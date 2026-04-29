@@ -1075,7 +1075,7 @@ function loadAtTab() {
   document.getElementById('at-equipamento').innerHTML = '<option value="">— Seleciona primeiro o cliente —</option>';
 }
 
-function atFiltrarClientes() {
+async function atFiltrarClientes() {
   const vendedor = document.getElementById('at-vendedor').value;
   const savedList = localStorage.getItem('delta_clientes_sistema');
   const lista = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
@@ -1083,13 +1083,50 @@ function atFiltrarClientes() {
   document.getElementById('at-cliente-search').value = '';
   document.getElementById('at-cliente-info-box').style.display = 'none';
   document.getElementById('at-equipamento').innerHTML = '<option value="">— Seleciona primeiro o cliente —</option>';
+  document.getElementById('at-cliente').innerHTML = '<option value="">A filtrar clientes...</option>';
 
   if (!vendedor) {
     atListaAtiva = [];
     document.getElementById('at-cliente').innerHTML = '<option value="">— Seleciona o vendedor primeiro —</option>';
     return;
   }
-  atListaAtiva = lista.filter(c => c.vendedor === vendedor);
+
+  // Get all clients for this vendedor
+  const clientesVendedor = lista.filter(c => c.vendedor === vendedor);
+  const cods = clientesVendedor.map(c => c.cod);
+
+  // Fetch all registos for these clients in one query
+  try {
+    const codsParam = cods.map(c => `"${c}"`).join(',');
+    const resp = await fetch(
+      `${SUPA_URL}?cod=in.(${cods.join(',')})&select=cod,equipamentos`,
+      { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY } }
+    );
+    const data = await resp.json();
+
+    // Build set of cods that have at least one eligible equipment
+    const codsComEquip = new Set();
+    (data || []).forEach(r => {
+      const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
+      const temElegivel = equips.some(e => {
+        if (!e.tipo) return false;
+        const tipoUp = e.tipo.toUpperCase().trim();
+        return !AT_EXCLUIR_EQUIP.some(ex => tipoUp.includes(ex));
+      });
+      if (temElegivel) codsComEquip.add(String(r.cod));
+    });
+
+    // Filter and sort alphabetically
+    atListaAtiva = clientesVendedor
+      .filter(c => codsComEquip.has(String(c.cod)))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+
+  } catch(err) {
+    // On error, show all clients sorted
+    atListaAtiva = [...clientesVendedor].sort((a, b) => a.nome.localeCompare(b.nome));
+    toast('Aviso: não foi possível filtrar por equipamentos.', 'error');
+  }
+
   atRenderClientesList(atListaAtiva);
 }
 
@@ -1105,10 +1142,10 @@ function atFiltrarLista() {
 function atRenderClientesList(lista) {
   const sel = document.getElementById('at-cliente');
   if (!lista.length) {
-    sel.innerHTML = '<option value="">Nenhum cliente encontrado</option>';
+    sel.innerHTML = '<option value="">Nenhum cliente com equipamentos elegíveis</option>';
     return;
   }
-  sel.innerHTML = '<option value="">— Selecionar cliente —</option>' +
+  sel.innerHTML = '<option value="">— Selecionar cliente (' + lista.length + ') —</option>' +
     lista.map(c => `<option value="${c.cod}" data-nome="${c.nome}" data-cep="${c.cep}" data-vendedor="${c.vendedor}">${c.nome} (${c.cod})</option>`).join('');
 }
 
@@ -1157,6 +1194,7 @@ async function atPreencherCliente() {
     if (equipList.length === 0) {
       selEquip.innerHTML = '<option value="">Nenhum equipamento elegível para AT</option>';
     } else {
+      equipList.sort((a, b) => a.tipo.localeCompare(b.tipo));
       selEquip.innerHTML = '<option value="">— Selecionar equipamento —</option>' +
         equipList.map(e => `<option value='${e.val}' data-tipo="${e.tipo}" data-tag="${e.tag}">${e.label}</option>`).join('');
     }
@@ -1197,7 +1235,7 @@ function enviarPedidoAT() {
   const hora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
 
   const assunto = encodeURIComponent(`Abertura de Chamado ${clienteCod} ${clienteNome} ${equipTipo}`);
-  const cc = encodeURIComponent('carlos.castro@deltafoodsbrasil.com.br,filipe.neves@deltafoodsbrasil.com.br,ricardo.vicentesilva@deltafoodsbrasil.com.br');
+  const cc = encodeURIComponent('carlos.castro@deltafoodsbrasil.com.br;filipe.neves@deltafoodsbrasil.com.br;ricardo.vicentesilva@deltafoodsbrasil.com.br');
 
   const corpo = `Pedido de Assistência Técnica
 ==============================
