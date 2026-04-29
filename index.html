@@ -752,7 +752,14 @@
         </div>
         <div class="form-group">
           <label>N Contrato</label>
-          <input type="text" id="f-contrato" placeholder="Número do contrato (opcional)" autocomplete="off">
+          <input type="text" id="f-contrato" placeholder="Número do contrato (opcional)" autocomplete="off" oninput="toggleContratoFields('f')">
+        </div>
+        <div id="f-contrato-extra" style="display:none">
+          <div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:8px">
+            <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:10px">📋 Detalhes do Contrato</div>
+            <div id="f-contratos-list"></div>
+            <button type="button" class="btn-add-equip" onclick="addContratoRow('f')" style="margin-top:6px">+ Adicionar contrato</button>
+          </div>
         </div>
       </div>
 
@@ -850,9 +857,13 @@
 
   <!-- RESUMO -->
   <div class="panel" id="panel-resumo">
-    <div id="resumo-content">
-      <tr class="loading-row"><td colspan="4"><span class="spinner"></span>A calcular...</td></tr>
+    <div id="resumo-content"></div>
+    <hr style="margin:24px 0;border:none;border-top:1.5px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="font-size:15px;font-weight:600;color:var(--text)">🔧 Chamados de Assistência Técnica</h3>
+      <button class="btn btn-secondary btn-sm" onclick="exportATExcel()">⬇ Excel</button>
     </div>
+    <div id="at-resumo-content"><div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">A carregar chamados...</div></div>
   </div>
 
   <div class="panel" id="panel-at">
@@ -978,7 +989,14 @@
         </div>
         <div class="form-group">
           <label>N Contrato</label>
-          <input type="text" id="e-contrato" placeholder="Número do contrato (opcional)">
+          <input type="text" id="e-contrato" placeholder="Número do contrato (opcional)" oninput="toggleContratoFields('e')">
+        </div>
+        <div id="e-contrato-extra" style="display:none">
+          <div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:8px">
+            <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:10px">📋 Detalhes do Contrato</div>
+            <div id="e-contratos-list"></div>
+            <button type="button" class="btn-add-equip" onclick="addContratoRow('e')" style="margin-top:6px">+ Adicionar contrato</button>
+          </div>
         </div>
       </div>
       <div class="form-group">
@@ -1263,9 +1281,21 @@ ${vendedor}
 ---
 Enviado via Delta Foods App`;
 
+  // Save chamado to localStorage for AT resumo
+  const chamados = getATChamados();
+  chamados.push({
+    id: Date.now().toString(36),
+    data, hora,
+    vendedor,
+    clienteCod, clienteNome,
+    equipTipo, equipTag,
+    avaria, descricao, urgencia
+  });
+  saveATChamados(chamados);
+
   const mailtoLink = `mailto:info.br@gruponabeiro.com?cc=${cc}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
   window.location.href = mailtoLink;
-  toast('✅ A abrir cliente de email...');
+  toast('✅ Chamado registado e email a abrir...');
 }
 
 // ─── STATUS ──────────────────────────────────────────
@@ -1320,6 +1350,8 @@ function getEquipamentos(listId) {
 // ─── FORM NOVO ──────────────────────────────────────
 function limparForm() {
   ['f-vendedor','f-cod','f-nome','f-cep','f-contrato'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-contrato-extra').style.display = 'none';
+  document.getElementById('f-contratos-list').innerHTML = '';
   document.getElementById('equip-list').innerHTML = '';
   addEquipRow();
 }
@@ -1349,6 +1381,7 @@ async function salvarRegisto() {
     nome: nome.toUpperCase(),
     cep,
     contrato: document.getElementById('f-contrato').value.trim(),
+    contratos: getContratos('f'),
     equipamentos,
     data: new Date().toLocaleDateString('pt-BR')
   };
@@ -1466,6 +1499,7 @@ function goToStep2() {
   document.getElementById('e-cep').value = registo.cep || '';
   document.getElementById('e-contrato').value = registo.contrato || '';
 
+  loadContratos('e', Array.isArray(registo.contratos) ? registo.contratos : []);
   document.getElementById('edit-equip-list').innerHTML = '';
   const equips = Array.isArray(registo.equipamentos) ? registo.equipamentos : [];
   if (equips.length === 0) {
@@ -1493,6 +1527,7 @@ async function salvarEdicao() {
     nome: document.getElementById('e-nome').value.trim().toUpperCase(),
     cep: document.getElementById('e-cep').value.trim(),
     contrato: document.getElementById('e-contrato').value.trim(),
+    contratos: getContratos('e'),
     equipamentos: getEquipamentos('edit-equip-list')
   };
 
@@ -1868,11 +1903,155 @@ async function loadResumo() {
 
     html += '</div>';
     document.getElementById('resumo-content').innerHTML = html;
+    await loadATResumo();
 
   } catch(e) {
     document.getElementById('resumo-content').innerHTML =
       '<div style="padding:40px;text-align:center;color:var(--danger)">Erro ao carregar dados.</div>';
   }
+}
+
+// ─── CONTRATOS ───────────────────────────────────────
+function toggleContratoFields(prefix) {
+  const val = document.getElementById(`${prefix}-contrato`).value.trim();
+  const extra = document.getElementById(`${prefix}-contrato-extra`);
+  if (val) {
+    extra.style.display = 'block';
+    if (!document.getElementById(`${prefix}-contratos-list`).children.length) {
+      addContratoRow(prefix);
+    }
+  } else {
+    extra.style.display = 'none';
+  }
+}
+
+function addContratoRow(prefix, data = {}) {
+  const list = document.getElementById(`${prefix}-contratos-list`);
+  const idx = list.children.length;
+  const div = document.createElement('div');
+  div.className = 'contrato-row';
+  div.style.cssText = 'border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px;background:var(--surface)';
+  div.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span style="font-size:11px;font-weight:600;color:var(--muted)">Contrato ${idx+1}</span>
+      ${idx > 0 ? `<button type="button" onclick="this.closest('.contrato-row').remove()" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px">✕</button>` : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+      <div>
+        <label style="font-size:11px;color:var(--muted)">Início (mês/ano)</label>
+        <input type="month" class="form-input" style="padding:6px 8px;font-size:13px" data-field="inicio" value="${data.inicio||''}">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted)">Duração (meses)</label>
+        <input type="number" class="form-input" style="padding:6px 8px;font-size:13px" placeholder="Ex: 12" min="1" data-field="duracao" value="${data.duracao||''}">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <div>
+        <label style="font-size:11px;color:var(--muted)">Consumo contratado</label>
+        <input type="number" class="form-input" style="padding:6px 8px;font-size:13px" placeholder="Quantidade" min="0" step="0.1" data-field="consumo" value="${data.consumo||''}">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted)">Unidade</label>
+        <select class="form-input" style="padding:6px 8px;font-size:13px" data-field="unidade">
+          <option value="Capsulas" ${(data.unidade||'Capsulas')==='Capsulas'?'selected':''}>Cápsulas</option>
+          <option value="Kg" ${data.unidade==='Kg'?'selected':''}>Kg</option>
+        </select>
+      </div>
+    </div>`;
+  list.appendChild(div);
+}
+
+function getContratos(prefix) {
+  const rows = document.querySelectorAll(`#${prefix}-contratos-list .contrato-row`);
+  return [...rows].map(row => ({
+    inicio:   row.querySelector('[data-field="inicio"]').value,
+    duracao:  row.querySelector('[data-field="duracao"]').value,
+    consumo:  row.querySelector('[data-field="consumo"]').value,
+    unidade:  row.querySelector('[data-field="unidade"]').value,
+  })).filter(c => c.inicio || c.consumo || c.duracao);
+}
+
+function loadContratos(prefix, contratos = []) {
+  const list = document.getElementById(`${prefix}-contratos-list`);
+  list.innerHTML = '';
+  if (contratos.length) {
+    contratos.forEach(c => addContratoRow(prefix, c));
+    document.getElementById(`${prefix}-contrato-extra`).style.display = 'block';
+  }
+}
+
+// ─── AT STORAGE & RESUMO ─────────────────────────────
+const AT_STORE_KEY = 'delta_at_chamados';
+
+function getATChamados() {
+  try { return JSON.parse(localStorage.getItem(AT_STORE_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveATChamados(arr) {
+  localStorage.setItem(AT_STORE_KEY, JSON.stringify(arr));
+}
+
+async function loadATResumo() {
+  const chamados = getATChamados();
+  const cont = document.getElementById('at-resumo-content');
+  if (!chamados.length) {
+    cont.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">Nenhum chamado AT registado ainda.</div>';
+    return;
+  }
+
+  // Group by vendedor → cliente → equipamento
+  const byVendedor = {};
+  chamados.forEach(c => {
+    const v = c.vendedor || '—';
+    if (!byVendedor[v]) byVendedor[v] = {};
+    const k = `${c.clienteCod}||${c.clienteNome}`;
+    if (!byVendedor[v][k]) byVendedor[v][k] = { clienteCod: c.clienteCod, clienteNome: c.clienteNome, equips: {} };
+    const eq = c.equipTipo || '—';
+    byVendedor[v][k].equips[eq] = (byVendedor[v][k].equips[eq] || 0) + 1;
+  });
+
+  let html = '';
+  Object.keys(byVendedor).sort().forEach(vend => {
+    const clientes = byVendedor[vend];
+    const totalClientes = Object.keys(clientes).length;
+    const totalChamados = Object.values(clientes).reduce((s, c) => s + Object.values(c.equips).reduce((a, b) => a + b, 0), 0);
+    html += `<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden">
+      <div style="background:var(--surface2);padding:10px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:14px" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+        <span>👤 ${vend}</span>
+        <span style="font-size:12px;color:var(--muted)">${totalClientes} cliente(s) · ${totalChamados} chamado(s)</span>
+      </div>
+      <div style="display:none;padding:8px 14px 12px">`;
+
+    Object.values(clientes).sort((a,b) => a.clienteNome.localeCompare(b.clienteNome)).forEach(cli => {
+      const totalCli = Object.values(cli.equips).reduce((a, b) => a + b, 0);
+      html += `<div style="border:1px solid var(--border);border-radius:8px;margin-top:8px;overflow:hidden">
+        <div style="padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:500;background:var(--surface)" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+          <span>${cli.clienteNome} <span style="color:var(--muted);font-size:11px">(${cli.clienteCod})</span></span>
+          <span style="color:var(--accent);font-size:12px">${totalCli} chamado(s)</span>
+        </div>
+        <div style="display:none;padding:6px 12px 10px">`;
+      Object.entries(cli.equips).sort((a,b) => a[0].localeCompare(b[0])).forEach(([eq, cnt]) => {
+        html += `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid var(--border)"><span>${eq}</span><span style="font-weight:600;color:var(--accent)">${cnt}x</span></div>`;
+      });
+      html += `</div></div>`;
+    });
+    html += `</div></div>`;
+  });
+  cont.innerHTML = html;
+}
+
+function exportATExcel() {
+  const chamados = getATChamados();
+  if (!chamados.length) { toast('Nenhum chamado para exportar.', 'error'); return; }
+  const rows = [['Data','Hora','Vendedor','Cód. Cliente','Cliente','Equipamento','Tag','Tipo Avaria','Descrição','Urgência']];
+  chamados.forEach(c => rows.push([
+    c.data||'', c.hora||'', c.vendedor||'', c.clienteCod||'', c.clienteNome||'',
+    c.equipTipo||'', c.equipTag||'', c.avaria||'', c.descricao||'', c.urgencia||''
+  ]));
+  const csv = rows.map(r => r.map(v => `"${(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='chamados_AT.csv'; a.click();
 }
 
 // ─── INIT ────────────────────────────────────────────
