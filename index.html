@@ -2241,7 +2241,7 @@ async function loadContratosTab() {
 
   try {
     // Fetch all registos with contratos from Supabase
-    const res = await fetch(SUPA_URL + '?select=cod,nome,contrato,contratos&contratos=not.is.null', {headers: HEADERS});
+    const res = await fetch(SUPA_URL + '?select=cod,nome,contrato,contratos', {headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }});
     let registos = await res.json();
 
     // Filter only those with contratos array
