@@ -1667,8 +1667,21 @@ async function loadPendentes() {
       .from('registos')
       .select('cod');
     if (error) throw error;
-    const codRegistados = new Set((data || []).map(r => String(r.cod).trim()));
-    pendentesData = listaAtiva.filter(c => !codRegistados.has(String(c.cod).trim()));
+    // Normalize all codes: remove spaces, leading zeros, convert to string
+    const normCod = v => String(v || '').trim().replace(/^0+/, '') || '0';
+    const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
+    // Debug: check a few specific codes
+    const helcioCods = listaAtiva.filter(c => c.vendedor && c.vendedor.includes('LCIO'));
+    const helcioRegistados = helcioCods.filter(c => codRegistados.has(normCod(c.cod)));
+    const helcioPendentes = helcioCods.filter(c => !codRegistados.has(normCod(c.cod)));
+    console.log('=== DEBUG PENDENTES ===');
+    console.log('Total lista Hélcio:', helcioCods.length);
+    console.log('Registados:', helcioRegistados.length);
+    console.log('Pendentes:', helcioPendentes.length);
+    console.log('Sample cod from lista:', normCod(helcioCods[0]?.cod));
+    console.log('Sample cod from supabase:', [...codRegistados].slice(0,3));
+    console.log('Sample raw cod from supabase:', (data||[]).slice(0,3).map(r=>r.cod));
+    pendentesData = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
   } catch(e) {
     pendentesData = listaAtiva;
   }
@@ -1857,7 +1870,8 @@ async function loadResumo() {
   try {
     const res = await fetch(SUPA_URL + '?select=cod,vendedor', { headers: HEADERS });
     const registados = await res.json();
-    const codRegistados = new Set(registados.map(r => String(r.cod).trim()));
+    const normCodR = v => String(v || '').trim().replace(/^0+/, '') || '0';
+    const codRegistados = new Set(registados.map(r => normCodR(r.cod)));
 
     // Agrupar por vendedor
     const vendedores = {};
@@ -1868,11 +1882,11 @@ async function loadResumo() {
       const v = c.vendedor;
       if (!vendedores[v]) vendedores[v] = { total: 0, registados: 0 };
       vendedores[v].total++;
-      if (codRegistados.has(String(c.cod).trim())) vendedores[v].registados++;
+      if (codRegistados.has(normCodR(c.cod))) vendedores[v].registados++;
     });
 
     const totalSistema = _listaStats.length;
-    const totalRegistados = _listaStats.filter(c => codRegistados.has(String(c.cod).trim())).length;
+    const totalRegistados = _listaStats.filter(c => codRegistados.has(normCodR(c.cod))).length;
     const totalPendentes = totalSistema - totalRegistados;
     const pctGeral = totalSistema > 0 ? Math.round((totalRegistados / totalSistema) * 100) : 0;
 
