@@ -2265,9 +2265,10 @@ async function loadContratosTab() {
         const [ano, mes] = c.inicio.split('-').map(Number);
         const dataInicio = new Date(ano, mes - 1, 1);
 
-        // Months elapsed since start (up to today)
+        // Months elapsed since start (inclusive of start month)
+        // Jan=0 start, Apr=3 now → 3-0+1 = 4 months
         let mesesDecorridos = (today.getFullYear() - dataInicio.getFullYear()) * 12 +
-          (today.getMonth() - dataInicio.getMonth());
+          (today.getMonth() - dataInicio.getMonth()) + 1;
         mesesDecorridos = Math.max(0, Math.min(mesesDecorridos, duracao));
 
         const consumoEsperado = consumoMes * mesesDecorridos;
@@ -2279,12 +2280,26 @@ async function loadContratosTab() {
         const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
         const inicioFmt = `${meses[mes-1]}/${ano}`;
 
+        // Calculate end date
+        const dataFim = new Date(dataInicio);
+        dataFim.setMonth(dataFim.getMonth() + duracao);
+        const meses2 = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        const fimFmt = `${meses2[dataFim.getMonth()]}/${dataFim.getFullYear()}`;
+
+        // Alert conditions
+        const mesesParaFim = (dataFim.getFullYear() - today.getFullYear()) * 12 +
+          (dataFim.getMonth() - today.getMonth());
+        const pctConsumo = totalContratado > 0 ? (consumoReal / totalContratado) * 100 : 0;
+        let alerta = null;
+        if (pctConsumo >= 85) alerta = 'volume';
+        else if (mesesParaFim <= 6 && mesesParaFim >= 0) alerta = 'tempo';
+
         rows.push({
           cod: r.cod, nome: r.nome, contrato: r.contrato || '—',
-          inicio: inicioFmt, duracao, unidade,
+          inicio: inicioFmt, duracao, fimFmt, unidade,
           totalContratado, consumoMes, mesesDecorridos,
           consumoEsperado, consumoReal,
-          pct, pctTotal, tipo
+          pct, pctTotal, tipo, alerta, mesesParaFim, pctConsumo
         });
       });
     });
@@ -2305,36 +2320,50 @@ async function loadContratosTab() {
     let html = `<div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead>
-        <tr style="background:var(--surface2);text-align:left">
-          <th style="padding:10px 12px;font-weight:600;white-space:nowrap">Cód</th>
-          <th style="padding:10px 12px;font-weight:600">Cliente</th>
-          <th style="padding:10px 12px;font-weight:600;white-space:nowrap">Contrato</th>
-          <th style="padding:10px 12px;font-weight:600;white-space:nowrap">Início</th>
-          <th style="padding:10px 12px;font-weight:600;white-space:nowrap">Unid.</th>
-          <th style="padding:10px 12px;font-weight:600;text-align:right;white-space:nowrap">Total<br>Contratado</th>
-          <th style="padding:10px 12px;font-weight:600;text-align:right;white-space:nowrap">Esperado<br>(${new Date().toLocaleDateString('pt-BR',{month:'short',year:'numeric'})})</th>
-          <th style="padding:10px 12px;font-weight:600;text-align:right;white-space:nowrap">Consumo<br>Real</th>
-          <th style="padding:10px 12px;font-weight:600;text-align:center;white-space:nowrap">% Cumprimento<br><span style="font-size:10px;font-weight:400">(vs esperado)</span></th>
+        <tr style="background:var(--accent);color:#fff;text-align:left">
+          <th style="padding:10px 12px;font-weight:600;white-space:nowrap;border:1px solid rgba(255,255,255,0.2)">Cód</th>
+          <th style="padding:10px 12px;font-weight:600;border:1px solid rgba(255,255,255,0.2)">Cliente</th>
+          <th style="padding:10px 12px;font-weight:600;white-space:nowrap;border:1px solid rgba(255,255,255,0.2)">Contrato</th>
+          <th style="padding:10px 12px;font-weight:600;white-space:nowrap;border:1px solid rgba(255,255,255,0.2)">Início</th>
+          <th style="padding:10px 12px;font-weight:600;white-space:nowrap;border:1px solid rgba(255,255,255,0.2)">Dur.<br>(m)</th>
+          <th style="padding:10px 12px;font-weight:600;white-space:nowrap;border:1px solid rgba(255,255,255,0.2)">Fim</th>
+          <th style="padding:10px 12px;font-weight:600;white-space:nowrap;border:1px solid rgba(255,255,255,0.2)">Unid.</th>
+          <th style="padding:10px 12px;font-weight:600;text-align:right;white-space:nowrap;border:1px solid rgba(255,255,255,0.2)">Total<br>Contratado</th>
+          <th style="padding:10px 12px;font-weight:600;text-align:right;white-space:nowrap;border:1px solid rgba(255,255,255,0.2)">Esperado<br>(${new Date().toLocaleDateString('pt-BR',{month:'short',year:'numeric'})})</th>
+          <th style="padding:10px 12px;font-weight:600;text-align:right;white-space:nowrap;border:1px solid rgba(255,255,255,0.2)">Consumo<br>Real</th>
+          <th style="padding:10px 12px;font-weight:600;text-align:center;white-space:nowrap;border:1px solid rgba(255,255,255,0.2)">%<br>Cumprimento</th>
+          <th style="padding:10px 12px;font-weight:600;text-align:center;white-space:nowrap;border:1px solid rgba(255,255,255,0.2)">Alerta</th>
         </tr>
       </thead>
       <tbody>`;
 
-    rows.forEach(r => {
+    rows.forEach((r, idx) => {
       const pBg = pctBg(r.pct);
       const pCol = pctColor(r.pct);
-      html += `<tr style="border-bottom:1px solid var(--border);background:var(--surface)">
-        <td style="padding:9px 12px;color:var(--muted);white-space:nowrap">${r.cod}</td>
-        <td style="padding:9px 12px;font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.nome}">${r.nome}</td>
-        <td style="padding:9px 12px;color:var(--muted);white-space:nowrap">${r.contrato}</td>
-        <td style="padding:9px 12px;white-space:nowrap">${r.inicio} · ${r.duracao}m</td>
-        <td style="padding:9px 12px;white-space:nowrap">${unidadeLabel(r.unidade)}</td>
-        <td style="padding:9px 12px;text-align:right;white-space:nowrap">${fmtNum(r.totalContratado, r.unidade)}</td>
-        <td style="padding:9px 12px;text-align:right;white-space:nowrap">${r.mesesDecorridos > 0 ? fmtNum(r.consumoEsperado, r.unidade) : '—'}</td>
-        <td style="padding:9px 12px;text-align:right;font-weight:600;white-space:nowrap">${r.consumoReal > 0 ? fmtNum(r.consumoReal, r.unidade) : '—'}</td>
-        <td style="padding:9px 12px;text-align:center">
+      const rowBg = r.alerta ? (r.alerta === 'volume' ? '#fff8e1' : '#fff3e0') : (idx % 2 === 0 ? 'var(--surface)' : 'var(--surface2)');
+      const td = `padding:9px 12px;border:1px solid var(--border);`;
+      html += `<tr style="background:${rowBg}">
+        <td style="${td}color:var(--muted);white-space:nowrap">${r.cod}</td>
+        <td style="${td}font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.nome}">${r.nome}</td>
+        <td style="${td}white-space:nowrap">${r.contrato}</td>
+        <td style="${td}white-space:nowrap">${r.inicio}</td>
+        <td style="${td}text-align:center;white-space:nowrap">${r.duracao}</td>
+        <td style="${td}white-space:nowrap">${r.fimFmt}</td>
+        <td style="${td}white-space:nowrap">${unidadeLabel(r.unidade)}</td>
+        <td style="${td}text-align:right;white-space:nowrap">${fmtNum(r.totalContratado, r.unidade)}</td>
+        <td style="${td}text-align:right;white-space:nowrap">${r.mesesDecorridos > 0 ? fmtNum(r.consumoEsperado, r.unidade) : '—'}</td>
+        <td style="${td}text-align:right;font-weight:700;white-space:nowrap">${r.consumoReal > 0 ? fmtNum(r.consumoReal, r.unidade) : '—'}</td>
+        <td style="${td}text-align:center">
           ${r.pct !== null && r.mesesDecorridos > 0
             ? `<span style="background:${pBg};color:${pCol};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pct}%</span>`
-            : '<span style="color:var(--muted);font-size:12px">Não iniciado</span>'}
+            : '<span style="color:var(--muted);font-size:12px">—</span>'}
+        </td>
+        <td style="${td}text-align:center;white-space:nowrap">
+          ${r.alerta === 'volume'
+            ? `<span style="background:#fff8e1;color:#e65100;border:1px solid #ffb300;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700" title="Consumo atingiu ${Math.round(r.pctConsumo)}% do total contratado">⚠️ 85% Volume</span>`
+            : r.alerta === 'tempo'
+            ? `<span style="background:#fff3e0;color:#bf360c;border:1px solid #ff7043;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700" title="Faltam ${r.mesesParaFim} mês(es) para terminar">🔔 ${r.mesesParaFim}m p/ fim</span>`
+            : '<span style="color:var(--muted);font-size:12px">—</span>'}
         </td>
       </tr>`;
     });
