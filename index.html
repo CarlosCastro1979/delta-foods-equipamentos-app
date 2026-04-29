@@ -1667,17 +1667,9 @@ async function loadPendentes() {
     const res = await fetch(SUPA_URL + '?select=cod', { headers: HEADERS });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    // Normalize all codes: remove spaces, leading zeros, convert to string
     const normCod = v => String(v || '').trim().replace(/^0+/, '') || '0';
     const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
-    console.log('=== DEBUG PENDENTES ===');
-    console.log('Total registados no Supabase:', codRegistados.size);
-    console.log('Total lista ativa:', listaAtiva.length);
-    console.log('Sample raw cod from supabase:', (data||[]).slice(0,3).map(r=>r.cod));
-    console.log('Sample normCod from supabase:', [...codRegistados].slice(0,3));
-    console.log('Sample cod from lista:', normCod(listaAtiva[0]?.cod));
     pendentesData = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
-    console.log('Pendentes após filtro:', pendentesData.length);
   } catch(e) {
     console.error('loadPendentes error:', e);
     pendentesData = listaAtiva;
