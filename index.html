@@ -727,6 +727,7 @@
     <button class="tab" onclick="switchTab('lista')">📋 Todos os Registos</button>
     <button class="tab" onclick="switchTab('pendentes')">⏳ Clientes por Registar</button>
     <button class="tab" onclick="switchTab('resumo')">📊 Resumo</button>
+    <button class="tab" onclick="switchTab('at')">🔧 Pedido AT</button>
   </div>
 
   <!-- NOVO REGISTO -->
@@ -854,6 +855,81 @@
     </div>
   </div>
 
+  <div class="panel" id="panel-at">
+    <div style="max-width:600px;margin:0 auto">
+      <h2 style="font-size:16px;font-weight:600;margin-bottom:16px;color:var(--text)">🔧 Pedido de Assistência Técnica</h2>
+
+      <div class="form-group">
+        <label class="form-label">Vendedor</label>
+        <input type="text" id="at-vendedor" class="form-input" placeholder="Nome do vendedor">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Cliente</label>
+        <select id="at-cliente" class="form-input" onchange="atPreencherCliente()">
+          <option value="">— Selecionar cliente —</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="at-cliente-info-box" style="display:none">
+        <div style="background:var(--surface2);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--muted)">
+          <span id="at-cliente-info"></span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Equipamento</label>
+        <select id="at-equipamento" class="form-input">
+          <option value="">— Selecionar equipamento —</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Número de série <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
+        <input type="text" id="at-serial" class="form-input" placeholder="Ex: SN-123456">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Tipo de avaria detectada</label>
+        <select id="at-avaria-tipo" class="form-input" onchange="atToggleOutraAvaria()">
+          <option value="">— Selecionar tipo de avaria —</option>
+          <option value="Não faz café / sem extração">Não faz café / sem extração</option>
+          <option value="Avaria no moinho">Avaria no moinho</option>
+          <option value="Fuga de água">Fuga de água</option>
+          <option value="Erro no display / painel">Erro no display / painel</option>
+          <option value="Temperatura incorreta">Temperatura incorreta</option>
+          <option value="Ruído anormal">Ruído anormal</option>
+          <option value="Bomba com problemas">Bomba com problemas</option>
+          <option value="Resistência com problemas">Resistência com problemas</option>
+          <option value="Não liga">Não liga</option>
+          <option value="Outra avaria">Outra avaria</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="at-outra-avaria-box" style="display:none">
+        <label class="form-label">Descreve a outra avaria</label>
+        <input type="text" id="at-outra-avaria" class="form-input" placeholder="Descreve a avaria">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Descrição detalhada <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
+        <textarea id="at-descricao" class="form-input" rows="3" placeholder="Informações adicionais para o técnico..." style="resize:vertical;min-height:80px"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Urgência</label>
+        <select id="at-urgencia" class="form-input">
+          <option value="Normal">Normal</option>
+          <option value="Urgente">🔴 Urgente</option>
+        </select>
+      </div>
+
+      <button class="btn-primary" onclick="enviarPedidoAT()" style="width:100%;padding:12px;font-size:15px;margin-top:4px">
+        📧 Registar e Enviar Pedido AT
+      </button>
+    </div>
+  </div>
+
 <!-- MODAL EDIÇÃO -->
 <div class="modal-overlay" id="modal-overlay" onclick="closeModalOnBg(event)">
   <div class="modal" id="modal-edit">
@@ -972,6 +1048,143 @@ function switchTab(tab) {
   if (tab === 'lista') loadData();
   if (tab === 'pendentes') loadPendentes();
   if (tab === 'resumo') loadResumo();
+  if (tab === 'at') loadAtTab();
+}
+
+// ─── PEDIDO AT ──────────────────────────────────────
+function loadAtTab() {
+  const savedList = localStorage.getItem('delta_clientes_sistema');
+  const lista = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
+  const sel = document.getElementById('at-cliente');
+  sel.innerHTML = '<option value="">— Selecionar cliente —</option>' +
+    lista.map(c => `<option value="${c.cod}" data-nome="${c.nome}" data-cep="${c.cep}" data-vendedor="${c.vendedor}">${c.nome} (${c.cod})</option>`).join('');
+  // Reset equipamento dropdown
+  document.getElementById('at-equipamento').innerHTML = '<option value="">— Seleciona primeiro o cliente —</option>';
+  document.getElementById('at-cliente-info-box').style.display = 'none';
+}
+
+async function atPreencherCliente() {
+  const sel = document.getElementById('at-cliente');
+  const opt = sel.selectedOptions[0];
+  const box = document.getElementById('at-cliente-info-box');
+  const info = document.getElementById('at-cliente-info');
+  const selEquip = document.getElementById('at-equipamento');
+
+  if (!opt || !opt.value) {
+    box.style.display = 'none';
+    selEquip.innerHTML = '<option value="">— Seleciona primeiro o cliente —</option>';
+    return;
+  }
+
+  const vend = opt.dataset.vendedor || '';
+  info.innerHTML = `<strong>${opt.dataset.nome}</strong> &nbsp;·&nbsp; CEP: ${opt.dataset.cep} &nbsp;·&nbsp; Vendedor: ${vend}`;
+  box.style.display = 'block';
+
+  // Auto-fill vendedor field if empty
+  const vField = document.getElementById('at-vendedor');
+  if (!vField.value && vend) vField.value = vend;
+
+  // Fetch registered equipment for this client from Supabase
+  selEquip.innerHTML = '<option value="">A carregar equipamentos...</option>';
+  try {
+    const resp = await fetch(
+      `${SUPA_URL}?cod=eq.${opt.value}&select=equipamentos,contrato`,
+      { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY } }
+    );
+    const data = await resp.json();
+    // Collect all unique equipamentos across all registos for this client
+    const equipList = [];
+    (data || []).forEach(r => {
+      const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
+      equips.forEach(e => {
+        if (e.tipo) {
+          const label = e.tag ? `${e.tipo} — Tag #${e.tag}` : e.tipo;
+          const val = JSON.stringify({tipo: e.tipo, tag: e.tag||''});
+          if (!equipList.find(x => x.val === val)) {
+            equipList.push({label, val, tipo: e.tipo, tag: e.tag||''});
+          }
+        }
+      });
+    });
+
+    if (equipList.length === 0) {
+      selEquip.innerHTML = '<option value="">Nenhum equipamento registado para este cliente</option>';
+    } else {
+      selEquip.innerHTML = '<option value="">— Selecionar equipamento —</option>' +
+        equipList.map(e => `<option value='${e.val}' data-tipo="${e.tipo}" data-tag="${e.tag}">${e.label}</option>`).join('');
+    }
+  } catch(err) {
+    selEquip.innerHTML = '<option value="">Erro ao carregar equipamentos</option>';
+    toast('Erro ao carregar equipamentos do cliente.', 'error');
+  }
+}
+
+function atToggleOutraAvaria() {
+  const tipo = document.getElementById('at-avaria-tipo').value;
+  document.getElementById('at-outra-avaria-box').style.display = tipo === 'Outra avaria' ? 'block' : 'none';
+}
+
+function enviarPedidoAT() {
+  const vendedor   = document.getElementById('at-vendedor').value.trim();
+  const clienteSel = document.getElementById('at-cliente');
+  const clienteOpt = clienteSel.selectedOptions[0];
+  const equipRaw    = document.getElementById('at-equipamento').value;
+  let equipTipo = equipRaw, equipTag = '';
+  try { const eq = JSON.parse(equipRaw); equipTipo = eq.tipo; equipTag = eq.tag; } catch(e) {}
+  const serial     = document.getElementById('at-serial').value.trim();
+  const avariaTipo = document.getElementById('at-avaria-tipo').value;
+  const outraAvaria = document.getElementById('at-outra-avaria').value.trim();
+  const descricao  = document.getElementById('at-descricao').value.trim();
+  const urgencia   = document.getElementById('at-urgencia').value;
+
+  // Validations
+  if (!vendedor)         { toast('Preenche o nome do vendedor.', 'error'); return; }
+  if (!clienteSel.value) { toast('Seleciona um cliente.', 'error'); return; }
+  if (!equipRaw)         { toast('Seleciona o equipamento.', 'error'); return; }
+  if (!avariaTipo)       { toast('Seleciona o tipo de avaria.', 'error'); return; }
+  if (avariaTipo === 'Outra avaria' && !outraAvaria) { toast('Descreve a avaria.', 'error'); return; }
+
+  const avaria = avariaTipo === 'Outra avaria' ? outraAvaria : avariaTipo;
+  const clienteNome = clienteOpt.dataset.nome;
+  const clienteCod  = clienteSel.value;
+  const clienteCep  = clienteOpt.dataset.cep;
+  const data = new Date().toLocaleDateString('pt-BR');
+  const hora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+
+  const assunto = encodeURIComponent(`[AT${urgencia === 'Urgente' ? ' 🔴 URGENTE' : ''}] ${clienteNome} — ${equipTipo}`);
+
+  const corpo = `Pedido de Assistência Técnica
+==============================
+Data: ${data} às ${hora}
+Urgência: ${urgencia}
+
+DADOS DO CLIENTE
+----------------
+Nome: ${clienteNome}
+Código: ${clienteCod}
+CEP: ${clienteCep}
+
+EQUIPAMENTO
+-----------
+Equipamento: ${equipTipo}${equipTag ? `
+Tag: #${equipTag}` : ''}${serial ? `
+Nº Série: ${serial}` : ''}
+
+AVARIA
+------
+Tipo: ${avaria}${descricao ? `
+Descrição: ${descricao}` : ''}
+
+VENDEDOR
+--------
+${vendedor}
+
+---
+Enviado via Delta Foods App`;
+
+  const mailtoLink = `mailto:info.br@gruponabeiro.com?subject=${assunto}&body=${encodeURIComponent(corpo)}`;
+  window.location.href = mailtoLink;
+  toast('✅ A abrir cliente de email...');
 }
 
 // ─── STATUS ──────────────────────────────────────────
