@@ -2109,12 +2109,24 @@ const SUPA_VENDAS = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/vendas';
 
 async function getVendas() {
   try {
-    const res = await fetch(SUPA_VENDAS + '?select=cod,data,tipo,qty,peso&limit=10000', { headers: HEADERS });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return await res.json();
+    let all = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const res = await fetch(
+        `${SUPA_VENDAS}?select=cod,data,tipo,qty,peso&limit=${pageSize}&offset=${from}`,
+        { headers: { ...HEADERS, 'Range-Unit': 'items', 'Range': `${from}-${from+pageSize-1}` } }
+      );
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const page = await res.json();
+      all = all.concat(page);
+      if (page.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
   } catch(e) {
     console.warn('Vendas fetch failed:', e);
-    return []; // Return empty, do NOT fallback to localStorage
+    return [];
   }
 }
 async function saveVendas(arr) {
