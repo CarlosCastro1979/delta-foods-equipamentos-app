@@ -2243,11 +2243,11 @@ async function loadContratosTab() {
     const vendas = getVendas();
     const today = new Date();
 
-    // Build vendasByCod
-    const vendasByCod = {};
+    // vendas indexed by cod for per-contract filtering
+    const vendasPorCod = {};
     vendas.forEach(v => {
-      if (!vendasByCod[v.cod]) vendasByCod[v.cod] = {GRÃO: 0, CAPSULAS: 0};
-      vendasByCod[v.cod][v.tipo] = (vendasByCod[v.cod][v.tipo] || 0) + v.qty;
+      if (!vendasPorCod[v.cod]) vendasPorCod[v.cod] = [];
+      vendasPorCod[v.cod].push(v);
     });
 
     // Compute table rows
@@ -2272,7 +2272,16 @@ async function loadContratosTab() {
         mesesDecorridos = Math.max(0, Math.min(mesesDecorridos, duracao));
 
         const consumoEsperado = consumoMes * mesesDecorridos;
-        const consumoReal = (vendasByCod[r.cod] && vendasByCod[r.cod][tipo]) || 0;
+        // Only count sales from contract start date onwards, matching tipo
+        const consumoReal = (vendasPorCod[r.cod] || [])
+          .filter(v => {
+            // Parse date format DD.MM.YYYY
+            const parts = v.data.split('.');
+            if (parts.length !== 3) return false;
+            const vData = new Date(+parts[2], +parts[1]-1, +parts[0]);
+            return v.tipo === tipo && vData >= dataInicio;
+          })
+          .reduce((sum, v) => sum + v.qty, 0);
         const pct = consumoEsperado > 0 ? Math.round((consumoReal / consumoEsperado) * 100) : null;
         const pctTotal = totalContratado > 0 ? Math.round((consumoReal / totalContratado) * 100) : null;
 
