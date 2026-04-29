@@ -987,6 +987,44 @@
     </div>
   </div>
 
+  <div class="panel" id="panel-contratos">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <h2 style="font-size:16px;font-weight:600;color:var(--text)">📊 Cumprimento de Contratos</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="exportContratosExcel()">⬇ Excel</button>
+        <button class="btn btn-primary btn-sm" onclick="showVendasImport()" style="background:var(--accent)">⬆ Carregar Vendas</button>
+      </div>
+    </div>
+    <div id="contratos-content"><div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A carregar...</div></div>
+  </div>
+
+  <!-- MODAL VENDAS IMPORT (PIN protected) -->
+  <div id="vendas-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;align-items:center;justify-content:center">
+    <div style="background:var(--surface);border-radius:12px;padding:24px;width:90%;max-width:480px;max-height:90vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="font-size:16px;font-weight:600">⬆ Carregar Vendas</h3>
+        <button onclick="closeVendasModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">✕</button>
+      </div>
+      <div id="vendas-pin-step">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Introduz o PIN para aceder ao carregamento de vendas:</p>
+        <input type="password" id="vendas-pin-input" class="form-input" placeholder="PIN" maxlength="6" style="text-align:center;font-size:20px;letter-spacing:8px;margin-bottom:10px" onkeydown="if(event.key==='Enter')checkVendasPin()">
+        <button class="btn btn-primary" onclick="checkVendasPin()" style="width:100%">Confirmar</button>
+      </div>
+      <div id="vendas-upload-step" style="display:none">
+        <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--muted)">
+          <strong>Regras de importação:</strong><br>
+          • Hierarquia GRÃO → usa Peso líq. em Kg<br>
+          • Hierarquia CÁPSULAS → Peso líq. ÷ 0,0055 = nº cápsulas<br>
+          • Datas já importadas são ignoradas automaticamente
+        </div>
+        <div id="vendas-status" style="margin-bottom:10px"></div>
+        <input type="file" id="vendas-file-input" accept=".xlsx,.xls" style="display:none" onchange="processVendasFile(event)">
+        <button class="btn btn-primary" onclick="document.getElementById('vendas-file-input').click()" style="width:100%;margin-bottom:8px">📂 Selecionar ficheiro Excel</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearVendas()" style="width:100%">🗑 Limpar todas as vendas</button>
+      </div>
+    </div>
+  </div>
+
 <!-- MODAL EDIÇÃO -->
 <div class="modal-overlay" id="modal-overlay" onclick="closeModalOnBg(event)">
   <div class="modal" id="modal-edit">
@@ -1213,7 +1251,7 @@ async function loadData() {
         <td>${r.contrato || '—'}</td>
         <td>${equipHtml}</td>
         <td><span class="vendedor-badge">${r.vendedor || '—'}</span></td>
-        <td>${r.data ? new Date(r.data+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+        <td>${r.data ? (()=>{ try { const d=new Date(r.data.includes('T')?r.data:r.data+'T12:00:00'); return isNaN(d)?r.data:d.toLocaleDateString('pt-BR'); } catch(e){ return r.data; } })() : '—'}</td>
         <td><button class="btn-edit" onclick="openEdit('${r.id}')">Editar</button></td>
       </tr>`;
     }).join('');
@@ -1593,7 +1631,7 @@ function switchTab(tab) {
   if (tab === 'pendentes') loadPendentes();
   if (tab === 'resumo') loadResumo();
   if (tab === 'at') loadAtTab();
-  if (tab === 'contratos') loadContratosTab();
+  if (tab === 'contratos') { const pc = document.getElementById('panel-contratos'); if(pc) loadContratosTab(); }
 }
 
 // ─── PEDIDO AT ──────────────────────────────────────
