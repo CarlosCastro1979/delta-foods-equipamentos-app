@@ -2115,14 +2115,16 @@ async function getVendas() {
     while (true) {
       const res = await fetch(
         `${SUPA_VENDAS}?select=cod,data,tipo,qty,peso&limit=${pageSize}&offset=${from}`,
-        { headers: { ...HEADERS, 'Range-Unit': 'items', 'Range': `${from}-${from+pageSize-1}` } }
+        { headers: HEADERS }
       );
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const page = await res.json();
       all = all.concat(page);
+      console.log(`Vendas page from=${from}: ${page.length} records, total so far: ${all.length}`);
       if (page.length < pageSize) break;
       from += pageSize;
     }
+    console.log('Total vendas fetched:', all.length);
     return all;
   } catch(e) {
     console.warn('Vendas fetch failed:', e);
