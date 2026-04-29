@@ -1374,13 +1374,25 @@ function abrirRegistoRapido(cliente) {
 async function handleFileImport(event) {
   const file = event.target.files[0];
   if (!file) return;
-
-  if (file.name.endsWith('.csv')) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+    toast('A carregar Excel...');
+    if (!window.XLSX) {
+      await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+    }
+    const buf = await file.arrayBuffer();
+    const wb = window.XLSX.read(buf, {type:'array'});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const csv = window.XLSX.utils.sheet_to_csv(ws, {FS:';'});
+    document.getElementById('csv-import-area').value = csv;
+    toast('Excel convertido — a processar...');
+    processarCSVImport();
+  } else if (name.endsWith('.csv')) {
     const text = await file.text();
     document.getElementById('csv-import-area').value = text;
     processarCSVImport();
   } else {
-    toast('Por agora usa CSV. No Excel: Ficheiro → Guardar como → CSV.', 'error');
+    toast('Usa ficheiro .xlsx, .xls ou .csv', 'error');
   }
   event.target.value = '';
 }
@@ -1395,16 +1407,39 @@ async function processarCSVImport() {
   const firstLine = lines[0].toLowerCase();
   const startIdx = (firstLine.includes('cod') || firstLine.includes('cliente') || firstLine.includes('nome')) ? 1 : 0;
 
+  // Merge hardcoded + saved vendedor maps
+  const savedVMap = JSON.parse(localStorage.getItem('delta_vendedor_map')||'{}');
+  const activeVMap = Object.assign({}, VENDEDOR_MAP, savedVMap);
+  const newVendedorMappings = {};
+
+  // Detect format: 6 cols (CDst;cod;nome;cep;cod_vend;nome_vend) or 4 cols (cod;nome;cep;vendedor)
+  const sampleCols = (lines[startIdx]||'').split(/[,;\t]/);
+  const is6col = sampleCols.length >= 6;
+
   for (let i = startIdx; i < lines.length; i++) {
     const cols = lines[i].split(/[,;\t]/);
-    if (cols.length >= 3) {
-      novaLista.push({
-        cod: cols[0].replace(/"/g,'').trim(),
-        nome: (cols[1] || '').replace(/"/g,'').trim().toUpperCase(),
-        cep: (cols[2] || '').replace(/"/g,'').trim(),
-        vendedor: (cols[3] || '').replace(/"/g,'').trim().toUpperCase()
-      });
-    }
+    let cod, nome, cep, vendedor;
+    if (is6col && cols.length >= 5) {
+      cod  = (cols[1]||'').replace(/"/g,'').trim();
+      nome = (cols[2]||'').replace(/"/g,'').trim().toUpperCase();
+      cep  = (cols[3]||'').replace(/"/g,'').trim();
+      const codVend  = (cols[4]||'').replace(/"/g,'').trim();
+      const nomeVend = (cols[5]||'').replace(/"/g,'').trim().toUpperCase();
+      if (codVend && nomeVend) { newVendedorMappings[codVend] = nomeVend; vendedor = nomeVend; }
+      else vendedor = activeVMap[codVend] || codVend;
+    } else if (cols.length >= 3) {
+      cod  = (cols[0]||'').replace(/"/g,'').trim();
+      nome = (cols[1]||'').replace(/"/g,'').trim().toUpperCase();
+      cep  = (cols[2]||'').replace(/"/g,'').trim();
+      const rawV = (cols[3]||'').replace(/"/g,'').trim();
+      vendedor = activeVMap[rawV] || rawV.toUpperCase();
+    } else { continue; }
+    if (cod && nome) novaLista.push({cod, nome, cep, vendedor});
+  }
+  // Save any new vendedor mappings learned
+  if (Object.keys(newVendedorMappings).length > 0) {
+    const merged = Object.assign({}, activeVMap, newVendedorMappings);
+    localStorage.setItem('delta_vendedor_map', JSON.stringify(merged));
   }
 
   if (novaLista.length === 0) { toast('Nenhum dado válido encontrado no CSV.', 'error'); return; }
