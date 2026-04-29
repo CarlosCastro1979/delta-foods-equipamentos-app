@@ -1465,7 +1465,9 @@ function cancelarImport() {
 // ─── RESUMO ──────────────────────────────────────────
 async function loadResumo() {
   try {
-    const res = await fetch(SUPA_URL + '?select=vendedor,cod', { headers: HEADERS });
+    const res = await fetch(SUPA_URL + '?select=vendedor,cod', { headers: {
+      'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY
+    }});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const registados = await res.json();
 
@@ -1560,7 +1562,8 @@ function toast(msg, type = 'success') {
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('panel-' + tab).classList.add('active');
+  const panel = document.getElementById('panel-' + tab);
+  if (panel) panel.classList.add('active');
   try {
     const activeTab = document.querySelector(`.tab[onclick*="'${tab}'"]`);
     if (activeTab) activeTab.classList.add('active');
