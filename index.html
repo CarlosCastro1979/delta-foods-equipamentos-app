@@ -1876,13 +1876,18 @@ ${vendedor}
 ---
 Enviado via Delta Foods App`;
 
-  // Save to localStorage for AT resumo
+  const mailtoUrl = `mailto:info.br@gruponabeiro.com?cc=${cc}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
+
+  // Ask for confirmation before opening email and saving chamado
+  if (!confirm('Confirmas que queres abrir o email e registar este chamado AT?')) return;
+
+  // Save chamado ONLY after user confirms
   const chamados = getATChamados();
   chamados.push({id:genId(), data, hora, vendedor, clienteCod, clienteNome,
     equipTipo, equipTag, avaria, descricao, urgencia, tipoEquip: atTipoEquip});
   saveATChamados(chamados);
 
-  window.location.href = `mailto:info.br@gruponabeiro.com?cc=${cc}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
+  window.location.href = mailtoUrl;
   toast('✅ Chamado registado e email a abrir...');
 }
 
