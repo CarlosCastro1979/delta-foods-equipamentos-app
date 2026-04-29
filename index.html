@@ -2113,8 +2113,8 @@ async function getVendas() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return await res.json();
   } catch(e) {
-    console.warn('Vendas fetch failed, using localStorage:', e);
-    try { return JSON.parse(localStorage.getItem(VENDAS_STORE) || '[]'); } catch(e2) { return []; }
+    console.warn('Vendas fetch failed:', e);
+    return []; // Return empty, do NOT fallback to localStorage
   }
 }
 async function saveVendas(arr) {
@@ -2233,11 +2233,24 @@ async function processVendasFile(event) {
     const batch = newVendas.slice(i, i + batchSize);
     const res = await fetch(SUPA_VENDAS, {
       method: 'POST',
-      headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
       body: JSON.stringify(batch)
     });
-    if (!res.ok) { const err = await res.text(); throw new Error(err); }
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('Insert error:', res.status, err);
+      throw new Error(`HTTP ${res.status}: ${err}`);
+    }
     inserted += batch.length;
+    document.getElementById('vendas-status').innerHTML =
+      `<div style="background:#e3f2fd;border-radius:6px;padding:8px 10px;font-size:12px;color:#1565c0">
+        ⏳ A inserir... ${inserted}/${newVendas.length} registos
+      </div>`;
   }
 
   document.getElementById('vendas-status').innerHTML =
