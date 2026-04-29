@@ -1663,26 +1663,23 @@ async function loadPendentes() {
   const listaAtiva = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
 
   try {
-    const { data, error } = await _supabase
-      .from('registos')
-      .select('cod');
-    if (error) throw error;
+    // Use fetch directly like the rest of the app (not _supabase SDK)
+    const res = await fetch(SUPA_URL + '?select=cod', { headers: HEADERS });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
     // Normalize all codes: remove spaces, leading zeros, convert to string
     const normCod = v => String(v || '').trim().replace(/^0+/, '') || '0';
     const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
-    // Debug: check a few specific codes
-    const helcioCods = listaAtiva.filter(c => c.vendedor && c.vendedor.includes('LCIO'));
-    const helcioRegistados = helcioCods.filter(c => codRegistados.has(normCod(c.cod)));
-    const helcioPendentes = helcioCods.filter(c => !codRegistados.has(normCod(c.cod)));
     console.log('=== DEBUG PENDENTES ===');
-    console.log('Total lista Hélcio:', helcioCods.length);
-    console.log('Registados:', helcioRegistados.length);
-    console.log('Pendentes:', helcioPendentes.length);
-    console.log('Sample cod from lista:', normCod(helcioCods[0]?.cod));
-    console.log('Sample cod from supabase:', [...codRegistados].slice(0,3));
+    console.log('Total registados no Supabase:', codRegistados.size);
+    console.log('Total lista ativa:', listaAtiva.length);
     console.log('Sample raw cod from supabase:', (data||[]).slice(0,3).map(r=>r.cod));
+    console.log('Sample normCod from supabase:', [...codRegistados].slice(0,3));
+    console.log('Sample cod from lista:', normCod(listaAtiva[0]?.cod));
     pendentesData = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
+    console.log('Pendentes após filtro:', pendentesData.length);
   } catch(e) {
+    console.error('loadPendentes error:', e);
     pendentesData = listaAtiva;
   }
 
