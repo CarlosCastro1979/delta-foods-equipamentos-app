@@ -861,13 +861,20 @@
 
       <div class="form-group">
         <label class="form-label">Vendedor</label>
-        <input type="text" id="at-vendedor" class="form-input" placeholder="Nome do vendedor">
+        <select id="at-vendedor" class="form-input" onchange="atFiltrarClientes()">
+          <option value="">— Selecionar vendedor —</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Pesquisar cliente (código ou nome)</label>
+        <input type="text" id="at-cliente-search" class="form-input" placeholder="Digite código ou nome do cliente..." oninput="atFiltrarLista()" autocomplete="off">
       </div>
 
       <div class="form-group">
         <label class="form-label">Cliente</label>
-        <select id="at-cliente" class="form-input" onchange="atPreencherCliente()">
-          <option value="">— Selecionar cliente —</option>
+        <select id="at-cliente" class="form-input" size="5" onchange="atPreencherCliente()" style="height:auto;min-height:44px">
+          <option value="">— Seleciona o vendedor primeiro —</option>
         </select>
       </div>
 
@@ -880,13 +887,8 @@
       <div class="form-group">
         <label class="form-label">Equipamento</label>
         <select id="at-equipamento" class="form-input">
-          <option value="">— Selecionar equipamento —</option>
+          <option value="">— Seleciona primeiro o cliente —</option>
         </select>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Número de série <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
-        <input type="text" id="at-serial" class="form-input" placeholder="Ex: SN-123456">
       </div>
 
       <div class="form-group">
@@ -902,6 +904,7 @@
           <option value="Bomba com problemas">Bomba com problemas</option>
           <option value="Resistência com problemas">Resistência com problemas</option>
           <option value="Não liga">Não liga</option>
+          <option value="Afinação e Manutenção Geral">Afinação e Manutenção Geral</option>
           <option value="Outra avaria">Outra avaria</option>
         </select>
       </div>
@@ -1052,15 +1055,61 @@ function switchTab(tab) {
 }
 
 // ─── PEDIDO AT ──────────────────────────────────────
+const AT_EXCLUIR_EQUIP = ['EQUIPAMENTO PROPRIO', 'MAQ DOMESTICA DELTA Q'];
+let atListaAtiva = []; // clientes filtrados para AT
+
 function loadAtTab() {
   const savedList = localStorage.getItem('delta_clientes_sistema');
   const lista = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
+
+  // Build vendedor list
+  const vendedores = [...new Set(lista.map(c => c.vendedor).filter(Boolean))].sort();
+  const selVend = document.getElementById('at-vendedor');
+  selVend.innerHTML = '<option value="">— Selecionar vendedor —</option>' +
+    vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+
+  atListaAtiva = [];
+  document.getElementById('at-cliente').innerHTML = '<option value="">— Seleciona o vendedor primeiro —</option>';
+  document.getElementById('at-cliente-search').value = '';
+  document.getElementById('at-cliente-info-box').style.display = 'none';
+  document.getElementById('at-equipamento').innerHTML = '<option value="">— Seleciona primeiro o cliente —</option>';
+}
+
+function atFiltrarClientes() {
+  const vendedor = document.getElementById('at-vendedor').value;
+  const savedList = localStorage.getItem('delta_clientes_sistema');
+  const lista = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
+
+  document.getElementById('at-cliente-search').value = '';
+  document.getElementById('at-cliente-info-box').style.display = 'none';
+  document.getElementById('at-equipamento').innerHTML = '<option value="">— Seleciona primeiro o cliente —</option>';
+
+  if (!vendedor) {
+    atListaAtiva = [];
+    document.getElementById('at-cliente').innerHTML = '<option value="">— Seleciona o vendedor primeiro —</option>';
+    return;
+  }
+  atListaAtiva = lista.filter(c => c.vendedor === vendedor);
+  atRenderClientesList(atListaAtiva);
+}
+
+function atFiltrarLista() {
+  const q = document.getElementById('at-cliente-search').value.trim().toLowerCase();
+  if (!atListaAtiva.length) return;
+  const filtered = q
+    ? atListaAtiva.filter(c => c.cod.toLowerCase().includes(q) || c.nome.toLowerCase().includes(q))
+    : atListaAtiva;
+  atRenderClientesList(filtered);
+}
+
+function atRenderClientesList(lista) {
   const sel = document.getElementById('at-cliente');
+  if (!lista.length) {
+    sel.innerHTML = '<option value="">Nenhum cliente encontrado</option>';
+    return;
+  }
   sel.innerHTML = '<option value="">— Selecionar cliente —</option>' +
     lista.map(c => `<option value="${c.cod}" data-nome="${c.nome}" data-cep="${c.cep}" data-vendedor="${c.vendedor}">${c.nome} (${c.cod})</option>`).join('');
-  // Reset equipamento dropdown
-  document.getElementById('at-equipamento').innerHTML = '<option value="">— Seleciona primeiro o cliente —</option>';
-  document.getElementById('at-cliente-info-box').style.display = 'none';
 }
 
 async function atPreencherCliente() {
@@ -1077,12 +1126,8 @@ async function atPreencherCliente() {
   }
 
   const vend = opt.dataset.vendedor || '';
-  info.innerHTML = `<strong>${opt.dataset.nome}</strong> &nbsp;·&nbsp; CEP: ${opt.dataset.cep} &nbsp;·&nbsp; Vendedor: ${vend}`;
+  info.innerHTML = `<strong>${opt.dataset.nome}</strong> &nbsp;·&nbsp; Cód: ${opt.value} &nbsp;·&nbsp; CEP: ${opt.dataset.cep}`;
   box.style.display = 'block';
-
-  // Auto-fill vendedor field if empty
-  const vField = document.getElementById('at-vendedor');
-  if (!vField.value && vend) vField.value = vend;
 
   // Fetch registered equipment for this client from Supabase
   selEquip.innerHTML = '<option value="">A carregar equipamentos...</option>';
@@ -1092,23 +1137,25 @@ async function atPreencherCliente() {
       { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY } }
     );
     const data = await resp.json();
-    // Collect all unique equipamentos across all registos for this client
+
     const equipList = [];
     (data || []).forEach(r => {
       const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
       equips.forEach(e => {
-        if (e.tipo) {
-          const label = e.tag ? `${e.tipo} — Tag #${e.tag}` : e.tipo;
-          const val = JSON.stringify({tipo: e.tipo, tag: e.tag||''});
-          if (!equipList.find(x => x.val === val)) {
-            equipList.push({label, val, tipo: e.tipo, tag: e.tag||''});
-          }
+        if (!e.tipo) return;
+        // Exclude domestic/own equipment
+        const tipoUp = e.tipo.toUpperCase().trim();
+        if (AT_EXCLUIR_EQUIP.some(ex => tipoUp.includes(ex))) return;
+        const label = e.tag ? `${e.tipo} — Tag #${e.tag}` : e.tipo;
+        const val = JSON.stringify({tipo: e.tipo, tag: e.tag||''});
+        if (!equipList.find(x => x.val === val)) {
+          equipList.push({label, val, tipo: e.tipo, tag: e.tag||''});
         }
       });
     });
 
     if (equipList.length === 0) {
-      selEquip.innerHTML = '<option value="">Nenhum equipamento registado para este cliente</option>';
+      selEquip.innerHTML = '<option value="">Nenhum equipamento elegível para AT</option>';
     } else {
       selEquip.innerHTML = '<option value="">— Selecionar equipamento —</option>' +
         equipList.map(e => `<option value='${e.val}' data-tipo="${e.tipo}" data-tag="${e.tag}">${e.label}</option>`).join('');
@@ -1125,33 +1172,32 @@ function atToggleOutraAvaria() {
 }
 
 function enviarPedidoAT() {
-  const vendedor   = document.getElementById('at-vendedor').value.trim();
+  const vendedor   = document.getElementById('at-vendedor').value;
   const clienteSel = document.getElementById('at-cliente');
   const clienteOpt = clienteSel.selectedOptions[0];
-  const equipRaw    = document.getElementById('at-equipamento').value;
+  const equipRaw   = document.getElementById('at-equipamento').value;
   let equipTipo = equipRaw, equipTag = '';
   try { const eq = JSON.parse(equipRaw); equipTipo = eq.tipo; equipTag = eq.tag; } catch(e) {}
-  const serial     = document.getElementById('at-serial').value.trim();
-  const avariaTipo = document.getElementById('at-avaria-tipo').value;
+  const avariaTipo  = document.getElementById('at-avaria-tipo').value;
   const outraAvaria = document.getElementById('at-outra-avaria').value.trim();
-  const descricao  = document.getElementById('at-descricao').value.trim();
-  const urgencia   = document.getElementById('at-urgencia').value;
+  const descricao   = document.getElementById('at-descricao').value.trim();
+  const urgencia    = document.getElementById('at-urgencia').value;
 
-  // Validations
-  if (!vendedor)         { toast('Preenche o nome do vendedor.', 'error'); return; }
+  if (!vendedor)         { toast('Seleciona o vendedor.', 'error'); return; }
   if (!clienteSel.value) { toast('Seleciona um cliente.', 'error'); return; }
   if (!equipRaw)         { toast('Seleciona o equipamento.', 'error'); return; }
   if (!avariaTipo)       { toast('Seleciona o tipo de avaria.', 'error'); return; }
   if (avariaTipo === 'Outra avaria' && !outraAvaria) { toast('Descreve a avaria.', 'error'); return; }
 
-  const avaria = avariaTipo === 'Outra avaria' ? outraAvaria : avariaTipo;
+  const avaria      = avariaTipo === 'Outra avaria' ? outraAvaria : avariaTipo;
   const clienteNome = clienteOpt.dataset.nome;
   const clienteCod  = clienteSel.value;
   const clienteCep  = clienteOpt.dataset.cep;
   const data = new Date().toLocaleDateString('pt-BR');
   const hora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
 
-  const assunto = encodeURIComponent(`[AT${urgencia === 'Urgente' ? ' 🔴 URGENTE' : ''}] ${clienteNome} — ${equipTipo}`);
+  const assunto = encodeURIComponent(`Abertura de Chamado ${clienteCod} ${clienteNome} ${equipTipo}`);
+  const cc = encodeURIComponent('carlos.castro@deltafoodsbrasil.com.br,filipe.neves@deltafoodsbrasil.com.br,ricardo.vicentesilva@deltafoodsbrasil.com.br');
 
   const corpo = `Pedido de Assistência Técnica
 ==============================
@@ -1166,14 +1212,11 @@ CEP: ${clienteCep}
 
 EQUIPAMENTO
 -----------
-Equipamento: ${equipTipo}${equipTag ? `
-Tag: #${equipTag}` : ''}${serial ? `
-Nº Série: ${serial}` : ''}
+Equipamento: ${equipTipo}${equipTag ? `\nTag: #${equipTag}` : ''}
 
 AVARIA
 ------
-Tipo: ${avaria}${descricao ? `
-Descrição: ${descricao}` : ''}
+Tipo: ${avaria}${descricao ? `\nDescrição: ${descricao}` : ''}
 
 VENDEDOR
 --------
@@ -1182,7 +1225,7 @@ ${vendedor}
 ---
 Enviado via Delta Foods App`;
 
-  const mailtoLink = `mailto:info.br@gruponabeiro.com?subject=${assunto}&body=${encodeURIComponent(corpo)}`;
+  const mailtoLink = `mailto:info.br@gruponabeiro.com?cc=${cc}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
   window.location.href = mailtoLink;
   toast('✅ A abrir cliente de email...');
 }
