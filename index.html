@@ -1288,26 +1288,29 @@ let pendentesData = []; // clientes ainda por registar (carregado do Supabase)
 let pendingImportBuffer = []; // novos clientes detectados no import
 
 async function loadPendentes() {
-  // Buscar todos os cods já registados no Supabase
+  // Use localStorage list if saved, otherwise use hardcoded list
+  const savedList = localStorage.getItem('delta_clientes_sistema');
+  const listaAtiva = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
+
   try {
-    const res = await fetch(SUPA_URL + '?select=cod', { headers: HEADERS });
-    const registados = await res.json();
-    const codRegistados = new Set(registados.map(r => String(r.cod).trim()));
-
-    // Filtrar clientes do sistema que ainda não foram registados
-    pendentesData = CLIENTES_SISTEMA.filter(c => !codRegistados.has(String(c.cod).trim()));
-
-    // Popular filtro de vendedores
-    const vendedores = [...new Set(pendentesData.map(c => c.vendedor))].sort();
-    const sel = document.getElementById('pending-filter-vendedor');
-    sel.innerHTML = '<option value="">Todos os vendedores</option>' +
-      vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
-
-    renderPendentes();
+    const { data, error } = await _supabase
+      .from('registos')
+      .select('cod');
+    if (error) throw error;
+    const codRegistados = new Set((data || []).map(r => String(r.cod).trim()));
+    pendentesData = listaAtiva.filter(c => !codRegistados.has(String(c.cod).trim()));
   } catch(e) {
-    document.getElementById('pending-body').innerHTML =
-      '<tr class="loading-row"><td colspan="5">Erro ao carregar.</td></tr>';
+    pendentesData = listaAtiva;
   }
+
+  const vendedores = [...new Set(pendentesData.map(c => c.vendedor))].sort();
+  const selVend = document.getElementById('filtro-vendedor');
+  if (selVend) {
+    const cur = selVend.value;
+    selVend.innerHTML = '<option value="">Todos os vendedores</option>' +
+      vendedores.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+  }
+  renderPendentes();
 }
 
 function renderPendentes() {
@@ -1386,18 +1389,16 @@ async function processarCSVImport() {
   const text = document.getElementById('csv-import-area').value.trim();
   if (!text) { toast('Cola ou carrega um ficheiro CSV primeiro.', 'error'); return; }
 
-  // Parsear CSV simples
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const novosClientes = [];
+  const novaLista = [];
 
-  // Tentar detectar header
   const firstLine = lines[0].toLowerCase();
   const startIdx = (firstLine.includes('cod') || firstLine.includes('cliente') || firstLine.includes('nome')) ? 1 : 0;
 
   for (let i = startIdx; i < lines.length; i++) {
     const cols = lines[i].split(/[,;\t]/);
     if (cols.length >= 3) {
-      novosClientes.push({
+      novaLista.push({
         cod: cols[0].replace(/"/g,'').trim(),
         nome: (cols[1] || '').replace(/"/g,'').trim().toUpperCase(),
         cep: (cols[2] || '').replace(/"/g,'').trim(),
@@ -1406,32 +1407,35 @@ async function processarCSVImport() {
     }
   }
 
-  if (novosClientes.length === 0) { toast('Nenhum dado válido encontrado no CSV.', 'error'); return; }
+  if (novaLista.length === 0) { toast('Nenhum dado válido encontrado no CSV.', 'error'); return; }
 
-  // Comparar com lista existente
-  const codExistentes = new Set(CLIENTES_SISTEMA.map(c => c.cod));
-  const reaisNovos = novosClientes.filter(c => c.cod && !codExistentes.has(c.cod));
+  // Compare with current active list
+  const savedList = localStorage.getItem('delta_clientes_sistema');
+  const listaAtual = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
+  const codAtual = new Set(listaAtual.map(c => String(c.cod)));
+  const codNova = new Set(novaLista.map(c => String(c.cod)));
 
-  if (reaisNovos.length === 0) {
-    toast('Nenhum cliente novo detectado — lista já está actualizada!');
-    return;
-  }
+  const adicionados = novaLista.filter(c => !codAtual.has(String(c.cod))).length;
+  const removidos = listaAtual.filter(c => !codNova.has(String(c.cod))).length;
 
-  pendingImportBuffer = reaisNovos;
-  document.getElementById('import-bar-text').textContent =
-    `${reaisNovos.length} novos clientes detectados — importar para a lista?`;
+  pendingImportBuffer = novaLista; // full replacement
+  let msg = `Lista com ${novaLista.length} clientes`;
+  if (adicionados > 0) msg += ` · +${adicionados} novos`;
+  if (removidos > 0) msg += ` · -${removidos} removidos`;
+  msg += ` — substituir lista completa?`;
+
+  document.getElementById('import-bar-text').textContent = msg;
   document.getElementById('pending-import-bar').style.display = 'block';
   document.getElementById('csv-import-area').value = '';
 }
 
 function confirmarImport() {
-  // Adicionar ao array em memória (sem persistência — a lista é gerada do Excel)
-  // Aqui informamos o utilizador para substituir o Excel
-  toast(`${pendingImportBuffer.length} clientes adicionados à lista desta sessão. Para tornar permanente, faz upload do novo Excel ao Claude.`);
-  // Adicionar ao CLIENTES_SISTEMA temporariamente
-  pendingImportBuffer.forEach(c => CLIENTES_SISTEMA.push(c));
+  // Save full new list to localStorage — persists across reloads
+  localStorage.setItem('delta_clientes_sistema', JSON.stringify(pendingImportBuffer));
+  const count = pendingImportBuffer.length;
   pendingImportBuffer = [];
   document.getElementById('pending-import-bar').style.display = 'none';
+  toast(`✅ Lista atualizada com ${count} clientes — alterações guardadas permanentemente!`);
   loadPendentes();
 }
 
@@ -1454,15 +1458,16 @@ async function loadResumo() {
     const vendedores = {};
 
     // Total do sistema
-    CLIENTES_SISTEMA.forEach(c => {
+    const _listaStats = localStorage.getItem('delta_clientes_sistema') ? JSON.parse(localStorage.getItem('delta_clientes_sistema')) : CLIENTES_SISTEMA;
+    _listaStats.forEach(c => {
       const v = c.vendedor;
       if (!vendedores[v]) vendedores[v] = { total: 0, registados: 0 };
       vendedores[v].total++;
       if (codRegistados.has(String(c.cod).trim())) vendedores[v].registados++;
     });
 
-    const totalSistema = CLIENTES_SISTEMA.length;
-    const totalRegistados = CLIENTES_SISTEMA.filter(c => codRegistados.has(String(c.cod).trim())).length;
+    const totalSistema = _listaStats.length;
+    const totalRegistados = _listaStats.filter(c => codRegistados.has(String(c.cod).trim())).length;
     const totalPendentes = totalSistema - totalRegistados;
     const pctGeral = totalSistema > 0 ? Math.round((totalRegistados / totalSistema) * 100) : 0;
 
