@@ -865,12 +865,7 @@
   <!-- RESUMO -->
   <div class="panel" id="panel-resumo">
     <div id="resumo-content"></div>
-    <hr style="margin:24px 0;border:none;border-top:1.5px solid var(--border)">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h3 style="font-size:15px;font-weight:600;color:var(--text)">🔧 Chamados de Assistência Técnica</h3>
-      <button class="btn btn-secondary btn-sm" onclick="exportATExcel()">⬇ Excel</button>
-    </div>
-    <div id="at-resumo-content"><div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">A carregar chamados...</div></div>
+
   </div>
 
   <div class="panel" id="panel-at">
@@ -996,6 +991,15 @@
       </div>
     </div>
     <div id="contratos-content"><div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A carregar...</div></div>
+  </div>
+
+  <div id="at-history-section" style="display:none;margin-top:24px">
+    <hr style="margin:0 0 20px 0;border:none;border-top:1.5px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="font-size:15px;font-weight:600;color:var(--text)">📋 Histórico de Chamados</h3>
+      <button class="btn btn-secondary btn-sm" onclick="exportATExcel()">⬇ Excel</button>
+    </div>
+    <div id="at-resumo-content"><div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">A carregar chamados...</div></div>
   </div>
 
   <!-- MODAL VENDAS IMPORT (PIN protected) -->
@@ -1569,7 +1573,6 @@ async function loadResumo() {
     html += `</tbody></table>`;
 
     document.getElementById('resumo-content').innerHTML = html;
-    await loadATResumo();
   } catch(e) {
     document.getElementById('resumo-content').innerHTML =
       '<div style="padding:40px;text-align:center;color:var(--danger)">Erro ao carregar dados.</div>';
@@ -1658,6 +1661,13 @@ function loadAtTab() {
   document.getElementById('at-tipo-equip').value = '';
   document.getElementById('at-cliente-search').value = '';
   document.getElementById('at-cliente-info-box').style.display = 'none';
+  // Load chamados history
+  const histSec = document.getElementById('at-history-section');
+  if (histSec) {
+    const chamados = getATChamados();
+    histSec.style.display = chamados.length ? 'block' : 'none';
+    loadATResumo();
+  }
 }
 
 function atOnVendedorChange() {
