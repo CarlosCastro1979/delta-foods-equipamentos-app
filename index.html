@@ -2322,7 +2322,10 @@ async function loadContratosTab() {
     rows.sort((a, b) => (a.pct || 0) - (b.pct || 0));
 
     const unidadeLabel = u => u === 'Kg' ? 'Kg' : 'Cáps';
-    const fmtNum = (n, u) => u === 'Kg' ? n.toFixed(1) + ' Kg' : Math.round(n) + ' Cáps';
+    const fmtNum = (n, u) => {
+      if (u === 'Kg') return n.toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' Kg';
+      return Math.round(n).toLocaleString('pt-BR') + ' Cáps';
+    };
     const pctColor = p => p === null ? '#888' : p >= 90 ? '#2e7d32' : p >= 60 ? '#f57c00' : '#c62828';
     const pctBg = p => p === null ? '#f5f5f5' : p >= 90 ? '#e8f5e9' : p >= 60 ? '#fff3e0' : '#ffebee';
 
@@ -2336,6 +2339,7 @@ async function loadContratosTab() {
           <th style="padding:10px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:12px">INÍCIO</th>
           <th style="padding:10px 12px;font-weight:700;white-space:nowrap;text-align:center;border:1px solid #ddd;font-size:12px">DUR.<br>(M)</th>
           <th style="padding:10px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:12px">FIM</th>
+          <th style="padding:10px 12px;font-weight:700;text-align:right;white-space:nowrap;border:1px solid #ddd;font-size:12px">CONS.<br>/ MÊS</th>
           <th style="padding:10px 12px;font-weight:700;text-align:right;white-space:nowrap;border:1px solid #ddd;font-size:12px">TOTAL<br>CONTRATADO</th>
           <th style="padding:10px 12px;font-weight:700;text-align:right;white-space:nowrap;border:1px solid #ddd;font-size:12px">ESPERADO<br>(${new Date().toLocaleDateString('pt-BR',{month:'short',year:'numeric'}).toUpperCase()})</th>
           <th style="padding:10px 12px;font-weight:700;text-align:right;white-space:nowrap;border:1px solid #ddd;font-size:12px">CONSUMO<br>REAL</th>
@@ -2357,6 +2361,7 @@ async function loadContratosTab() {
         <td style="${td}white-space:nowrap">${r.inicio}</td>
         <td style="${td}text-align:center;white-space:nowrap">${r.duracao}</td>
         <td style="${td}white-space:nowrap">${r.fimFmt}</td>
+        <td style="${td}text-align:right;white-space:nowrap">${fmtNum(r.consumoMes, r.unidade)}</td>
         <td style="${td}text-align:right;white-space:nowrap">${fmtNum(r.totalContratado, r.unidade)}</td>
         <td style="${td}text-align:right;white-space:nowrap">${r.mesesDecorridos > 0 ? fmtNum(r.consumoEsperado, r.unidade) : '—'}</td>
         <td style="${td}text-align:right;font-weight:700;white-space:nowrap">${r.consumoReal > 0 ? fmtNum(r.consumoReal, r.unidade) : '—'}</td>
