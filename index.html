@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Registo de Tags de Equipamentos</title>
+<link rel="manifest" href="/delta-foods-equipamentos-app/manifest.json">
+<meta name="theme-color" content="#c8102e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Delta Foods">
+<link rel="apple-touch-icon" href="/delta-foods-equipamentos-app/icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -2098,12 +2104,23 @@ function exportATExcel() {
 }
 
 // ─── VENDAS & CONTRATOS ──────────────────────────────
-const VENDAS_STORE = 'delta_vendas_v1';
+const VENDAS_STORE = 'delta_vendas_v1'; // kept for migration
+const SUPA_VENDAS = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/vendas';
 
-function getVendas() {
-  try { return JSON.parse(localStorage.getItem(VENDAS_STORE) || '[]'); } catch(e) { return []; }
+async function getVendas() {
+  try {
+    const res = await fetch(SUPA_VENDAS + '?select=cod,data,tipo,qty,peso&limit=10000', { headers: HEADERS });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } catch(e) {
+    console.warn('Vendas fetch failed, using localStorage:', e);
+    try { return JSON.parse(localStorage.getItem(VENDAS_STORE) || '[]'); } catch(e2) { return []; }
+  }
 }
-function saveVendas(arr) { localStorage.setItem(VENDAS_STORE, JSON.stringify(arr)); }
+async function saveVendas(arr) {
+  // Migrate any localStorage vendas to Supabase
+  try { localStorage.removeItem(VENDAS_STORE); } catch(e) {}
+}
 
 function showVendasImport() {
   document.getElementById('vendas-modal').style.display = 'flex';
@@ -2116,17 +2133,17 @@ function showVendasImport() {
 function closeVendasModal() {
   document.getElementById('vendas-modal').style.display = 'none';
 }
-function checkVendasPin() {
+async function checkVendasPin() {
   const pin = document.getElementById('vendas-pin-input').value.trim();
   if (pin === '1304') {
     document.getElementById('vendas-pin-step').style.display = 'none';
     document.getElementById('vendas-upload-step').style.display = 'block';
-    const vendas = getVendas();
+    const vendas = await getVendas();
     const datas = vendas.map(v => v.data).sort();
     if (datas.length) {
       document.getElementById('vendas-status').innerHTML =
         `<div style="background:#e8f5e9;border-radius:6px;padding:8px 10px;font-size:12px;color:#2e7d32">
-          ✅ ${vendas.length} registo(s) carregados<br>
+          ✅ ${vendas.length} registo(s) no servidor<br>
           Período: ${datas[0]} a ${datas[datas.length-1]}
         </div>`;
     }
@@ -2170,7 +2187,7 @@ async function processVendasFile(event) {
   }
 
   // Get existing vendas and their dates to avoid duplicates
-  const existingVendas = getVendas();
+  const existingVendas = await getVendas();
   const existingDates = new Set(existingVendas.map(v => v.data));
 
   const newVendas = [];
@@ -2201,16 +2218,34 @@ async function processVendasFile(event) {
   const datasIgnoradas = [...newDates].filter(d => existingDates.has(d)).length;
   const datasNovas = [...newDates].filter(d => !existingDates.has(d)).length;
 
-  // Merge
-  const merged = [...existingVendas, ...newVendas];
-  saveVendas(merged);
+  if (!newVendas.length) {
+    document.getElementById('vendas-status').innerHTML =
+      `<div style="background:#fff3e0;border-radius:6px;padding:10px;font-size:12px;color:#e65100">
+        ℹ️ Nenhum novo registo — todas as datas já estavam importadas.
+      </div>`;
+    return;
+  }
+
+  // Insert new vendas into Supabase in batches of 500
+  let inserted = 0;
+  const batchSize = 500;
+  for (let i = 0; i < newVendas.length; i += batchSize) {
+    const batch = newVendas.slice(i, i + batchSize);
+    const res = await fetch(SUPA_VENDAS, {
+      method: 'POST',
+      headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify(batch)
+    });
+    if (!res.ok) { const err = await res.text(); throw new Error(err); }
+    inserted += batch.length;
+  }
 
   document.getElementById('vendas-status').innerHTML =
     `<div style="background:#e8f5e9;border-radius:6px;padding:10px;font-size:12px;color:#2e7d32;line-height:1.6">
       ✅ Importação concluída!<br>
-      • ${newVendas.length} novos registos adicionados<br>
+      • ${inserted} novos registos adicionados ao servidor<br>
       • ${datasIgnoradas} datas já existentes ignoradas<br>
-      • Total acumulado: ${merged.length} registos
+      • Visível para todos os utilizadores
     </div>`;
 
   event.target.value = '';
@@ -2218,12 +2253,21 @@ async function processVendasFile(event) {
   toast(`✅ ${newVendas.length} registos importados!`);
 }
 
-function clearVendas() {
-  if (!confirm('Eliminar todos os dados de vendas?')) return;
-  saveVendas([]);
-  document.getElementById('vendas-status').innerHTML =
-    '<div style="color:var(--danger);font-size:12px">🗑 Dados eliminados.</div>';
-  loadContratosTab();
+async function clearVendas() {
+  if (!confirm('Eliminar TODOS os dados de vendas do servidor? Esta ação afeta todos os utilizadores.')) return;
+  try {
+    const res = await fetch(SUPA_VENDAS + '?id=gte.0', {
+      method: 'DELETE',
+      headers: HEADERS
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    localStorage.removeItem(VENDAS_STORE);
+    document.getElementById('vendas-status').innerHTML =
+      '<div style="color:var(--danger);font-size:12px">🗑 Dados eliminados do servidor.</div>';
+    loadContratosTab();
+  } catch(e) {
+    toast('Erro ao eliminar: ' + e.message, 'error');
+  }
 }
 
 async function loadContratosTab() {
@@ -2243,7 +2287,7 @@ async function loadContratosTab() {
       return;
     }
 
-    const vendas = getVendas();
+    const vendas = await getVendas();
     const today = new Date();
 
     // vendas indexed by cod for per-contract filtering
@@ -2423,6 +2467,15 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
   } catch { setStatus(false); }
 });
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/delta-foods-equipamentos-app/sw.js')
+      .then(r => console.log('SW registered'))
+      .catch(e => console.log('SW error', e));
+  });
+}
 </script>
 </body>
 </html>

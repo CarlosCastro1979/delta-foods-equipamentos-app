@@ -1,0 +1,25 @@
+{
+  "name": "Delta Foods Brasil - Equipamentos",
+  "short_name": "Delta Foods",
+  "description": "Registo de Tags de Equipamentos Delta Foods Brasil",
+  "start_url": "/delta-foods-equipamentos-app/",
+  "scope": "/delta-foods-equipamentos-app/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#c8102e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/delta-foods-equipamentos-app/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/delta-foods-equipamentos-app/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
