@@ -943,7 +943,7 @@
 
       <div class="form-group" id="at-descricao-group" style="display:none">
         <label class="form-label">Descrição detalhada <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
-        <textarea id="at-descricao" class="form-input" rows="3" placeholder="Informações adicionais para o técnico..." style="resize:vertical;min-height:80px"></textarea>
+        <textarea id="at-descricao" class="form-input" rows="3" placeholder="Informações adicionais para o técnico..." style="resize:vertical;min-height:72px;font-family:inherit;font-size:14px"></textarea>
       </div>
 
       <div class="form-group" id="at-urgencia-group" style="display:none">
@@ -1318,7 +1318,7 @@ async function loadPendentes() {
   }
 
   const vendedores = [...new Set(pendentesData.map(c => c.vendedor))].sort();
-  const selVend = document.getElementById('filtro-vendedor');
+  const selVend = document.getElementById('pending-filter-vendedor');
   if (selVend) {
     const cur = selVend.value;
     selVend.innerHTML = '<option value="">Todos os vendedores</option>' +
@@ -1328,15 +1328,16 @@ async function loadPendentes() {
 }
 
 function renderPendentes() {
-  const search = document.getElementById('search-pendentes')?.value?.trim()?.toLowerCase() || '';
-  const vendFilt = document.getElementById('filtro-vendedor')?.value || '';
+  const search = document.getElementById('pending-search')?.value?.trim()?.toLowerCase() || '';
+  const vendFilt = document.getElementById('pending-filter-vendedor')?.value || '';
   let filtered = pendentesData;
   if (search) filtered = filtered.filter(c => c.nome.toLowerCase().includes(search) || c.cod.toLowerCase().includes(search) || (c.vendedor||'').toLowerCase().includes(search));
   if (vendFilt) filtered = filtered.filter(c => c.vendedor === vendFilt);
 
-  document.getElementById('pendentes-count').textContent = `${filtered.length} de ${pendentesData.length} por registar`;
+  const countEl = document.getElementById('pending-count-badge');
+  if (countEl) countEl.textContent = `${filtered.length} de ${pendentesData.length} por registar`;
 
-  document.getElementById('pendentes-body').innerHTML = filtered.length
+  document.getElementById('pending-body').innerHTML = filtered.length
     ? filtered.map(c => `<tr>
         <td>${c.cod}</td>
         <td>${c.nome}</td>
@@ -1560,7 +1561,10 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-' + tab).classList.add('active');
-  event.target.classList.add('active');
+  try {
+    const activeTab = document.querySelector(`.tab[onclick*="'${tab}'"]`);
+    if (activeTab) activeTab.classList.add('active');
+  } catch(e) {}
   if (tab === 'lista') loadData();
   if (tab === 'pendentes') loadPendentes();
   if (tab === 'resumo') loadResumo();
@@ -2012,6 +2016,74 @@ async function clearVendas() {
   } catch(e) {
     toast('Erro ao eliminar: ' + e.message, 'error');
   }
+}
+
+// ─── AT CHAMADOS ─────────────────────────────────────
+const AT_STORE_KEY = 'delta_at_chamados';
+function getATChamados() {
+  try { return JSON.parse(localStorage.getItem(AT_STORE_KEY) || '[]'); } catch(e) { return []; }
+}
+function saveATChamados(arr) {
+  localStorage.setItem(AT_STORE_KEY, JSON.stringify(arr));
+}
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+}
+
+async function loadATResumo() {
+  const chamados = getATChamados();
+  const cont = document.getElementById('at-resumo-content');
+  if (!cont) return;
+  if (!chamados.length) {
+    cont.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">Nenhum chamado AT registado ainda.</div>';
+    return;
+  }
+  const byVendedor = {};
+  chamados.forEach(c => {
+    const v = c.vendedor || '—';
+    if (!byVendedor[v]) byVendedor[v] = {};
+    const k = `${c.clienteCod}||${c.clienteNome}`;
+    if (!byVendedor[v][k]) byVendedor[v][k] = { clienteCod: c.clienteCod, clienteNome: c.clienteNome, equips: {} };
+    const eq = c.equipTipo || '—';
+    byVendedor[v][k].equips[eq] = (byVendedor[v][k].equips[eq] || 0) + 1;
+  });
+  let html = '';
+  Object.keys(byVendedor).sort().forEach(vend => {
+    const clientes = byVendedor[vend];
+    const totalCli = Object.keys(clientes).length;
+    const totalCham = Object.values(clientes).reduce((s,c) => s + Object.values(c.equips).reduce((a,b)=>a+b,0), 0);
+    html += `<div style="border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden">
+      <div style="background:var(--surface2);padding:8px 12px;cursor:pointer;display:flex;justify-content:space-between;font-size:13px;font-weight:600" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+        <span>👤 ${vend}</span><span style="color:var(--muted)">${totalCli} cliente(s) · ${totalCham} chamado(s)</span>
+      </div>
+      <div style="display:none;padding:8px 12px">`;
+    Object.values(clientes).sort((a,b)=>a.clienteNome.localeCompare(b.clienteNome)).forEach(cli => {
+      const totalC = Object.values(cli.equips).reduce((a,b)=>a+b,0);
+      html += `<div style="margin-top:6px;border:1px solid var(--border);border-radius:6px;overflow:hidden">
+        <div style="padding:6px 10px;display:flex;justify-content:space-between;font-size:12px;cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+          <span>${cli.clienteNome} <span style="color:var(--muted)">(${cli.clienteCod})</span></span>
+          <span style="color:var(--accent)">${totalC}x</span>
+        </div>
+        <div style="display:none;padding:4px 10px 8px">`;
+      Object.entries(cli.equips).forEach(([eq,cnt]) => {
+        html += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;border-bottom:1px solid var(--border)"><span>${eq}</span><span style="font-weight:600">${cnt}x</span></div>`;
+      });
+      html += `</div></div>`;
+    });
+    html += `</div></div>`;
+  });
+  cont.innerHTML = html;
+}
+
+function exportATExcel() {
+  const chamados = getATChamados();
+  if (!chamados.length) { toast('Nenhum chamado para exportar.', 'error'); return; }
+  const rows = [['Data','Hora','Vendedor','Cód. Cliente','Cliente','Equipamento','Tag','Tipo Avaria','Descrição','Urgência']];
+  chamados.forEach(c => rows.push([c.data||'',c.hora||'',c.vendedor||'',c.clienteCod||'',c.clienteNome||'',c.equipTipo||'',c.equipTag||'',c.avaria||'',c.descricao||'',c.urgencia||'']));
+  const csv = rows.map(r=>r.map(v=>`"${(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='chamados_AT.csv'; a.click();
 }
 
 // ─── CONTRATOS ───────────────────────────────────────
