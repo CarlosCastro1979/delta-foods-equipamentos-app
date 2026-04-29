@@ -728,6 +728,7 @@
     <button class="tab" onclick="switchTab('pendentes')">⏳ Clientes por Registar</button>
     <button class="tab" onclick="switchTab('resumo')">📊 Resumo</button>
     <button class="tab" onclick="switchTab('at')">🔧 Pedido AT</button>
+    <button class="tab" onclick="switchTab('contratos')">📊 Contratos</button>
   </div>
 
   <!-- NOVO REGISTO -->
@@ -944,6 +945,44 @@
     </div>
   </div>
 
+  <div class="panel" id="panel-contratos">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <h2 style="font-size:16px;font-weight:600;color:var(--text)">📊 Cumprimento de Contratos</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="exportContratosExcel()">⬇ Excel</button>
+        <button class="btn btn-primary btn-sm" onclick="showVendasImport()" style="background:var(--accent)">⬆ Carregar Vendas</button>
+      </div>
+    </div>
+    <div id="contratos-content"><div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A carregar...</div></div>
+  </div>
+
+  <!-- MODAL VENDAS IMPORT (PIN protected) -->
+  <div id="vendas-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;display:none;align-items:center;justify-content:center">
+    <div style="background:var(--surface);border-radius:12px;padding:24px;width:90%;max-width:480px;max-height:90vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="font-size:16px;font-weight:600">⬆ Carregar Vendas</h3>
+        <button onclick="closeVendasModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">✕</button>
+      </div>
+      <div id="vendas-pin-step">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Introduz o PIN para aceder ao carregamento de vendas:</p>
+        <input type="password" id="vendas-pin-input" class="form-input" placeholder="PIN" maxlength="6" style="text-align:center;font-size:20px;letter-spacing:8px;margin-bottom:10px" onkeydown="if(event.key==='Enter')checkVendasPin()">
+        <button class="btn btn-primary" onclick="checkVendasPin()" style="width:100%">Confirmar</button>
+      </div>
+      <div id="vendas-upload-step" style="display:none">
+        <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--muted)">
+          <strong>Regras de importação:</strong><br>
+          • Hierarquia GRÃO → usa Peso líq. em Kg<br>
+          • Hierarquia CÁPSULAS → Peso líq. ÷ 0,0055 = nº cápsulas<br>
+          • Datas já importadas são ignoradas automaticamente
+        </div>
+        <div id="vendas-status" style="margin-bottom:10px"></div>
+        <input type="file" id="vendas-file-input" accept=".xlsx,.xls" style="display:none" onchange="processVendasFile(event)">
+        <button class="btn btn-primary" onclick="document.getElementById('vendas-file-input').click()" style="width:100%;margin-bottom:8px">📂 Selecionar ficheiro Excel</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearVendas()" style="width:100%">🗑 Limpar todas as vendas</button>
+      </div>
+    </div>
+  </div>
+
 <!-- MODAL EDIÇÃO -->
 <div class="modal-overlay" id="modal-overlay" onclick="closeModalOnBg(event)">
   <div class="modal" id="modal-edit">
@@ -1070,6 +1109,7 @@ function switchTab(tab) {
   if (tab === 'pendentes') loadPendentes();
   if (tab === 'resumo') loadResumo();
   if (tab === 'at') loadAtTab();
+  if (tab === 'contratos') loadContratosTab();
 }
 
 // ─── PEDIDO AT ──────────────────────────────────────
@@ -1948,7 +1988,7 @@ function addContratoRow(prefix, data = {}) {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
       <div>
-        <label style="font-size:11px;color:var(--muted)">Consumo contratado</label>
+        <label style="font-size:11px;color:var(--muted)">Consumo / mês</label>
         <input type="number" class="form-input" style="padding:6px 8px;font-size:13px" placeholder="Quantidade" min="0" step="0.1" data-field="consumo" value="${data.consumo||''}">
       </div>
       <div>
@@ -2052,6 +2092,275 @@ function exportATExcel() {
   const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download='chamados_AT.csv'; a.click();
+}
+
+// ─── VENDAS & CONTRATOS ──────────────────────────────
+const VENDAS_STORE = 'delta_vendas_v1';
+
+function getVendas() {
+  try { return JSON.parse(localStorage.getItem(VENDAS_STORE) || '[]'); } catch(e) { return []; }
+}
+function saveVendas(arr) { localStorage.setItem(VENDAS_STORE, JSON.stringify(arr)); }
+
+function showVendasImport() {
+  document.getElementById('vendas-modal').style.display = 'flex';
+  document.getElementById('vendas-pin-step').style.display = 'block';
+  document.getElementById('vendas-upload-step').style.display = 'none';
+  document.getElementById('vendas-pin-input').value = '';
+  document.getElementById('vendas-status').innerHTML = '';
+  setTimeout(() => document.getElementById('vendas-pin-input').focus(), 100);
+}
+function closeVendasModal() {
+  document.getElementById('vendas-modal').style.display = 'none';
+}
+function checkVendasPin() {
+  const pin = document.getElementById('vendas-pin-input').value.trim();
+  if (pin === '1304') {
+    document.getElementById('vendas-pin-step').style.display = 'none';
+    document.getElementById('vendas-upload-step').style.display = 'block';
+    const vendas = getVendas();
+    const datas = vendas.map(v => v.data).sort();
+    if (datas.length) {
+      document.getElementById('vendas-status').innerHTML =
+        `<div style="background:#e8f5e9;border-radius:6px;padding:8px 10px;font-size:12px;color:#2e7d32">
+          ✅ ${vendas.length} registo(s) carregados<br>
+          Período: ${datas[0]} a ${datas[datas.length-1]}
+        </div>`;
+    }
+  } else {
+    toast('PIN incorreto.', 'error');
+    document.getElementById('vendas-pin-input').value = '';
+    document.getElementById('vendas-pin-input').focus();
+  }
+}
+
+async function processVendasFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  document.getElementById('vendas-status').innerHTML =
+    '<div style="color:var(--muted);font-size:12px">⏳ A processar ficheiro...</div>';
+
+  if (!window.XLSX) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+
+  const buf = await file.arrayBuffer();
+  const wb = window.XLSX.read(buf, {type: 'array'});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = window.XLSX.utils.sheet_to_json(ws, {header: 1});
+
+  if (!rows.length) { toast('Ficheiro vazio.', 'error'); return; }
+
+  const headers = rows[0].map(h => String(h || ''));
+  const iHierarq = headers.indexOf('Hierarq.produtos');
+  const iEmissor = headers.indexOf('Emissor da ordem');
+  const iData = headers.indexOf('Data');
+  const iPeso = headers.findIndex(h => h === 'Peso líq.');
+
+  if (iHierarq < 0 || iEmissor < 0 || iData < 0 || iPeso < 0) {
+    toast('Colunas não encontradas. Verifica o ficheiro.', 'error'); return;
+  }
+
+  // Get existing vendas and their dates to avoid duplicates
+  const existingVendas = getVendas();
+  const existingDates = new Set(existingVendas.map(v => v.data));
+
+  const newVendas = [];
+  const newDates = new Set();
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const hierarq = String(row[iHierarq] || '');
+    if (!hierarq.includes('GRÃO') && !hierarq.includes('CÁPSULAS')) continue;
+    const emissor = String(row[iEmissor] || '').trim();
+    const cod = emissor.split(/\s+/)[0].trim();
+    if (!cod) continue;
+    const dataStr = String(row[iData] || '').trim();
+    if (!dataStr) continue;
+    const pesoRaw = row[iPeso];
+    if (pesoRaw === null || pesoRaw === undefined || pesoRaw === '') continue;
+    const peso = parseFloat(pesoRaw);
+    if (isNaN(peso)) continue;
+    const tipo = hierarq.includes('GRÃO') ? 'GRÃO' : 'CAPSULAS';
+    const qty = tipo === 'GRÃO' ? peso : Math.round(peso / 0.0055);
+    newDates.add(dataStr);
+    if (!existingDates.has(dataStr)) {
+      newVendas.push({cod, data: dataStr, tipo, qty, peso});
+    }
+  }
+
+  // Find truly new dates
+  const datasIgnoradas = [...newDates].filter(d => existingDates.has(d)).length;
+  const datasNovas = [...newDates].filter(d => !existingDates.has(d)).length;
+
+  // Merge
+  const merged = [...existingVendas, ...newVendas];
+  saveVendas(merged);
+
+  document.getElementById('vendas-status').innerHTML =
+    `<div style="background:#e8f5e9;border-radius:6px;padding:10px;font-size:12px;color:#2e7d32;line-height:1.6">
+      ✅ Importação concluída!<br>
+      • ${newVendas.length} novos registos adicionados<br>
+      • ${datasIgnoradas} datas já existentes ignoradas<br>
+      • Total acumulado: ${merged.length} registos
+    </div>`;
+
+  event.target.value = '';
+  loadContratosTab();
+  toast(`✅ ${newVendas.length} registos importados!`);
+}
+
+function clearVendas() {
+  if (!confirm('Eliminar todos os dados de vendas?')) return;
+  saveVendas([]);
+  document.getElementById('vendas-status').innerHTML =
+    '<div style="color:var(--danger);font-size:12px">🗑 Dados eliminados.</div>';
+  loadContratosTab();
+}
+
+async function loadContratosTab() {
+  const cont = document.getElementById('contratos-content');
+  cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A calcular...</div>';
+
+  try {
+    // Fetch all registos with contratos from Supabase
+    const res = await fetch(SUPA_URL + '?select=cod,nome,contrato,contratos&contratos=not.is.null', {headers: HEADERS});
+    let registos = await res.json();
+
+    // Filter only those with contratos array
+    registos = registos.filter(r => Array.isArray(r.contratos) && r.contratos.length > 0);
+
+    if (!registos.length) {
+      cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Nenhum contrato registado ainda.<br>Adiciona contratos no formulário de Novo Registo.</div>';
+      return;
+    }
+
+    const vendas = getVendas();
+    const today = new Date();
+
+    // Build vendasByCod
+    const vendasByCod = {};
+    vendas.forEach(v => {
+      if (!vendasByCod[v.cod]) vendasByCod[v.cod] = {GRÃO: 0, CAPSULAS: 0};
+      vendasByCod[v.cod][v.tipo] = (vendasByCod[v.cod][v.tipo] || 0) + v.qty;
+    });
+
+    // Compute table rows
+    const rows = [];
+    registos.forEach(r => {
+      (r.contratos || []).forEach(c => {
+        if (!c.inicio || !c.consumo || !c.duracao) return;
+        const unidade = c.unidade || 'Capsulas';
+        const tipo = unidade === 'Kg' ? 'GRÃO' : 'CAPSULAS';
+        const consumoMes = parseFloat(c.consumo) || 0;
+        const duracao = parseInt(c.duracao) || 0;
+        const totalContratado = consumoMes * duracao;
+
+        // Parse start date (YYYY-MM format from input[type=month])
+        const [ano, mes] = c.inicio.split('-').map(Number);
+        const dataInicio = new Date(ano, mes - 1, 1);
+
+        // Months elapsed since start (up to today)
+        let mesesDecorridos = (today.getFullYear() - dataInicio.getFullYear()) * 12 +
+          (today.getMonth() - dataInicio.getMonth());
+        mesesDecorridos = Math.max(0, Math.min(mesesDecorridos, duracao));
+
+        const consumoEsperado = consumoMes * mesesDecorridos;
+        const consumoReal = (vendasByCod[r.cod] && vendasByCod[r.cod][tipo]) || 0;
+        const pct = consumoEsperado > 0 ? Math.round((consumoReal / consumoEsperado) * 100) : null;
+        const pctTotal = totalContratado > 0 ? Math.round((consumoReal / totalContratado) * 100) : null;
+
+        // Format inicio
+        const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        const inicioFmt = `${meses[mes-1]}/${ano}`;
+
+        rows.push({
+          cod: r.cod, nome: r.nome, contrato: r.contrato || '—',
+          inicio: inicioFmt, duracao, unidade,
+          totalContratado, consumoMes, mesesDecorridos,
+          consumoEsperado, consumoReal,
+          pct, pctTotal, tipo
+        });
+      });
+    });
+
+    if (!rows.length) {
+      cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Nenhum contrato com dados completos encontrado.</div>';
+      return;
+    }
+
+    // Sort by % cumprimento asc (worst first)
+    rows.sort((a, b) => (a.pct || 0) - (b.pct || 0));
+
+    const unidadeLabel = u => u === 'Kg' ? 'Kg' : 'Cáps';
+    const fmtNum = (n, u) => u === 'Kg' ? n.toFixed(1) + ' Kg' : Math.round(n) + ' Cáps';
+    const pctColor = p => p === null ? '#888' : p >= 90 ? '#2e7d32' : p >= 60 ? '#f57c00' : '#c62828';
+    const pctBg = p => p === null ? '#f5f5f5' : p >= 90 ? '#e8f5e9' : p >= 60 ? '#fff3e0' : '#ffebee';
+
+    let html = `<div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="background:var(--surface2);text-align:left">
+          <th style="padding:10px 12px;font-weight:600;white-space:nowrap">Cód</th>
+          <th style="padding:10px 12px;font-weight:600">Cliente</th>
+          <th style="padding:10px 12px;font-weight:600;white-space:nowrap">Contrato</th>
+          <th style="padding:10px 12px;font-weight:600;white-space:nowrap">Início</th>
+          <th style="padding:10px 12px;font-weight:600;white-space:nowrap">Unid.</th>
+          <th style="padding:10px 12px;font-weight:600;text-align:right;white-space:nowrap">Total<br>Contratado</th>
+          <th style="padding:10px 12px;font-weight:600;text-align:right;white-space:nowrap">Esperado<br>(${new Date().toLocaleDateString('pt-BR',{month:'short',year:'numeric'})})</th>
+          <th style="padding:10px 12px;font-weight:600;text-align:right;white-space:nowrap">Consumo<br>Real</th>
+          <th style="padding:10px 12px;font-weight:600;text-align:center;white-space:nowrap">% Cumprimento<br><span style="font-size:10px;font-weight:400">(vs esperado)</span></th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+    rows.forEach(r => {
+      const pBg = pctBg(r.pct);
+      const pCol = pctColor(r.pct);
+      html += `<tr style="border-bottom:1px solid var(--border);background:var(--surface)">
+        <td style="padding:9px 12px;color:var(--muted);white-space:nowrap">${r.cod}</td>
+        <td style="padding:9px 12px;font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.nome}">${r.nome}</td>
+        <td style="padding:9px 12px;color:var(--muted);white-space:nowrap">${r.contrato}</td>
+        <td style="padding:9px 12px;white-space:nowrap">${r.inicio} · ${r.duracao}m</td>
+        <td style="padding:9px 12px;white-space:nowrap">${unidadeLabel(r.unidade)}</td>
+        <td style="padding:9px 12px;text-align:right;white-space:nowrap">${fmtNum(r.totalContratado, r.unidade)}</td>
+        <td style="padding:9px 12px;text-align:right;white-space:nowrap">${r.mesesDecorridos > 0 ? fmtNum(r.consumoEsperado, r.unidade) : '—'}</td>
+        <td style="padding:9px 12px;text-align:right;font-weight:600;white-space:nowrap">${r.consumoReal > 0 ? fmtNum(r.consumoReal, r.unidade) : '—'}</td>
+        <td style="padding:9px 12px;text-align:center">
+          ${r.pct !== null && r.mesesDecorridos > 0
+            ? `<span style="background:${pBg};color:${pCol};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pct}%</span>`
+            : '<span style="color:var(--muted);font-size:12px">Não iniciado</span>'}
+        </td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div>
+    <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:right">
+      ${rows.length} contrato(s) · Vendas: ${vendas.length} registos
+    </div>`;
+
+    cont.innerHTML = html;
+  } catch(e) {
+    cont.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">Erro: ${e.message}</div>`;
+  }
+}
+
+function exportContratosExcel() {
+  // Collect visible table rows and export as CSV
+  const table = document.querySelector('#contratos-content table');
+  if (!table) { toast('Nenhum dado para exportar.', 'error'); return; }
+  const rows = [...table.querySelectorAll('tr')].map(tr =>
+    [...tr.querySelectorAll('th,td')].map(td => `"${td.innerText.replace(/"/g,'""').replace(/\n/g,' ')}"`)
+  );
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='contratos_cumprimento.csv'; a.click();
 }
 
 // ─── INIT ────────────────────────────────────────────
