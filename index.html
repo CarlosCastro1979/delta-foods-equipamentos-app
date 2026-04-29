@@ -2120,11 +2120,11 @@ async function getVendas() {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const page = await res.json();
       all = all.concat(page);
-      console.log(`Vendas page from=${from}: ${page.length} records, total so far: ${all.length}`);
+
       if (page.length < pageSize) break;
       from += pageSize;
     }
-    console.log('Total vendas fetched:', all.length);
+
     return all;
   } catch(e) {
     console.warn('Vendas fetch failed:', e);
@@ -2496,11 +2496,10 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
+// Unregister any service workers to prevent stale cache issues
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/delta-foods-equipamentos-app/sw.js')
-      .then(r => console.log('SW registered'))
-      .catch(e => console.log('SW error', e));
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(r => r.unregister());
   });
 }
 </script>
