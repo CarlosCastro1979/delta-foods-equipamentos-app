@@ -921,14 +921,13 @@
         <label class="form-label">Modelo da máquina</label>
         <select id="at-modelo-dom" class="form-input">
           <option value="">— Selecionar modelo —</option>
-          <option value="Delta Q XS">Delta Q XS</option>
-          <option value="Delta Q L">Delta Q L</option>
-          <option value="Delta Q XL">Delta Q XL</option>
-          <option value="Delta Q Xclusivo">Delta Q Xclusivo</option>
-          <option value="Delta Q Magic">Delta Q Magic</option>
-          <option value="Delta Q Qool">Delta Q Qool</option>
-          <option value="Delta Q Pop">Delta Q Pop</option>
-          <option value="Delta Q Quby">Delta Q Quby</option>
+          <option value="Qool Auto">Qool Auto</option>
+          <option value="Quick">Quick</option>
+          <option value="MiniQool">MiniQool</option>
+          <option value="Qool Evolution">Qool Evolution</option>
+          <option value="MiniMilk">MiniMilk</option>
+          <option value="Milkq Qool">Milkq Qool</option>
+          <option value="Iconiq">Iconiq</option>
         </select>
       </div>
 
@@ -2010,40 +2009,13 @@ Enviado via Delta Foods App`;
 // ─── VENDAS & CONTRATOS ──────────────────────────────
 const VENDAS_STORE = 'delta_vendas_v1'; // kept for migration
 const SUPA_VENDAS = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/vendas';
-const VENDAS_CACHE_KEY = 'delta_vendas_cache';
-const VENDAS_CACHE_TS_KEY = 'delta_vendas_cache_ts';
-
-function getVendasCache() {
-  try {
-    const ts = localStorage.getItem(VENDAS_CACHE_TS_KEY);
-    const data = localStorage.getItem(VENDAS_CACHE_KEY);
-    if (ts && data) return { ts, vendas: JSON.parse(data) };
-  } catch(e) {}
-  return null;
-}
-function setVendasCache(vendas) {
-  try {
-    localStorage.setItem(VENDAS_CACHE_KEY, JSON.stringify(vendas));
-    localStorage.setItem(VENDAS_CACHE_TS_KEY, new Date().toISOString());
-  } catch(e) {
-    console.warn('Cache save failed (storage full?):', e);
-  }
-}
-function clearVendasCache() {
-  localStorage.removeItem(VENDAS_CACHE_KEY);
-  localStorage.removeItem(VENDAS_CACHE_TS_KEY);
-}
 
 async function getVendas(forceRefresh = false) {
-  // Use cache unless forcing refresh
-  if (!forceRefresh) {
-    const cache = getVendasCache();
-    if (cache && cache.vendas.length > 0) {
-      return cache.vendas;
-    }
+  // Vendas are too large for localStorage cache (~71k records)
+  // Always fetch from Supabase but use in-memory cache within the session
+  if (!forceRefresh && window._vendasMemCache) {
+    return window._vendasMemCache;
   }
-
-  // Fetch from Supabase
   try {
     let all = [];
     let from = 0;
@@ -2059,14 +2031,11 @@ async function getVendas(forceRefresh = false) {
       if (page.length < pageSize) break;
       from += pageSize;
     }
-    // Save to cache
-    setVendasCache(all);
+    window._vendasMemCache = all; // Keep in memory for this session
     return all;
   } catch(e) {
     console.warn('Vendas fetch failed:', e);
-    // Try cache as fallback even if stale
-    const cache = getVendasCache();
-    if (cache) return cache.vendas;
+    if (window._vendasMemCache) return window._vendasMemCache;
     return [];
   }
 }
@@ -2215,7 +2184,7 @@ async function processVendasFile(event) {
     </div>`;
 
   event.target.value = '';
-  clearVendasCache(); // Force fresh fetch on next load
+  window._vendasMemCache = null; // Force fresh fetch on next load
   loadContratosTab();
   toast(`✅ ${newVendas.length} registos importados!`);
 }
@@ -2229,7 +2198,7 @@ async function clearVendas() {
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     localStorage.removeItem(VENDAS_STORE);
-    clearVendasCache();
+    window._vendasMemCache = null;
     document.getElementById('vendas-status').innerHTML =
       '<div style="color:var(--danger);font-size:12px">🗑 Dados eliminados do servidor e cache limpo.</div>';
     loadContratosTab();
@@ -2538,7 +2507,6 @@ async function loadContratosTab() {
     html += `</tbody></table></div>
     <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:right">
       ${rows.length} contrato(s) · Vendas: ${vendas.length} registos
-      ${(()=>{ const ts = localStorage.getItem(VENDAS_CACHE_TS_KEY); return ts ? ` · Cache: ${new Date(ts).toLocaleDateString('pt-BR')} ${new Date(ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}` : ''; })()}
     </div>`;
 
     cont.innerHTML = html;
