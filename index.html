@@ -1914,7 +1914,7 @@ function atToggleOutraAvaria() {
   document.getElementById('at-outra-avaria-box').style.display = tipo === 'Outra avaria' ? 'block' : 'none';
 }
 
-function enviarPedidoAT() {
+async function enviarPedidoAT() {
   const vendedor    = document.getElementById('at-vendedor').value;
   const clienteSel  = document.getElementById('at-cliente');
   const clienteOpt  = clienteSel.selectedOptions[0];
