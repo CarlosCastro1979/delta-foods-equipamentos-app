@@ -2821,7 +2821,29 @@ function renderATHistorico() {
   const monthKeys = Object.keys(byMonth).sort().reverse(); // mais recente primeiro
 
   // ── TABELA RESUMO POR TIPO DE AVARIA × MÊS ──
-  const allAvariaTypes = [...new Set(data.map(c => c.avaria || 'Não especificado'))].sort();
+  // Usa apenas os tipos fixos do select — texto livre vai para "Outra avaria"
+  const TIPOS_FIXOS = [
+    'Não faz café / sem extração',
+    'Avaria no moinho',
+    'Fuga de água',
+    'Erro no display / painel',
+    'Temperatura incorreta',
+    'Ruído anormal',
+    'Bomba com problemas',
+    'Resistência com problemas',
+    'Não liga',
+    'Afinação e Manutenção Geral',
+    'Preventiva',
+    'Instalação',
+    'Desinstalação',
+    'Outra avaria'
+  ];
+  // Normaliza: se o valor não está nos tipos fixos, é "Outra avaria"
+  function normalizaTipo(avaria) {
+    return TIPOS_FIXOS.includes(avaria) ? avaria : 'Outra avaria';
+  }
+  // Só mostra tipos que têm pelo menos 1 chamado
+  const allAvariaTypes = TIPOS_FIXOS.filter(t => data.some(c => normalizaTipo(c.avaria) === t));
   const recentMonths = monthKeys.slice(0, 6); // últimos 6 meses
 
   let resumoHtml = `
@@ -2839,11 +2861,11 @@ function renderATHistorico() {
         <tbody>`;
 
   allAvariaTypes.forEach(tipo => {
-    const rowTotal = data.filter(c => (c.avaria || 'Não especificado') === tipo).length;
+    const rowTotal = data.filter(c => normalizaTipo(c.avaria || '') === tipo).length;
     resumoHtml += `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:8px 12px;font-weight:500">${tipo}</td>
       ${recentMonths.map(k => {
-        const n = byMonth[k].filter(c => (c.avaria || 'Não especificado') === tipo).length;
+        const n = byMonth[k].filter(c => normalizaTipo(c.avaria || '') === tipo).length;
         return `<td style="padding:8px 10px;text-align:center;color:${n>0?'var(--text)':'var(--muted)'}">${n > 0 ? `<strong>${n}</strong>` : '–'}</td>`;
       }).join('')}
       <td style="padding:8px 10px;text-align:center;background:rgba(200,16,46,0.06)"><strong style="color:var(--accent)">${rowTotal}</strong></td>
