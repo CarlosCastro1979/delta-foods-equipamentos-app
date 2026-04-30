@@ -735,6 +735,7 @@
     <button class="tab" onclick="switchTab('resumo')">📊 Resumo</button>
     <button class="tab" onclick="switchTab('at')">🔧 Pedido AT</button>
     <button class="tab" onclick="switchTab('contratos')">📊 Contratos</button>
+    <button class="tab" onclick="switchTab('historico-at')">🔧 Histórico AT</button>
   </div>
 
   <!-- NOVO REGISTO -->
@@ -785,11 +786,15 @@
 
   <!-- LISTA -->
   <div class="panel" id="panel-lista">
-    <div class="table-toolbar">
-      <input type="text" id="search-input" placeholder="🔍 Pesquisar por cliente, código ou vendedor…" oninput="renderTable()">
-      <button class="btn btn-secondary btn-sm" onclick="loadData()">↻ Atualizar</button>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center">
+      <select id="filtro-vendedor-lista" class="form-input" style="flex:1;min-width:140px;max-width:200px;padding:7px 10px;font-size:13px" onchange="renderTable()">
+        <option value="">Todos os vendedores</option>
+      </select>
+      <input type="text" id="filtro-cod" placeholder="🔍 Código cliente" oninput="renderTable()" style="flex:1;min-width:120px;max-width:160px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface)">
+      <input type="text" id="filtro-nome" placeholder="🔍 Nome cliente" oninput="renderTable()" style="flex:1;min-width:160px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface)">
+      <button class="btn btn-secondary btn-sm" onclick="loadData(true)">↻ Atualizar</button>
       <button class="btn btn-secondary btn-sm" onclick="exportExcel()">⬇ Excel</button>
-      <span class="count-badge" id="count-badge"></span>
+      <span id="record-count" style="font-size:12px;color:var(--muted);font-family:var(--font-mono)"></span>
     </div>
     <div class="table-wrap">
       <table>
@@ -912,6 +917,20 @@
           <option value="">— Seleciona primeiro o cliente —</option>
         </select>
       </div>
+      <div class="form-group" id="at-modelo-dom-group" style="display:none">
+        <label class="form-label">Modelo da máquina</label>
+        <select id="at-modelo-dom" class="form-input">
+          <option value="">— Selecionar modelo —</option>
+          <option value="Delta Q XS">Delta Q XS</option>
+          <option value="Delta Q L">Delta Q L</option>
+          <option value="Delta Q XL">Delta Q XL</option>
+          <option value="Delta Q Xclusivo">Delta Q Xclusivo</option>
+          <option value="Delta Q Magic">Delta Q Magic</option>
+          <option value="Delta Q Qool">Delta Q Qool</option>
+          <option value="Delta Q Pop">Delta Q Pop</option>
+          <option value="Delta Q Quby">Delta Q Quby</option>
+        </select>
+      </div>
 
       <div class="form-group" id="at-avaria-group" style="display:none">
         <label class="form-label">Tipo de avaria detectada</label>
@@ -1027,6 +1046,20 @@
         <button class="btn btn-secondary btn-sm" onclick="clearVendas()" style="width:100%">🗑 Limpar todas as vendas</button>
       </div>
     </div>
+  </div>
+
+  <div class="panel" id="panel-historico-at">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <h2 style="font-size:16px;font-weight:600;color:var(--text)">🔧 Histórico de Assistência Técnica</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select id="at-hist-vendedor" class="form-input" style="padding:6px 10px;font-size:13px;min-width:140px" onchange="renderATHistorico()">
+          <option value="">Todos os vendedores</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="exportATHistoricoExcel()">⬇ Excel</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadATHistorico(true)">↻ Atualizar</button>
+      </div>
+    </div>
+    <div id="at-hist-content"><div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A carregar...</div></div>
   </div>
 
 <!-- MODAL EDIÇÃO -->
@@ -1179,6 +1212,7 @@ async function salvarRegisto() {
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     toast('✅ Registo guardado!');
+    clearRegistosCache();
     limparForm();
     // Update count
     const res2 = await fetch(SUPA_URL + '?select=id', { headers: HEADERS });
@@ -1200,68 +1234,106 @@ function limparForm() {
 }
 
 // ─── LOAD LIST ────────────────────────────────────────
-async function loadData() {
-  const search = document.getElementById('search-input')?.value?.trim()?.toLowerCase() || '';
-  const vendFilt = document.getElementById('filtro-vendedor-lista')?.value || '';
+const REGISTOS_CACHE_KEY = 'delta_registos_cache';
+const REGISTOS_CACHE_TS = 'delta_registos_cache_ts';
 
-  const tabelaBody = document.getElementById('table-body') || document.getElementById('tabela-body');
+function getRegistosCache() {
+  try {
+    const d = localStorage.getItem(REGISTOS_CACHE_KEY);
+    return d ? JSON.parse(d) : null;
+  } catch(e) { return null; }
+}
+function setRegistosCache(data) {
+  try {
+    localStorage.setItem(REGISTOS_CACHE_KEY, JSON.stringify(data));
+    localStorage.setItem(REGISTOS_CACHE_TS, new Date().toISOString());
+  } catch(e) {}
+}
+function clearRegistosCache() {
+  localStorage.removeItem(REGISTOS_CACHE_KEY);
+  localStorage.removeItem(REGISTOS_CACHE_TS);
+}
+
+function renderTable() {
+  const vendFilt = document.getElementById('filtro-vendedor-lista')?.value || '';
+  const codFilt = document.getElementById('filtro-cod')?.value?.trim()?.toLowerCase() || '';
+  const nomeFilt = document.getElementById('filtro-nome')?.value?.trim()?.toLowerCase() || '';
+  const tabelaBody = document.getElementById('table-body');
+
+  let filtered = allData || [];
+  if (vendFilt) filtered = filtered.filter(r => r.vendedor === vendFilt);
+  if (codFilt) filtered = filtered.filter(r => (r.cod||'').toLowerCase().includes(codFilt));
+  if (nomeFilt) filtered = filtered.filter(r => (r.nome||'').toLowerCase().includes(nomeFilt));
+
+  const countEl = document.getElementById('record-count');
+  if (countEl) countEl.textContent = `${filtered.length} de ${(allData||[]).length} registos`;
+
+  if (!filtered.length) {
+    if (tabelaBody) tabelaBody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--muted)">Nenhum registo encontrado.</td></tr>';
+    return;
+  }
+
+  if (tabelaBody) tabelaBody.innerHTML = filtered.map(r => {
+    const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
+    const equipHtml = equips.map(e =>
+      `<span class="equip-tag-badge">${e.tipo}${e.tag ? ` <span class="tag-num">#${e.tag}</span>` : ''}</span>`
+    ).join('');
+    const dataFmt = r.data ? (()=>{ try { const d=new Date(r.data.includes('T')?r.data:r.data+'T12:00:00'); return isNaN(d)?r.data:d.toLocaleDateString('pt-BR'); } catch(e){ return r.data; } })() : '—';
+    return `<tr>
+      <td>${r.cod || '—'}</td>
+      <td>${r.nome || '—'}</td>
+      <td>${r.cep || '—'}</td>
+      <td>${r.contrato || '—'}</td>
+      <td>${equipHtml}</td>
+      <td><span class="vendedor-badge">${r.vendedor || '—'}</span></td>
+      <td>${dataFmt}</td>
+      <td><button class="btn-edit" onclick="openEdit('${r.id}')">Editar</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadData(forceRefresh = false) {
+  const tabelaBody = document.getElementById('table-body');
+
+  // Use cache if available and not forcing refresh
+  if (!forceRefresh) {
+    const cache = getRegistosCache();
+    if (cache && cache.length > 0) {
+      allData = cache;
+      // Update vendedor filter
+      const vendedores = [...new Set(allData.map(r => r.vendedor).filter(Boolean))].sort();
+      const selVend = document.getElementById('filtro-vendedor-lista');
+      if (selVend) {
+        const cur = selVend.value;
+        selVend.innerHTML = '<option value="">Todos os vendedores</option>' +
+          vendedores.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+      }
+      renderTable();
+      return;
+    }
+  }
+
   if (tabelaBody) tabelaBody.innerHTML =
     '<tr class="loading-row"><td colspan="8"><span class="spinner"></span>A carregar dados...</td></tr>';
 
   try {
-    let url = SUPA_URL + '?select=*&order=criado_em.desc';
-    const res = await fetch(url, { headers: HEADERS });
+    const res = await fetch(SUPA_URL + '?select=*&order=criado_em.desc', { headers: HEADERS });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     allData = await res.json();
-
-    let filtered = allData;
-    if (search) {
-      filtered = filtered.filter(r =>
-        (r.nome||'').toLowerCase().includes(search) ||
-        (r.cod||'').toLowerCase().includes(search) ||
-        (r.vendedor||'').toLowerCase().includes(search) ||
-        (r.contrato||'').toLowerCase().includes(search) ||
-        (Array.isArray(r.equipamentos) ? r.equipamentos.some(e => (e.tag||'').toLowerCase().includes(search) || (e.tipo||'').toLowerCase().includes(search)) : false)
-      );
-    }
-    if (vendFilt) filtered = filtered.filter(r => r.vendedor === vendFilt);
+    setRegistosCache(allData);
 
     // Update vendedor filter
     const vendedores = [...new Set(allData.map(r => r.vendedor).filter(Boolean))].sort();
-    const selVend = document.getElementById('filtro-vendedor-lista') || document.getElementById('search-input');
+    const selVend = document.getElementById('filtro-vendedor-lista');
     if (selVend) {
       const cur = selVend.value;
       selVend.innerHTML = '<option value="">Todos os vendedores</option>' +
         vendedores.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
     }
-
-    const countEl = document.getElementById('count-label') || document.getElementById('record-count'); if(countEl) countEl.textContent = `${filtered.length} de ${allData.length} registos`;
-
-    if (!filtered.length) {
-      document.getElementById('tabela-body').innerHTML =
-        '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--muted)">Nenhum registo encontrado.</td></tr>';
-      return;
-    }
-
-    if (tabelaBody) tabelaBody.innerHTML = filtered.map(r => {
-      const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
-      const equipHtml = equips.map(e =>
-        `<span class="equip-tag-badge">${e.tipo}${e.tag ? ` <span class="tag-num">#${e.tag}</span>` : ''}</span>`
-      ).join('');
-      return `<tr>
-        <td>${r.cod || '—'}</td>
-        <td>${r.nome || '—'}</td>
-        <td>${r.cep || '—'}</td>
-        <td>${r.contrato || '—'}</td>
-        <td>${equipHtml}</td>
-        <td><span class="vendedor-badge">${r.vendedor || '—'}</span></td>
-        <td>${r.data ? (()=>{ try { const d=new Date(r.data.includes('T')?r.data:r.data+'T12:00:00'); return isNaN(d)?r.data:d.toLocaleDateString('pt-BR'); } catch(e){ return r.data; } })() : '—'}</td>
-        <td><button class="btn-edit" onclick="openEdit('${r.id}')">Editar</button></td>
-      </tr>`;
-    }).join('');
+    renderTable();
   } catch(e) {
-    document.getElementById('tabela-body').innerHTML =
-      '<div style="padding:40px;text-align:center;color:var(--danger)">Erro ao carregar dados.</div>';
+    if (tabelaBody) tabelaBody.innerHTML =
+      '<tr><td colspan="8" style="padding:40px;text-align:center;color:var(--danger)">Erro ao carregar dados.</td></tr>';
   }
 }
 
@@ -1322,8 +1394,9 @@ async function salvarEdicao() {
     });
     if (!res.ok) throw new Error(await res.text());
     toast('✅ Registo atualizado!');
+    clearRegistosCache();
     closeEdit();
-    loadData();
+    loadData(true);
   } catch(e) {
     toast('Erro: ' + e.message, 'error');
   }
@@ -1335,8 +1408,9 @@ async function excluirRegisto() {
     const res = await fetch(SUPA_URL + '?id=eq.' + editingId, { method: 'DELETE', headers: HEADERS });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     toast('🗑️ Registo eliminado.');
+    clearRegistosCache();
     closeEdit();
-    loadData();
+    loadData(true);
   } catch(e) {
     toast('Erro: ' + e.message, 'error');
   }
@@ -1349,9 +1423,13 @@ async function loadPendentes() {
   const savedList = localStorage.getItem('delta_clientes_sistema');
   const listaAtiva = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
   try {
-    const res = await fetch(SUPA_URL + '?select=cod', { headers: HEADERS });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
+    // Use registos cache if available
+    let data = getRegistosCache();
+    if (!data) {
+      const res = await fetch(SUPA_URL + '?select=cod', { headers: HEADERS });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      data = await res.json();
+    }
     const normCod = v => String(v || '').trim().replace(/^0+/, '') || '0';
     const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
     pendentesData = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
@@ -1508,11 +1586,15 @@ function cancelarImport() {
 // ─── RESUMO ──────────────────────────────────────────
 async function loadResumo() {
   try {
-    const res = await fetch(SUPA_URL + '?select=vendedor,cod', { headers: {
-      'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY
-    }});
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const registados = await res.json();
+    // Use cache if available
+    let registados = getRegistosCache();
+    if (!registados) {
+      const res = await fetch(SUPA_URL + '?select=vendedor,cod', { headers: {
+        'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY
+      }});
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      registados = await res.json();
+    }
 
     const vendedores = {};
     const normCodR = v => String(v || '').trim().replace(/^0+/, '') || '0';
@@ -1635,6 +1717,7 @@ function switchTab(tab) {
   if (tab === 'resumo') loadResumo();
   if (tab === 'at') loadAtTab();
   if (tab === 'contratos') { const pc = document.getElementById('panel-contratos'); if(pc) loadContratosTab(); }
+  if (tab === 'historico-at') loadATHistorico();
 }
 
 // ─── PEDIDO AT ──────────────────────────────────────
@@ -1685,6 +1768,9 @@ function atOnVendedorChange() {
 }
 
 async function atOnTipoEquipChange() {
+  // Show/hide modelo field for doméstico
+  const modeloGroup = document.getElementById('at-modelo-dom-group');
+  if (modeloGroup) modeloGroup.style.display = 'none';
   const vendedor = document.getElementById('at-vendedor').value;
   atTipoEquip = document.getElementById('at-tipo-equip').value;
   if (!atTipoEquip || !vendedor) return;
@@ -1817,6 +1903,9 @@ async function atPreencherCliente() {
   ['at-avaria-group','at-descricao-group','at-urgencia-group'].forEach(id => {
     document.getElementById(id).style.display = 'block';
   });
+  // Show modelo for doméstico
+  const modeloGroup = document.getElementById('at-modelo-dom-group');
+  if (modeloGroup) modeloGroup.style.display = atTipoEquip === 'domestico' ? 'block' : 'none';
   document.getElementById('at-submit-btn').style.display = 'block';
 }
 
@@ -1832,6 +1921,7 @@ function enviarPedidoAT() {
   const equipRaw    = document.getElementById('at-equipamento').value;
   let equipTipo = equipRaw, equipTag = '';
   try { const eq = JSON.parse(equipRaw); equipTipo = eq.tipo; equipTag = eq.tag; } catch(e) {}
+  const modeloDom   = document.getElementById('at-modelo-dom')?.value || '';
   const avariaTipo  = document.getElementById('at-avaria-tipo').value;
   const outraAvaria = document.getElementById('at-outra-avaria').value.trim();
   const descricao   = document.getElementById('at-descricao').value.trim();
@@ -1859,7 +1949,12 @@ function enviarPedidoAT() {
 
   const tipoLabel = atTipoEquip === 'domestico' ? 'Doméstico' : 'Profissional';
 
-  const corpo = `Pedido de Assistência Técnica
+    const morada = getMorada(clienteCod);
+  const moradaLine = (atTipoEquip === 'comercial' && morada)
+    ? `\nMorada: ${morada.rua}\nCEP: ${morada.cep}` : '';
+  const modeloLine = (atTipoEquip === 'domestico' && modeloDom) ? `\nModelo: ${modeloDom}` : '';
+
+const corpo = `Pedido de Assistência Técnica
 ==============================
 Data: ${data} às ${hora}
 Urgência: ${urgencia}
@@ -1869,11 +1964,11 @@ DADOS DO CLIENTE
 ----------------
 Nome: ${clienteNome}
 Código: ${clienteCod}
-CEP: ${clienteCep}
+CEP: ${clienteCep}${moradaLine}
 
 EQUIPAMENTO
 -----------
-Equipamento: ${equipTipo}${equipTag ? `\nTag: #${equipTag}` : ''}
+Equipamento: ${equipTipo}${equipTag ? `\nTag: #${equipTag}` : ''}${modeloLine}
 
 AVARIA
 ------
@@ -1892,6 +1987,17 @@ Enviado via Delta Foods App`;
   if (!confirm('Confirmas que queres abrir o email e registar este chamado AT?')) return;
 
   // Save chamado ONLY after user confirms
+  try {
+    await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/chamados_at', {
+      method: 'POST',
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ data, hora, vendedor, cliente_cod: clienteCod, cliente_nome: clienteNome,
+        equip_tipo: equipTipo, equip_tag: equipTag, avaria, descricao, urgencia, tipo_equip: atTipoEquip, modelo_dom: modeloDom })
+    });
+  } catch(e) {
+    console.warn('Chamado AT save failed:', e);
+  }
+  // Also keep local copy as backup
   const chamados = getATChamados();
   chamados.push({id:genId(), data, hora, vendedor, clienteCod, clienteNome,
     equipTipo, equipTag, avaria, descricao, urgencia, tipoEquip: atTipoEquip});
@@ -1904,8 +2010,40 @@ Enviado via Delta Foods App`;
 // ─── VENDAS & CONTRATOS ──────────────────────────────
 const VENDAS_STORE = 'delta_vendas_v1'; // kept for migration
 const SUPA_VENDAS = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/vendas';
+const VENDAS_CACHE_KEY = 'delta_vendas_cache';
+const VENDAS_CACHE_TS_KEY = 'delta_vendas_cache_ts';
 
-async function getVendas() {
+function getVendasCache() {
+  try {
+    const ts = localStorage.getItem(VENDAS_CACHE_TS_KEY);
+    const data = localStorage.getItem(VENDAS_CACHE_KEY);
+    if (ts && data) return { ts, vendas: JSON.parse(data) };
+  } catch(e) {}
+  return null;
+}
+function setVendasCache(vendas) {
+  try {
+    localStorage.setItem(VENDAS_CACHE_KEY, JSON.stringify(vendas));
+    localStorage.setItem(VENDAS_CACHE_TS_KEY, new Date().toISOString());
+  } catch(e) {
+    console.warn('Cache save failed (storage full?):', e);
+  }
+}
+function clearVendasCache() {
+  localStorage.removeItem(VENDAS_CACHE_KEY);
+  localStorage.removeItem(VENDAS_CACHE_TS_KEY);
+}
+
+async function getVendas(forceRefresh = false) {
+  // Use cache unless forcing refresh
+  if (!forceRefresh) {
+    const cache = getVendasCache();
+    if (cache && cache.vendas.length > 0) {
+      return cache.vendas;
+    }
+  }
+
+  // Fetch from Supabase
   try {
     let all = [];
     let from = 0;
@@ -1918,14 +2056,17 @@ async function getVendas() {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const page = await res.json();
       all = all.concat(page);
-
       if (page.length < pageSize) break;
       from += pageSize;
     }
-
+    // Save to cache
+    setVendasCache(all);
     return all;
   } catch(e) {
     console.warn('Vendas fetch failed:', e);
+    // Try cache as fallback even if stale
+    const cache = getVendasCache();
+    if (cache) return cache.vendas;
     return [];
   }
 }
@@ -2074,6 +2215,7 @@ async function processVendasFile(event) {
     </div>`;
 
   event.target.value = '';
+  clearVendasCache(); // Force fresh fetch on next load
   loadContratosTab();
   toast(`✅ ${newVendas.length} registos importados!`);
 }
@@ -2087,8 +2229,9 @@ async function clearVendas() {
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     localStorage.removeItem(VENDAS_STORE);
+    clearVendasCache();
     document.getElementById('vendas-status').innerHTML =
-      '<div style="color:var(--danger);font-size:12px">🗑 Dados eliminados do servidor.</div>';
+      '<div style="color:var(--danger);font-size:12px">🗑 Dados eliminados do servidor e cache limpo.</div>';
     loadContratosTab();
   } catch(e) {
     toast('Erro ao eliminar: ' + e.message, 'error');
@@ -2395,6 +2538,7 @@ async function loadContratosTab() {
     html += `</tbody></table></div>
     <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:right">
       ${rows.length} contrato(s) · Vendas: ${vendas.length} registos
+      ${(()=>{ const ts = localStorage.getItem(VENDAS_CACHE_TS_KEY); return ts ? ` · Cache: ${new Date(ts).toLocaleDateString('pt-BR')} ${new Date(ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}` : ''; })()}
     </div>`;
 
     cont.innerHTML = html;
@@ -2414,6 +2558,160 @@ function exportContratosExcel() {
   const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download='contratos_cumprimento.csv'; a.click();
+}
+
+// ─── AT HISTÓRICO ────────────────────────────────────
+const SUPA_AT = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/chamados_at';
+const MORADAS_DB = {"748133": {"rua": "RUA DESEM DO VALE 777", "cep": "05010-040"}, "748134": {"rua": "ALAMEDA CAMPINAS 1630", "cep": "01404-002"}, "748135": {"rua": "AVENIDA WASHINGTON LUIS 1960", "cep": "04662-002"}, "748083": {"rua": "Rua Domingos Leme 687", "cep": "04510-040"}, "748091": {"rua": "Rua Marechal Hastinfil 233, LOJA 01", "cep": "05641-000"}, "748185": {"rua": "Estrada Vinho 9111, Loja 0", "cep": "18145-002"}, "748203": {"rua": "ALAMEDA JAÚ 1607", "cep": "01405-003"}, "748977": {"rua": "Av do Farol S/N", "cep": "48280-000"}, "748986": {"rua": "AL LORENA 514", "cep": "01309-020"}, "748990": {"rua": "Av Prof. Luciano Gualberto 908", "cep": "05508-010"}, "748991": {"rua": "AVENIDA PAULISTA 453", "cep": "01311-000"}, "748992": {"rua": "Rua Haddock Lobo 1553", "cep": "01414-003"}, "748993": {"rua": "Rua Bandeira Paulista 726", "cep": "04532-002"}, "748158": {"rua": "Avenida Magalhães de C 12000, LJ 19", "cep": "05676-900"}, "748163": {"rua": "Rua Treze de Maio 560", "cep": "01327-000"}, "748174": {"rua": "Avenida Ibirapuera 3103, AP 90", "cep": "04029-902"}, "748019": {"rua": "RUA AFONSO CELSO 402", "cep": "04119-001"}, "748021": {"rua": "Rua Afonso Celso 411", "cep": "04119-001"}, "748022": {"rua": "RUA DOMINGOS DE MORAES 2242", "cep": "04036-000"}, "748025": {"rua": "SITIO PRAIA 245", "cep": "57940-000"}, "748093": {"rua": "Avenida Ibirapuera 3103", "cep": "04029-200"}, "748099": {"rua": "Rua Joaquim Carlos 1036", "cep": "03019-000"}, "748105": {"rua": "Avenida Fagundes Filho 141", "cep": "04304-010"}, "748109": {"rua": "AVENIDA BRAS LEME 1200, LJ LUC N04", "cep": "02511-000"}, "748113": {"rua": "Avenida Francisco Loup 901", "cep": "11628-115"}, "748114": {"rua": "Rua Olimpíadas 360", "cep": "04551-000"}, "748115": {"rua": "Alameda dos Nhambiquaras 573", "cep": "04090-011"}, "748117": {"rua": "RUA AZEVEDO SOARES 1092", "cep": "03322-001"}, "748118": {"rua": "Rua Doutor Fonseca Brasil 282", "cep": "05716-060"}, "748119": {"rua": "Rua Estado de Israel 240", "cep": "04022-000"}, "748121": {"rua": "Rua Antônio Pereira de Sousa 227", "cep": "02404-060"}, "748915": {"rua": "Estrada Santa Isabel 1647", "cep": "07432-575"}, "748928": {"rua": "Rua José Maria Lisboa 1397", "cep": "01423-003"}, "748930": {"rua": "RUA CAP PACHECO E C 313, L SMO 2115", "cep": "03126-000"}, "748450": {"rua": "Av Humberto Alencar Castelo Bra 633", "cep": "09850-300"}, "748935": {"rua": "Avenida Aricanduva 5555, LJM", "cep": "03527-000"}, "748932": {"rua": "Alameda Lorena 871", "cep": "01424-005"}, "748938": {"rua": "Rua Tutóia 77", "cep": "04007-000"}, "748940": {"rua": "Rua Comendador Araújo 499", "cep": "80420-000"}, "748941": {"rua": "Rua Emílio Mallet 494", "cep": "03320-000"}, "748945": {"rua": "Rua Canadá 324", "cep": "01436-000"}, "748948": {"rua": "Rua Haddock Lobo 1416", "cep": "01414-002"}, "748956": {"rua": "Av Prof Luciano Gualberto 78", "cep": "05508-010"}, "748958": {"rua": "AVENIDA PROFESSOR LINEU PRESTE 2227", "cep": "05508-000"}, "748959": {"rua": "RUA PAMPLONA 735", "cep": "01405-200"}, "749650": {"rua": "RUA ALFERES JOSE CAETANO 1857", "cep": "13400-123"}, "748475": {"rua": "ALAMEDA DOS ARAPANES 977", "cep": "04524-001"}, "748478": {"rua": "AVENIDA MÃE BERNARDA 2001, 2005", "cep": "11623-304"}, "748479": {"rua": "Avenida Juriti 651", "cep": "04520-001"}, "748493": {"rua": "Rodovia dos Tamoios S/N", "cep": "12260-000"}, "748969": {"rua": "Rua Peixoto Gomide 870", "cep": "01409-000"}, "748971": {"rua": "Rua Tumiaru 48", "cep": "04008-050"}, "748500": {"rua": "Rua Conrado Augusto Offa 535", "cep": "13209-070"}, "748520": {"rua": "Alameda dos Anapurus 942", "cep": "04087-002"}, "748523": {"rua": "Avenida Jurucê 776", "cep": "04080-013"}, "748532": {"rua": "Avenida das Carinas 93", "cep": "04086-010"}, "748548": {"rua": "RUA HILARIÃO CRISÓLOGO DE MATOS 455", "cep": "11600-000"}, "748550": {"rua": "AVENIDA PEDRO PAULA DE MORAES 749", "cep": "11630-000"}, "749874": {"rua": "R. CON EUGENIO LEITE 727", "cep": "05414-011"}, "749652": {"rua": "RUA AFONSO BRAZ 355", "cep": "04511-011"}, "748218": {"rua": "Av das Nações Unidas 10989", "cep": "04578-000"}, "748220": {"rua": "Rua João Cachoeira 800", "cep": "04535-002"}, "748230": {"rua": "Rua Jerônimo da Veiga 198", "cep": "04536-000"}, "748231": {"rua": "Rua Joaquim Floriano 677", "cep": "04534-012"}, "748240": {"rua": "Rua Álvaro Rodrigues 304", "cep": "04582-000"}, "748245": {"rua": "Rua Afonso Braz 621", "cep": "04511-011"}, "748251": {"rua": "RUA DR.MÁRIO FERRAZ 490", "cep": "01453-011"}, "748255": {"rua": "AV. DOS BANDEIRANTES 1051", "cep": "04550-003"}, "748258": {"rua": "Av Brigadeiro Luís Antônio 3300", "cep": "01402-001"}, "748259": {"rua": "Rua João Cachoeira 287", "cep": "04535-010"}, "748726": {"rua": "Rua Cardeal Arcoverde 776", "cep": "05408-001"}, "748728": {"rua": "Rua Cunha Gago 332", "cep": "05421-000"}, "748271": {"rua": "Rua Iguatemi 76", "cep": "01451-010"}, "748273": {"rua": "Rua Sete de Abril 241", "cep": "01043-000"}, "748276": {"rua": "Rua Rosa e Silva 132", "cep": "01230-020"}, "748748": {"rua": "AL.RIO NEGRO LJ.48 E 49 CENT.I 1033", "cep": "06454-000"}, "748749": {"rua": "Rua Vupabussu 79", "cep": "05429-040"}, "748750": {"rua": "Avenida Antártica 408", "cep": "05003-020"}, "748755": {"rua": "Travessa Casalbuono 120", "cep": "02089-900"}, "748292": {"rua": "Rua Afonso Celso 437", "cep": "04119-001"}, "748293": {"rua": "Avenida Armando Ferrentini 31", "cep": "04103-030"}, "748299": {"rua": "Rua Presidente Wenceslau Braz 148", "cep": "27553-000"}, "748310": {"rua": "Rua Antônio de Macedo Soares 1369", "cep": "04607-002"}, "748312": {"rua": "Rua Barra Funda 730", "cep": "01152-000"}, "748317": {"rua": "Rua Maestro Cardim 1118", "cep": "01323-001"}, "748760": {"rua": "Praça Pan-Americana 41", "cep": "05461-000"}, "748763": {"rua": "Av Dr Enéas Carvalho de Aguiar 255", "cep": "05403-000"}, "748769": {"rua": "Rua Angelina Maffei Vita 493", "cep": "01455-902"}, "748770": {"rua": "Rua Deputado Lacerda Franco 115", "cep": "05418-000"}, "748772": {"rua": "Avenida Brigadeiro Faria Lima 1230", "cep": "01451-001"}, "748324": {"rua": "Praça Marechal Deodoro 268", "cep": "01150-010"}, "748332": {"rua": "Rua Barão de Jaceguai 1526", "cep": "04606-004"}, "748337": {"rua": "Rua Vinte e Três-B 55", "cep": "27260-130"}, "748341": {"rua": "Rua Gabriele D'Annunzio 1345", "cep": "04619-005"}, "748342": {"rua": "Rua Marquês de Itu 134", "cep": "01223-000"}, "748343": {"rua": "AVENIDA YOJIRO TAKAOKA 3500", "cep": "06541-038"}, "748344": {"rua": "Rua Cancioneiro Popular 210", "cep": "04710-000"}, "748345": {"rua": "Avenida Torres de Oliveira 330", "cep": "05347-020"}, "748346": {"rua": "Rua Vergueiro 1109", "cep": "01504-001"}, "748792": {"rua": "Rua Bonnard GREEN VALLEY I 980", "cep": "06465-134"}, "748793": {"rua": "Avenida Brigadeiro Faria Lima 1635", "cep": "01452-001"}, "748797": {"rua": "ESTRADA DO VINHO 3300", "cep": "18145-002"}, "748816": {"rua": "Travessa Casalbuono 120", "cep": "02089-900"}, "748862": {"rua": "Rua Pires da Mota 525", "cep": "01529-001"}, "748872": {"rua": "Avenida Jóquei Clube 771", "cep": "64049-240"}, "748878": {"rua": "AVENIDA MOREIRA GUIMARAES 900", "cep": "04074-020"}, "748898": {"rua": "Av das Nações Unidas 13947", "cep": "04794-905"}, "749655": {"rua": "RUA DA CONSOLACAO 2095", "cep": "01301-100"}, "752126": {"rua": "RUA BORBA GATO 59, LOJA 262", "cep": "04747-030"}, "752567": {"rua": "AVENIDA JOAO PAULO A 38, SAL.1 TERR", "cep": "06711-250"}, "752141": {"rua": "RUA CANTAGALO 856", "cep": "03319-000"}, "753533": {"rua": "RUA VITORINO DE MORAIS 337", "cep": "04714-030"}, "753534": {"rua": "RUA GOMES DE CARVALHO 955", "cep": "04547-003"}, "757392": {"rua": "AVENIDA DAS COMUNICAÇÕES 04 4", "cep": "06276-905"}, "757576": {"rua": "RUA DOUTOR STEVAUX 240", "cep": "18130-500"}, "757577": {"rua": "RODOVIA RAPOSO TAVARES K 59,6 S/N", "cep": "18130-970"}, "757034": {"rua": "RUA RAMOS BATISTA 372", "cep": "04552-020"}, "757999": {"rua": "AV.GUILHERME CAMPOS 500, EUC 420", "cep": "13087-901"}, "764412": {"rua": "OSWALDO CASIMIRO MULLER 76", "cep": "04571-030"}, "766415": {"rua": "RUA LINS DE VASCONCELOS 1166", "cep": "01538-001"}, "765023": {"rua": "RUA GAIVOTA APTO.42 1027", "cep": "04522-032"}, "766908": {"rua": "RUA MATIAS AIRES 74", "cep": "01309-020"}, "766422": {"rua": "AVENIDA TIRADENTES 2201", "cep": "07113-001"}, "767864": {"rua": "RUA TUPIGUAES 56", "cep": "02022-040"}, "765613": {"rua": "RUA SERRA DO JAPI 750, AN.758 762", "cep": "03309-000"}, "767831": {"rua": "RUA ARIZONA 1485", "cep": "04567-003"}, "767830": {"rua": "AVENIDA PORTUGAL 300", "cep": "04559-000"}, "769768": {"rua": "AV.MAGNO DOS PASSOS BITTENCOURT 935", "cep": "11624-103"}, "770855": {"rua": "RUA ABILIO SOARES 1589", "cep": "04005-005"}, "783685": {"rua": "AVENIDA CHIBARAS 269", "cep": "04076-000"}, "782721": {"rua": "AV 04, QUADRA 31 12", "cep": "65077-348"}, "779419": {"rua": "RUA AUGUSTA 1832", "cep": "01412-000"}, "776100": {"rua": "AV.DR.LUIS FELIPPE FR 3000, LOJA 05", "cep": "07619-288"}, "774258": {"rua": "RUA SÃO LUIS 416", "cep": "90620-170"}, "776389": {"rua": "RUA CANUTO DO VAL 216", "cep": "01224-040"}, "778264": {"rua": "AV. GIOVANNI GRONCHI LJ. 125 5819", "cep": "05724-900"}, "773794": {"rua": "AVENIDA GIOVANNI G 5930, 112 PAVMTO", "cep": "05724-002"}, "779048": {"rua": "RUA ITATIARA 226, CAMP.FAAP", "cep": "01242-020"}, "779050": {"rua": "RUA PIRES DA MOTA 762", "cep": "01529-000"}, "775216": {"rua": "RUA BARAO DO BANANAL 854", "cep": "05024-000"}, "778367": {"rua": "RUA DR CANDIDO ESPINHEIRA 445", "cep": "05004-000"}, "775432": {"rua": "AV VER.BELARMINO P.CARVALHO 8018", "cep": "07600-000"}, "443608": {"rua": "RUA MACEIÓ CONSOLAÇÃO 64", "cep": "01302-010"}, "443613": {"rua": "AVENIDA JAMARIS 213", "cep": "04089-012"}, "446705": {"rua": "RUA ADILIA MERCADO MADUREIRA 14", "cep": "04401-070"}, "440726": {"rua": "AVENIDA PAULISTA 2073, LOJA 144", "cep": "01311-300"}, "447400": {"rua": "RUA TENERIFE 140, SLJ 142", "cep": "04548-040"}, "443643": {"rua": "ALAMEDA ARAPANES 977", "cep": "04524-001"}, "447403": {"rua": "AVENIDA ESPERANTINA 287", "cep": "03692-000"}, "446711": {"rua": "AV. NOSSA SENHORA DO SABARÁ 4163", "cep": "04447-021"}, "447516": {"rua": "PRAÇA MAIACA 116", "cep": "03584-010"}, "447996": {"rua": "MACHADO BITENCOURT 75", "cep": "04044-000"}, "443257": {"rua": "R. FRANCISCO ZICARDI 6", "cep": "03335-090"}, "442131": {"rua": "ESTRADA ARY DO ING 2719, ST. CAFET.", "cep": "06855-000"}, "442467": {"rua": "RUA ARANDU 154", "cep": "04562-031"}, "442557": {"rua": "RUA DR GUILHERME BANNITZ 126", "cep": "04532-060"}, "443607": {"rua": "RUA MACEIÓ CONSOLAÇÃO 64", "cep": "01302-010"}, "443609": {"rua": "RUA APENINOS 614", "cep": "04104-020"}, "443611": {"rua": "RUA DOMINGOS DE MARAES 336", "cep": "04010-000"}, "446735": {"rua": "AV.PROF. LUIZ IGNACIO ANHAIA M 1820", "cep": "03154-000"}, "446736": {"rua": "RUA DEP LACERDA FRANCO 77", "cep": "05418-000"}, "442558": {"rua": "RUA CARDEAL ARCO VERDE 1361", "cep": "05407-000"}, "441336": {"rua": "R MARCOS AZEVEDO 66", "cep": "05428-050"}, "444068": {"rua": "R. SAO JOSE 50", "cep": "09693-070"}, "449015": {"rua": "RUA ALFREDO PUJOL 853", "cep": "02017-011"}, "447363": {"rua": "RUA DOUTOR LUIZ MIGL 1986, LOJA 14T", "cep": "05711-001"}, "442045": {"rua": "r. JAROSLAV HAJEK 2, LOJA 1", "cep": "07082-190"}, "447633": {"rua": "RUA PORTO ALEGRE 274", "cep": "03185-020"}, "448597": {"rua": "R.PROF.  TIBERIO JUSTO 521, CASA 2", "cep": "18133-000"}, "447696": {"rua": "AVENIDA MIGUEL ESTEFNO 544", "cep": "04301-000"}, "443426": {"rua": "RUA ROBERTO SIMONSEN 122", "cep": "01017-020"}, "443605": {"rua": "RUA DA CONSOLAÇÃO 64", "cep": "01301-100"}, "443138": {"rua": "RUA PENSILVANIA 457", "cep": "04564-001"}, "448759": {"rua": "RUA BR DE LADARIO 670, LJ SUC 362", "cep": "03010-000"}, "440090": {"rua": "RUA VUPABUSSU 45", "cep": "05429-040"}, "447434": {"rua": "R TITO 31", "cep": "05051-000"}, "441283": {"rua": "R DR JOAO BATISTA DE LACERDA 301", "cep": "03177-010"}, "447463": {"rua": "RUA GERALDO FRAGA DE OL 548, LOJA 3", "cep": "05843-000"}, "443604": {"rua": "R. MACEIÓ, 64 CONSOLAÇÃO 64", "cep": "01302-010"}, "447517": {"rua": "RUA DA CONSOLAÇÃO 2550", "cep": "01416-000"}, "443612": {"rua": "RUA JOAQUIM TÁVORA 1240", "cep": "04015-013"}, "442779": {"rua": "FERREIRA DE ARAUJO 332", "cep": "05428-000"}, "446649": {"rua": "AVENIDA GAL ATALIBA LEONEL 2742", "cep": "02242-000"}, "446691": {"rua": "RUA DOM LUIS FELIPE DE ORLEANS 135", "cep": "02118-000"}, "445940": {"rua": "AV DR YOJIRO TAKAOKA 4456", "cep": "06541-038"}, "447431": {"rua": "RUA DR JOSE DO AMARAL 284, CONJ 304", "cep": "03675-010"}, "447433": {"rua": "R. REVER. JOAO EUCLI 451B, SLJ SL 8", "cep": "03814-080"}, "443708": {"rua": "AL JOAQUIM EUGENIO DE LIMA 1682", "cep": "01403-002"}, "442875": {"rua": "R JULIO CONCEICAO 284", "cep": "01126-000"}, "444090": {"rua": "ALAMEDA TERRACOTA 185, T.P.13A", "cep": "09531-190"}, "444093": {"rua": "R DR CESAR 1288", "cep": "02013-004"}, "444468": {"rua": "AV ENG ARMANDO DE ARRUDA PEREIR 618", "cep": "04308-000"}, "447840": {"rua": "AVENIDA PROF ALFONSO BOVERO 543", "cep": "01254-000"}, "447955": {"rua": "PRACA MAL DEODORO 256", "cep": "01150-010"}, "440034": {"rua": "RUA SILVA BUENO 65", "cep": "04208-050"}, "448416": {"rua": "RUA PITANGUEIRAS 304", "cep": "04052-020"}, "445408": {"rua": "RUA VITORINO DE MORAIS 337", "cep": "04714-030"}, "448415": {"rua": "RUA CANTAREIRA, DA 306", "cep": "01024-000"}, "448668": {"rua": "R MONTEIRO DE MELO 699, ANEXO 711", "cep": "05050-000"}, "446616": {"rua": "R. ENSEADA DO ALBATROZ, 116", "cep": "28952-740"}, "446695": {"rua": "AV. MANUEL ANTONIO GONCALVES 179", "cep": "02152-000"}, "448301": {"rua": "RUA DONA MARIA CUSTODIA 334", "cep": "02460-070"}, "443614": {"rua": "AVENIDA DOUTOR CARDOSO DE MELL 200", "cep": "04548-005"}, "446704": {"rua": "RUA PADRE ESTEVAO PERNET 37", "cep": "03315-000"}, "446706": {"rua": "RUA SÃO BENEDITO 226", "cep": "04735-000"}, "446710": {"rua": "AV. MARTINHO GUEDES 19", "cep": "04294-110"}, "444701": {"rua": "RUA HADDOCK LOBO 231", "cep": "01414-001"}, "447457": {"rua": "RUA SANTO ANTONIO 1106", "cep": "01314-001"}, "447913": {"rua": "RUA GEN OSORIO 436", "cep": "01213-010"}, "440036": {"rua": "AV. DR. ALTINOI ARANTES 302", "cep": "04042-002"}, "442096": {"rua": "RUA BOM PASTOR 1375", "cep": "04203-051"}, "447954": {"rua": "RUA DR JOSE MARIA DE AZEVEDO 259", "cep": "01550-020"}, "445863": {"rua": "RUA AUGUSTA 1832", "cep": "01412-000"}, "442183": {"rua": "AVENIDA MELCHERT 676, LETRA A", "cep": "03508-000"}, "446734": {"rua": "RUA GAL BRASILIO TABORDA 81", "cep": "05591-100"}, "442270": {"rua": "FIDENCIO RAMOS 41", "cep": "04551-010"}, "442022": {"rua": "R. FRANÇA PINTO 175", "cep": "04016-031"}, "442556": {"rua": "RUA OSCAR RODRIGUES CAJADO FILH 263", "cep": "04710-190"}, "442353": {"rua": "AV MARIANA UBALDINA DO ESP. SAN 779", "cep": "07197-000"}, "433636": {"rua": "RUA JOAQUIM TAVORA 1150", "cep": "04015-013"}, "432706": {"rua": "ESTRADA DO EMBÚ 123", "cep": "06713-100"}, "434743": {"rua": "R CARLOS LISDEGNO CARLUCCI 519", "cep": "05536-900"}, "433445": {"rua": "AVENIDA GUILHERME GIORGI\" 775", "cep": "03422-000"}, "433120": {"rua": "RUA IPURINAS 315", "cep": "04561-050"}, "433907": {"rua": "AV. CORIFEU DE AZEVEDO MARQUES 1560", "cep": "05582-001"}, "433385": {"rua": "RUA ITAUNA 146", "cep": "02111-030"}, "435587": {"rua": "RUA SERVULO GONCALVES 149", "cep": "03376-140"}, "434745": {"rua": "AV PROFESSOR FRANCISCO MORATO 2718", "cep": "05512-300"}, "433513": {"rua": "RUA ALVES DE ALMEIDA 546", "cep": "03378-010"}, "433535": {"rua": "RUA NOVA JERUSALEM 399", "cep": "03410-000"}, "438445": {"rua": "R. VILELA 805", "cep": "03314-000"}, "437989": {"rua": "RUA ARTHUR SAMPAIO MOREIRA 15", "cep": "09911-010"}, "434358": {"rua": "AV. ANGELICA 101", "cep": "01227-000"}, "434513": {"rua": "AVENIDA GAL EDGAR FAC 1339, LOJA 01", "cep": "02924-401"}, "435700": {"rua": "R CASA DO ATOR 803", "cep": "04546-003"}, "438207": {"rua": "RUA TRES DE DEZEMBRO 48", "cep": "01014-020"}, "432650": {"rua": "RUA DA MOOCA 2895", "cep": "03165-001"}, "438250": {"rua": "RUA RICARDO VILELA 1102, SALA 06", "cep": "08780-060"}, "433010": {"rua": "RUA MARAMBAIA 568", "cep": "02513-000"}, "433073": {"rua": "RUA GABRIELE D'ANNUNZIO 1346", "cep": "04619-005"}, "438345": {"rua": "R MARILENA MACHADO 176", "cep": "04811-080"}, "435461": {"rua": "RUA ANTONIO CARLOS 282", "cep": "01309-010"}, "438287": {"rua": "AVENIDA SAPOPEMBA 1540", "cep": "03345-000"}, "433728": {"rua": "RUA PDE GARCIA VELHO 72", "cep": "05421-030"}, "433521": {"rua": "RUA BARAO DO TRIUNFO 502", "cep": "04602-002"}, "433851": {"rua": "RUA JOSE MASCARENHAS 912", "cep": "03515-000"}, "434387": {"rua": "RUA BARAO DO TRIUNFO 255, ERLAPL57", "cep": "04602-000"}, "435326": {"rua": "RUA SALVADOR TOLEZANO 817", "cep": "02422-160"}, "435852": {"rua": "ALAMEDA JAÚ 1607, SALA A", "cep": "01420-007"}, "434855": {"rua": "AVENIDA INTERLAGOS 4455", "cep": "04661-300"}, "433388": {"rua": "R. CORON. BENTO JOSE DE CARVALH 339", "cep": "03516-010"}, "430124": {"rua": "RUA CONSELHEIRO FURTADO 1187", "cep": "01511-001"}, "431034": {"rua": "RUA GUAIANASES 1461", "cep": "01204-003"}, "432308": {"rua": "RUA MANUEL HOMEM DE ANDRADE 110", "cep": "05723-400"}, "431065": {"rua": "RUA ARON MASTER 85", "cep": "02151-090"}, "431656": {"rua": "RUA PAIAGUAS 148", "cep": "04624-080"}, "431658": {"rua": "RUA OSWALDO CASIMIRO MULLER 76", "cep": "04571-030"}, "431432": {"rua": "RUA DOUTOR STEVAUX 227", "cep": "18130-500"}, "431659": {"rua": "R JOAO DE MOURA 257", "cep": "05412-001"}, "431103": {"rua": "RUA DEP LAERCIO CORTE 468", "cep": "05706-290"}, "430751": {"rua": "RUA EMBIRUCU 211", "cep": "03644-000"}, "429590": {"rua": "ALAMEDA GABRIEL MONTEIRO DA SI 1350", "cep": "01442-000"}, "429639": {"rua": "AVENIDA DAS NAÇÕE 12901, C201,S7,2T", "cep": "04578-910"}, "431063": {"rua": "RUA FERREIRA DE ARAUJO 690", "cep": "05428-002"}, "431528": {"rua": "RUA GUARARAPES 1942", "cep": "04561-004"}, "429278": {"rua": "AV. MARQUES DE SÃO VIC 446, LOJA 03", "cep": "01139-000"}, "430982": {"rua": "R AMOIPIRA 304", "cep": "04689-070"}, "431585": {"rua": "RUA FORTUNATO 298", "cep": "01224-030"}, "431033": {"rua": "AVENIDA DOUTOR CHUCRI ZAIDAN 296", "cep": "04583-110"}, "432458": {"rua": "AVENIDA IRAI 807", "cep": "04082-002"}, "432476": {"rua": "RUA DA FARTURA 170", "cep": "11616-503"}, "430211": {"rua": "R NAPOLEAO DE BARROS 1300", "cep": "04024-003"}, "431329": {"rua": "RUA REGINO ARAGÃO 139", "cep": "04285-020"}, "429693": {"rua": "RUA ALVARO ALVIM 0", "cep": "09693-000"}, "431591": {"rua": "RUA CRASSO 140", "cep": "05043-010"}, "430988": {"rua": "RUA DEPUTADO JOAO SUSSUMU HIRAT 804", "cep": "05715-010"}, "430868": {"rua": "RUA DOS CICLAMES 56", "cep": "03146-010"}, "430880": {"rua": "RUA SAO BENEDITO 1762", "cep": "04735-004"}, "431202": {"rua": "PRAÇA TOKIO 6, SALA 6", "cep": "02132-150"}, "431032": {"rua": "AVENIDA MASCOTE 225", "cep": "04363-000"}, "430917": {"rua": "ROD JOSMAR CHAVES PINTO 2141, LJ182", "cep": "68903-419"}, "429817": {"rua": "RUA PRUDENTE DE MORAES 108", "cep": "07400-500"}, "428732": {"rua": "RUA HENRIQUE DUMONT 317", "cep": "03320-040"}, "428729": {"rua": "ALAMEDA DOS MARACATINS 847", "cep": "04089-012"}, "427663": {"rua": "RUA BORBA GATO 59", "cep": "04747-030"}, "427916": {"rua": "AVENIDA EDE 379, LOJA 3", "cep": "02203-000"}, "428176": {"rua": "AVENIDA JURUCE 841", "cep": "04080-013"}, "427952": {"rua": "RUA NORMA PIERUCCINI GIANNOTTI 366", "cep": "01137-010"}, "427464": {"rua": "RUA RAMOS BATISTA 409", "cep": "04552-020"}, "427526": {"rua": "AV DAS NACOES UNIDAS 22939, LOJA 06", "cep": "04696-005"}, "427953": {"rua": "RUA DA CANTAREIRA 04,ME 306, BOX 04", "cep": "03166-001"}, "428537": {"rua": "RUA MOURATO COELHO 789", "cep": "05417-011"}, "428540": {"rua": "AVENIDA PROFESSOR PAPINI 388", "cep": "04805-300"}, "427919": {"rua": "ALAMEDA RIBEIRO DA SILVA 909", "cep": "01217-010"}, "427920": {"rua": "R ARCIPRESTE EZEQUIAS 116", "cep": "04271-060"}, "427922": {"rua": "RUA CARLOS WEBER 426", "cep": "05303-000"}, "427923": {"rua": "RUA ANTÔNIO LOURENÇO 20", "cep": "02334-070"}, "427924": {"rua": "R BRIGADEIRO GALVAO 102", "cep": "01151-000"}, "427925": {"rua": "R HORACIO VERGUEIRO RUDGE 535", "cep": "02512-060"}, "426675": {"rua": "AV. DR. ARNALDO 296", "cep": "01255-000"}, "428539": {"rua": "AVENIDA NSRA DO LORETO 836", "cep": "02219-000"}, "426741": {"rua": "RUA REPÚBLICA DO IRAQUE 1347", "cep": "04611-002"}, "428532": {"rua": "RUA CIPRIANO BARATA 3232", "cep": "04205-002"}, "428557": {"rua": "AVENIDA PRES CASTELO 6653, LOJA 01", "cep": "05034-000"}, "428178": {"rua": "RUA OSCAR RODRIGUES CAJADO FILHO 22", "cep": "04710-190"}, "434232": {"rua": "RUA DELFINA 126,  CONJ 130", "cep": "05443-010"}, "427914": {"rua": "RUA AMÁLIA DE NORONH 343, AP.CASA 1", "cep": "05410-010"}, "427915": {"rua": "RUA GENERAL LECOR 175", "cep": "04213-020"}, "428177": {"rua": "AV.ANTONIO BARBOSA DA S.SANDOVAL 92", "cep": "04783-000"}, "427917": {"rua": "RUA PEDRO GOMES CARDIM 246", "cep": "05617-000"}, "427921": {"rua": "AV PAULISTA 1009", "cep": "01311-100"}, "427926": {"rua": "RUA PROF ANTONIO PENA 28", "cep": "02043-030"}, "427238": {"rua": "AV ENG CARLOS REINA 3200, AND 5SL50", "cep": "18013-280"}, "425885": {"rua": "AV. HIGIENÓPOLIS 449", "cep": "86020-080"}, "425887": {"rua": "RUA BELA CINTRA 968", "cep": "01415-002"}, "423872": {"rua": "AVENIDA SUPLICY 366", "cep": "07097-000"}, "424929": {"rua": "AV DAS AMERICAS 500, BL 17", "cep": "22640-100"}, "424215": {"rua": "AV DAS NAÇÕES UNIDAS 13947, LJ 242", "cep": "04794-905"}, "426136": {"rua": "AV BRIGADEIRO FARIA LIMA 166", "cep": "05426-200"}, "424365": {"rua": "SOLON 550", "cep": "01127-010"}, "425586": {"rua": "AV. DA LIBERDADE 596", "cep": "01502-001"}, "424472": {"rua": "RUA CÔNEGO VALADÃO 1628", "cep": "07040-000"}, "424271": {"rua": "RUA TAPAJOS 25", "cep": "07111-340"}, "425681": {"rua": "R MEDEIROS DE ALBUQUERQUE 295", "cep": "05436-060"}, "424366": {"rua": "AV SANTA MARINA 950", "cep": "05036-000"}, "423909": {"rua": "AV INTERLAGOS 4455, LOJA 11", "cep": "04661-300"}, "423910": {"rua": "ALAMEDA MINISTRO ROCHA AZEVEDO 806", "cep": "01410-003"}, "424193": {"rua": "AVENIDA ANTONIO PIRANGA 130", "cep": "09911-160"}, "424186": {"rua": "AV. GENERAL ASDRUBAL DA CUNHA 643", "cep": "05565-000"}, "424192": {"rua": "PRACA PRESIDENTE CASTELO BRANCO 213", "cep": "09911-160"}, "424556": {"rua": "RUA MARECHAL DEODORO 520", "cep": "09710-000"}, "425360": {"rua": "AV. ANGÉLICA 2585", "cep": "01227-200"}, "419682": {"rua": "RUA RAFAEL DIAS COST 140, L228/L339", "cep": "18132-852"}, "419479": {"rua": "RUA LUIS CORREIA DEMELO 92, LOJA 03", "cep": "04726-220"}, "420871": {"rua": "RUA PIRATININGA 456", "cep": "03042-000"}, "421512": {"rua": "AV. PDE ANTONIO JOS 519, A. 523/527", "cep": "04563-011"}, "420361": {"rua": "AV HORÁCIO LAFER 517", "cep": "04538-082"}, "420877": {"rua": "AV. AMADOR BUENO DA VEIGA 2430", "cep": "03636-100"}, "422152": {"rua": "AL TERRACOTA  / TORRE UNION 215", "cep": "09531-190"}, "420872": {"rua": "AV. LEÔNCIO DE MAGALHÃES 1165", "cep": "02042-011"}, "421511": {"rua": "RUA CARAMARU 671", "cep": "04138-002"}, "419356": {"rua": "RUA DA IMPRENSA 529", "cep": "04265-000"}, "422412": {"rua": "RUA JOAQUIM TAVORA 871", "cep": "04015-000"}, "419934": {"rua": "RUA CEL LUIS BARROSO 399", "cep": "04750-030"}, "423387": {"rua": "RUA FERNÃO DIAS 604", "cep": "05427-001"}, "418680": {"rua": "RUA PADRE JOSÉ DE ANCHIETA 444", "cep": "04742-000"}, "417670": {"rua": "RUA DEPUTADO LAERTE CORTE 468", "cep": "05706-290"}, "418593": {"rua": "PRAÇA FRANKLIN ROOSEVELT 92", "cep": "01303-020"}, "418497": {"rua": "AVENIDA SAPOPEMBA 14022", "cep": "03989-000"}, "418499": {"rua": "TRAVESSA DO ATLETA 2", "cep": "03707-060"}, "418501": {"rua": "RUA PRINCESA ISABEL 102", "cep": "04601-001"}, "418506": {"rua": "RUA INÁCIO CUNHA LEME 513", "cep": "04784-145"}, "417375": {"rua": "ALAMEDA DOS JURUPIS 399", "cep": "04088-000"}, "418573": {"rua": "RUA COSTA AGUIAR 2124", "cep": "04204-002"}, "418553": {"rua": "AV ENG. CAETANO ÁLVARES 6580", "cep": "02416-050"}, "418261": {"rua": "R SOLDADO BRASILIO P. DE ALMEID 319", "cep": "02188-080"}, "419082": {"rua": "RUA PADRE MARCHETTI 228", "cep": "04266-000"}, "415881": {"rua": "RUA MARQUEZ DE ITU 188", "cep": "01223-000"}, "419087": {"rua": "RUA QUIRINO DOS SANT 189, N. TERREO", "cep": "01141-020"}, "417829": {"rua": "ALAMEDA JOAQUIM EUGENIO LIMA 1682", "cep": "01403-002"}, "418243": {"rua": "RUA DOS PINHEIROS 953, LOJA 4", "cep": "05422-011"}, "418246": {"rua": "RUA FREI CANECA 494, SALA 3", "cep": "01307-000"}, "418303": {"rua": "RUA MIGUEL TELES JUNIOR 595", "cep": "01540-040"}, "418509": {"rua": "RUA MANUEL GAYA 880, LOJA 01", "cep": "02313-000"}, "418481": {"rua": "RUA DESEMBARGADOR DO VALE 115", "cep": "05010-040"}, "418549": {"rua": "AV PROF ALCEU MAYNARD ARAÚJO 81", "cep": "04726-160"}, "418574": {"rua": "AVENIDA MAZZEI 885", "cep": "02310-001"}, "418568": {"rua": "RUA CIPRIANO BARATA 1696", "cep": "09890-300"}, "418590": {"rua": "RUA DR FONSECA BRASIL 118", "cep": "05716 060"}, "418580": {"rua": "RUA VIEIRA DE MORAIS 1034", "cep": "04617-003"}, "418581": {"rua": "AVENIDA DAMASCENO VIEIRA 751", "cep": "04363-040"}, "418891": {"rua": "RUA EUGÊNIA DE CARVALHO 871", "cep": "03516-000"}, "418242": {"rua": "RUA LISBOA 306", "cep": "05413-000"}, "418677": {"rua": "RUA MAZEL 283", "cep": "06708-235"}, "418679": {"rua": "AVENIDA MASCOTE 1048", "cep": "04363-001"}, "418300": {"rua": "RUA AMARANTE 31", "cep": "01543-040"}, "419081": {"rua": "AVENIDA GUILHERME GIORGI 261", "cep": "03422-000"}, "418480": {"rua": "RUA ALVARENGA PEIXOTO 353", "cep": "05095-010"}, "418495": {"rua": "RUA BOM SUCESSO 886, CONJ 02", "cep": "03305-000"}, "416445": {"rua": "ALAMEDA CAMPINAS 1061", "cep": "01404-001"}, "418571": {"rua": "RUA PESTANA 11", "cep": "02433-070"}, "418592": {"rua": "AVENIDA ROLAND GARROS 705", "cep": "02235-001"}, "418664": {"rua": "PC FRANKLIN ROOSVELT 142", "cep": "01303-020"}, "415680": {"rua": "RUA MINAS GERAIS 476", "cep": "01244-010"}, "418667": {"rua": "RUA SERVULO GONÇALVES 149", "cep": "03376-140"}, "418255": {"rua": "RUA BRIGADEIRO GALVÃO 181", "cep": "01151-000"}, "418582": {"rua": "RUA MÁRIO DE ANDRADE 104", "cep": "01154-060"}, "418583": {"rua": "RUA DA IMPRENSA 424", "cep": "04265-000"}, "418591": {"rua": "RUA CARAMURU 245", "cep": "04138-000"}, "418826": {"rua": "RUA GUAIMBE 205", "cep": "03118-030"}, "418505": {"rua": "R.PROF J. H. MEIRELLE 546, P. SHELL", "cep": "05630-130"}, "426359": {"rua": "RUA BARONESA DE BELA VISTA 663", "cep": "04612-002"}, "425955": {"rua": "RUA MARTIM FRANCISCO 111", "cep": "01226-000"}, "425232": {"rua": "PRAÇA STO EDUARDO 142", "cep": "02113-000"}, "418823": {"rua": "RUA AURELIA 1060", "cep": "05046-001"}, "418825": {"rua": "RUA MARTIM FRANCISCO 707", "cep": "01226-003"}, "418668": {"rua": "RUA DO ORATORIO 2534", "cep": "03195-000"}, "418197": {"rua": "AVENIDA DAS NAÇOES U 22540, LOJA AC", "cep": "04795-921"}, "418229": {"rua": "RUA JOAQUIM ANTUNES 197", "cep": "05415-010"}, "418824": {"rua": "RUA ANDARAI 141", "cep": "02117-000"}, "418675": {"rua": "RUA MOTA PAIS 32", "cep": "05054-000"}, "418265": {"rua": "PÇA FRANKLIN ROOSELVELT 124", "cep": "01303-020"}, "418478": {"rua": "RUA JOAO MAFFEI 202", "cep": "05592-030"}, "418483": {"rua": "AV PROF CELESTINO BOURROUL sn", "cep": "02710-001"}, "418496": {"rua": "AV ALVARO MACHADO PEDROSA 476", "cep": "02245-000"}, "418517": {"rua": "P COMANDANTE EDUARDO 170, COMERCIAL", "cep": "02233-060"}, "418588": {"rua": "RUA REPÚBLICA DO IRAQUE 1326", "cep": "04611-002"}, "415978": {"rua": "RUA SERRA DE BOTUCATU 277", "cep": "03317-000"}, "418892": {"rua": "RUA MOSSÂMEDES 210, LOJA 210", "cep": "03325-060"}, "418293": {"rua": "RUA DR. CESARIO MOTA 569", "cep": "01221-020"}, "418083": {"rua": "RUA AFONSO DE FREITAS 399", "cep": "04006-051"}, "414895": {"rua": "AVENIDA PIRACEMA 669, STBSPQ 13", "cep": "06460-030"}, "414818": {"rua": "AV COPACABANA 112, LOJA 05", "cep": "06472-001"}, "414038": {"rua": "AV DR GUILHERME DU 1210, LJ 24 A 29", "cep": "05640-002"}, "413943": {"rua": "RUA JUIZ DAVID BARRIL 376, ANEXO II", "cep": "12246-200"}, "415175": {"rua": "RUA REGINO ARAGÃO 170", "cep": "04285-020"}, "415503": {"rua": "RUA MONTE SERRAT 1460", "cep": "03312-001"}, "414065": {"rua": "RUA CAPITAO PACHECO E 313, SM002009", "cep": "03126-000"}, "415444": {"rua": "AVENIDA BARBER GREENE 810", "cep": "07120-260"}, "415295": {"rua": "AV DR CHUCRI ZAIDAN 296, LOJA 4", "cep": "04583-110"}, "415179": {"rua": "RUA CONDE DE IRAJÁ 3311, AND.SUP.", "cep": "04119-010"}, "415432": {"rua": "RUA ITAMARACA 472", "cep": "03179-010"}, "784207": {"rua": "RUA DOMINGOS DE MO 2564, AND PIS G1", "cep": "04036-100"}, "786117": {"rua": "AVENIDA PAULO BEKER 322", "cep": "12243-610"}, "785764": {"rua": "RUA GABRIELE D'ANNUNZIO 1379", "cep": "04619-005"}, "787045": {"rua": "ALAMEDA LORENA 1263", "cep": "01424-005"}, "784212": {"rua": "AV.HISTORIADOR RUB 3300, REMEMBRADA", "cep": "78050-280"}, "786466": {"rua": "ALAMEDA DOS ANAPURUS 970", "cep": "04087-002"}, "786118": {"rua": "AVENIDA SÃO JOÃO 282", "cep": "12242-840"}, "785090": {"rua": "RUA MARTIM FRANCISCO 92", "cep": "01226-000"}, "786589": {"rua": "RUA CAVALHEIRO BASILIO JAFET 148", "cep": "01022-020"}, "411898": {"rua": "RUA BANDEIRA PAULIS 808, LOJA 1 E 2", "cep": "04514-000"}, "412612": {"rua": "AV.DR MAURO LINDEMBERG 979, PVMTOR", "cep": "06278-010"}, "412257": {"rua": "RUA MACEIÓ 64, 66", "cep": "01302-010"}, "412403": {"rua": "RUA CATUMBI 1393, ANEXO 1391", "cep": "03021-000"}, "412253": {"rua": "RUA DA CONSOLAÇÃO 2063", "cep": "01301-100"}, "412254": {"rua": "RUA DA CONSOLAÇÃO 2068", "cep": "01302-001"}, "412251": {"rua": "RUA DA CONSOLAÇÃO 2078", "cep": "01302-001"}, "412256": {"rua": "AVENIDA IPIRANGA 1058", "cep": "01040-000"}, "409207": {"rua": "RUA GRAUNA 65, LETRA 3-B", "cep": "04514-000"}, "409736": {"rua": "AVENIDA SÃO LUCAS 222", "cep": "03239-000"}, "410367": {"rua": "AVENIDA SENADOR ROBERTO SIMONSE 678", "cep": "09530-401"}, "410209": {"rua": "AV DR GUILHERME DU 1269, LJ.19/20 A", "cep": "05640-901"}, "409502": {"rua": "AVENIDA LIDER 1743", "cep": "08285-000"}, "409786": {"rua": "RUA AMALIA DE NORONHA 454", "cep": "05410-010"}, "410734": {"rua": "AV VEREADOR JOSE DINI 3271, ANEXO 1", "cep": "04603-002"}, "409505": {"rua": "RUA CORREIA DIAS S/N", "cep": "04104-001"}, "409948": {"rua": "RUA BENTO BRANCO DE ANDRADE FIL 203", "cep": "04757-000"}, "748015": {"rua": "Praça Pio X 15", "cep": "20040-020"}, "766005": {"rua": "RUA TABAPUÃ 81, 6 ANDAR", "cep": "04533-010"}, "793420": {"rua": "FRANCISCO SOUSA DOS SANTOS 3", "cep": "29164-153"}, "408615": {"rua": "RUA FERNANDO DE ALBUQUERQUE 105", "cep": "01309-030"}, "406964": {"rua": "R OLIMPIADAS 360, LOJA 310", "cep": "04551-000"}, "407342": {"rua": "RUA COMENDADOR NESTOR PE 33, AN ESQ", "cep": "03034-070"}, "411204": {"rua": "RUA DAVID BEN GURION 65, LOJA 2-A", "cep": "05634-000"}, "411233": {"rua": "RUA TITO 21", "cep": "05051-000"}, "409592": {"rua": "RUA EMILIO MALLET 1333", "cep": "03320-001"}, "408904": {"rua": "RUA CAIO GRACO 521", "cep": "05044-000"}, "753934": {"rua": "RUA AFONSO BRAS 408, 1-CJT102", "cep": "04511-001"}, "790175": {"rua": "RUA ANTONIO LOBO 33", "cep": "03634-030"}, "796568": {"rua": "RUA DESEMBARGADOR AGUIAR VALIM 228", "cep": "04535-100"}, "790599": {"rua": "RUA DOMINGOS ANTONI 189, VL S FRANC", "cep": "04710-220"}, "790473": {"rua": "RUA CAPOTE VALENTE 548", "cep": "05409-001"}, "754434": {"rua": "RUA JOSE PAOLONE 105", "cep": "09521-370"}, "756055": {"rua": "AV BARTHOLOMEU DE C 230, LOJA 3067/", "cep": "02430-001"}, "748037": {"rua": "Rua Augusta 2840", "cep": "01412-100"}, "408056": {"rua": "AVENIDA DAMASCENO VIEIRA 747", "cep": "04363-040"}, "407916": {"rua": "RUA CALIFORNIA 785", "cep": "04566-003"}, "406535": {"rua": "RUA ROGERIO GIORGI 322", "cep": "03431-000"}, "407275": {"rua": "R LEOPOLDO COUTO MAGALH 490, FUNDOS", "cep": "04542-000"}, "407276": {"rua": "RUA CAME 632, LOJA", "cep": "03121-020"}, "406846": {"rua": "ESTRADA DO VINHO 9111, LJ 6 KM 09", "cep": "18145-002"}, "407701": {"rua": "RUA BONIFACIO CUBAS 226", "cep": "02731-000"}, "403083": {"rua": "RUA CAIUBI 928", "cep": "05010-000"}, "403930": {"rua": "RUA FREI CAINISIO 143, LOJA 1 E 2", "cep": "04671-240"}, "402719": {"rua": "RUA CONSELHEIRO RAMALHO 647", "cep": "01325-000"}, "404034": {"rua": "RUA FERREIRA DE ARAUJO 323", "cep": "05428-000"}, "403747": {"rua": "AVENIDA PEREIRA BARRE 42, LU C302/3", "cep": "09190-210"}, "402778": {"rua": "RUA DR AUGUSTO MIRANDA 712", "cep": "05026-000"}, "402795": {"rua": "RUA MARECHAL HERMES DA FONSECA 271", "cep": "02020-000"}, "402646": {"rua": "AVENIDA RODRIGUES MONTE MOR 223", "cep": "04387-002"}, "403960": {"rua": "RUA EVA TERPINS 20", "cep": "05327-030"}, "402649": {"rua": "RUA DAS FLECHAS 400", "cep": "04364-030"}, "403262": {"rua": "RUA DOUTOR ANDRADE PERTENCE 209", "cep": "04549-020"}, "403264": {"rua": "RUA ANLETO FARRO 491", "cep": "04754-060"}, "404611": {"rua": "RODOVIA RAPOSO TAV 23600, 412 412/A", "cep": "06709-015"}, "403089": {"rua": "AV SÃO LUIZ 187, 2AND LJ35", "cep": "01046-001"}, "403929": {"rua": "PRACA CARAUARI 2", "cep": "02130-000"}, "402797": {"rua": "RUA JOSÉ DE SIQUEIRA 45", "cep": "02925-020"}, "404762": {"rua": "AV.LUIZ JOSE SERENO 755", "cep": "13212-210"}, "402897": {"rua": "RUA DIAS DA SILVA 762", "cep": "02117-022"}, "402906": {"rua": "RUA ALFERES MAGALHAES 25", "cep": "02034-006"}, "404033": {"rua": "RUA COSTA AGUIAR 1734", "cep": "04204-002"}, "405534": {"rua": "RUA CLODOMIRO AMAZONAS 287", "cep": "04537-010"}, "402647": {"rua": "RUA AIMBERE 855", "cep": "05018-011"}, "404156": {"rua": "AVENIDA LIMEIRA 722, LJ LUC 231", "cep": "13414-018"}, "403247": {"rua": "RUA CONSELHEIRO MOREIRA DE BAR 1084", "cep": "02018-012"}, "403252": {"rua": "AVENIDA PRESIDENTE ALTINO 199", "cep": "05323-000"}, "403253": {"rua": "RUA CAPITÃO RUBENS 592, A", "cep": "02233-000"}, "402895": {"rua": "AV DO CURSINO 1415", "cep": "04133-100"}, "402900": {"rua": "RUA BORGES 437", "cep": "02247-000"}, "402903": {"rua": "AV CASA VERDE 2800", "cep": "02920-300"}, "403249": {"rua": "RUA JOSÉ WASTH RODRIGUES 36", "cep": "02121-010"}, "406168": {"rua": "R.AMELIA CORREA FONTES GUIMARAES 36", "cep": "05617-000"}, "406172": {"rua": "R DIOGO JACOME 591", "cep": "04512-001"}, "405063": {"rua": "ST SAI/SO AREA 6580", "cep": "71219-900"}, "402902": {"rua": "R.EMBAIX.JOÃO NEVES FONTOURA 306", "cep": "02017-011"}, "402745": {"rua": "R.CONEGO VICENTE MIGU 262, LOJA 290", "cep": "01135-020"}, "403258": {"rua": "R.PROF.MANOELITO DE ORNELLAS 62", "cep": "04719-040"}, "402718": {"rua": "ALAMEDA SANTOS 2516, AP,CASA", "cep": "01418-000"}, "402799": {"rua": "AV JULIO BUONO 2272", "cep": "02201-000"}, "403087": {"rua": "RUA MARTIM FRANCISCO 244", "cep": "01226-000"}, "403088": {"rua": "RUA GENERAL JARDIM 90", "cep": "01223-010"}, "404137": {"rua": "RUA MATIAS AIRES 56", "cep": "01309-020"}, "402781": {"rua": "RUA COTOXÓ, 708 PERDIZES 708", "cep": "05021-000"}, "402516": {"rua": "AV DOS BANDEIRANTES 1000", "cep": "04553-001"}, "402554": {"rua": "RUA JOAO CRUDO 60", "cep": "06090-000"}, "403085": {"rua": "R COTOXO 1185", "cep": "05021-000"}, "402648": {"rua": "AVENIDA MASCOTE 80", "cep": "04363-000"}, "400527": {"rua": "ALAMEDA LORENA 1330, LOJA 3", "cep": "01424-001"}, "401940": {"rua": "RUA FERNANDO DE ALBUQUERQUE 26", "cep": "01309-030"}, "401958": {"rua": "RUA CONSELHEIRO NÉBIAS 1531", "cep": "01203-001"}, "401943": {"rua": "RUA AZEVEDO SOARES 499", "cep": "03118-030"}, "401759": {"rua": "RUA CISPLATINA 115", "cep": "04206-001"}, "401765": {"rua": "RUA NOVA LOUZAN 66", "cep": "04124-160"}, "401842": {"rua": "RUA DA CANTAREIRA 306, M.MUN B.3", "cep": "01024-000"}, "401763": {"rua": "AVENIDA ITABORAÍ 891", "cep": "04135-001"}, "401758": {"rua": "RUA BRIGADEIRO JORDÃO 294", "cep": "04210-000"}, "401760": {"rua": "RUA AGOSTINHO GOMES 2785", "cep": "04206-001"}, "401764": {"rua": "RUA FRANCISCO DIAS 635", "cep": "04148-000"}, "799075": {"rua": "RUA ANTÓNIO LAPA 383, LOJA 1", "cep": "13025-241"}, "401762": {"rua": "RUA LUÍS GÓIS 14", "cep": "04043-000"}, "401767": {"rua": "AV.AFONSO MARIANO FAGUNDES 665", "cep": "04054-001"}, "402133": {"rua": "RUA CARDEAL ARCO VERDE 455", "cep": "05407-000"}, "401271": {"rua": "RUA BANDEIRA PAULISTA 405", "cep": "04532-011"}, "401761": {"rua": "RUA COSTA AGUIAR 1436", "cep": "04204-001"}, "401964": {"rua": "RUA TUPI 792", "cep": "01233-001"}, "402353": {"rua": "AVENIDA MELCHERT 676", "cep": "03508-000"}, "401938": {"rua": "PRAÇA VINTE DE JANEIRO 67", "cep": "03335-060"}, "401944": {"rua": "RUA DO ORATORIO 1632", "cep": "03116-000"}, "402352": {"rua": "PRAÇA ITUZAINGO 42", "cep": "03334-020"}, "400327": {"rua": "RUA BARAO DE TEFE 146", "cep": "05003-040"}, "402137": {"rua": "RUA MINISTRO FERREIRA 720, CONJ 730", "cep": "05009-060"}, "401948": {"rua": "RUA SANTO ANTONIO 492", "cep": "01314-000"}, "401535": {"rua": "AV. ROQUE PETRONI JUNIOR 1089", "cep": "04707-900"}, "401892": {"rua": "AV.MARIA LUIZA AMERICANO, 1550", "cep": "08275-000"}, "799124": {"rua": "PÇA COMAND.EDUARDO DE OLIVEIRA 234", "cep": "02233-060"}, "799836": {"rua": "RUA AVANHANDAVA 378, LOJA 1", "cep": "01306-000"}, "401941": {"rua": "RUA GUAIMBE 412", "cep": "03118-030"}, "401942": {"rua": "RUA CORIOLANO 336", "cep": "05042-010"}, "797412": {"rua": "RUA MINAS GERAIS 316", "cep": "01244-010"}, "797507": {"rua": "RUA COSTA AGUIAR 1431", "cep": "04204-001"}, "794464": {"rua": "RUA BORGES LAGOA 371", "cep": "04038-030"}, "794479": {"rua": "AV 9 DE JULHO 4984", "cep": "01406-200"}, "796153": {"rua": "RUA TEIXEIRA E SOUSA 99", "cep": "05003-050"}, "797087": {"rua": "RUA BR DE TATUI 302", "cep": "01226-030"}, "795629": {"rua": "RUA JOSÉ FÉLIX DE OLIV 1148, LOJA 3", "cep": "06708-415"}, "794481": {"rua": "RUA CEL.XAVIER DE TO 23, LJ138 143P", "cep": "01048-900"}, "792907": {"rua": "AVENIDA LAURA SODRE 445, LOJA 401", "cep": "22290-070"}, "793627": {"rua": "RUA CIPRIANO BARATA 1913", "cep": "04205-001"}, "756348": {"rua": "AV CEARA 818", "cep": "69905-062"}, "792640": {"rua": "RUA CARLOS DEL PRETE 106, CASA", "cep": "09710-230"}, "794161": {"rua": "RUA FREI CANECA 840", "cep": "01307-000"}, "792675": {"rua": "AV. PAULO FACCINI 790", "cep": "07111-000"}, "793504": {"rua": "RUA MARECHAL DEODOR 165, 1 202 202A", "cep": "25620-150"}, "792932": {"rua": "AVENIDA DAS AMERICAS SN", "cep": "22640-102"}, "792643": {"rua": "RUA PEDRO TAQUES 145", "cep": "01415-000"}, "793449": {"rua": "PC DA CONQUISTA 103", "cep": "03509-040"}, "789527": {"rua": "RUA NHU-GUACU 303", "cep": "04625-001"}, "407630": {"rua": "RUA MIGUEL VENDITI 75B, CONJ COM", "cep": "03309-020"}, "789528": {"rua": "RUA FREI CANECA 569, P 3 CINEMA", "cep": "01310-200"}, "791007": {"rua": "RUA MARTIM FRANCISCO 149", "cep": "01226-001"}, "787794": {"rua": "AV.ANTÔNIO JOAQUIM MOURA ANDRAD 323", "cep": "04507-000"}, "788321": {"rua": "RUA MATIAS AIRES 88", "cep": "01309-020"}, "788323": {"rua": "RUA FREI CANECA 1046, TÉRREO", "cep": "01307-002"}, "790602": {"rua": "ALAMEDA DOS ARAPANES 1344", "cep": "04524-002"}, "791646": {"rua": "RUA PDE RAPOSO 433, SÃO PAULO", "cep": "03118-000"}, "787571": {"rua": "RUA ALBINO FANTAZZINNI 90", "cep": "07023-100"}, "451543": {"rua": "HENRI DUNANT 1103", "cep": "04709-111"}, "450804": {"rua": "ALAMEDA FRANCA 1071, A. 1073", "cep": "01422-003"}, "449557": {"rua": "RUA SÃO CARLOS DO PINH 303, SOLOQUI", "cep": "01333-001"}, "450028": {"rua": "RUA SOUSA LOPES 283", "cep": "02436-000"}, "450701": {"rua": "AVENIDA PARQUE DAS CEREJEIRAS 300", "cep": "04966-180"}, "428078": {"rua": "PC COMANDT. EDUARDO DE OLIVEIRA 190", "cep": "02233-060"}, "450624": {"rua": "RUA SERRA DE BOTUCATU 2521", "cep": "03417-000"}, "450761": {"rua": "RUA BOM PASTOR 1861", "cep": "04203-052"}, "451066": {"rua": "RUA DOUGLAS PELLEGRINO 12", "cep": "08042-260"}, "449392": {"rua": "AV LUCA 42", "cep": "03370-010"}, "451270": {"rua": "AV SENADOR CASEMIRO DA ROCHA 301", "cep": "04047-000"}, "449598": {"rua": "IGUATEMI 151, CONJ 82 A8", "cep": "01451-011"}, "450029": {"rua": "RUA MARTIM FRANCISCO 529", "cep": "01226-003"}, "449516": {"rua": "RUA TIE 42", "cep": "03181-030"}, "449556": {"rua": "RUA SÃO CARLOS DO PINH 303, SOLOQUI", "cep": "01333-001"}, "451001": {"rua": "RUA PADRE DIOGO NUNES 76", "cep": "03325-115"}, "451016": {"rua": "RUA PORTO ALEGRE 86", "cep": "06529-195"}, "451353": {"rua": "RUA DR. NETO DE ARAÚJO 57", "cep": "04111-000"}, "452047": {"rua": "AV. DIREITOS HUMAN 1201, APT.23 T.3", "cep": "02475-001"}, "450030": {"rua": "RUA ISABEL DIAS 57", "cep": "03119-030"}, "451069": {"rua": "RUA ARTUR BARREIROS 15, CONJ 1", "cep": "05372-090"}, "450597": {"rua": "RUA RIO BRANCO 79", "cep": "06529-170"}, "450620": {"rua": "RUA FLORIANOPOLIS 785", "cep": "03185-050"}, "449847": {"rua": "AVENIDA REBOUCAS 3970, ELDORADO", "cep": "05402-918"}, "449886": {"rua": "AVENIDA PAVAO 465", "cep": "04516-011"}, "450031": {"rua": "AV VER.BELARMINO PER. CARVALHO S/N", "cep": "07618-830"}, "450623": {"rua": "GUARAIUVA 629", "cep": "04569-001"}, "449345": {"rua": "GABRIELE DÀNNUNZIO 1301", "cep": "04619-005"}};
+function getMorada(cod) {
+  const c = String(cod||'').trim();
+  return MORADAS_DB[c] || MORADAS_DB[c.replace(/^0+/,'')] || null;
+}
+const AT_HIST_CACHE_KEY = 'delta_at_hist_cache';
+let atHistData = null;
+
+function getATHistCache() {
+  try { const d = localStorage.getItem(AT_HIST_CACHE_KEY); return d ? JSON.parse(d) : null; } catch(e) { return null; }
+}
+function setATHistCache(data) {
+  try { localStorage.setItem(AT_HIST_CACHE_KEY, JSON.stringify(data)); } catch(e) {}
+}
+
+async function loadATHistorico(forceRefresh = false) {
+  const cont = document.getElementById('at-hist-content');
+  if (!cont) return;
+
+  if (!forceRefresh && atHistData) {
+    renderATHistorico();
+    return;
+  }
+
+  // Try cache
+  if (!forceRefresh) {
+    const cache = getATHistCache();
+    if (cache) { atHistData = cache; renderATHistorico(); return; }
+  }
+
+  cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A carregar...</div>';
+
+  try {
+    const res = await fetch(SUPA_AT + '?select=*&order=id.desc', {
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    atHistData = await res.json();
+    setATHistCache(atHistData);
+
+    // Also migrate any local chamados to Supabase
+    const localChamados = getATChamados();
+    if (localChamados.length > 0) {
+      for (const c of localChamados) {
+        try {
+          await fetch(SUPA_AT, {
+            method: 'POST',
+            headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ data: c.data, hora: c.hora, vendedor: c.vendedor,
+              cliente_cod: c.clienteCod, cliente_nome: c.clienteNome,
+              equip_tipo: c.equipTipo, equip_tag: c.equipTag,
+              avaria: c.avaria, descricao: c.descricao, urgencia: c.urgencia, tipo_equip: c.tipoEquip })
+          });
+        } catch(e) {}
+      }
+      saveATChamados([]); // Clear local after migration
+      // Reload
+      const res2 = await fetch(SUPA_AT + '?select=*&order=id.desc', {
+        headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+      });
+      atHistData = await res2.json();
+      setATHistCache(atHistData);
+    }
+
+    renderATHistorico();
+  } catch(e) {
+    cont.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">Erro ao carregar: ${e.message}</div>`;
+  }
+}
+
+function renderATHistorico() {
+  const cont = document.getElementById('at-hist-content');
+  if (!cont || !atHistData) return;
+
+  const vendFilt = document.getElementById('at-hist-vendedor')?.value || '';
+  let data = atHistData;
+  if (vendFilt) data = data.filter(c => c.vendedor === vendFilt);
+
+  // Update vendedor filter
+  const vendedores = [...new Set(atHistData.map(c => c.vendedor).filter(Boolean))].sort();
+  const sel = document.getElementById('at-hist-vendedor');
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Todos os vendedores</option>' +
+      vendedores.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+  }
+
+  if (!data.length) {
+    cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Nenhum chamado AT registado.</div>';
+    return;
+  }
+
+  // Group by client, count chamados
+  const byCliente = {};
+  data.forEach(c => {
+    const key = `${c.cliente_cod}||${c.cliente_nome}`;
+    if (!byCliente[key]) byCliente[key] = { cod: c.cliente_cod, nome: c.cliente_nome, vendedor: c.vendedor, chamados: [] };
+    byCliente[key].chamados.push(c);
+  });
+
+  // Sort by number of chamados desc
+  const sorted = Object.values(byCliente).sort((a, b) => b.chamados.length - a.chamados.length);
+
+  let html = `<div style="font-size:12px;color:var(--muted);margin-bottom:12px;text-align:right">${data.length} chamado(s) · ${sorted.length} cliente(s)</div>`;
+
+  sorted.forEach(cli => {
+    const badge = `<span style="background:var(--accent);color:#fff;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:700">${cli.chamados.length}</span>`;
+    html += `<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden">
+      <div style="background:var(--surface2);padding:10px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+        <div>
+          <span style="font-weight:600;font-size:14px">${cli.nome}</span>
+          <span style="color:var(--muted);font-size:12px;margin-left:8px">(${cli.cod})</span>
+          <span style="color:var(--muted);font-size:11px;margin-left:8px">· ${cli.vendedor}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">${badge} ▾</div>
+      </div>
+      <div style="display:none;padding:0">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border)">
+            <th style="padding:7px 12px;text-align:left;font-weight:600">Data</th>
+            <th style="padding:7px 12px;text-align:left;font-weight:600">Equipamento</th>
+            <th style="padding:7px 12px;text-align:left;font-weight:600">Avaria</th>
+            <th style="padding:7px 12px;text-align:left;font-weight:600">Tipo</th>
+            <th style="padding:7px 12px;text-align:left;font-weight:600">Urgência</th>
+          </tr></thead>
+          <tbody>
+            ${cli.chamados.map(c => `<tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:7px 12px;white-space:nowrap">${c.data||'—'} ${c.hora||''}</td>
+              <td style="padding:7px 12px">${c.equip_tipo||'—'}${c.equip_tag?` #${c.equip_tag}`:''}</td>
+              <td style="padding:7px 12px">${c.avaria||'—'}</td>
+              <td style="padding:7px 12px">${c.tipo_equip==='domestico'?'Doméstico':'Profissional'}</td>
+              <td style="padding:7px 12px"><span style="color:${c.urgencia==='Urgente'?'var(--danger)':'var(--muted)'};font-weight:${c.urgencia==='Urgente'?'700':'400'}">${c.urgencia||'Normal'}</span></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  });
+
+  cont.innerHTML = html;
+}
+
+function exportATHistoricoExcel() {
+  if (!atHistData || !atHistData.length) { toast('Nenhum dado para exportar.', 'error'); return; }
+  const rows = [['Data','Hora','Vendedor','Cód. Cliente','Cliente','Equipamento','Tag','Tipo Avaria','Urgência','Tipo Equip']];
+  atHistData.forEach(c => rows.push([c.data||'',c.hora||'',c.vendedor||'',c.cliente_cod||'',c.cliente_nome||'',c.equip_tipo||'',c.equip_tag||'',c.avaria||'',c.urgencia||'',c.tipo_equip||'']));
+  const csv = rows.map(r=>r.map(v=>`"${(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='historico_AT.csv'; a.click();
 }
 
 // ─── INIT ────────────────────────────────────────────
