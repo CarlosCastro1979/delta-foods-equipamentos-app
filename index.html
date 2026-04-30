@@ -945,6 +945,8 @@
           <option value="Resistência com problemas">Resistência com problemas</option>
           <option value="Não liga">Não liga</option>
           <option value="Afinação e Manutenção Geral">Afinação e Manutenção Geral</option>
+          <option value="Instalação">Instalação</option>
+          <option value="Desinstalação">Desinstalação</option>
           <option value="Outra avaria">Outra avaria</option>
         </select>
       </div>
@@ -1767,9 +1769,11 @@ function atOnVendedorChange() {
 }
 
 async function atOnTipoEquipChange() {
-  // Show/hide modelo field for doméstico
+  // Show/hide modelo field and equipment field based on type
   const modeloGroup = document.getElementById('at-modelo-dom-group');
   if (modeloGroup) modeloGroup.style.display = 'none';
+  const equipGroup = document.getElementById('at-equipamento-group');
+  if (equipGroup) equipGroup.style.display = 'none';
   const vendedor = document.getElementById('at-vendedor').value;
   atTipoEquip = document.getElementById('at-tipo-equip').value;
   if (!atTipoEquip || !vendedor) return;
@@ -1902,9 +1906,11 @@ async function atPreencherCliente() {
   ['at-avaria-group','at-descricao-group','at-urgencia-group'].forEach(id => {
     document.getElementById(id).style.display = 'block';
   });
-  // Show modelo for doméstico
+  // Show modelo only for doméstico; show equipment only for profissional
   const modeloGroup = document.getElementById('at-modelo-dom-group');
+  const equipGroup2 = document.getElementById('at-equipamento-group');
   if (modeloGroup) modeloGroup.style.display = atTipoEquip === 'domestico' ? 'block' : 'none';
+  if (equipGroup2) equipGroup2.style.display = atTipoEquip === 'comercial' ? 'block' : 'none';
   document.getElementById('at-submit-btn').style.display = 'block';
 }
 
