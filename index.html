@@ -744,7 +744,13 @@
       <div class="form-row">
         <div class="form-group">
           <label>Vendedor *</label>
-          <input type="text" id="f-vendedor" placeholder="Seu nome completo" autocomplete="off">
+          <select id="f-vendedor" class="form-input">
+            <option value="">— Selecionar vendedor —</option>
+          <option value="DANIELA SANTOS">DANIELA SANTOS</option>
+          <option value="FILIPE NEVES">FILIPE NEVES</option>
+          <option value="HÉLCIO GRÉGIO">HÉLCIO GRÉGIO</option>
+          <option value="PAULO FONTES">PAULO FONTES</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Código de Cliente *</label>
@@ -881,6 +887,10 @@
         <label class="form-label">Vendedor</label>
         <select id="at-vendedor" class="form-input" onchange="atOnVendedorChange()">
           <option value="">— Selecionar vendedor —</option>
+          <option value="DANIELA SANTOS">DANIELA SANTOS</option>
+<option value="FILIPE NEVES">FILIPE NEVES</option>
+<option value="HÉLCIO GRÉGIO">HÉLCIO GRÉGIO</option>
+<option value="PAULO FONTES">PAULO FONTES</option>
         </select>
       </div>
 
@@ -1092,7 +1102,13 @@
       <div class="form-row">
         <div class="form-group">
           <label>Vendedor</label>
-          <input type="text" id="e-vendedor">
+          <select id="e-vendedor" class="form-input">
+            <option value="">— Selecionar vendedor —</option>
+          <option value="DANIELA SANTOS">DANIELA SANTOS</option>
+          <option value="FILIPE NEVES">FILIPE NEVES</option>
+          <option value="HÉLCIO GRÉGIO">HÉLCIO GRÉGIO</option>
+          <option value="PAULO FONTES">PAULO FONTES</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Código de Cliente</label>
@@ -1227,7 +1243,7 @@ async function salvarRegisto() {
 }
 
 function limparForm() {
-  ['f-vendedor','f-cod','f-nome','f-cep','f-contrato'].forEach(id => document.getElementById(id).value = '');
+  ['f-vendedor','f-cod','f-nome','f-cep','f-contrato'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   document.getElementById('f-contrato-extra').style.display = 'none';
   document.getElementById('f-contratos-list').innerHTML = '';
   document.getElementById('equip-list').innerHTML = '';
@@ -1355,7 +1371,7 @@ function openEdit(id) {
   const registo = allData.find(r => r.id === id);
   if (!registo) return;
   editingId = id;
-  document.getElementById('edit-vendedor').value = registo.vendedor || '';
+  document.getElementById('e-vendedor').value = registo.vendedor || '';
   document.getElementById('edit-cod').value = registo.cod || '';
   document.getElementById('edit-nome').value = registo.nome || '';
   document.getElementById('edit-cep').value = registo.cep || '';
@@ -1375,7 +1391,7 @@ function closeEdit() {
 
 async function salvarEdicao() {
   if (!editingId) return;
-  const vendedor = document.getElementById('edit-vendedor').value.trim();
+  const vendedor = document.getElementById('e-vendedor').value.trim();
   const cod = document.getElementById('edit-cod').value.trim();
   const nome = document.getElementById('edit-nome').value.trim();
   const cep = document.getElementById('edit-cep').value.trim();
@@ -1475,7 +1491,8 @@ function preencherNovo(cod, nome, cep, vendedor) {
   document.getElementById('f-cod').value = cod;
   document.getElementById('f-nome').value = nome;
   document.getElementById('f-cep').value = formatCep(cep);
-  document.getElementById('f-vendedor').value = vendedor;
+  const fVendSel = document.getElementById('f-vendedor');
+  if (fVendSel) fVendSel.value = vendedor;
   document.getElementById('f-cod').focus();
   toast('Cliente pré-preenchido. Adiciona os equipamentos e guarda.');
 }
