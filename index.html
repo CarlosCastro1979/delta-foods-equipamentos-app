@@ -704,11 +704,103 @@
 
   @media (max-width: 600px) {
     .top-bar { padding: 10px 16px; }
-    .container { padding: 20px 14px; }
+    .container { padding: 16px 12px; }
     .form-row { grid-template-columns: 1fr; }
     .table-toolbar { flex-direction: column; align-items: stretch; }
     .table-toolbar input { width: 100%; }
     .logo-img { height: 60px; }
+
+    /* TABS mobile — scroll horizontal */
+    .tabs {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      gap: 0;
+      padding-bottom: 0;
+      scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab {
+      padding: 10px 14px;
+      font-size: 13px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* FORM CARD mobile */
+    .form-card { padding: 16px; border-radius: 8px; }
+    .form-group { margin-bottom: 14px; }
+
+    /* INPUTS mobile — touch targets mínimos 48px */
+    input, select, textarea {
+      min-height: 48px;
+      font-size: 16px !important; /* evita zoom automático iOS */
+      padding: 12px 14px;
+    }
+    .btn-primary, .btn-secondary, .btn {
+      min-height: 48px;
+      font-size: 15px;
+    }
+    .btn-sm { min-height: 40px; font-size: 13px; }
+
+    /* EQUIP ROW mobile */
+    .equip-row {
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+    .equip-row .btn-remove-equip {
+      width: 100%;
+      height: 40px;
+    }
+
+    /* TABLE mobile — scroll horizontal */
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { font-size: 12px; }
+    th, td { padding: 10px 12px; }
+
+    /* AT form mobile */
+    #panel-at .form-card, #panel-at > div { padding: 12px; }
+
+    /* CHIPS selecção de equipamentos */
+    .equip-chips-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .equip-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(200,16,46,0.08);
+      border: 1px solid rgba(200,16,46,0.3);
+      border-radius: 20px;
+      padding: 6px 12px;
+      font-size: 13px;
+      color: var(--accent);
+    }
+    .equip-chip button {
+      background: none;
+      border: none;
+      color: var(--accent);
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0;
+      min-height: unset;
+    }
+
+    /* PENDING toolbar mobile */
+    .pending-toolbar { flex-direction: column; gap: 8px; }
+    .pending-toolbar select { width: 100%; }
+
+    /* MODAL mobile */
+    .modal { padding: 20px 16px; }
+
+    /* AT client list mobile */
+    #at-cliente { min-height: 120px; font-size: 15px; }
+
+    /* Toast mobile */
+    #toast { left: 12px; right: 12px; bottom: 16px; max-width: 100%; }
   }
 </style>
 </head>
@@ -922,10 +1014,11 @@
       </div>
 
       <div class="form-group" id="at-equipamento-group" style="display:none">
-        <label class="form-label">Equipamento</label>
-        <select id="at-equipamento" class="form-input">
+        <label class="form-label">Equipamento(s) — seleciona um ou mais</label>
+        <select id="at-equipamento" class="form-input" multiple size="4" style="min-height:120px">
           <option value="">— Seleciona primeiro o cliente —</option>
         </select>
+        <div id="at-equip-selected-info" style="margin-top:6px;font-size:12px;color:var(--muted)">Mantém Ctrl (PC) ou toca para selecionar vários</div>
       </div>
       <div class="form-group" id="at-modelo-dom-group" style="display:none">
         <label class="form-label">Modelo da máquina</label>
@@ -1366,35 +1459,85 @@ function exportCSV() {
   const a = document.createElement('a'); a.href=url; a.download='registos_equipamentos.csv'; a.click();
 }
 
+// ─── MODAL HELPERS ────────────────────────────────────
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  editingId = null;
+}
+
+function closeModalOnBg(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+function checkConfirmName() {
+  const input = document.getElementById('confirm-name-input').value.trim().toUpperCase();
+  const vendedor = document.getElementById('confirm-vendedor-name').textContent.trim().toUpperCase();
+  const ok = input === vendedor;
+  document.getElementById('btn-confirm-name').disabled = !ok;
+  document.getElementById('confirm-error').style.display = ok ? 'none' : (input.length > 0 ? 'block' : 'none');
+}
+
+function goToStep2() {
+  document.getElementById('modal-step1').style.display = 'none';
+  document.getElementById('modal-step2').style.display = 'block';
+  // Copy values from edit-* fields to e-* fields (the step2 form uses e-* IDs)
+  const r = window._editingRegisto;
+  if (r) {
+    document.getElementById('e-vendedor').value = r.vendedor || '';
+    document.getElementById('e-cod').value = r.cod || '';
+    document.getElementById('e-nome').value = r.nome || '';
+    document.getElementById('e-cep').value = r.cep || '';
+    document.getElementById('e-contrato').value = r.contrato || '';
+    loadContratos('e', Array.isArray(r.contratos) ? r.contratos : []);
+    document.getElementById('edit-equip-list').innerHTML = '';
+    const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
+    equips.forEach(eq => addEditEquipRow(eq.tipo, eq.tag));
+    if (!equips.length) addEditEquipRow();
+  }
+}
+
+async function confirmarExclusao() {
+  if (!editingId || !confirm('Eliminar este registo permanentemente?')) return;
+  try {
+    const res = await fetch(SUPA_URL + '?id=eq.' + editingId, { method: 'DELETE', headers: HEADERS });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    toast('🗑️ Registo eliminado.');
+    clearRegistosCache();
+    closeModal();
+    loadData(true);
+  } catch(e) {
+    toast('Erro: ' + e.message, 'error');
+  }
+}
+
 // ─── EDIT ─────────────────────────────────────────────
 function openEdit(id) {
   const registo = allData.find(r => r.id === id);
   if (!registo) return;
   editingId = id;
-  document.getElementById('e-vendedor').value = registo.vendedor || '';
-  document.getElementById('edit-cod').value = registo.cod || '';
-  document.getElementById('edit-nome').value = registo.nome || '';
-  document.getElementById('edit-cep').value = registo.cep || '';
-  document.getElementById('e-contrato').value = registo.contrato || '';
-  loadContratos('e', Array.isArray(registo.contratos) ? registo.contratos : []);
-  document.getElementById('edit-equip-list').innerHTML = '';
-  const equips = Array.isArray(registo.equipamentos) ? registo.equipamentos : [];
-  equips.forEach(e => addEditEquipRow(e.tipo, e.tag));
-  if (!equips.length) addEditEquipRow();
-  document.getElementById('modal-edicao').style.display = 'flex';
+  window._editingRegisto = registo; // stored for goToStep2
+  // Populate step1 with vendor name for confirmation
+  document.getElementById('confirm-vendedor-name').textContent = registo.vendedor || 'desconhecido';
+  document.getElementById('confirm-name-input').value = '';
+  document.getElementById('confirm-error').style.display = 'none';
+  document.getElementById('btn-confirm-name').disabled = true;
+  // Show step1, hide step2
+  document.getElementById('modal-step1').style.display = 'block';
+  document.getElementById('modal-step2').style.display = 'none';
+  document.getElementById('modal-overlay').classList.add('open');
 }
 
 function closeEdit() {
-  document.getElementById('modal-edicao').style.display = 'none';
+  document.getElementById('modal-overlay').classList.remove('open');
   editingId = null;
 }
 
 async function salvarEdicao() {
   if (!editingId) return;
   const vendedor = document.getElementById('e-vendedor').value.trim();
-  const cod = document.getElementById('edit-cod').value.trim();
-  const nome = document.getElementById('edit-nome').value.trim();
-  const cep = document.getElementById('edit-cep').value.trim();
+  const cod = document.getElementById('e-cod').value.trim();
+  const nome = document.getElementById('e-nome').value.trim();
+  const cep = document.getElementById('e-cep').value.trim();
   const contrato = document.getElementById('e-contrato').value.trim();
   const contratos = getContratos('e');
   const equipamentos = getEquipamentos('edit-equip-list');
@@ -1419,19 +1562,7 @@ async function salvarEdicao() {
   }
 }
 
-async function excluirRegisto() {
-  if (!editingId || !confirm('Eliminar este registo permanentemente?')) return;
-  try {
-    const res = await fetch(SUPA_URL + '?id=eq.' + editingId, { method: 'DELETE', headers: HEADERS });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    toast('🗑️ Registo eliminado.');
-    clearRegistosCache();
-    closeEdit();
-    loadData(true);
-  } catch(e) {
-    toast('Erro: ' + e.message, 'error');
-  }
-}
+// excluirRegisto moved to confirmarExclusao above
 
 // ─── PENDENTES ───────────────────────────────────────
 let pendentesData = [];
@@ -1940,19 +2071,25 @@ async function enviarPedidoAT() {
   const vendedor    = document.getElementById('at-vendedor').value;
   const clienteSel  = document.getElementById('at-cliente');
   const clienteOpt  = clienteSel.selectedOptions[0];
-  const equipRaw    = document.getElementById('at-equipamento').value;
-  let equipTipo = equipRaw, equipTag = '';
-  try { const eq = JSON.parse(equipRaw); equipTipo = eq.tipo; equipTag = eq.tag; } catch(e) {}
+  const equipSel    = document.getElementById('at-equipamento');
+
+  // Multi-selecção de equipamentos
+  const selectedEquips = Array.from(equipSel.selectedOptions).map(opt => {
+    let tipo = opt.value, tag = '';
+    try { const eq = JSON.parse(opt.value); tipo = eq.tipo; tag = eq.tag; } catch(e) {}
+    return {tipo, tag};
+  }).filter(e => e.tipo && e.tipo !== '');
+
   const modeloDom   = document.getElementById('at-modelo-dom')?.value || '';
   const avariaTipo  = document.getElementById('at-avaria-tipo').value;
   const outraAvaria = document.getElementById('at-outra-avaria').value.trim();
   const descricao   = document.getElementById('at-descricao').value.trim();
   const urgencia    = document.getElementById('at-urgencia').value;
 
-  if (!vendedor)         { toast('Seleciona o vendedor.', 'error'); return; }
-  if (!clienteSel.value) { toast('Seleciona um cliente.', 'error'); return; }
-  if (!equipRaw)         { toast('Seleciona o equipamento.', 'error'); return; }
-  if (!avariaTipo)       { toast('Seleciona o tipo de avaria.', 'error'); return; }
+  if (!vendedor)              { toast('Seleciona o vendedor.', 'error'); return; }
+  if (!clienteSel.value)      { toast('Seleciona um cliente.', 'error'); return; }
+  if (!selectedEquips.length) { toast('Seleciona pelo menos um equipamento.', 'error'); return; }
+  if (!avariaTipo)            { toast('Seleciona o tipo de avaria.', 'error'); return; }
   if (avariaTipo === 'Outra avaria' && !outraAvaria) { toast('Descreve a avaria.', 'error'); return; }
 
   const avaria      = avariaTipo === 'Outra avaria' ? outraAvaria : avariaTipo;
@@ -1971,10 +2108,17 @@ async function enviarPedidoAT() {
 
   const tipoLabel = atTipoEquip === 'domestico' ? 'Doméstico' : 'Profissional';
 
-    const morada = getMorada(clienteCod);
+  const morada = getMorada(clienteCod);
   const moradaLine = (atTipoEquip === 'comercial' && morada)
     ? `\nMorada: ${morada.rua}\nCEP: ${morada.cep}` : '';
   const modeloLine = (atTipoEquip === 'domestico' && modeloDom) ? `\nModelo: ${modeloDom}` : '';
+
+  // Build equipment list for email
+  const equipLines = selectedEquips.map((e, i) => {
+    const tagPart = e.tag ? ` — Tag #${e.tag}` : '';
+    return selectedEquips.length > 1 ? `  ${i+1}. ${e.tipo}${tagPart}` : `${e.tipo}${tagPart}`;
+  }).join('\n');
+  const equipHeader = selectedEquips.length > 1 ? 'Equipamentos:\n' + equipLines : 'Equipamento: ' + equipLines;
 
 const corpo = `Pedido de Assistência Técnica
 ==============================
@@ -1990,7 +2134,7 @@ CEP: ${clienteCep}${moradaLine}
 
 EQUIPAMENTO
 -----------
-Equipamento: ${equipTipo}${equipTag ? `\nTag: #${equipTag}` : ''}${modeloLine}
+${equipHeader}${modeloLine}
 
 AVARIA
 ------
@@ -2003,18 +2147,25 @@ ${vendedor}
 ---
 Enviado via Delta Foods App`;
 
-  const mailtoUrl = `mailto:info.br@gruponabeiro.com?cc=${cc}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
+  // Tenta ms-outlook:// primeiro (abre Outlook directamente no Windows/mobile)
+  const emailDest = 'info.br@gruponabeiro.com';
+  const mailtoBase = `?to=${encodeURIComponent(emailDest)}&cc=${cc}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
+  const outlookUrl = `ms-outlook://compose${mailtoBase}`;
+  const mailtoUrl  = `mailto:${emailDest}${mailtoBase}`;
 
   // Ask for confirmation before opening email and saving chamado
   if (!confirm('Confirmas que queres abrir o email e registar este chamado AT?')) return;
 
   // Save chamado ONLY after user confirms
+  const equipTipoStr = selectedEquips.map(e => e.tipo).join(', ');
+  const equipTagStr  = selectedEquips.map(e => e.tag).filter(Boolean).join(', ');
   try {
     await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/chamados_at', {
       method: 'POST',
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
       body: JSON.stringify({ data, hora, vendedor, cliente_cod: clienteCod, cliente_nome: clienteNome,
-        equip_tipo: equipTipo, equip_tag: equipTag, avaria, descricao, urgencia, tipo_equip: atTipoEquip, modelo_dom: modeloDom })
+        equip_tipo: equipTipoStr, equip_tag: equipTagStr, avaria, descricao, urgencia, tipo_equip: atTipoEquip, modelo_dom: modeloDom,
+        equipamentos_selecionados: selectedEquips })
     });
   } catch(e) {
     console.warn('Chamado AT save failed:', e);
@@ -2022,10 +2173,12 @@ Enviado via Delta Foods App`;
   // Also keep local copy as backup
   const chamados = getATChamados();
   chamados.push({id:genId(), data, hora, vendedor, clienteCod, clienteNome,
-    equipTipo, equipTag, avaria, descricao, urgencia, tipoEquip: atTipoEquip});
+    equipTipo: equipTipoStr, equipTag: equipTagStr, avaria, descricao, urgencia, tipoEquip: atTipoEquip});
   saveATChamados(chamados);
 
-  window.location.href = mailtoUrl;
+  // Tenta Outlook nativo; fallback para mailto padrão após 1.5s
+  window.location.href = outlookUrl;
+  setTimeout(() => { window.location.href = mailtoUrl; }, 1500);
   toast('✅ Chamado registado e email a abrir...');
 }
 
