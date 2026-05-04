@@ -1454,6 +1454,22 @@ async function loadData(forceRefresh = false) {
   }
 }
 
+async function exportExcel() {
+  if (!window.XLSX) {
+    await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+  }
+  const rows = [['Vendedor','Cód. Cliente','Nome','CEP','N Contrato','Equipamento','Tag','Data']];
+  allData.forEach(r => {
+    const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [{}];
+    equips.forEach(e => rows.push([r.vendedor||'',r.cod||'',r.nome||'',r.cep||'',r.contrato||'',e.tipo||'',e.tag||'',r.data||'']));
+  });
+  const ws = window.XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:20},{wch:14},{wch:40},{wch:12},{wch:14},{wch:30},{wch:12},{wch:12}];
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Registos');
+  window.XLSX.writeFile(wb, 'registos_equipamentos.xlsx');
+}
+
 function exportCSV() {
   const rows = [['Vendedor','Cod','Nome','CEP','Contrato','Equipamento','Tag','Data']];
   allData.forEach(r => {
