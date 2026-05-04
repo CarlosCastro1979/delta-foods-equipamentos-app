@@ -1319,7 +1319,7 @@ async function salvarRegisto() {
     const res = await fetch(SUPA_URL, {
       method: 'POST',
       headers: HEADERS,
-      body: JSON.stringify({ id: crypto.randomUUID(), vendedor, cod, nome, cep, contrato, equipamentos, data: new Date().toISOString().slice(0,10) })
+      body: JSON.stringify({ id: crypto.randomUUID(), vendedor, cod, nome, cep, contrato, contratos, equipamentos, data: new Date().toISOString().slice(0,10) })
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
@@ -1557,7 +1557,7 @@ async function salvarEdicao() {
     const res = await fetch(SUPA_URL + '?id=eq.' + editingId, {
       method: 'PATCH',
       headers: HEADERS,
-      body: JSON.stringify({ vendedor, cod, nome, cep, contrato, equipamentos })
+      body: JSON.stringify({ vendedor, cod, nome, cep, contrato, contratos, equipamentos })
     });
     if (!res.ok) throw new Error(await res.text());
     toast('✅ Registo atualizado!');
