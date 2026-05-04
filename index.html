@@ -1923,6 +1923,9 @@ async function atOnTipoEquipChange() {
   if (modeloGroup) modeloGroup.style.display = 'none';
   const equipGroup = document.getElementById('at-equipamento-group');
   if (equipGroup) equipGroup.style.display = 'none';
+  // Reset equipment select
+  const equipSel0 = document.getElementById('at-equipamento');
+  if (equipSel0) equipSel0.innerHTML = '<option value="">— Seleciona primeiro o cliente —</option>';
   const vendedor = document.getElementById('at-vendedor').value;
   atTipoEquip = document.getElementById('at-tipo-equip').value;
   if (!atTipoEquip || !vendedor) return;
@@ -2062,8 +2065,16 @@ async function atPreencherCliente() {
     if (!equipList.length) {
       selEquip.innerHTML = '<option value="">Nenhum equipamento elegível</option>';
     } else {
-      selEquip.innerHTML = '<option value="">— Selecionar equipamento —</option>' +
-        equipList.map(e => `<option value='${e.val}' data-tipo="${e.tipo}" data-tag="${e.tag}">${e.label}</option>`).join('');
+      selEquip.innerHTML = equipList.map(e => `<option value='${e.val}' data-tipo="${e.tipo}" data-tag="${e.tag}">${e.label}</option>`).join('');
+      // Para doméstico: auto-seleciona tudo e esconde o select (é implícito)
+      // Para comercial: mostra o select para o utilizador escolher
+      if (atTipoEquip === 'domestico') {
+        Array.from(selEquip.options).forEach(opt => opt.selected = true);
+        document.getElementById('at-equipamento-group').style.display = 'none';
+      } else {
+        document.getElementById('at-equipamento-group').style.display = 'block';
+        document.getElementById('at-equip-selected-info').style.display = 'block';
+      }
     }
   } catch(err) {
     selEquip.innerHTML = '<option value="">Erro ao carregar equipamentos</option>';
@@ -2093,11 +2104,11 @@ async function enviarPedidoAT() {
   const equipSel    = document.getElementById('at-equipamento');
 
   // Multi-selecção de equipamentos
-  const selectedEquips = Array.from(equipSel.selectedOptions).map(opt => {
+  let selectedEquips = Array.from(equipSel.selectedOptions).map(opt => {
     let tipo = opt.value, tag = '';
     try { const eq = JSON.parse(opt.value); tipo = eq.tipo; tag = eq.tag; } catch(e) {}
     return {tipo, tag};
-  }).filter(e => e.tipo && e.tipo !== '');
+  }).filter(e => e.tipo && e.tipo !== '' && e.tipo !== '— Selecionar equipamento —');
 
   const modeloDom   = document.getElementById('at-modelo-dom')?.value || '';
   const avariaTipo  = document.getElementById('at-avaria-tipo').value;
@@ -2105,8 +2116,20 @@ async function enviarPedidoAT() {
   const descricao   = document.getElementById('at-descricao').value.trim();
   const urgencia    = document.getElementById('at-urgencia').value;
 
-  if (!vendedor)              { toast('Seleciona o vendedor.', 'error'); return; }
-  if (!clienteSel.value)      { toast('Seleciona um cliente.', 'error'); return; }
+  if (!vendedor)         { toast('Seleciona o vendedor.', 'error'); return; }
+  if (!clienteSel.value) { toast('Seleciona um cliente.', 'error'); return; }
+
+  // Para doméstico: se nenhum equipamento seleccionado no select múltiplo,
+  // usa todas as opções disponíveis no select (são os equipamentos do registo)
+  if (!selectedEquips.length && atTipoEquip === 'domestico') {
+    selectedEquips = Array.from(equipSel.options).map(opt => {
+      let tipo = opt.value, tag = '';
+      try { const eq = JSON.parse(opt.value); tipo = eq.tipo; tag = eq.tag; } catch(e) {}
+      return {tipo, tag};
+    }).filter(e => e.tipo && e.tipo !== '' && e.tipo !== '— Selecionar equipamento —');
+  }
+
+  // Se ainda não há equipamentos (comercial sem selecção), avisa
   if (!selectedEquips.length) { toast('Seleciona pelo menos um equipamento.', 'error'); return; }
   if (!avariaTipo)            { toast('Seleciona o tipo de avaria.', 'error'); return; }
   if (avariaTipo === 'Outra avaria' && !outraAvaria) { toast('Descreve a avaria.', 'error'); return; }
