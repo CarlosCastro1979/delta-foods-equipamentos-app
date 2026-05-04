@@ -1943,15 +1943,17 @@ async function atOnTipoEquipChange() {
   document.getElementById('at-cliente-search').value = '';
 
   try {
-    const cods = clientesVendedor.map(c => c.cod);
+    // Busca TODOS os registos do vendedor directamente no Supabase
+    // (não depende da lista estática de clientes — apanha todos os registados)
+    const vendedorEnc = encodeURIComponent(vendedor);
     const resp = await fetch(
-      `${SUPA_URL}?cod=in.(${cods.join(',')})&select=cod,equipamentos`,
+      `${SUPA_URL}?vendedor=eq.${vendedorEnc}&select=cod,nome,cep,equipamentos`,
       { headers: HEADERS }
     );
     const data = await resp.json();
 
     // Filter clients by equipment type
-    const codsElegiveis = new Set();
+    const clientesElegiveis = [];
     (data || []).forEach(r => {
       const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
       const temEquip = equips.some(e => {
@@ -1960,19 +1962,35 @@ async function atOnTipoEquipChange() {
         if (atTipoEquip === 'domestico') {
           return tipoUp.includes(AT_DOMESTICO);
         } else {
-          // Comercial: exclude domestic and own equipment
           return !tipoUp.includes(AT_DOMESTICO) && !AT_EXCLUIR_EQUIP.some(ex => tipoUp.includes(ex));
         }
       });
-      if (temEquip) codsElegiveis.add(String(r.cod));
+      if (temEquip) {
+        clientesElegiveis.push({
+          cod: String(r.cod || ''),
+          nome: r.nome || r.cod || '—',
+          cep: r.cep || '',
+          vendedor: vendedor,
+          // equipamentos elegíveis para este tipo
+          equipsElegiveis: equips.filter(e => {
+            if (!e.tipo) return false;
+            const tipoUp = e.tipo.toUpperCase().trim();
+            return atTipoEquip === 'domestico'
+              ? tipoUp.includes(AT_DOMESTICO)
+              : !tipoUp.includes(AT_DOMESTICO) && !AT_EXCLUIR_EQUIP.some(ex => tipoUp.includes(ex));
+          })
+        });
+      }
     });
 
-    const normCod = v => String(v || '').trim().replace(/^0+/, '') || '0';
-    atListaAtiva = clientesVendedor
-      .filter(c => codsElegiveis.has(normCod(c.cod)) || codsElegiveis.has(String(c.cod)))
+    // Remove duplicados (mesmo cod, mantém o mais recente)
+    const seen = new Set();
+    atListaAtiva = clientesElegiveis
+      .filter(c => { if (seen.has(c.cod)) return false; seen.add(c.cod); return true; })
       .sort((a, b) => a.nome.localeCompare(b.nome));
 
   } catch(err) {
+    console.error('atOnTipoEquipChange error:', err);
     atListaAtiva = [...clientesVendedor].sort((a, b) => a.nome.localeCompare(b.nome));
   }
   atRenderClientesList(atListaAtiva);
