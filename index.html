@@ -2257,7 +2257,7 @@ async function enviarPedidoAT() {
 
   const morada = getMorada(clienteCod);
   const moradaLine = (atTipoEquip === 'comercial' && morada)
-    ? `\nMorada: ${morada.rua}\nCEP: ${morada.cep}` : '';
+    ? `\nMorada: ${morada.rua}` : '';
   const modeloLine = (atTipoEquip === 'domestico' && modeloDom) ? `\nModelo: ${modeloDom}` : '';
 
   // Build equipment list for email
