@@ -2267,41 +2267,52 @@ async function enviarPedidoAT() {
   }).join('\n');
   const equipHeader = selectedEquips.length > 1 ? 'Equipamentos:\n' + equipLines : 'Equipamento: ' + equipLines;
 
-const corpo = `Pedido de Assistência Técnica
-==============================
-Data: ${data} às ${hora}
-Urgência: ${urgencia}
-Tipo: ${tipoLabel}
+const urgenciaLabel = urgencia === 'Urgente' ? '🔴 URGENTE' : '🟢 Normal';
 
-DADOS DO CLIENTE
-----------------
-Nome: ${clienteNome}
-Código: ${clienteCod}
-CEP: ${clienteCep}${moradaLine}
+const corpo = `PEDIDO DE ASSISTÊNCIA TÉCNICA — DELTA FOODS BRASIL
+${'='.repeat(50)}
 
-EQUIPAMENTO
------------
-${equipHeader}${modeloLine}
+  Data/Hora : ${data} às ${hora}
+  Urgência  : ${urgenciaLabel}
+  Tipo      : ${tipoLabel}
+  Vendedor  : ${vendedor}
 
-AVARIA
-------
-Tipo: ${avaria}${descricao ? `\nDescrição: ${descricao}` : ''}
+${'─'.repeat(50)}
+  DADOS DO CLIENTE
+${'─'.repeat(50)}
+  Nome      : ${clienteNome}
+  Código    : ${clienteCod}
+  CEP       : ${clienteCep}${moradaLine ? '\n  Morada    : ' + moradaLine.replace('\nMorada: ','') : ''}
 
-VENDEDOR
---------
-${vendedor}
+${'─'.repeat(50)}
+  EQUIPAMENTO
+${'─'.repeat(50)}
+${selectedEquips.map((e,i) => selectedEquips.length > 1
+  ? `  Equip. ${i+1}  : ${e.tipo}${e.tag ? ' — Tag #'+e.tag : ''}`
+  : `  Equipamento: ${e.tipo}${e.tag ? ' — Tag #'+e.tag : ''}`).join('\n')}${modeloLine ? '\n  Modelo    : ' + modeloLine.replace('\nModelo: ','') : ''}
 
----
+${'─'.repeat(50)}
+  AVARIA REPORTADA
+${'─'.repeat(50)}
+  Tipo      : ${avaria}${descricao ? '\n  Descrição : ' + descricao : ''}
+
+${'='.repeat(50)}
 Enviado via Delta Foods App`;
 
-  const mailtoUrl = `mailto:info.br@gruponabeiro.com?cc=${cc}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
+  // Ask for confirmation
+  if (!confirm('Confirmas que queres enviar o chamado AT por email?')) return;
 
-  // Ask for confirmation before opening email and saving chamado
-  if (!confirm('Confirmas que queres abrir o email e registar este chamado AT?')) return;
-
-  // Save chamado ONLY after user confirms
   const equipTipoStr = selectedEquips.map(e => e.tipo).join(', ');
   const equipTagStr  = selectedEquips.map(e => e.tag).filter(Boolean).join(', ');
+
+  // Build CC array
+  const ccList = atTipoEquip === 'domestico'
+    ? ['filipe.neves@deltafoodsbrasil.com.br']
+    : ['carlos.castro@deltafoodsbrasil.com.br','filipe.neves@deltafoodsbrasil.com.br','ricardo.vicentesilva@deltafoodsbrasil.com.br'];
+  const vendedorEmail = VENDEDOR_EMAILS[vendedor] || '';
+  if (vendedorEmail && !ccList.includes(vendedorEmail)) ccList.push(vendedorEmail);
+
+  // Save chamado to Supabase
   try {
     await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/chamados_at', {
       method: 'POST',
@@ -2310,17 +2321,47 @@ Enviado via Delta Foods App`;
         equip_tipo: equipTipoStr, equip_tag: equipTagStr, avaria, descricao, urgencia, tipo_equip: atTipoEquip, modelo_dom: modeloDom,
         equipamentos_selecionados: selectedEquips })
     });
-  } catch(e) {
-    console.warn('Chamado AT save failed:', e);
-  }
-  // Also keep local copy as backup
+  } catch(e) { console.warn('Chamado AT save failed:', e); }
+
+  // Save local backup
   const chamados = getATChamados();
   chamados.push({id:genId(), data, hora, vendedor, clienteCod, clienteNome,
     equipTipo: equipTipoStr, equipTag: equipTagStr, avaria, descricao, urgencia, tipoEquip: atTipoEquip});
   saveATChamados(chamados);
 
-  window.location.href = mailtoUrl;
-  toast('✅ Chamado registado e email a abrir...');
+  // Send HTML email via Supabase Edge Function
+  toast('A enviar email...', 'info');
+  try {
+    const moradaTexto = moradaLine ? moradaLine.replace('\nMorada: ','') : '';
+    const emailRes = await fetch(
+      'https://qnscwppgljobelplgbkp.supabase.co/functions/v1/send-at-email',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY },
+        body: JSON.stringify({
+          vendedor, clienteNome, clienteCod, clienteCep,
+          morada: moradaTexto,
+          equipamentos: selectedEquips,
+          avaria, descricao, urgencia,
+          tipoEquip: atTipoEquip,
+          modeloDom: modeloDom || '',
+          data, hora,
+          to: 'info.br@gruponabeiro.com',
+          cc: ccList,
+        })
+      }
+    );
+    const emailResult = await emailRes.json();
+    if (!emailResult.ok) throw new Error(emailResult.error || 'Erro ao enviar');
+    toast('✅ Chamado registado e email enviado!');
+  } catch(emailErr) {
+    console.error('Email send error:', emailErr);
+    // Fallback para mailto se a Edge Function falhar
+    const assuntoFallback = encodeURIComponent(`ABERTURA DE CHAMADO ${clienteCod} ${clienteNome}`);
+    const ccFallback = encodeURIComponent(ccList.join(';'));
+    window.location.href = `mailto:info.br@gruponabeiro.com?cc=${ccFallback}&subject=${assuntoFallback}`;
+    toast('⚠️ Email aberto no cliente de email (fallback).', 'error');
+  }
 }
 
 // ─── VENDAS & CONTRATOS ──────────────────────────────
