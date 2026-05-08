@@ -2238,21 +2238,6 @@ async function enviarPedidoAT() {
     'CARLOS CASTRO':  'carlos.castro@deltafoodsbrasil.com.br',
   };
 
-  // Email do vendedor seleccionado — em CC se não for ele próprio a abrir
-  const vendedorEmail = VENDEDOR_EMAILS[vendedor] || '';
-  const loggedVendedor = vendedor; // quem está a abrir o chamado
-
-  const ccBase = atTipoEquip === 'domestico'
-    ? 'filipe.neves@deltafoodsbrasil.com.br'
-    : 'carlos.castro@deltafoodsbrasil.com.br;filipe.neves@deltafoodsbrasil.com.br;ricardo.vicentesilva@deltafoodsbrasil.com.br';
-
-  // Adiciona o email do vendedor ao CC se não estiver já incluído
-  const ccFinal = (vendedorEmail && !ccBase.includes(vendedorEmail))
-    ? ccBase + ';' + vendedorEmail
-    : ccBase;
-
-  const cc = encodeURIComponent(ccFinal);
-
   const tipoLabel = atTipoEquip === 'domestico' ? 'Doméstico' : 'Profissional';
 
   const morada = getMorada(clienteCod);
