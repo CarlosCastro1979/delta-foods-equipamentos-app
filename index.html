@@ -2226,9 +2226,6 @@ async function enviarPedidoAT() {
   const data = new Date().toLocaleDateString('pt-BR');
   const hora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
 
-  const assunto = encodeURIComponent(`ABERTURA DE CHAMADO ${clienteCod} ${clienteNome}`);
-
-  // CC depends on equipment type
   // Mapa vendedor → email corporativo
   const VENDEDOR_EMAILS = {
     'PAULO FONTES':   'paulo.fontes@deltafoodsbrasil.com.br',
@@ -2285,17 +2282,20 @@ ${'='.repeat(50)}
 Enviado via Delta Foods App`;
 
   // Ask for confirmation
-  if (!confirm('Confirmas que queres enviar o chamado AT por email?')) return;
+  if (!confirm('Confirmas que queres abrir o email e registar este chamado AT?')) return;
 
   const equipTipoStr = selectedEquips.map(e => e.tipo).join(', ');
   const equipTagStr  = selectedEquips.map(e => e.tag).filter(Boolean).join(', ');
 
-  // Build CC array
-  const ccList = atTipoEquip === 'domestico'
-    ? ['filipe.neves@deltafoodsbrasil.com.br']
-    : ['carlos.castro@deltafoodsbrasil.com.br','filipe.neves@deltafoodsbrasil.com.br','ricardo.vicentesilva@deltafoodsbrasil.com.br'];
+  // Build CC
+  const ccBase = atTipoEquip === 'domestico'
+    ? 'filipe.neves@deltafoodsbrasil.com.br'
+    : 'carlos.castro@deltafoodsbrasil.com.br;filipe.neves@deltafoodsbrasil.com.br;ricardo.vicentesilva@deltafoodsbrasil.com.br';
   const vendedorEmail = VENDEDOR_EMAILS[vendedor] || '';
-  if (vendedorEmail && !ccList.includes(vendedorEmail)) ccList.push(vendedorEmail);
+  const ccFinal = (vendedorEmail && !ccBase.includes(vendedorEmail)) ? ccBase + ';' + vendedorEmail : ccBase;
+  const cc = encodeURIComponent(ccFinal);
+  const assunto = encodeURIComponent(`ABERTURA DE CHAMADO ${clienteCod} ${clienteNome}`);
+  const mailtoUrl = `mailto:info.br@gruponabeiro.com?cc=${cc}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
 
   // Save chamado to Supabase
   try {
@@ -2314,39 +2314,8 @@ Enviado via Delta Foods App`;
     equipTipo: equipTipoStr, equipTag: equipTagStr, avaria, descricao, urgencia, tipoEquip: atTipoEquip});
   saveATChamados(chamados);
 
-  // Send HTML email via Supabase Edge Function
-  toast('A enviar email...', 'info');
-  try {
-    const moradaTexto = moradaLine ? moradaLine.replace('\nMorada: ','') : '';
-    const emailRes = await fetch(
-      'https://qnscwppgljobelplgbkp.supabase.co/functions/v1/send-at-email',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY },
-        body: JSON.stringify({
-          vendedor, clienteNome, clienteCod, clienteCep,
-          morada: moradaTexto,
-          equipamentos: selectedEquips,
-          avaria, descricao, urgencia,
-          tipoEquip: atTipoEquip,
-          modeloDom: modeloDom || '',
-          data, hora,
-          to: 'info.br@gruponabeiro.com',
-          cc: ccList,
-        })
-      }
-    );
-    const emailResult = await emailRes.json();
-    if (!emailResult.ok) throw new Error(emailResult.error || 'Erro ao enviar');
-    toast('✅ Chamado registado e email enviado!');
-  } catch(emailErr) {
-    console.error('Email send error:', emailErr);
-    // Fallback para mailto se a Edge Function falhar
-    const assuntoFallback = encodeURIComponent(`ABERTURA DE CHAMADO ${clienteCod} ${clienteNome}`);
-    const ccFallback = encodeURIComponent(ccList.join(';'));
-    window.location.href = `mailto:info.br@gruponabeiro.com?cc=${ccFallback}&subject=${assuntoFallback}`;
-    toast('⚠️ Email aberto no cliente de email (fallback).', 'error');
-  }
+  window.location.href = mailtoUrl;
+  toast('✅ Chamado registado e email a abrir...');
 }
 
 // ─── VENDAS & CONTRATOS ──────────────────────────────
