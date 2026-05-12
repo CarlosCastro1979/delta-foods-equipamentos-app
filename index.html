@@ -1908,13 +1908,11 @@ function renderSemCompras() {
     const codNorm = normalizaCodSC(cli.cod);
     const ultimaCompra = scVendasData[codNorm] || scVendasData[cli.cod] || null;
 
-    let mesesSemComprar;
-    if (!ultimaCompra) {
-      mesesSemComprar = 999; // nunca comprou (nos dados carregados)
-    } else {
-      const diffMs = hoje - ultimaCompra;
-      mesesSemComprar = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.44));
-    }
+    // Só considera clientes com pelo menos uma venda no histórico
+    if (!ultimaCompra) continue;
+
+    const diffMs = hoje - ultimaCompra;
+    const mesesSemComprar = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.44));
 
     if (mesesSemComprar >= periodoMin) {
       resultado.push({ ...cli, ultimaCompra, mesesSemComprar });
