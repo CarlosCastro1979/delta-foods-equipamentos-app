@@ -1759,27 +1759,7 @@ async function handleSCFileImport(event) {
 let scDividasData = {};
 let scDividasLoaded = false;
 
-async function scSaveDividasToSupabase(dividasMap) {
-  const rows = Object.entries(dividasMap).map(([cod, d]) => ({
-    cod_cliente: cod,
-    vencido: d.vencido,
-    aging_0_15: d.a0_15 || 0,
-    aging_15_30: d.a15_30 || 0,
-    aging_30_60: d.a30_60 || 0,
-    aging_60_90: d.a60_90 || 0,
-    aging_90_120: d.a90_120 || 0,
-    aging_120: d.a120 || 0,
-  }));
-  const batchSize = 100;
-  for (let i = 0; i < rows.length; i += batchSize) {
-    await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico', {
-      method: 'POST',
-      headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(rows.slice(i, i + batchSize))
-    });
-  }
-}
-
+// Dívidas: carregadas do ficheiro mensal, guardadas no Supabase, substituídas a cada upload
 async function scLoadDividasFromSupabase() {
   try {
     const res = await fetch(
@@ -1852,10 +1832,37 @@ async function handleSCDividasImport(event) {
     };
   }
 
-  toast(`A guardar ${Object.keys(novasDividas).length} dívidas...`);
-  await scSaveDividasToSupabase(novasDividas);
-  await scLoadDividasFromSupabase();
-  toast(`✅ ${Object.keys(scDividasData).length} clientes com dívida carregados`);
+  // Guarda no Supabase: apaga tudo e reescreve
+  toast('A actualizar dívidas no servidor...');
+  try {
+    // 1. Apaga todos os registos existentes
+    await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico?cod_cliente=neq.NULL_PLACEHOLDER', {
+      method: 'DELETE',
+      headers: HEADERS
+    });
+    // 2. Insere os novos em lotes de 100
+    const rows = Object.entries(novasDividas).map(([cod, d]) => ({
+      cod_cliente: cod, vencido: d.vencido,
+      aging_0_15: d.a0_15||0, aging_15_30: d.a15_30||0,
+      aging_30_60: d.a30_60||0, aging_60_90: d.a60_90||0,
+      aging_90_120: d.a90_120||0, aging_120: d.a120||0,
+    }));
+    for (let i = 0; i < rows.length; i += 100) {
+      await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico', {
+        method: 'POST',
+        headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+        body: JSON.stringify(rows.slice(i, i + 100))
+      });
+    }
+    scDividasData = novasDividas;
+    scDividasLoaded = true;
+    toast(`✅ ${Object.keys(scDividasData).length} clientes com dívida actualizados`);
+  } catch(e) {
+    // Fallback: guarda só em memória se Supabase falhar
+    scDividasData = novasDividas;
+    scDividasLoaded = true;
+    toast(`✅ ${Object.keys(scDividasData).length} clientes carregados (só memória)`);
+  }
   renderSemCompras();
   event.target.value = '';
 }
@@ -1932,10 +1939,7 @@ function renderSemCompras() {
     return;
   }
 
-  // Carrega dívidas se ainda não carregado
-  if (!scDividasLoaded) scLoadDividasFromSupabase().then(() => renderSemCompras());
-
-  // Separa em com dívida e sem dívida
+  // Separa em com dívida e sem dívida (dívidas carregadas manualmente)
   const comDivida    = resultado.filter(c => scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)]);
   const semDivida    = resultado.filter(c => !scDividasData[c.cod] && !scDividasData[normalizaCodSC(c.cod)]);
 
