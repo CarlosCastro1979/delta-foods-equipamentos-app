@@ -1178,6 +1178,16 @@
         <button class="btn btn-secondary btn-sm" onclick="exportSCExcel()" style="min-height:36px;">⬇ Excel</button>
       </div>
     </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <button id="sc-btn-divida" onclick="toggleSCFiltro('divida')"
+        style="padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid #c8102e;background:#c8102e;color:#fff;">
+        💰 Com dívida
+      </button>
+      <button id="sc-btn-sem-divida" onclick="toggleSCFiltro('sem-divida')"
+        style="padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid #16a34a;background:#16a34a;color:#fff;">
+        ✅ Sem dívida
+      </button>
+    </div>
     <div id="sc-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
     <div id="sc-content">
       <div style="padding:60px 20px;text-align:center;color:var(--muted);">
@@ -1669,16 +1679,13 @@ async function initSemCompras() {
       vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
   }
 
-  // Carrega do Supabase se ainda não carregado
-  if (!scLoaded) {
-    const ok = await scLoadFromSupabase();
-    if (ok) {
-      scDataRef = new Date();
-      renderSemCompras();
-    }
-  } else {
-    renderSemCompras();
-  }
+  // Carrega vendas e dívidas do Supabase em paralelo
+  const promises = [];
+  if (!scLoaded) promises.push(scLoadFromSupabase().then(ok => { if (ok) scDataRef = new Date(); }));
+  if (!scDividasLoaded) promises.push(scLoadDividasFromSupabase());
+  if (promises.length) await Promise.all(promises);
+
+  renderSemCompras();
 }
 
 async function handleSCFileImport(event) {
@@ -1895,6 +1902,36 @@ function agingBar(d) {
   return `<div style="margin-top:3px;">${bars}</div><div style="margin-top:2px;">${labels}</div>`;
 }
 
+// Filtro activo: 'divida', 'sem-divida', ou 'ambos'
+let scFiltroActivo = 'ambos';
+
+function toggleSCFiltro(tipo) {
+  if (scFiltroActivo === tipo) {
+    scFiltroActivo = 'ambos'; // clica no mesmo = mostra ambos
+  } else if (scFiltroActivo === 'ambos') {
+    scFiltroActivo = tipo;
+  } else {
+    scFiltroActivo = 'ambos'; // tinha o outro activo = mostra ambos
+  }
+
+  // Actualiza visual dos botões
+  const btnDiv    = document.getElementById('sc-btn-divida');
+  const btnSemDiv = document.getElementById('sc-btn-sem-divida');
+
+  if (scFiltroActivo === 'divida') {
+    btnDiv.style.background    = '#c8102e'; btnDiv.style.color    = '#fff';
+    btnSemDiv.style.background = '#fff';    btnSemDiv.style.color = '#16a34a';
+  } else if (scFiltroActivo === 'sem-divida') {
+    btnDiv.style.background    = '#fff';    btnDiv.style.color    = '#c8102e';
+    btnSemDiv.style.background = '#16a34a'; btnSemDiv.style.color = '#fff';
+  } else {
+    btnDiv.style.background    = '#c8102e'; btnDiv.style.color    = '#fff';
+    btnSemDiv.style.background = '#16a34a'; btnSemDiv.style.color = '#fff';
+  }
+
+  renderSemCompras();
+}
+
 function renderSemCompras() {
   const cont = document.getElementById('sc-content');
   if (!scLoaded || !cont) return;
@@ -2027,8 +2064,12 @@ function renderSemCompras() {
 
   let html = '';
 
+  // Aplica filtro dos botões
+  const mostrarComDiv = scFiltroActivo === 'divida' || scFiltroActivo === 'ambos';
+  const mostrarSemDiv = scFiltroActivo === 'sem-divida' || scFiltroActivo === 'ambos';
+
   // SECÇÃO 1: Com dívida — lista única ordenada por vendedor + antiguidade
-  if (comDivida.length) {
+  if (comDivida.length && mostrarComDiv) {
     const totalDivida = comDivida.reduce((s,c) => {
       const d = scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)];
       return s + (d ? d.vencido : 0);
@@ -2042,12 +2083,12 @@ function renderSemCompras() {
   }
 
   // SEPARADOR
-  if (comDivida.length && semDivida.length) {
+  if (comDivida.length && mostrarComDiv && semDivida.length && mostrarSemDiv) {
     html += `<div style="border-top:2px dashed #e0e0e0;margin:24px 0 20px;"></div>`;
   }
 
   // SECÇÃO 2: Sem dívida — separado por período, ordenado por vendedor dentro de cada grupo
-  if (semDivida.length) {
+  if (semDivida.length && mostrarSemDiv) {
     html += `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
       <span style="font-size:14px;font-weight:700;color:#16a34a;">✅ Sem dívida — ${semDivida.length} clientes</span>
       <span style="font-size:12px;color:#888;margin-left:12px;">Podem ser reactivados mais rapidamente · ordenado por vendedor</span>
@@ -3307,7 +3348,7 @@ async function loadContratosTab(forceRefresh = false) {
           (dataFim.getMonth() - today.getMonth());
         const pctConsumo = totalContratado > 0 ? (consumoReal / totalContratado) * 100 : 0;
         let alerta = null;
-        if (pctConsumo >= 85) alerta = 'volume';
+        if (pctTotal !== null && pctTotal >= 85) alerta = 'volume'; // alerta baseado em % vs total contrato
         else if (mesesParaFim <= 6 && mesesParaFim >= 0) alerta = 'tempo';
 
         rows.push({
@@ -3326,7 +3367,7 @@ async function loadContratosTab(forceRefresh = false) {
     }
 
     // Sort by % cumprimento asc (worst first)
-    rows.sort((a, b) => (a.pct || 0) - (b.pct || 0));
+    rows.sort((a, b) => (a.pctTotal || 0) - (b.pctTotal || 0) || (a.pct || 0) - (b.pct || 0));
 
     const unidadeLabel = u => u === 'Kg' ? 'Kg' : 'Cáps';
     const fmtNum = (n, u) => {
@@ -3350,7 +3391,8 @@ async function loadContratosTab(forceRefresh = false) {
           <th style="padding:10px 12px;font-weight:700;text-align:right;white-space:nowrap;border:1px solid #ddd;font-size:12px">TOTAL<br>CONTRATADO</th>
           <th style="padding:10px 12px;font-weight:700;text-align:right;white-space:nowrap;border:1px solid #ddd;font-size:12px">ESPERADO<br>(${new Date().toLocaleDateString('pt-BR',{month:'short',year:'numeric'}).toUpperCase()})</th>
           <th style="padding:10px 12px;font-weight:700;text-align:right;white-space:nowrap;border:1px solid #ddd;font-size:12px">CONSUMO<br>REAL</th>
-          <th style="padding:10px 12px;font-weight:700;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:12px">%<br>CUMPRIMENTO</th>
+          <th style="padding:10px 12px;font-weight:700;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:12px;background:#EFF6FF">% vs<br>TOTAL ⚠️</th>
+          <th style="padding:10px 12px;font-weight:700;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:12px;background:#F0FDF4">% vs<br>YTD</th>
           <th style="padding:10px 12px;font-weight:700;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:12px">ALERTA</th>
         </tr>
       </thead>
@@ -3372,14 +3414,19 @@ async function loadContratosTab(forceRefresh = false) {
         <td style="${td}text-align:right;white-space:nowrap">${fmtNum(r.totalContratado, r.unidade)}</td>
         <td style="${td}text-align:right;white-space:nowrap">${r.mesesDecorridos > 0 ? fmtNum(r.consumoEsperado, r.unidade) : '—'}</td>
         <td style="${td}text-align:right;font-weight:700;white-space:nowrap">${r.consumoReal > 0 ? fmtNum(r.consumoReal, r.unidade) : '—'}</td>
-        <td style="${td}text-align:center">
+        <td style="${td}text-align:center;background:#F8FAFF">
+          ${r.pctTotal !== null
+            ? `<span style="background:${pctBg(r.pctTotal)};color:${pctColor(r.pctTotal)};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pctTotal}%</span>`
+            : '<span style="color:var(--muted);font-size:12px">—</span>'}
+        </td>
+        <td style="${td}text-align:center;background:#F8FFF9">
           ${r.pct !== null && r.mesesDecorridos > 0
             ? `<span style="background:${pBg};color:${pCol};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pct}%</span>`
             : '<span style="color:var(--muted);font-size:12px">—</span>'}
         </td>
         <td style="${td}text-align:center;white-space:nowrap">
           ${r.alerta === 'volume'
-            ? `<span style="background:#fff8e1;color:#e65100;border:1px solid #ffb300;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700" title="Consumo atingiu ${Math.round(r.pctConsumo)}% do total contratado">⚠️ 85% Volume</span>`
+            ? `<span style="background:#fff8e1;color:#e65100;border:1px solid #ffb300;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700" title="Consumo atingiu ${r.pctTotal}% do total contratado">⚠️ 85% Volume</span>`
             : r.alerta === 'tempo'
             ? `<span style="background:#fff3e0;color:#bf360c;border:1px solid #ff7043;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700" title="Faltam ${r.mesesParaFim} mês(es) para terminar">🔔 ${r.mesesParaFim}m p/ fim</span>`
             : '<span style="color:var(--muted);font-size:12px">—</span>'}
