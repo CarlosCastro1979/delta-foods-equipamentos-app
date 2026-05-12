@@ -2292,10 +2292,15 @@ Enviado via Delta Foods App`;
     ? 'filipe.neves@deltafoodsbrasil.com.br'
     : 'carlos.castro@deltafoodsbrasil.com.br;filipe.neves@deltafoodsbrasil.com.br;ricardo.vicentesilva@deltafoodsbrasil.com.br';
   const vendedorEmail = VENDEDOR_EMAILS[vendedor] || '';
-  const ccFinal = (vendedorEmail && !ccBase.includes(vendedorEmail)) ? ccBase + ';' + vendedorEmail : ccBase;
-  const cc = encodeURIComponent(ccFinal);
+  // Separar emails por vírgula (standard RFC para mailto)
+  const ccList = atTipoEquip === 'domestico'
+    ? ['filipe.neves@deltafoodsbrasil.com.br']
+    : ['carlos.castro@deltafoodsbrasil.com.br', 'filipe.neves@deltafoodsbrasil.com.br', 'ricardo.vicentesilva@deltafoodsbrasil.com.br'];
+  if (vendedorEmail && !ccList.includes(vendedorEmail)) ccList.push(vendedorEmail);
+  // Cada email no CC é um parâmetro separado — compatível com Outlook e Gmail
+  const ccParams = ccList.map(e => `cc=${encodeURIComponent(e)}`).join('&');
   const assunto = encodeURIComponent(`ABERTURA DE CHAMADO ${clienteCod} ${clienteNome}`);
-  const mailtoUrl = `mailto:info.br@gruponabeiro.com?cc=${cc}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
+  const mailtoUrl = `mailto:${encodeURIComponent('info.br@gruponabeiro.com')}?${ccParams}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
 
   // Save chamado to Supabase
   try {
