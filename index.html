@@ -1939,45 +1939,86 @@ function renderSemCompras() {
     return;
   }
 
-  // Separa em com dívida e sem dívida (dívidas carregadas manualmente)
-  const comDivida    = resultado.filter(c => scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)]);
-  const semDivida    = resultado.filter(c => !scDividasData[c.cod] && !scDividasData[normalizaCodSC(c.cod)]);
+  // Separa em com dívida e sem dívida
+  const comDivida = resultado.filter(c => scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)]);
+  const semDivida = resultado.filter(c => !scDividasData[c.cod] && !scDividasData[normalizaCodSC(c.cod)]);
 
-  function buildGrupos(lista) {
-    return [
-      { label: '🔴 Mais de 12 meses', cor: '#c8102e', bg: '#FEF2F2', clientes: lista.filter(c => c.mesesSemComprar >= 12) },
-      { label: '🟠 Entre 9 e 12 meses', cor: '#d97706', bg: '#FFFBEB', clientes: lista.filter(c => c.mesesSemComprar >= 9 && c.mesesSemComprar < 12) },
-      { label: '🟡 Entre 6 e 9 meses', cor: '#ca8a04', bg: '#FEFCE8', clientes: lista.filter(c => c.mesesSemComprar >= 6 && c.mesesSemComprar < 9) },
-    ].filter(g => g.clientes.length > 0);
+  // COM DÍVIDA: ordena por vendedor, depois dívida mais antiga (maior antiguidade +120 primeiro)
+  comDivida.sort((a, b) => {
+    if (a.vendedor !== b.vendedor) return (a.vendedor||'').localeCompare(b.vendedor||'');
+    const da = scDividasData[a.cod] || scDividasData[normalizaCodSC(a.cod)] || {};
+    const db = scDividasData[b.cod] || scDividasData[normalizaCodSC(b.cod)] || {};
+    // Ordena por antiguidade: mais antiga primeiro (+120 > 90-120 > ...)
+    const antiguidadeA = (da.a120||0)*6 + (da.a90_120||0)*5 + (da.a60_90||0)*4 + (da.a30_60||0)*3 + (da.a15_30||0)*2 + (da.a0_15||0);
+    const antiguidadeB = (db.a120||0)*6 + (db.a90_120||0)*5 + (db.a60_90||0)*4 + (db.a30_60||0)*3 + (db.a15_30||0)*2 + (db.a0_15||0);
+    return antiguidadeB - antiguidadeA;
+  });
+
+  // SEM DÍVIDA: dentro de cada grupo ordena por vendedor
+  const buildGruposSemDiv = (lista) => [
+    { label: '🔴 Mais de 12 meses', cor: '#c8102e', bg: '#FEF2F2',
+      clientes: lista.filter(c => c.mesesSemComprar >= 12).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
+    { label: '🟠 Entre 9 e 12 meses', cor: '#d97706', bg: '#FFFBEB',
+      clientes: lista.filter(c => c.mesesSemComprar >= 9 && c.mesesSemComprar < 12).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
+    { label: '🟡 Entre 6 e 9 meses', cor: '#ca8a04', bg: '#FEFCE8',
+      clientes: lista.filter(c => c.mesesSemComprar >= 6 && c.mesesSemComprar < 9).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
+  ].filter(g => g.clientes.length > 0);
+
+  function buildTableComDiv(lista) {
+    if (!lista.length) return '';
+    return `<div style="border:1px solid #e0e0e0;border-radius:8px;overflow-x:auto;margin-bottom:8px;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:720px;">
+        <thead><tr style="background:#f5f5f5;border-bottom:1px solid #e0e0e0;">
+          <th style="padding:7px 10px;text-align:left;color:var(--muted);white-space:nowrap">Vendedor</th>
+          <th style="padding:7px 10px;text-align:left;color:var(--muted);white-space:nowrap">Cód.</th>
+          <th style="padding:7px 10px;text-align:left;color:var(--muted);">Nome</th>
+          <th style="padding:7px 10px;text-align:left;color:var(--muted);white-space:nowrap">Última compra</th>
+          <th style="padding:7px 10px;text-align:center;color:var(--muted);">Meses</th>
+          <th style="padding:7px 10px;text-align:right;color:var(--muted);white-space:nowrap">Total vencido</th>
+          <th style="padding:7px 10px;text-align:left;color:var(--muted);">Antiguidade</th>
+        </tr></thead>
+        <tbody>
+          ${lista.map((c, i) => {
+            const div = scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)];
+            const faixaCor = c.mesesSemComprar >= 12 ? '#c8102e' : c.mesesSemComprar >= 9 ? '#d97706' : '#ca8a04';
+            const faixaBg  = c.mesesSemComprar >= 12 ? '#FEF2F2' : c.mesesSemComprar >= 9 ? '#FFFBEB' : '#FEFCE8';
+            return `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
+              <td style="padding:7px 10px;font-size:11px;color:var(--muted);white-space:nowrap">${c.vendedor||'—'}</td>
+              <td style="padding:7px 10px;color:var(--muted);font-size:11px;">${c.cod}</td>
+              <td style="padding:7px 10px;font-weight:500;">${c.nome}</td>
+              <td style="padding:7px 10px;font-size:11px;white-space:nowrap">${c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('pt-BR') : '—'}</td>
+              <td style="padding:7px 10px;text-align:center;"><span style="background:${faixaBg};color:${faixaCor};border-radius:12px;padding:2px 8px;font-weight:700;font-size:11px;">${c.mesesSemComprar+'m'}</span></td>
+              <td style="padding:7px 10px;text-align:right;font-weight:700;color:#c8102e;white-space:nowrap">${div ? formatEur(div.vencido) : '—'}</td>
+              <td style="padding:7px 10px;min-width:140px">${div ? agingBar(div) : ''}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
   }
 
-  function buildTable(grupo, comDiv) {
+  function buildTableSemDiv(grupo) {
     return `<div style="margin-bottom:16px;">
       <div style="background:${grupo.bg};border-left:3px solid ${grupo.cor};padding:7px 14px;border-radius:4px 4px 0 0;font-size:13px;font-weight:600;color:${grupo.cor};">
         ${grupo.label} <span style="font-weight:400;color:var(--muted)">(${grupo.clientes.length})</span>
       </div>
       <div style="border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:${comDiv?'700px':'550px'}">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px;">
           <thead><tr style="background:#f5f5f5;border-bottom:1px solid #e0e0e0;">
+            <th style="padding:7px 10px;text-align:left;color:var(--muted);white-space:nowrap">Vendedor</th>
             <th style="padding:7px 10px;text-align:left;color:var(--muted);white-space:nowrap">Cód.</th>
             <th style="padding:7px 10px;text-align:left;color:var(--muted);">Nome</th>
-            <th style="padding:7px 10px;text-align:left;color:var(--muted);white-space:nowrap">Vendedor</th>
             <th style="padding:7px 10px;text-align:left;color:var(--muted);white-space:nowrap">Última compra</th>
             <th style="padding:7px 10px;text-align:center;color:var(--muted);">Meses</th>
-            ${comDiv ? '<th style="padding:7px 10px;text-align:right;color:var(--muted);white-space:nowrap">Total vencido</th><th style="padding:7px 10px;text-align:left;color:var(--muted);">Antiguidade</th>' : ''}
           </tr></thead>
           <tbody>
-            ${grupo.clientes.map((c, i) => {
-              const div = scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)];
-              return `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
-                <td style="padding:7px 10px;color:var(--muted);font-size:11px;">${c.cod}</td>
-                <td style="padding:7px 10px;font-weight:500;">${c.nome}</td>
-                <td style="padding:7px 10px;font-size:11px;color:var(--muted);white-space:nowrap">${c.vendedor||'—'}</td>
-                <td style="padding:7px 10px;font-size:11px;white-space:nowrap">${c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('pt-BR') : '<span style="color:var(--danger)">Sem dados</span>'}</td>
-                <td style="padding:7px 10px;text-align:center;"><span style="background:${grupo.bg};color:${grupo.cor};border-radius:12px;padding:2px 8px;font-weight:700;font-size:11px;">${c.mesesSemComprar>=999?'—':c.mesesSemComprar+'m'}</span></td>
-                ${comDiv && div ? `<td style="padding:7px 10px;text-align:right;font-weight:700;color:#c8102e;white-space:nowrap">${formatEur(div.vencido)}</td><td style="padding:7px 10px;min-width:140px">${agingBar(div)}</td>` : (comDiv ? '<td></td><td></td>' : '')}
-              </tr>`;
-            }).join('')}
+            ${grupo.clientes.map((c, i) => `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
+              <td style="padding:7px 10px;font-size:11px;color:var(--muted);white-space:nowrap">${c.vendedor||'—'}</td>
+              <td style="padding:7px 10px;color:var(--muted);font-size:11px;">${c.cod}</td>
+              <td style="padding:7px 10px;font-weight:500;">${c.nome}</td>
+              <td style="padding:7px 10px;font-size:11px;white-space:nowrap">${c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('pt-BR') : '—'}</td>
+              <td style="padding:7px 10px;text-align:center;"><span style="background:${grupo.bg};color:${grupo.cor};border-radius:12px;padding:2px 8px;font-weight:700;font-size:11px;">${c.mesesSemComprar+'m'}</span></td>
+            </tr>`).join('')}
           </tbody>
         </table>
       </div>
@@ -1986,15 +2027,18 @@ function renderSemCompras() {
 
   let html = '';
 
-  // SECÇÃO 1: Com dívida
+  // SECÇÃO 1: Com dívida — lista única ordenada por vendedor + antiguidade
   if (comDivida.length) {
-    const totalDivida = comDivida.reduce((s,c) => { const d=scDividasData[c.cod]||scDividasData[normalizaCodSC(c.cod)]; return s+(d?d.vencido:0); }, 0);
-    html += `<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+    const totalDivida = comDivida.reduce((s,c) => {
+      const d = scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)];
+      return s + (d ? d.vencido : 0);
+    }, 0);
+    html += `<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
       <div><span style="font-size:14px;font-weight:700;color:#c8102e;">💰 Com dívida vencida — ${comDivida.length} clientes</span>
-      <span style="font-size:12px;color:#888;margin-left:12px;">Recuperação necessária antes de reactivar</span></div>
+      <span style="font-size:12px;color:#888;margin-left:12px;">Ordenado por vendedor · dívida mais antiga primeiro</span></div>
       <div style="font-size:15px;font-weight:700;color:#c8102e;">Total: ${formatEur(totalDivida)}</div>
     </div>`;
-    for (const g of buildGrupos(comDivida)) html += buildTable(g, true);
+    html += buildTableComDiv(comDivida);
   }
 
   // SEPARADOR
@@ -2002,13 +2046,13 @@ function renderSemCompras() {
     html += `<div style="border-top:2px dashed #e0e0e0;margin:24px 0 20px;"></div>`;
   }
 
-  // SECÇÃO 2: Sem dívida
+  // SECÇÃO 2: Sem dívida — separado por período, ordenado por vendedor dentro de cada grupo
   if (semDivida.length) {
     html += `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
       <span style="font-size:14px;font-weight:700;color:#16a34a;">✅ Sem dívida — ${semDivida.length} clientes</span>
-      <span style="font-size:12px;color:#888;margin-left:12px;">Podem ser reactivados mais rapidamente</span>
+      <span style="font-size:12px;color:#888;margin-left:12px;">Podem ser reactivados mais rapidamente · ordenado por vendedor</span>
     </div>`;
-    for (const g of buildGrupos(semDivida)) html += buildTable(g, false);
+    for (const g of buildGruposSemDiv(semDivida)) html += buildTableSemDiv(g);
   }
 
   cont.innerHTML = html;
