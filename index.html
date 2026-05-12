@@ -1610,21 +1610,23 @@ let scDataRef = null;
 let scLoaded = false;
 
 async function scSaveToSupabase(novasVendas) {
-  // Converte para array de upserts
   const rows = Object.entries(novasVendas).map(([cod, dt]) => ({
     cod_cliente: cod,
     ultima_compra: dt instanceof Date ? dt.toISOString().slice(0,10) : dt,
   }));
 
-  // Divide em lotes de 100 para não sobrecarregar
   const batchSize = 100;
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize);
-    await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/vendas_historico', {
+    const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/vendas_historico', {
       method: 'POST',
       headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify(batch)
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(`Supabase erro ${res.status}: ${err.message || err.hint || JSON.stringify(err)}`);
+    }
   }
 }
 
