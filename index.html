@@ -1171,6 +1171,10 @@
           📂 Carregar vendas
           <input type="file" id="sc-file-input" accept=".xlsx,.xls" multiple style="display:none" onchange="handleSCFileImport(event)">
         </label>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:flex;align-items:center;gap:6px;min-height:36px;">
+          💰 Carregar dívidas
+          <input type="file" id="sc-dividas-input" accept=".xlsx,.xls" style="display:none" onchange="handleSCDividasImport(event)">
+        </label>
         <button class="btn btn-secondary btn-sm" onclick="exportSCExcel()" style="min-height:36px;">⬇ Excel</button>
       </div>
     </div>
@@ -1751,6 +1755,137 @@ async function handleSCFileImport(event) {
   event.target.value = '';
 }
 
+// Dívidas carregadas: { codCliente: { vencido, aging: {0-15, 15-30, 30-60, 60-90, 90-120, +120} } }
+let scDividasData = {};
+let scDividasLoaded = false;
+
+async function scSaveDividasToSupabase(dividasMap) {
+  const rows = Object.entries(dividasMap).map(([cod, d]) => ({
+    cod_cliente: cod,
+    vencido: d.vencido,
+    aging_0_15: d.a0_15 || 0,
+    aging_15_30: d.a15_30 || 0,
+    aging_30_60: d.a30_60 || 0,
+    aging_60_90: d.a60_90 || 0,
+    aging_90_120: d.a90_120 || 0,
+    aging_120: d.a120 || 0,
+  }));
+  const batchSize = 100;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico', {
+      method: 'POST',
+      headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(rows.slice(i, i + batchSize))
+    });
+  }
+}
+
+async function scLoadDividasFromSupabase() {
+  try {
+    const res = await fetch(
+      'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico?select=*',
+      { headers: HEADERS }
+    );
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length) return false;
+    scDividasData = {};
+    for (const row of data) {
+      if (row.vencido > 0) {
+        scDividasData[String(row.cod_cliente)] = {
+          vencido: row.vencido,
+          a0_15: row.aging_0_15, a15_30: row.aging_15_30,
+          a30_60: row.aging_30_60, a60_90: row.aging_60_90,
+          a90_120: row.aging_90_120, a120: row.aging_120,
+        };
+      }
+    }
+    scDividasLoaded = true;
+    return true;
+  } catch(e) { console.error('scLoadDividas error:', e); return false; }
+}
+
+async function handleSCDividasImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!window.XLSX) {
+    await new Promise((res,rej) => { const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s); });
+  }
+  toast('A processar dívidas...');
+  const buf = await file.arrayBuffer();
+  const wb = window.XLSX.read(buf, { type: 'array' });
+
+  // Procura aba "COLAR PENDENTES"
+  const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes('COLAR') || n.toUpperCase().includes('PENDENTE')) || wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1 });
+  const headers = (rows[0] || []).map(h => String(h || '').trim());
+
+  const iCod     = headers.findIndex(h => h === 'CÓDIGO' || h === 'CODIGO');
+  const iVencido = headers.findIndex(h => h === 'VENCIDO');
+  const i0_15    = headers.findIndex(h => h === '0-15');
+  const i15_30   = headers.findIndex(h => h === '15-30');
+  const i30_60   = headers.findIndex(h => h === '30-60');
+  const i60_90   = headers.findIndex(h => h === '60-90');
+  const i90_120  = headers.findIndex(h => h === '90-120');
+  const i120     = headers.findIndex(h => h === '+ 120' || h === '+120');
+
+  if (iCod === -1 || iVencido === -1) {
+    toast('Colunas CÓDIGO ou VENCIDO não encontradas.', 'error');
+    event.target.value = ''; return;
+  }
+
+  const novasDividas = {};
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row[iCod]) continue;
+    const cod = String(row[iCod]).trim();
+    const vencido = parseFloat(row[iVencido]) || 0;
+    if (vencido <= 0) continue;
+    novasDividas[cod] = {
+      vencido,
+      a0_15:   parseFloat(row[i0_15])   || 0,
+      a15_30:  parseFloat(row[i15_30])  || 0,
+      a30_60:  parseFloat(row[i30_60])  || 0,
+      a60_90:  parseFloat(row[i60_90])  || 0,
+      a90_120: parseFloat(row[i90_120]) || 0,
+      a120:    parseFloat(row[i120])    || 0,
+    };
+  }
+
+  toast(`A guardar ${Object.keys(novasDividas).length} dívidas...`);
+  await scSaveDividasToSupabase(novasDividas);
+  await scLoadDividasFromSupabase();
+  toast(`✅ ${Object.keys(scDividasData).length} clientes com dívida carregados`);
+  renderSemCompras();
+  event.target.value = '';
+}
+
+function formatEur(v) {
+  if (!v) return '—';
+  return 'R$ ' + parseFloat(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function agingBar(d) {
+  if (!d) return '';
+  const total = d.vencido;
+  if (!total) return '';
+  const segs = [
+    { v: d.a0_15,   label: '0-15d',   cor: '#f59e0b' },
+    { v: d.a15_30,  label: '15-30d',  cor: '#f97316' },
+    { v: d.a30_60,  label: '30-60d',  cor: '#ef4444' },
+    { v: d.a60_90,  label: '60-90d',  cor: '#dc2626' },
+    { v: d.a90_120, label: '90-120d', cor: '#b91c1c' },
+    { v: d.a120,    label: '+120d',   cor: '#7f1d1d' },
+  ].filter(s => s.v > 0);
+  if (!segs.length) return '';
+  const bars = segs.map(s => {
+    const pct = Math.round(Math.abs(s.v) / Math.abs(total) * 100);
+    return `<span title="${s.label}: ${formatEur(s.v)}" style="display:inline-block;width:${pct}%;min-width:4px;height:8px;background:${s.cor};border-radius:2px;margin-right:1px;"></span>`;
+  }).join('');
+  const labels = segs.map(s => `<span style="font-size:10px;color:#888;margin-right:6px;">${s.label}</span>`).join('');
+  return `<div style="margin-top:3px;">${bars}</div><div style="margin-top:2px;">${labels}</div>`;
+}
+
 function renderSemCompras() {
   const cont = document.getElementById('sc-content');
   if (!scLoaded || !cont) return;
@@ -1797,40 +1932,79 @@ function renderSemCompras() {
     return;
   }
 
-  // Agrupa por faixa de tempo
-  const grupos = [
-    { label: '🔴 Mais de 12 meses', cor: '#c8102e', bg: '#FEF2F2', clientes: resultado.filter(c => c.mesesSemComprar >= 12) },
-    { label: '🟠 Entre 9 e 12 meses', cor: '#d97706', bg: '#FFFBEB', clientes: resultado.filter(c => c.mesesSemComprar >= 9 && c.mesesSemComprar < 12) },
-    { label: '🟡 Entre 6 e 9 meses', cor: '#ca8a04', bg: '#FEFCE8', clientes: resultado.filter(c => c.mesesSemComprar >= 6 && c.mesesSemComprar < 9) },
-  ].filter(g => g.clientes.length > 0 && g.clientes[0].mesesSemComprar >= periodoMin);
+  // Carrega dívidas se ainda não carregado
+  if (!scDividasLoaded) scLoadDividasFromSupabase().then(() => renderSemCompras());
 
-  let html = '';
-  for (const grupo of grupos) {
-    html += `<div style="margin-bottom:20px;">
-      <div style="background:${grupo.bg};border-left:3px solid ${grupo.cor};padding:8px 14px;border-radius:4px 4px 0 0;font-size:13px;font-weight:600;color:${grupo.cor};">
-        ${grupo.label} <span style="font-weight:400;color:var(--muted)">(${grupo.clientes.length} clientes)</span>
+  // Separa em com dívida e sem dívida
+  const comDivida    = resultado.filter(c => scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)]);
+  const semDivida    = resultado.filter(c => !scDividasData[c.cod] && !scDividasData[normalizaCodSC(c.cod)]);
+
+  function buildGrupos(lista) {
+    return [
+      { label: '🔴 Mais de 12 meses', cor: '#c8102e', bg: '#FEF2F2', clientes: lista.filter(c => c.mesesSemComprar >= 12) },
+      { label: '🟠 Entre 9 e 12 meses', cor: '#d97706', bg: '#FFFBEB', clientes: lista.filter(c => c.mesesSemComprar >= 9 && c.mesesSemComprar < 12) },
+      { label: '🟡 Entre 6 e 9 meses', cor: '#ca8a04', bg: '#FEFCE8', clientes: lista.filter(c => c.mesesSemComprar >= 6 && c.mesesSemComprar < 9) },
+    ].filter(g => g.clientes.length > 0);
+  }
+
+  function buildTable(grupo, comDiv) {
+    return `<div style="margin-bottom:16px;">
+      <div style="background:${grupo.bg};border-left:3px solid ${grupo.cor};padding:7px 14px;border-radius:4px 4px 0 0;font-size:13px;font-weight:600;color:${grupo.cor};">
+        ${grupo.label} <span style="font-weight:400;color:var(--muted)">(${grupo.clientes.length})</span>
       </div>
-      <div style="border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;overflow:hidden;">
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <div style="border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:${comDiv?'700px':'550px'}">
           <thead><tr style="background:#f5f5f5;border-bottom:1px solid #e0e0e0;">
-            <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--muted);">Cód.</th>
-            <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--muted);">Nome</th>
-            <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--muted);">Vendedor</th>
-            <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--muted);">Última compra</th>
-            <th style="padding:8px 12px;text-align:center;font-weight:600;color:var(--muted);">Meses</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--muted);white-space:nowrap">Cód.</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--muted);">Nome</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--muted);white-space:nowrap">Vendedor</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--muted);white-space:nowrap">Última compra</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--muted);">Meses</th>
+            ${comDiv ? '<th style="padding:7px 10px;text-align:right;color:var(--muted);white-space:nowrap">Total vencido</th><th style="padding:7px 10px;text-align:left;color:var(--muted);">Antiguidade</th>' : ''}
           </tr></thead>
           <tbody>
-            ${grupo.clientes.map((c, i) => `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
-              <td style="padding:8px 12px;color:var(--muted);font-size:12px;">${c.cod}</td>
-              <td style="padding:8px 12px;font-weight:500;">${c.nome}</td>
-              <td style="padding:8px 12px;font-size:12px;color:var(--muted);">${c.vendedor || '—'}</td>
-              <td style="padding:8px 12px;font-size:12px;">${c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('pt-BR') : '<span style="color:var(--danger)">Sem dados</span>'}</td>
-              <td style="padding:8px 12px;text-align:center;"><span style="background:${grupo.bg};color:${grupo.cor};border-radius:12px;padding:2px 10px;font-weight:700;font-size:12px;">${c.mesesSemComprar >= 999 ? '—' : c.mesesSemComprar + 'm'}</span></td>
-            </tr>`).join('')}
+            ${grupo.clientes.map((c, i) => {
+              const div = scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)];
+              return `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
+                <td style="padding:7px 10px;color:var(--muted);font-size:11px;">${c.cod}</td>
+                <td style="padding:7px 10px;font-weight:500;">${c.nome}</td>
+                <td style="padding:7px 10px;font-size:11px;color:var(--muted);white-space:nowrap">${c.vendedor||'—'}</td>
+                <td style="padding:7px 10px;font-size:11px;white-space:nowrap">${c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('pt-BR') : '<span style="color:var(--danger)">Sem dados</span>'}</td>
+                <td style="padding:7px 10px;text-align:center;"><span style="background:${grupo.bg};color:${grupo.cor};border-radius:12px;padding:2px 8px;font-weight:700;font-size:11px;">${c.mesesSemComprar>=999?'—':c.mesesSemComprar+'m'}</span></td>
+                ${comDiv && div ? `<td style="padding:7px 10px;text-align:right;font-weight:700;color:#c8102e;white-space:nowrap">${formatEur(div.vencido)}</td><td style="padding:7px 10px;min-width:140px">${agingBar(div)}</td>` : (comDiv ? '<td></td><td></td>' : '')}
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>
     </div>`;
+  }
+
+  let html = '';
+
+  // SECÇÃO 1: Com dívida
+  if (comDivida.length) {
+    const totalDivida = comDivida.reduce((s,c) => { const d=scDividasData[c.cod]||scDividasData[normalizaCodSC(c.cod)]; return s+(d?d.vencido:0); }, 0);
+    html += `<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <div><span style="font-size:14px;font-weight:700;color:#c8102e;">💰 Com dívida vencida — ${comDivida.length} clientes</span>
+      <span style="font-size:12px;color:#888;margin-left:12px;">Recuperação necessária antes de reactivar</span></div>
+      <div style="font-size:15px;font-weight:700;color:#c8102e;">Total: ${formatEur(totalDivida)}</div>
+    </div>`;
+    for (const g of buildGrupos(comDivida)) html += buildTable(g, true);
+  }
+
+  // SEPARADOR
+  if (comDivida.length && semDivida.length) {
+    html += `<div style="border-top:2px dashed #e0e0e0;margin:24px 0 20px;"></div>`;
+  }
+
+  // SECÇÃO 2: Sem dívida
+  if (semDivida.length) {
+    html += `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+      <span style="font-size:14px;font-weight:700;color:#16a34a;">✅ Sem dívida — ${semDivida.length} clientes</span>
+      <span style="font-size:12px;color:#888;margin-left:12px;">Podem ser reactivados mais rapidamente</span>
+    </div>`;
+    for (const g of buildGrupos(semDivida)) html += buildTable(g, false);
   }
 
   cont.innerHTML = html;
@@ -1845,7 +2019,7 @@ async function exportSCExcel() {
   const periodoMin = parseInt(document.getElementById('sc-periodo')?.value || '6');
   const hoje = scDataRef || new Date();
 
-  const rows = [['Vendedor','Cód.','Nome','CEP','Última Compra','Meses sem comprar','Faixa']];
+  const rows = [['Vendedor','Cód.','Nome','CEP','Última Compra','Meses sem comprar','Faixa','Situação Dívida','Total Vencido (R$)']];
   for (const cli of CLIENTES_SISTEMA) {
     if (vendFilt && cli.vendedor !== vendFilt) continue;
     const codNorm = normalizaCodSC(cli.cod);
@@ -1853,12 +2027,15 @@ async function exportSCExcel() {
     const meses = ultimaCompra ? Math.floor((hoje - ultimaCompra) / (1000*60*60*24*30.44)) : 999;
     if (meses < periodoMin) continue;
     const faixa = meses >= 12 ? '+12 meses' : meses >= 9 ? '9-12 meses' : '6-9 meses';
-    rows.push([cli.vendedor||'', cli.cod, cli.nome, cli.cep, ultimaCompra ? ultimaCompra.toLocaleDateString('pt-BR') : 'Sem dados', meses >= 999 ? '' : meses, faixa]);
+    const div = scDividasData[cli.cod] || scDividasData[normalizaCodSC(cli.cod)];
+    const vencido = div ? div.vencido : 0;
+    const lista = div ? 'Com divida' : 'Sem divida';
+    rows.push([cli.vendedor||'', cli.cod, cli.nome, cli.cep, ultimaCompra ? ultimaCompra.toLocaleDateString('pt-BR') : 'Sem dados', meses >= 999 ? '' : meses, faixa, lista, vencido || '']);
   }
   rows.sort((a,b) => (b[5]||0) - (a[5]||0));
 
   const ws = window.XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:20},{wch:10},{wch:40},{wch:12},{wch:14},{wch:18},{wch:12}];
+  ws['!cols'] = [{wch:20},{wch:10},{wch:40},{wch:12},{wch:14},{wch:18},{wch:12},{wch:14},{wch:18}];
   const wb = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(wb, ws, 'Sem Compras');
   window.XLSX.writeFile(wb, 'clientes_sem_compras.xlsx');
