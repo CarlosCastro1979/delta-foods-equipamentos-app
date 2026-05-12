@@ -828,6 +828,7 @@
     <button class="tab" onclick="switchTab('at')">🔧 Pedido AT</button>
     <button class="tab" onclick="switchTab('contratos')">📊 Contratos</button>
     <button class="tab" onclick="switchTab('historico-at')">🔧 Histórico AT</button>
+    <button class="tab" onclick="switchTab('sem-compras')">⚠️ Sem Compras</button>
   </div>
 
   <!-- NOVO REGISTO -->
@@ -1149,6 +1150,36 @@
         <input type="file" id="vendas-file-input" accept=".xlsx,.xls" style="display:none" onchange="processVendasFile(event)">
         <button class="btn btn-primary" onclick="document.getElementById('vendas-file-input').click()" style="width:100%;margin-bottom:8px">📂 Selecionar ficheiro Excel</button>
         <button class="btn btn-secondary btn-sm" onclick="clearVendas()" style="width:100%">🗑 Limpar todas as vendas</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PANEL: SEM COMPRAS -->
+  <div class="panel" id="panel-sem-compras">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+      <div style="font-size:15px;font-weight:600;">⚠️ Clientes sem compras</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <select id="sc-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="renderSemCompras()">
+          <option value="">Todos os vendedores</option>
+        </select>
+        <select id="sc-periodo" class="form-input" style="min-width:160px;height:36px;font-size:13px;" onchange="renderSemCompras()">
+          <option value="6">Mais de 6 meses</option>
+          <option value="9">Mais de 9 meses</option>
+          <option value="12">Mais de 12 meses</option>
+        </select>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:flex;align-items:center;gap:6px;min-height:36px;">
+          📂 Carregar vendas
+          <input type="file" id="sc-file-input" accept=".xlsx,.xls" multiple style="display:none" onchange="handleSCFileImport(event)">
+        </label>
+        <button class="btn btn-secondary btn-sm" onclick="exportSCExcel()" style="min-height:36px;">⬇ Excel</button>
+      </div>
+    </div>
+    <div id="sc-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+    <div id="sc-content">
+      <div style="padding:60px 20px;text-align:center;color:var(--muted);">
+        <div style="font-size:40px;margin-bottom:12px;">📂</div>
+        <div style="font-size:14px;font-weight:500;margin-bottom:6px;">Carrega o ficheiro de vendas para começar</div>
+        <div style="font-size:12px;">Aceita ficheiros Excel do SAP · Podes carregar vários meses de uma vez</div>
       </div>
     </div>
   </div>
@@ -1531,6 +1562,232 @@ async function confirmarExclusao() {
   } catch(e) {
     toast('Erro: ' + e.message, 'error');
   }
+}
+
+// ─── SEM COMPRAS ──────────────────────────────────────
+
+// Mapa Nº pess. → vendedor (mesmo do importador)
+const NPESS_VENDEDOR_SC = {
+  99520002: 'HÉLCIO GRÉGIO',
+  99520015: 'HÉLCIO GRÉGIO',
+  99520006: 'DANIELA SANTOS',
+  99520007: 'PAULO FONTES',
+  99520010: 'FILIPE NEVES',
+  99520016: 'DANIELA SANTOS',
+  99520017: 'PAULO FONTES',
+};
+
+// Normaliza código de cliente (remove espaços e zeros à esquerda)
+function normalizaCodSC(raw) {
+  return String(raw || '').trim().replace(/^0+/, '') || '0';
+}
+
+// Extrai código numérico do "Emissor da ordem" (ex: "427238     TEIXEIRA..." → "427238")
+function extrairCodCliente(emissor) {
+  const m = String(emissor || '').trim().match(/^(\d+)/);
+  return m ? m[1] : '';
+}
+
+// Parse data dd.mm.yyyy ou yyyy-mm-dd
+function parseDateSC(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  const m1 = s.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+  if (m1) return new Date(parseInt(m1[3]), parseInt(m1[2])-1, parseInt(m1[1]));
+  const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m2) return new Date(parseInt(m2[1]), parseInt(m2[2])-1, parseInt(m2[3]));
+  return null;
+}
+
+// Dados das vendas carregadas: { codCliente: Date (última compra) }
+let scVendasData = {}; // carregado pelo utilizador
+let scDataRef = null;  // data de referência (hoje)
+let scLoaded = false;
+
+function initSemCompras() {
+  if (!scLoaded) return; // aguarda carregamento de ficheiro
+  renderSemCompras();
+}
+
+async function handleSCFileImport(event) {
+  const files = Array.from(event.target.files);
+  if (!files.length) return;
+
+  if (!window.XLSX) {
+    toast('A carregar leitor Excel...');
+    await new Promise((res,rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+
+  toast(`A processar ${files.length} ficheiro(s)...`);
+  const novasVendas = { ...scVendasData };
+  let totalLinhas = 0;
+
+  for (const file of files) {
+    const buf = await file.arrayBuffer();
+    const wb = window.XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1 });
+    const headers = (rows[0] || []).map(h => String(h || '').trim());
+
+    const iEmissor = headers.findIndex(h => h.includes('Emissor'));
+    const iData    = headers.findIndex(h => h === 'Data');
+
+    if (iEmissor === -1 || iData === -1) {
+      toast(`Ficheiro "${file.name}" não tem colunas esperadas.`, 'error');
+      continue;
+    }
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !row[iEmissor]) continue;
+      const cod = extrairCodCliente(row[iEmissor]);
+      if (!cod) continue;
+      const dt = parseDateSC(row[iData]);
+      if (!dt) continue;
+      // Guarda a data mais recente por cliente
+      if (!novasVendas[cod] || dt > novasVendas[cod]) {
+        novasVendas[cod] = dt;
+      }
+      totalLinhas++;
+    }
+  }
+
+  scVendasData = novasVendas;
+  scDataRef = new Date();
+  scLoaded = true;
+
+  const nClientes = Object.keys(scVendasData).length;
+  toast(`✅ ${totalLinhas} linhas processadas · ${nClientes} clientes com vendas`);
+
+  // Actualiza filtro de vendedores
+  const sel = document.getElementById('sc-vendedor');
+  if (sel) {
+    const vendedores = [...new Set(CLIENTES_SISTEMA.map(c => c.vendedor).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">Todos os vendedores</option>' +
+      vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+  }
+
+  document.getElementById('sc-info').textContent = '';
+  renderSemCompras();
+  event.target.value = '';
+}
+
+function renderSemCompras() {
+  const cont = document.getElementById('sc-content');
+  if (!scLoaded || !cont) return;
+
+  const vendFilt   = document.getElementById('sc-vendedor')?.value || '';
+  const periodoMin = parseInt(document.getElementById('sc-periodo')?.value || '6');
+  const hoje = scDataRef || new Date();
+
+  // Calcula meses sem comprar por cliente
+  const resultado = [];
+  for (const cli of CLIENTES_SISTEMA) {
+    if (vendFilt && cli.vendedor !== vendFilt) continue;
+    const codNorm = normalizaCodSC(cli.cod);
+    const ultimaCompra = scVendasData[codNorm] || scVendasData[cli.cod] || null;
+
+    let mesesSemComprar;
+    if (!ultimaCompra) {
+      mesesSemComprar = 999; // nunca comprou (nos dados carregados)
+    } else {
+      const diffMs = hoje - ultimaCompra;
+      mesesSemComprar = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.44));
+    }
+
+    if (mesesSemComprar >= periodoMin) {
+      resultado.push({ ...cli, ultimaCompra, mesesSemComprar });
+    }
+  }
+
+  // Ordena: mais tempo sem comprar primeiro
+  resultado.sort((a, b) => b.mesesSemComprar - a.mesesSemComprar);
+
+  // Estatísticas
+  const n12 = resultado.filter(c => c.mesesSemComprar >= 12).length;
+  const n9  = resultado.filter(c => c.mesesSemComprar >= 9 && c.mesesSemComprar < 12).length;
+  const n6  = resultado.filter(c => c.mesesSemComprar >= 6 && c.mesesSemComprar < 9).length;
+
+  document.getElementById('sc-info').innerHTML =
+    `<span style="color:var(--danger);font-weight:600;">${resultado.length} clientes</span> sem compras há mais de ${periodoMin} meses` +
+    (periodoMin <= 6 ? ` &nbsp;·&nbsp; <span style="color:var(--danger)">🔴 +12m: ${n12}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟡 9-12m: ${n9}</span> &nbsp;·&nbsp; <span style="color:#ca8a04">🟠 6-9m: ${n6}</span>` : '') +
+    ` &nbsp;·&nbsp; Referência: ${hoje.toLocaleDateString('pt-BR')}`;
+
+  if (!resultado.length) {
+    cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum cliente sem compras neste período.</div>';
+    return;
+  }
+
+  // Agrupa por faixa de tempo
+  const grupos = [
+    { label: '🔴 Mais de 12 meses', cor: '#c8102e', bg: '#FEF2F2', clientes: resultado.filter(c => c.mesesSemComprar >= 12) },
+    { label: '🟠 Entre 9 e 12 meses', cor: '#d97706', bg: '#FFFBEB', clientes: resultado.filter(c => c.mesesSemComprar >= 9 && c.mesesSemComprar < 12) },
+    { label: '🟡 Entre 6 e 9 meses', cor: '#ca8a04', bg: '#FEFCE8', clientes: resultado.filter(c => c.mesesSemComprar >= 6 && c.mesesSemComprar < 9) },
+  ].filter(g => g.clientes.length > 0 && g.clientes[0].mesesSemComprar >= periodoMin);
+
+  let html = '';
+  for (const grupo of grupos) {
+    html += `<div style="margin-bottom:20px;">
+      <div style="background:${grupo.bg};border-left:3px solid ${grupo.cor};padding:8px 14px;border-radius:4px 4px 0 0;font-size:13px;font-weight:600;color:${grupo.cor};">
+        ${grupo.label} <span style="font-weight:400;color:var(--muted)">(${grupo.clientes.length} clientes)</span>
+      </div>
+      <div style="border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr style="background:#f5f5f5;border-bottom:1px solid #e0e0e0;">
+            <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--muted);">Cód.</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--muted);">Nome</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--muted);">Vendedor</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--muted);">Última compra</th>
+            <th style="padding:8px 12px;text-align:center;font-weight:600;color:var(--muted);">Meses</th>
+          </tr></thead>
+          <tbody>
+            ${grupo.clientes.map((c, i) => `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
+              <td style="padding:8px 12px;color:var(--muted);font-size:12px;">${c.cod}</td>
+              <td style="padding:8px 12px;font-weight:500;">${c.nome}</td>
+              <td style="padding:8px 12px;font-size:12px;color:var(--muted);">${c.vendedor || '—'}</td>
+              <td style="padding:8px 12px;font-size:12px;">${c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('pt-BR') : '<span style="color:var(--danger)">Sem dados</span>'}</td>
+              <td style="padding:8px 12px;text-align:center;"><span style="background:${grupo.bg};color:${grupo.cor};border-radius:12px;padding:2px 10px;font-weight:700;font-size:12px;">${c.mesesSemComprar >= 999 ? '—' : c.mesesSemComprar + 'm'}</span></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  cont.innerHTML = html;
+}
+
+async function exportSCExcel() {
+  if (!scLoaded) { toast('Carrega primeiro um ficheiro de vendas.', 'error'); return; }
+  if (!window.XLSX) {
+    await new Promise((res,rej) => { const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s); });
+  }
+  const vendFilt   = document.getElementById('sc-vendedor')?.value || '';
+  const periodoMin = parseInt(document.getElementById('sc-periodo')?.value || '6');
+  const hoje = scDataRef || new Date();
+
+  const rows = [['Vendedor','Cód.','Nome','CEP','Última Compra','Meses sem comprar','Faixa']];
+  for (const cli of CLIENTES_SISTEMA) {
+    if (vendFilt && cli.vendedor !== vendFilt) continue;
+    const codNorm = normalizaCodSC(cli.cod);
+    const ultimaCompra = scVendasData[codNorm] || scVendasData[cli.cod] || null;
+    const meses = ultimaCompra ? Math.floor((hoje - ultimaCompra) / (1000*60*60*24*30.44)) : 999;
+    if (meses < periodoMin) continue;
+    const faixa = meses >= 12 ? '+12 meses' : meses >= 9 ? '9-12 meses' : '6-9 meses';
+    rows.push([cli.vendedor||'', cli.cod, cli.nome, cli.cep, ultimaCompra ? ultimaCompra.toLocaleDateString('pt-BR') : 'Sem dados', meses >= 999 ? '' : meses, faixa]);
+  }
+  rows.sort((a,b) => (b[5]||0) - (a[5]||0));
+
+  const ws = window.XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:20},{wch:10},{wch:40},{wch:12},{wch:14},{wch:18},{wch:12}];
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Sem Compras');
+  window.XLSX.writeFile(wb, 'clientes_sem_compras.xlsx');
 }
 
 // ─── EDIT ─────────────────────────────────────────────
@@ -1953,6 +2210,7 @@ function switchTab(tab) {
   if (tab === 'at') loadAtTab();
   if (tab === 'contratos') { const pc = document.getElementById('panel-contratos'); if(pc) loadContratosTab(); }
   if (tab === 'historico-at') loadATHistorico();
+  if (tab === 'sem-compras') initSemCompras();
 }
 
 // ─── PEDIDO AT ──────────────────────────────────────
