@@ -1599,14 +1599,80 @@ function parseDateSC(str) {
   return null;
 }
 
-// Dados das vendas carregadas: { codCliente: Date (última compra) }
-let scVendasData = {}; // carregado pelo utilizador
-let scDataRef = null;  // data de referência (hoje)
+// Dados das vendas: { codCliente: timestamp (última compra) }
+// Guardado em localStorage para persistir entre sessões
+let scVendasData = {};
+let scDataRef = null;
 let scLoaded = false;
 
-function initSemCompras() {
-  if (!scLoaded) return; // aguarda carregamento de ficheiro
-  renderSemCompras();
+async function scSaveToSupabase(novasVendas) {
+  // Converte para array de upserts
+  const rows = Object.entries(novasVendas).map(([cod, dt]) => ({
+    cod_cliente: cod,
+    ultima_compra: dt instanceof Date ? dt.toISOString().slice(0,10) : dt,
+  }));
+
+  // Divide em lotes de 100 para não sobrecarregar
+  const batchSize = 100;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
+    await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/vendas_historico', {
+      method: 'POST',
+      headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(batch)
+    });
+  }
+}
+
+async function scLoadFromSupabase() {
+  try {
+    document.getElementById('sc-info').innerHTML =
+      '<span style="color:var(--muted);font-size:12px;">⏳ A carregar histórico...</span>';
+    const res = await fetch(
+      'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/vendas_historico?select=cod_cliente,ultima_compra,updated_at&order=ultima_compra.desc',
+      { headers: HEADERS }
+    );
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length) return false;
+
+    scVendasData = {};
+    let lastUpdate = '';
+    for (const row of data) {
+      scVendasData[row.cod_cliente] = new Date(row.ultima_compra);
+      if (row.updated_at > lastUpdate) lastUpdate = row.updated_at;
+    }
+    scLoaded = true;
+
+    const nClientes = data.length;
+    const dtUpdate = lastUpdate ? new Date(lastUpdate).toLocaleDateString('pt-BR') : '—';
+    document.getElementById('sc-info').innerHTML =
+      `<span style="color:var(--muted);font-size:12px;">📦 Histórico: <strong>${nClientes}</strong> clientes · Última actualização: <strong>${dtUpdate}</strong></span>`;
+    return true;
+  } catch(e) {
+    console.error('scLoadFromSupabase error:', e);
+    return false;
+  }
+}
+
+async function initSemCompras() {
+  // Actualiza filtro de vendedores
+  const sel = document.getElementById('sc-vendedor');
+  if (sel && sel.options.length <= 1) {
+    const vendedores = [...new Set(CLIENTES_SISTEMA.map(c => c.vendedor).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">Todos os vendedores</option>' +
+      vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+  }
+
+  // Carrega do Supabase se ainda não carregado
+  if (!scLoaded) {
+    const ok = await scLoadFromSupabase();
+    if (ok) {
+      scDataRef = new Date();
+      renderSemCompras();
+    }
+  } else {
+    renderSemCompras();
+  }
 }
 
 async function handleSCFileImport(event) {
@@ -1657,22 +1723,30 @@ async function handleSCFileImport(event) {
     }
   }
 
-  scVendasData = novasVendas;
+  // Guarda no Supabase (upsert — mantém histórico, só actualiza se mais recente)
+  toast(`A guardar ${Object.keys(novasVendas).length} clientes no histórico...`);
+  try {
+    await scSaveToSupabase(novasVendas);
+  } catch(e) {
+    toast('Erro ao guardar histórico: ' + e.message, 'error');
+  }
+
+  // Recarrega do Supabase para ter dados frescos
+  await scLoadFromSupabase();
   scDataRef = new Date();
   scLoaded = true;
 
   const nClientes = Object.keys(scVendasData).length;
-  toast(`✅ ${totalLinhas} linhas processadas · ${nClientes} clientes com vendas`);
+  toast(`✅ ${totalLinhas} linhas processadas · ${nClientes} clientes no histórico`);
 
   // Actualiza filtro de vendedores
   const sel = document.getElementById('sc-vendedor');
-  if (sel) {
+  if (sel && sel.options.length <= 1) {
     const vendedores = [...new Set(CLIENTES_SISTEMA.map(c => c.vendedor).filter(Boolean))].sort();
     sel.innerHTML = '<option value="">Todos os vendedores</option>' +
       vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
   }
 
-  document.getElementById('sc-info').textContent = '';
   renderSemCompras();
   event.target.value = '';
 }
