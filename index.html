@@ -1560,7 +1560,7 @@ async function confirmarExclusao() {
     const res = await fetch(SUPA_URL + '?id=eq.' + editingId, { method: 'DELETE', headers: HEADERS });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     toast('🗑️ Registo eliminado.');
-    clearRegistosCache();
+    clearRegistosCache(); clearContratosCache();
     closeModal();
     loadData(true);
   } catch(e) {
@@ -3175,8 +3175,17 @@ function loadContratos(prefix, contratos = []) {
   }
 }
 
-async function loadContratosTab() {
+let contratosCache = null; // cache em memória — só vai ao Supabase uma vez por sessão
+
+async function loadContratosTab(forceRefresh = false) {
   const cont = document.getElementById('contratos-content');
+
+  // Usa cache se disponível e não forçar refresh
+  if (contratosCache && !forceRefresh) {
+    renderContratosFromCache(contratosCache);
+    return;
+  }
+
   cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A calcular...</div>';
 
   try {
@@ -3337,11 +3346,20 @@ async function loadContratosTab() {
       ${rows.length} contrato(s) · Vendas: ${vendas.length} registos
     </div>`;
 
+    contratosCache = html; // guarda em cache
     cont.innerHTML = html;
   } catch(e) {
     cont.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">Erro: ${e.message}</div>`;
   }
 }
+
+function renderContratosFromCache(html) {
+  const cont = document.getElementById('contratos-content');
+  if (cont) cont.innerHTML = html;
+}
+
+// Invalida cache dos contratos quando há novos registos
+function clearContratosCache() { contratosCache = null; }
 
 function exportContratosExcel() {
   // Collect visible table rows and export as CSV
