@@ -3538,7 +3538,7 @@ async function loadContratosTab(forceRefresh = false) {
 
   try {
     // Fetch all registos with contratos from Supabase
-    const res = await fetch(SUPA_URL + '?select=cod,nome,contrato,contratos', {headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }});
+    const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,contrato,contratos', {headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }});
     let registos = await res.json();
 
     // Filter only those with contratos array
@@ -3613,7 +3613,7 @@ async function loadContratosTab(forceRefresh = false) {
         else if (mesesParaFim <= 6 && mesesParaFim >= 0) alerta = 'tempo';
 
         rows.push({
-          cod: r.cod, nome: r.nome, contrato: r.contrato || '—',
+          cod: r.cod, nome: r.nome, vendedor: r.vendedor || '—', contrato: r.contrato || '—',
           inicio: inicioFmt, duracao, fimFmt, unidade,
           totalContratado, consumoMes, mesesDecorridos,
           consumoEsperado, consumoReal,
@@ -3638,7 +3638,51 @@ async function loadContratosTab(forceRefresh = false) {
     const pctColor = p => p === null ? '#888' : p >= 90 ? '#2e7d32' : p >= 60 ? '#f57c00' : '#c62828';
     const pctBg = p => p === null ? '#f5f5f5' : p >= 90 ? '#e8f5e9' : p >= 60 ? '#fff3e0' : '#ffebee';
 
-    let html = `<div style="overflow-x:auto">
+    // ── RESUMO POR VENDEDOR ──
+    const resumoVendContr = {};
+    rows.forEach(r => {
+      const v = r.vendedor || '—';
+      if (!resumoVendContr[v]) resumoVendContr[v] = { total: 0, abaixo50: 0, entre50_75: 0, acima100: 0 };
+      resumoVendContr[v].total++;
+      const p = r.pct !== null ? r.pct : null;
+      if (p === null) return;
+      if (p < 50)  resumoVendContr[v].abaixo50++;
+      else if (p < 75) resumoVendContr[v].entre50_75++;
+      else if (p >= 100) resumoVendContr[v].acima100++;
+    });
+
+    let html = `<div style="margin-bottom:20px;display:inline-block;min-width:480px;max-width:100%;">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por vendedor — % YTD</div>
+      <table style="border-collapse:collapse;font-size:13px;width:100%;">
+        <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+          <th style="padding:7px 14px;text-align:left;font-weight:600;">Vendedor</th>
+          <th style="padding:7px 14px;text-align:center;font-weight:600;">Contratos</th>
+          <th style="padding:7px 14px;text-align:center;font-weight:600;color:#c62828;">Abaixo 50%</th>
+          <th style="padding:7px 14px;text-align:center;font-weight:600;color:#f57c00;">50% – 75%</th>
+          <th style="padding:7px 14px;text-align:center;font-weight:600;color:#2e7d32;">100% ou +</th>
+        </tr></thead>
+        <tbody>
+          ${Object.entries(resumoVendContr).sort((a,b) => b[1].total - a[1].total).map(([v, d], i) => `
+          <tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
+            <td style="padding:7px 14px;font-weight:500;">${v}</td>
+            <td style="padding:7px 14px;text-align:center;font-weight:600;">${d.total}</td>
+            <td style="padding:7px 14px;text-align:center;font-weight:${d.abaixo50>0?'700':'400'};color:${d.abaixo50>0?'#c62828':'var(--muted)'};">${d.abaixo50 || '—'}</td>
+            <td style="padding:7px 14px;text-align:center;font-weight:${d.entre50_75>0?'700':'400'};color:${d.entre50_75>0?'#f57c00':'var(--muted)'};">${d.entre50_75 || '—'}</td>
+            <td style="padding:7px 14px;text-align:center;font-weight:${d.acima100>0?'700':'400'};color:${d.acima100>0?'#2e7d32':'var(--muted)'};">${d.acima100 || '—'}</td>
+          </tr>`).join('')}
+          <tr style="border-top:2px solid var(--border);background:#f9f9f9;">
+            <td style="padding:7px 14px;font-weight:700;">Total</td>
+            <td style="padding:7px 14px;text-align:center;font-weight:700;">${rows.length}</td>
+            <td style="padding:7px 14px;text-align:center;font-weight:700;color:#c62828;">${Object.values(resumoVendContr).reduce((s,d)=>s+d.abaixo50,0)||'—'}</td>
+            <td style="padding:7px 14px;text-align:center;font-weight:700;color:#f57c00;">${Object.values(resumoVendContr).reduce((s,d)=>s+d.entre50_75,0)||'—'}</td>
+            <td style="padding:7px 14px;text-align:center;font-weight:700;color:#2e7d32;">${Object.values(resumoVendContr).reduce((s,d)=>s+d.acima100,0)||'—'}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
+
+    html += `<div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead>
         <tr style="background:#f5f5f5;color:#333;text-align:left;border-bottom:2px solid #c8102e">
