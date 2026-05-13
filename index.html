@@ -1111,7 +1111,10 @@
   <div class="panel" id="panel-contratos">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <h2 style="font-size:16px;font-weight:600;color:var(--text)">📊 Cumprimento de Contratos</h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <select id="contratos-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="filtrarContratosVendedor()">
+          <option value="">Todos os vendedores</option>
+        </select>
         <button class="btn btn-secondary btn-sm" onclick="exportContratosExcel()">⬇ Excel</button>
         <button class="btn btn-primary btn-sm" onclick="showVendasImport()" style="background:var(--accent)">⬆ Carregar Vendas</button>
       </div>
@@ -1863,18 +1866,21 @@ async function handleSCDividasImport(event) {
   // Guarda no Supabase: apaga tudo e reescreve
   toast('A actualizar dívidas no servidor...');
   try {
-    // 1. Apaga todos os registos existentes (usando gt vazio que apanha tudo)
-    await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico?vencido=gte.0', {
+    // 1. Apaga todos os registos existentes
+    const delRes = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico?vencido=gte.0', {
       method: 'DELETE',
       headers: HEADERS
     });
-    // 2. Insere os novos em lotes de 100 com verificação de erro
+    if (!delRes.ok) console.warn('DELETE dividas:', delRes.status);
+
+    // 2. Insere os novos em lotes de 100
     const rows = Object.entries(novasDividas).map(([cod, d]) => ({
       cod_cliente: cod, vencido: d.vencido,
       aging_0_15: d.a0_15||0, aging_15_30: d.a15_30||0,
       aging_30_60: d.a30_60||0, aging_60_90: d.a60_90||0,
       aging_90_120: d.a90_120||0, aging_120: d.a120||0,
     }));
+    let inserted = 0;
     for (let i = 0; i < rows.length; i += 100) {
       const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico', {
         method: 'POST',
@@ -1883,12 +1889,13 @@ async function handleSCDividasImport(event) {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error('Supabase: ' + (err.message || err.hint || res.status));
+        throw new Error('Supabase INSERT: ' + (err.message || err.hint || res.status));
       }
+      inserted += rows.slice(i, i + 100).length;
     }
     scDividasData = novasDividas;
     scDividasLoaded = true;
-    toast(`✅ ${Object.keys(scDividasData).length} clientes com dívida guardados no servidor`);
+    toast(`✅ ${inserted} clientes com dívida guardados no Supabase`);
   } catch(e) {
     // Fallback: guarda só em memória se Supabase falhar
     scDividasData = novasDividas;
@@ -3544,6 +3551,10 @@ async function loadContratosTab(forceRefresh = false) {
     // Filter only those with contratos array
     registos = registos.filter(r => Array.isArray(r.contratos) && r.contratos.length > 0);
 
+    // Apply vendedor filter if active
+    const vendFiltContr = window._contratosFiltro || '';
+    if (vendFiltContr) registos = registos.filter(r => r.vendedor === vendFiltContr);
+
     if (!registos.length) {
       cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Nenhum contrato registado ainda.<br>Adiciona contratos no formulário de Novo Registo.</div>';
       return;
@@ -3749,6 +3760,15 @@ async function loadContratosTab(forceRefresh = false) {
   } catch(e) {
     cont.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">Erro: ${e.message}</div>`;
   }
+}
+
+function filtrarContratosVendedor() {
+  const vendFilt = document.getElementById('contratos-vendedor')?.value || '';
+  if (!window._contratosRows) { loadContratosTab(true); return; }
+  // Invalida cache para forçar re-render com filtro
+  contratosCache = null;
+  window._contratosFiltro = vendFilt;
+  loadContratosTab();
 }
 
 function renderContratosFromCache(html) {
