@@ -1863,12 +1863,12 @@ async function handleSCDividasImport(event) {
   // Guarda no Supabase: apaga tudo e reescreve
   toast('A actualizar dívidas no servidor...');
   try {
-    // 1. Apaga todos os registos existentes
-    await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico?cod_cliente=neq.NULL_PLACEHOLDER', {
+    // 1. Apaga todos os registos existentes (usando gt vazio que apanha tudo)
+    await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico?vencido=gte.0', {
       method: 'DELETE',
       headers: HEADERS
     });
-    // 2. Insere os novos em lotes de 100
+    // 2. Insere os novos em lotes de 100 com verificação de erro
     const rows = Object.entries(novasDividas).map(([cod, d]) => ({
       cod_cliente: cod, vencido: d.vencido,
       aging_0_15: d.a0_15||0, aging_15_30: d.a15_30||0,
@@ -1876,15 +1876,19 @@ async function handleSCDividasImport(event) {
       aging_90_120: d.a90_120||0, aging_120: d.a120||0,
     }));
     for (let i = 0; i < rows.length; i += 100) {
-      await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico', {
+      const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico', {
         method: 'POST',
         headers: { ...HEADERS, 'Prefer': 'return=minimal' },
         body: JSON.stringify(rows.slice(i, i + 100))
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error('Supabase: ' + (err.message || err.hint || res.status));
+      }
     }
     scDividasData = novasDividas;
     scDividasLoaded = true;
-    toast(`✅ ${Object.keys(scDividasData).length} clientes com dívida actualizados`);
+    toast(`✅ ${Object.keys(scDividasData).length} clientes com dívida guardados no servidor`);
   } catch(e) {
     // Fallback: guarda só em memória se Supabase falhar
     scDividasData = novasDividas;
