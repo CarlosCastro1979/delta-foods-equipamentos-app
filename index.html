@@ -3775,16 +3775,19 @@ async function loadContratosTab(forceRefresh = false) {
     contratosCache = html; // guarda em cache
     cont.innerHTML = html;
 
-    // Event delegation for resumo table clicks
-    cont.addEventListener('click', function handler(e) {
-      const td = e.target.closest('[data-nivel]');
-      if (!td) return;
-      const tr = td.closest('[data-vend]');
-      const vend = tr ? decodeURIComponent(tr.dataset.vend) : (td.dataset.vend || 'todos');
-      const nivel = td.dataset.nivel || 'todos';
-      if (!nivel) return;
-      filtrarContratosTabela(vend, nivel);
-    });
+    // Event delegation for resumo table clicks (once only)
+    if (!cont._resumoListenerAdded) {
+      cont._resumoListenerAdded = true;
+      cont.addEventListener('click', function(e) {
+        const td = e.target.closest('[data-nivel]');
+        if (!td) return;
+        const tr = td.closest('[data-vend]');
+        const vend = tr ? decodeURIComponent(tr.dataset.vend) : (td.dataset.vend || 'todos');
+        const nivel = td.dataset.nivel || 'todos';
+        if (!nivel) return;
+        filtrarContratosTabela(vend, nivel);
+      });
+    }
   } catch(e) {
     cont.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">Erro: ${e.message}</div>`;
   }
@@ -3820,13 +3823,7 @@ function filtrarContratosTabela(vendedor, nivel) {
     return;
   }
 
-  const filtroLabel = (nivel!=='todos'||vendedor!=='todos')
-    ? `<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:7px 14px;margin-bottom:10px;font-size:13px;display:flex;justify-content:space-between;align-items:center;">
-        <span>📌 <strong>${vendLabel}</strong> · <strong>${nivelLabel}</strong> · ${rows.length} contrato(s)</span>
-        <button onclick="filtrarContratosTabela('todos','todos')" style="padding:3px 10px;border-radius:4px;border:1px solid #93C5FD;cursor:pointer;font-size:12px;background:#fff;">✕ Limpar</button>
-      </div>` : '';
-
-  let html = filtroLabel + `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+  let html = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
     <thead><tr style="background:#f5f5f5;color:#333;text-align:left;border-bottom:2px solid #c8102e">
       <th style="padding:10px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:12px">CLIENTE</th>
       <th style="padding:10px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:12px">CONTRATO</th>
