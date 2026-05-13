@@ -1794,14 +1794,18 @@ let scDividasLoaded = false;
 async function scLoadDividasFromSupabase() {
   try {
     const res = await fetch(
-      'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico?select=*',
+      'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico?select=*&limit=5000',
       { headers: HEADERS }
     );
+    if (!res.ok) { console.error('scLoadDividas HTTP:', res.status); return false; }
     const data = await res.json();
-    if (!Array.isArray(data) || !data.length) return false;
+    if (!Array.isArray(data) || !data.length) {
+      console.warn('scLoadDividas: tabela vazia');
+      return false;
+    }
     scDividasData = {};
     for (const row of data) {
-      if (row.vencido > 0) {
+      if ((row.vencido || 0) > 0) {
         scDividasData[String(row.cod_cliente)] = {
           vencido: row.vencido,
           a0_15: row.aging_0_15, a15_30: row.aging_15_30,
@@ -1811,6 +1815,7 @@ async function scLoadDividasFromSupabase() {
       }
     }
     scDividasLoaded = true;
+    console.log('scLoadDividas: carregados', Object.keys(scDividasData).length, 'clientes com dívida');
     return true;
   } catch(e) { console.error('scLoadDividas error:', e); return false; }
 }
@@ -3755,6 +3760,16 @@ async function loadContratosTab(forceRefresh = false) {
       ${rows.length} contrato(s) · Vendas: ${vendas.length} registos
     </div>`;
 
+    // Guarda rows para filtro e popula select de vendedores
+    window._contratosAllRows = rows;
+    const vendedoresContr = [...new Set(rows.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
+    const selVC = document.getElementById('contratos-vendedor');
+    if (selVC) {
+      const cur = selVC.value;
+      selVC.innerHTML = '<option value="">Todos os vendedores</option>' +
+        vendedoresContr.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+    }
+
     contratosCache = html; // guarda em cache
     cont.innerHTML = html;
   } catch(e) {
@@ -3764,11 +3779,105 @@ async function loadContratosTab(forceRefresh = false) {
 
 function filtrarContratosVendedor() {
   const vendFilt = document.getElementById('contratos-vendedor')?.value || '';
-  if (!window._contratosRows) { loadContratosTab(true); return; }
-  // Invalida cache para forçar re-render com filtro
-  contratosCache = null;
-  window._contratosFiltro = vendFilt;
-  loadContratosTab();
+  const allRows = window._contratosAllRows;
+  if (!allRows) { loadContratosTab(true); return; }
+
+  const rows = vendFilt ? allRows.filter(r => r.vendedor === vendFilt) : allRows;
+  if (!rows.length) {
+    document.getElementById('contratos-content').innerHTML =
+      '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum contrato para este vendedor.</div>';
+    return;
+  }
+
+  // Re-render resumo + tabela com rows filtradas
+  const pctColor = p => p === null ? '#888' : p >= 90 ? '#2e7d32' : p >= 60 ? '#f57c00' : '#c62828';
+  const pctBg    = p => p === null ? '#f5f5f5' : p >= 90 ? '#e8f5e9' : p >= 60 ? '#fff3e0' : '#ffebee';
+  const fmtNum   = (n, u) => u === 'Kg'
+    ? n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' Kg'
+    : Math.round(n).toLocaleString('pt-BR')+' Cáps';
+
+  // Resumo
+  const resumo = {};
+  rows.forEach(r => {
+    const v = r.vendedor||'—';
+    if (!resumo[v]) resumo[v] = {total:0,abaixo50:0,entre50_75:0,acima100:0};
+    resumo[v].total++;
+    const p = r.pct;
+    if (p === null) return;
+    if (p < 50) resumo[v].abaixo50++;
+    else if (p < 75) resumo[v].entre50_75++;
+    else if (p >= 100) resumo[v].acima100++;
+  });
+
+  let html = `<div style="margin-bottom:20px;display:inline-block;min-width:480px;max-width:100%;">
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por vendedor — % YTD</div>
+    <table style="border-collapse:collapse;font-size:13px;width:100%;">
+      <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+        <th style="padding:7px 14px;text-align:left;font-weight:600;">Vendedor</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;">Contratos</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;color:#c62828;">Abaixo 50%</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;color:#f57c00;">50%–75%</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;color:#2e7d32;">100% ou +</th>
+      </tr></thead><tbody>
+      ${Object.entries(resumo).sort((a,b)=>b[1].total-a[1].total).map(([v,d],i)=>`
+      <tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
+        <td style="padding:7px 14px;font-weight:500;">${v}</td>
+        <td style="padding:7px 14px;text-align:center;font-weight:600;">${d.total}</td>
+        <td style="padding:7px 14px;text-align:center;font-weight:${d.abaixo50?'700':'400'};color:${d.abaixo50?'#c62828':'var(--muted)'};">${d.abaixo50||'—'}</td>
+        <td style="padding:7px 14px;text-align:center;font-weight:${d.entre50_75?'700':'400'};color:${d.entre50_75?'#f57c00':'var(--muted)'};">${d.entre50_75||'—'}</td>
+        <td style="padding:7px 14px;text-align:center;font-weight:${d.acima100?'700':'400'};color:${d.acima100?'#2e7d32':'var(--muted)'};">${d.acima100||'—'}</td>
+      </tr>`).join('')}
+      <tr style="border-top:2px solid var(--border);background:#f9f9f9;">
+        <td style="padding:7px 14px;font-weight:700;">Total</td>
+        <td style="padding:7px 14px;text-align:center;font-weight:700;">${rows.length}</td>
+        <td style="padding:7px 14px;text-align:center;font-weight:700;color:#c62828;">${Object.values(resumo).reduce((s,d)=>s+d.abaixo50,0)||'—'}</td>
+        <td style="padding:7px 14px;text-align:center;font-weight:700;color:#f57c00;">${Object.values(resumo).reduce((s,d)=>s+d.entre50_75,0)||'—'}</td>
+        <td style="padding:7px 14px;text-align:center;font-weight:700;color:#2e7d32;">${Object.values(resumo).reduce((s,d)=>s+d.acima100,0)||'—'}</td>
+      </tr></tbody>
+    </table></div>
+    <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
+
+  // Tabela de contratos (reutiliza HTML do contrato original por linha)
+  html += `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr style="background:#f5f5f5;color:#333;text-align:left;border-bottom:2px solid #c8102e">
+      <th style="padding:10px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:12px">CLIENTE</th>
+      <th style="padding:10px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:12px">CONTRATO</th>
+      <th style="padding:10px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:12px">INÍCIO</th>
+      <th style="padding:10px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:12px">FIM</th>
+      <th style="padding:10px 12px;font-weight:700;text-align:right;white-space:nowrap;border:1px solid #ddd;font-size:12px">CONS.<br>/ MÊS</th>
+      <th style="padding:10px 12px;font-weight:700;text-align:right;white-space:nowrap;border:1px solid #ddd;font-size:12px">TOTAL<br>CONTRATADO</th>
+      <th style="padding:10px 12px;font-weight:700;text-align:right;white-space:nowrap;border:1px solid #ddd;font-size:12px">ESPERADO</th>
+      <th style="padding:10px 12px;font-weight:700;text-align:right;white-space:nowrap;border:1px solid #ddd;font-size:12px">CONSUMO<br>REAL</th>
+      <th style="padding:10px 12px;font-weight:700;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:12px;background:#EFF6FF">% vs<br>TOTAL ⚠️</th>
+      <th style="padding:10px 12px;font-weight:700;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:12px;background:#F0FDF4">% vs<br>YTD</th>
+      <th style="padding:10px 12px;font-weight:700;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:12px">ALERTA</th>
+    </tr></thead><tbody>`;
+
+  rows.forEach((r, idx) => {
+    const td = `padding:10px 12px;border:1px solid #eee;font-size:12px;${idx%2===0?'background:#fff;':'background:#fafafa;'}`;
+    const pBg  = pctBg(r.pct);  const pCol  = pctColor(r.pct);
+    const alertaHtml = r.alerta === 'volume'
+      ? `<span style="background:#ffebee;color:#c62828;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700" title="Consumo atingiu ${r.pctTotal}% do total contratado">⚠️ Volume</span>`
+      : r.alerta === 'tempo'
+      ? `<span style="background:#fff3e0;color:#f57c00;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700">⏳ Tempo</span>`
+      : `<span style="color:#aaa;font-size:11px">—</span>`;
+    html += `<tr>
+      <td style="${td}font-weight:500">${r.nome}</td>
+      <td style="${td}">${r.contrato}</td>
+      <td style="${td}white-space:nowrap">${r.inicio}</td>
+      <td style="${td}white-space:nowrap">${r.fimFmt}</td>
+      <td style="${td}text-align:right">${fmtNum(r.consumoMes, r.unidade)}</td>
+      <td style="${td}text-align:right">${fmtNum(r.totalContratado, r.unidade)}</td>
+      <td style="${td}text-align:right">${r.consumoEsperado !== null ? fmtNum(r.consumoEsperado, r.unidade) : '—'}</td>
+      <td style="${td}text-align:right;font-weight:600">${r.consumoReal !== null ? fmtNum(r.consumoReal, r.unidade) : '—'}</td>
+      <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal !== null ? `<span style="background:${pctBg(r.pctTotal)};color:${pctColor(r.pctTotal)};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pctTotal}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
+      <td style="${td}text-align:center;background:#F8FFF9">${r.pct !== null && r.mesesDecorridos > 0 ? `<span style="background:${pBg};color:${pCol};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pct}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
+      <td style="${td}text-align:center">${alertaHtml}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>`;
+  document.getElementById('contratos-content').innerHTML = html;
 }
 
 function renderContratosFromCache(html) {
