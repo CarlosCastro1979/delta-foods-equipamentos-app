@@ -2242,54 +2242,84 @@ function renderForaSP() {
   if (vendFilt)   lista = lista.filter(c => c.vendedor === vendFilt);
   if (estadoFilt) lista = lista.filter(c => c.estado === estadoFilt);
 
+  const totalVendas = lista.reduce((s, c) => s + (c.vendas2025 || 0), 0);
+
   document.getElementById('fsp-info').innerHTML =
-    `<strong>${lista.length}</strong> clientes activos fora de SP` +
-    (scLoaded ? ' <span style="color:var(--muted)">(excluindo sem compras há +6m)</span>' : ' <span style="color:#d97706">⚠️ Carrega vendas para excluir inativos</span>');
+    `<strong>${lista.length}</strong> clientes activos fora de SP &nbsp;·&nbsp; Total 2025: <strong>R$ ${totalVendas.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})}</strong>`;
 
   if (!lista.length) {
     cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum cliente encontrado.</div>';
     return;
   }
 
-  // Agrupa por estado
-  const porEstado = {};
+  // ── RESUMO POR VENDEDOR ──
+  const porVendedor = {};
   lista.forEach(c => {
-    if (!porEstado[c.estado]) porEstado[c.estado] = [];
-    porEstado[c.estado].push(c);
+    const v = c.vendedor || '—';
+    if (!porVendedor[v]) porVendedor[v] = { clientes: 0, vendas: 0 };
+    porVendedor[v].clientes++;
+    porVendedor[v].vendas += c.vendas2025 || 0;
   });
 
-  let html = '';
-  for (const [estado, clientes] of Object.entries(porEstado).sort()) {
-    html += `<div style="margin-bottom:20px;">
-      <div style="background:var(--surface2);border-left:3px solid var(--accent);padding:8px 14px;border-radius:4px 4px 0 0;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center;">
-        <span>🗺️ ${estado} — ${ESTADO_NOME[estado]||estado}</span>
-        <span style="font-weight:400;color:var(--muted);font-size:12px;">${clientes.length} cliente(s)</span>
-      </div>
-      <div style="border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:13px;">
-          <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border);">
-            <th style="padding:8px 12px;text-align:left;color:var(--muted);white-space:nowrap;">Cód.</th>
-            <th style="padding:8px 12px;text-align:left;color:var(--muted);">Nome</th>
-            <th style="padding:8px 12px;text-align:left;color:var(--muted);white-space:nowrap;">Vendedor</th>
-            <th style="padding:8px 12px;text-align:left;color:var(--muted);white-space:nowrap;">CEP</th>
-            <th style="padding:8px 12px;text-align:right;color:var(--muted);white-space:nowrap;">Vendas 2025</th>
-          </tr></thead>
-          <tbody>
-            ${clientes.map((c, i) => `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
-              <td style="padding:8px 12px;color:var(--muted);font-size:12px;">${c.cod}</td>
-              <td style="padding:8px 12px;font-weight:500;">${c.nome}</td>
-              <td style="padding:8px 12px;font-size:12px;color:var(--muted);">${c.vendedor||'—'}</td>
-              <td style="padding:8px 12px;font-size:12px;font-family:monospace;">${c.cep||'—'}</td>
-              <td style="padding:8px 12px;text-align:right;font-size:12px;font-weight:${c.vendas2025>0?'600':'400'};color:${c.vendas2025>0?'var(--text)':'var(--muted)'}">
-                ${c.vendas2025 > 0 ? 'R$ ' + c.vendas2025.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}
-              </td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-  }
+  let html = `<div style="margin-bottom:20px;display:inline-block;min-width:360px;">
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por vendedor</div>
+    <table style="border-collapse:collapse;font-size:13px;width:100%;">
+      <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+        <th style="padding:7px 14px;text-align:left;font-weight:600;">Vendedor</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;">Clientes</th>
+        <th style="padding:7px 14px;text-align:right;font-weight:600;">Vendas 2025</th>
+      </tr></thead>
+      <tbody>
+        ${Object.entries(porVendedor).sort((a,b) => b[1].vendas - a[1].vendas).map(([v, d], i) => `
+        <tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
+          <td style="padding:7px 14px;font-weight:500;">${v}</td>
+          <td style="padding:7px 14px;text-align:center;color:var(--muted);">${d.clientes}</td>
+          <td style="padding:7px 14px;text-align:right;font-weight:600;">R$ ${d.vendas.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        </tr>`).join('')}
+        <tr style="border-top:2px solid var(--border);background:#f9f9f9;">
+          <td style="padding:7px 14px;font-weight:700;">Total</td>
+          <td style="padding:7px 14px;text-align:center;font-weight:700;">${lista.length}</td>
+          <td style="padding:7px 14px;text-align:right;font-weight:700;color:var(--accent);">R$ ${totalVendas.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>`;
 
+  // ── TABELA PRINCIPAL — uma tabela única com estado como coluna ──
+  html += `<div style="border:1px solid var(--border);border-radius:8px;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:600px;">
+      <thead>
+        <tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+          <th style="padding:9px 12px;text-align:left;font-weight:600;white-space:nowrap;width:80px;">Estado</th>
+          <th style="padding:9px 12px;text-align:left;font-weight:600;white-space:nowrap;width:80px;">Cód.</th>
+          <th style="padding:9px 12px;text-align:left;font-weight:600;">Nome</th>
+          <th style="padding:9px 12px;text-align:left;font-weight:600;white-space:nowrap;">Vendedor</th>
+          <th style="padding:9px 12px;text-align:left;font-weight:600;white-space:nowrap;">CEP</th>
+          <th style="padding:9px 12px;text-align:right;font-weight:600;white-space:nowrap;">Vendas 2025</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  let lastEstado = '';
+  lista.forEach((c, i) => {
+    const isNewEstado = c.estado !== lastEstado;
+    const rowBg = isNewEstado && i > 0 ? 'border-top:2px solid #e8e8e8;' : '';
+    lastEstado = c.estado;
+    html += `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'};${rowBg}">
+      <td style="padding:8px 12px;white-space:nowrap;">
+        ${isNewEstado ? `<span style="background:var(--accent);color:#fff;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;">${c.estado} — ${ESTADO_NOME[c.estado]||c.estado}</span>` : ''}
+      </td>
+      <td style="padding:8px 12px;color:var(--muted);font-size:12px;">${c.cod}</td>
+      <td style="padding:8px 12px;font-weight:500;">${c.nome}</td>
+      <td style="padding:8px 12px;font-size:12px;color:var(--muted);white-space:nowrap;">${c.vendedor||'—'}</td>
+      <td style="padding:8px 12px;font-size:12px;font-family:monospace;">${c.cep||'—'}</td>
+      <td style="padding:8px 12px;text-align:right;font-weight:${c.vendas2025>0?'600':'400'};color:${c.vendas2025>0?'var(--text)':'var(--muted)'};">
+        ${c.vendas2025 > 0 ? 'R$ ' + c.vendas2025.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}
+      </td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>`;
   cont.innerHTML = html;
 }
 
