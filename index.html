@@ -3000,10 +3000,102 @@ async function loadResumo() {
     });
     html += `</tbody></table>`;
 
+    // ── SECÇÃO CONTRATOS ──────────────────────────────────
+    html += `<div style="margin-top:32px;">
+      <div style="font-size:15px;font-weight:600;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid var(--accent);">📊 Contratos — Resumo por Vendedor</div>
+      <div id="resumo-contratos-content" style="font-size:13px;color:var(--muted);">A calcular...</div>
+    </div>`;
+
     document.getElementById('resumo-content').innerHTML = html;
+
+    // Load contratos summary async
+    loadResumoCont();
   } catch(e) {
     document.getElementById('resumo-content').innerHTML =
       '<div style="padding:40px;text-align:center;color:var(--danger)">Erro ao carregar dados.</div>';
+  }
+}
+
+async function loadResumoCont() {
+  const cont = document.getElementById('resumo-contratos-content');
+  if (!cont) return;
+  try {
+    // Get all registos with equipamentos and contratos
+    const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,equipamentos,contratos', {
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+    });
+    const registos = await res.json();
+    if (!Array.isArray(registos)) return;
+
+    // Per vendedor: count with professional equip, count with contract
+    const stats = {};
+    for (const r of registos) {
+      const v = r.vendedor || '—';
+      if (!stats[v]) stats[v] = { comEquipProf: 0, comContrato: 0, porRegistar: 0 };
+
+      const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
+      const temEquipProf = equips.some(e => isEquipamentoProfissionalNosso(e.tipo));
+      if (!temEquipProf) continue;
+
+      stats[v].comEquipProf++;
+      const temContrato = Array.isArray(r.contratos) && r.contratos.length > 0;
+      if (temContrato) stats[v].comContrato++;
+      else stats[v].porRegistar++;
+    }
+
+    const vendedores = Object.keys(stats).sort();
+    const totalEquip = Object.values(stats).reduce((s,d) => s + d.comEquipProf, 0);
+    const totalContr = Object.values(stats).reduce((s,d) => s + d.comContrato, 0);
+    const totalPR    = Object.values(stats).reduce((s,d) => s + d.porRegistar, 0);
+
+    let html = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
+      <div style="background:#F0FDF4;border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:24px;font-weight:700;color:#16a34a;">${totalContr}</div>
+        <div style="font-size:12px;color:#166534;margin-top:2px;">Com contrato</div>
+      </div>
+      <div style="background:#FEF2F2;border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:24px;font-weight:700;color:#c8102e;">${totalPR}</div>
+        <div style="font-size:12px;color:#991b1b;margin-top:2px;">Por registar</div>
+      </div>
+      <div style="background:#F0F9FF;border-radius:8px;padding:14px;text-align:center;">
+        <div style="font-size:24px;font-weight:700;color:#0369a1;">${totalEquip > 0 ? Math.round(totalContr/totalEquip*100) : 0}%</div>
+        <div style="font-size:12px;color:#075985;margin-top:2px;">Cobertura</div>
+      </div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+        <th style="padding:8px 12px;text-align:left;font-weight:600;">Vendedor</th>
+        <th style="padding:8px 12px;text-align:center;font-weight:600;">Com equip. prof.</th>
+        <th style="padding:8px 12px;text-align:center;font-weight:600;color:#16a34a;">Com contrato</th>
+        <th style="padding:8px 12px;text-align:center;font-weight:600;color:#c8102e;">Por registar</th>
+        <th style="padding:8px 12px;text-align:center;font-weight:600;">Cobertura</th>
+      </tr></thead><tbody>`;
+
+    vendedores.forEach((v, i) => {
+      const d = stats[v];
+      const pct = d.comEquipProf > 0 ? Math.round(d.comContrato / d.comEquipProf * 100) : 0;
+      const pctCor = pct >= 80 ? '#16a34a' : pct >= 50 ? '#d97706' : '#c8102e';
+      const pctBg  = pct >= 80 ? '#F0FDF4' : pct >= 50 ? '#FFFBEB' : '#FEF2F2';
+      html += `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
+        <td style="padding:8px 12px;font-weight:500;">${v}</td>
+        <td style="padding:8px 12px;text-align:center;">${d.comEquipProf}</td>
+        <td style="padding:8px 12px;text-align:center;font-weight:600;color:#16a34a;">${d.comContrato}</td>
+        <td style="padding:8px 12px;text-align:center;font-weight:${d.porRegistar>0?'700':'400'};color:${d.porRegistar>0?'#c8102e':'var(--muted)'};">${d.porRegistar||'—'}</td>
+        <td style="padding:8px 12px;text-align:center;"><span style="background:${pctBg};color:${pctCor};padding:2px 10px;border-radius:12px;font-weight:700;">${pct}%</span></td>
+      </tr>`;
+    });
+
+    html += `<tr style="border-top:2px solid var(--border);background:#f9f9f9;">
+      <td style="padding:8px 12px;font-weight:700;">Total</td>
+      <td style="padding:8px 12px;text-align:center;font-weight:700;">${totalEquip}</td>
+      <td style="padding:8px 12px;text-align:center;font-weight:700;color:#16a34a;">${totalContr}</td>
+      <td style="padding:8px 12px;text-align:center;font-weight:700;color:${totalPR>0?'#c8102e':'var(--muted)'};">${totalPR||'—'}</td>
+      <td style="padding:8px 12px;text-align:center;"><span style="background:#F0F9FF;color:#0369a1;padding:2px 10px;border-radius:12px;font-weight:700;">${totalEquip>0?Math.round(totalContr/totalEquip*100):0}%</span></td>
+    </tr></tbody></table>`;
+
+    cont.innerHTML = html;
+  } catch(e) {
+    cont.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
   }
 }
 const SUPA_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/registos';
