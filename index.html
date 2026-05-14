@@ -2866,11 +2866,14 @@ async function processarRawExcel(rows, headers) {
   let msg = `Lista com ${novaLista.length} clientes`;
   if (adicionados > 0) msg += ` · +${adicionados} novos`;
   if (removidos > 0)   msg += ` · -${removidos} removidos`;
-  if (semVendedor > 0) msg += ` · ⚠️ ${semVendedor} sem vendedor`;
 
-  document.getElementById('import-preview-msg').textContent = msg;
-  document.getElementById('import-preview').style.display = 'block';
-  toast(`✅ ${novaLista.length} clientes lidos. Confirma para importar.`);
+  // Confirma directamente via dialog
+  if (confirm(`${msg}\n\nConfirmas a importação?`)) {
+    confirmarImport();
+  } else {
+    pendingImportBuffer = [];
+    toast('Importação cancelada.');
+  }
 }
 
 async function processarCSVImport() {
