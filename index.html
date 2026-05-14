@@ -2752,14 +2752,22 @@ function renderPendentes() {
 }
 
 function preencherNovo(cod, nome, cep, vendedor) {
-  switchTabDirect('novo');
-  document.getElementById('f-cod').value = cod;
-  document.getElementById('f-nome').value = nome;
-  document.getElementById('f-cep').value = formatCep(cep);
-  const fVendSel = document.getElementById('f-vendedor');
-  if (fVendSel) fVendSel.value = vendedor;
-  document.getElementById('f-cod').focus();
-  toast('Cliente pré-preenchido. Adiciona os equipamentos e guarda.');
+  // Navega para a aba Registo Clientes → sub-aba Novo Registo
+  switchTab('registos');
+  switchSubTab('registos', 'novo');
+  // Preenche o formulário
+  setTimeout(() => {
+    const fCod = document.getElementById('f-cod');
+    const fNome = document.getElementById('f-nome');
+    const fCep = document.getElementById('f-cep');
+    const fVend = document.getElementById('f-vendedor');
+    if (fCod) fCod.value = cod;
+    if (fNome) fNome.value = nome;
+    if (fCep) fCep.value = formatCep(cep);
+    if (fVend) fVend.value = vendedor;
+    if (fCod) fCod.focus();
+    toast('Cliente pré-preenchido. Adiciona os equipamentos e guarda.');
+  }, 50);
 }
 
 function switchTabDirect(tab) {
@@ -2846,6 +2854,8 @@ async function processarRawExcel(rows, headers) {
 
   if (!novaLista.length) { toast('Nenhum cliente válido encontrado.', 'error'); return; }
 
+  const listaAtual = localStorage.getItem('delta_clientes_sistema')
+    ? JSON.parse(localStorage.getItem('delta_clientes_sistema')) : CLIENTES_SISTEMA;
   const codAtual = new Set(listaAtual.map(c => String(c.cod)));
   const codNova  = new Set(novaLista.map(c => String(c.cod)));
   const adicionados = novaLista.filter(c => !codAtual.has(c.cod)).length;
