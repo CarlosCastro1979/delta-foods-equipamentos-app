@@ -821,9 +821,7 @@
   </div>
 
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('novo')">＋ Novo Registo</button>
-    <button class="tab" onclick="switchTab('lista')">📋 Todos os Registos</button>
-    <button class="tab" onclick="switchTab('pendentes')">⏳ Clientes por Registar</button>
+    <button class="tab active" onclick="switchTab('registos')">📋 Registo Clientes</button>
     <button class="tab" onclick="switchTab('resumo')">📊 Resumo</button>
     <button class="tab" onclick="switchTab('at')">🔧 Pedido AT</button>
     <button class="tab" onclick="switchTab('contratos')">📊 Contratos</button>
@@ -833,6 +831,24 @@
   </div>
 
   <!-- NOVO REGISTO -->
+  <!-- PANEL: REGISTO CLIENTES (com sub-abas) -->
+  <div class="panel active" id="panel-registos">
+    <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px;">
+      <button id="sub-novo" onclick="switchSubTab('registos','novo')"
+        style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-2px;color:var(--accent);">
+        ＋ Novo Registo
+      </button>
+      <button id="sub-lista" onclick="switchSubTab('registos','lista')"
+        style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--muted);">
+        📋 Todos os Registos
+      </button>
+      <button id="sub-pendentes" onclick="switchSubTab('registos','pendentes')"
+        style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--muted);">
+        ⏳ Por Registar
+      </button>
+    </div>
+    <div id="sub-panel-novo" style="display:block;">
+
   <div class="panel active" id="panel-novo">
     <div class="form-card">
       <div class="form-row">
@@ -885,6 +901,8 @@
   </div>
 
   <!-- LISTA -->
+    </div><!-- end sub-panel-novo -->
+    <div id="sub-panel-lista" style="display:none;">
   <div class="panel" id="panel-lista">
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center">
       <select id="filtro-vendedor-lista" class="form-input" style="flex:1;min-width:140px;max-width:200px;padding:7px 10px;font-size:13px" onchange="renderTable()">
@@ -920,6 +938,8 @@
 </div>
 
   <!-- CLIENTES POR REGISTAR -->
+    </div><!-- end sub-panel-lista -->
+    <div id="sub-panel-pendentes" style="display:none;">
   <div class="panel" id="panel-pendentes">
     <div class="pending-toolbar">
       <input type="text" id="pending-search" placeholder="🔍 Pesquisar cliente, código ou vendedor…" oninput="renderPendentes()">
@@ -968,6 +988,9 @@
   </div>
 
   <!-- RESUMO -->
+    </div><!-- end sub-panel-pendentes -->
+  </div><!-- end panel-registos -->
+
   <div class="panel" id="panel-resumo">
     <div id="resumo-content"></div>
 
@@ -1108,18 +1131,49 @@
     </div>
   </div>
 
+  <!-- PANEL: CONTRATOS (com sub-abas) -->
   <div class="panel" id="panel-contratos">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
-      <h2 style="font-size:16px;font-weight:600;color:var(--text)">📊 Cumprimento de Contratos</h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-        <select id="contratos-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="filtrarContratosVendedor()">
-          <option value="">Todos os vendedores</option>
-        </select>
-        <button class="btn btn-secondary btn-sm" onclick="exportContratosExcel()">⬇ Excel</button>
-        <button class="btn btn-primary btn-sm" onclick="showVendasImport()" style="background:var(--accent)">⬆ Carregar Vendas</button>
+    <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px;">
+      <button id="sub-contratos-registados" onclick="switchSubTab('contratos','registados')"
+        style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-2px;color:var(--accent);">
+        📊 Registados
+      </button>
+      <button id="sub-contratos-por-registar" onclick="switchSubTab('contratos','por-registar')"
+        style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--muted);">
+        ⏳ Por Registar
+      </button>
+    </div>
+
+    <!-- SUB: Registados -->
+    <div id="sub-panel-contratos-registados" style="display:block;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <h2 style="font-size:16px;font-weight:600;color:var(--text)">📊 Cumprimento de Contratos</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <select id="contratos-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="filtrarContratosVendedor()">
+            <option value="">Todos os vendedores</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="exportContratosExcel()">⬇ Excel</button>
+          <button class="btn btn-primary btn-sm" onclick="showVendasImport()" style="background:var(--accent)">⬆ Carregar Vendas</button>
+        </div>
+      </div>
+      <div id="contratos-content"><div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A carregar...</div></div>
+    </div>
+
+    <!-- SUB: Por Registar -->
+    <div id="sub-panel-contratos-por-registar" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <h2 style="font-size:16px;font-weight:600;color:var(--text)">⏳ Contratos por Registar</h2>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="contratos-pr-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="renderContratosPorRegistar()">
+            <option value="">Todos os vendedores</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="exportContratosPorRegistarExcel()">⬇ Excel</button>
+        </div>
+      </div>
+      <div id="contratos-por-registar-content">
+        <div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A calcular...</div>
       </div>
     </div>
-    <div id="contratos-content"><div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A carregar...</div></div>
   </div>
 
   <div id="at-history-section" style="display:none;margin-top:24px">
@@ -2401,6 +2455,194 @@ async function exportForaSPExcel() {
   window.XLSX.writeFile(wb, 'clientes_fora_sp.xlsx');
 }
 
+// ─── SUB-TABS ──────────────────────────────────────────
+
+function switchSubTab(group, sub) {
+  if (group === 'registos') {
+    window._registosSubTab = sub;
+    ['novo','lista','pendentes'].forEach(s => {
+      const btn = document.getElementById('sub-' + s);
+      const panel = document.getElementById('sub-panel-' + s);
+      const active = s === sub;
+      if (btn) {
+        btn.style.borderBottom = active ? '2px solid var(--accent)' : 'none';
+        btn.style.color = active ? 'var(--accent)' : 'var(--muted)';
+        btn.style.marginBottom = active ? '-2px' : '0';
+      }
+      if (panel) panel.style.display = active ? 'block' : 'none';
+    });
+    if (sub === 'lista') loadData();
+    if (sub === 'pendentes') loadPendentes();
+  }
+  if (group === 'contratos') {
+    window._contratosSubTab = sub;
+    ['registados','por-registar'].forEach(s => {
+      const btn = document.getElementById('sub-contratos-' + s);
+      const panel = document.getElementById('sub-panel-contratos-' + s);
+      const active = s === sub;
+      if (btn) {
+        btn.style.borderBottom = active ? '2px solid var(--accent)' : 'none';
+        btn.style.color = active ? 'var(--accent)' : 'var(--muted)';
+        btn.style.marginBottom = active ? '-2px' : '0';
+      }
+      if (panel) panel.style.display = active ? 'block' : 'none';
+    });
+    if (sub === 'registados') loadContratosTab();
+    if (sub === 'por-registar') loadContratosPorRegistar();
+  }
+}
+
+// ─── CONTRATOS POR REGISTAR ────────────────────────────
+
+// Equipamentos que indicam máquina profissional nossa
+function isEquipamentoProfissionalNosso(tipo) {
+  if (!tipo) return false;
+  const t = tipo.toUpperCase().trim();
+  // Exclui: equipamento próprio ou máquina doméstica
+  if (t.includes('PROPRIO') || t.includes('PRÓPRIO') || t.includes('PROPRIA') || t.includes('PRÓPRIA')) return false;
+  if (t.includes('DOMESTIC') || t.includes('DELTA Q') || t.includes('QUICK') || t.includes('TOUCH')) return false;
+  return true;
+}
+
+async function loadContratosPorRegistar() {
+  const cont = document.getElementById('contratos-por-registar-content');
+  if (!cont) return;
+  cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A calcular...</div>';
+
+  try {
+    // 1. Busca todos os registos com equipamentos
+    const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,equipamentos', {
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+    });
+    const registos = await res.json();
+
+    // 2. Busca contratos já registados (cod dos clientes que já têm contrato)
+    const resC = await fetch(SUPA_URL + '?select=cod,contratos', {
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+    });
+    const todosRegistos = await resC.json();
+    const codsComContrato = new Set(
+      todosRegistos
+        .filter(r => Array.isArray(r.contratos) && r.contratos.length > 0)
+        .map(r => String(r.cod))
+    );
+
+    // 3. Filtra: tem equipamento profissional nosso MAS não tem contrato
+    const porRegistar = [];
+    for (const r of registos) {
+      if (codsComContrato.has(String(r.cod))) continue; // já tem contrato
+      const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
+      const equipsProfissionais = equips.filter(e => isEquipamentoProfissionalNosso(e.tipo));
+      if (equipsProfissionais.length > 0) {
+        porRegistar.push({
+          cod: r.cod, nome: r.nome, vendedor: r.vendedor || '—',
+          equipamentos: equipsProfissionais
+        });
+      }
+    }
+
+    // Popula filtro vendedor
+    const vendedores = [...new Set(porRegistar.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
+    const selV = document.getElementById('contratos-pr-vendedor');
+    if (selV) {
+      selV.innerHTML = '<option value="">Todos os vendedores</option>' +
+        vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+    }
+
+    window._contratosPorRegistar = porRegistar;
+    renderContratosPorRegistar();
+  } catch(e) {
+    cont.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">Erro: ${e.message}</div>`;
+  }
+}
+
+function renderContratosPorRegistar() {
+  const cont = document.getElementById('contratos-por-registar-content');
+  if (!cont || !window._contratosPorRegistar) return;
+
+  const vendFilt = document.getElementById('contratos-pr-vendedor')?.value || '';
+  let lista = window._contratosPorRegistar;
+  if (vendFilt) lista = lista.filter(r => r.vendedor === vendFilt);
+
+  lista.sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'') || (a.nome||'').localeCompare(b.nome||''));
+
+  if (!lista.length) {
+    cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">✅ Todos os clientes com equipamento profissional já têm contrato registado!</div>';
+    return;
+  }
+
+  // Resumo por vendedor
+  const porVend = {};
+  lista.forEach(r => {
+    const v = r.vendedor || '—';
+    if (!porVend[v]) porVend[v] = 0;
+    porVend[v]++;
+  });
+
+  let html = `<div style="margin-bottom:16px;display:inline-block;min-width:300px;">
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo</div>
+    <table style="border-collapse:collapse;font-size:13px;width:100%;">
+      <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+        <th style="padding:7px 14px;text-align:left;font-weight:600;">Vendedor</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;">Por registar</th>
+      </tr></thead><tbody>
+      ${Object.entries(porVend).sort((a,b)=>b[1]-a[1]).map(([v,n],i)=>`
+      <tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
+        <td style="padding:7px 14px;font-weight:500;">${v}</td>
+        <td style="padding:7px 14px;text-align:center;font-weight:700;color:var(--accent);">${n}</td>
+      </tr>`).join('')}
+      <tr style="border-top:2px solid var(--border);background:#f9f9f9;">
+        <td style="padding:7px 14px;font-weight:700;">Total</td>
+        <td style="padding:7px 14px;text-align:center;font-weight:700;color:var(--accent);">${lista.length}</td>
+      </tr></tbody>
+    </table>
+  </div>
+  <div style="border-top:2px dashed #e0e0e0;margin:16px 0;"></div>
+  <div style="border:1px solid var(--border);border-radius:8px;overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:500px;">
+      <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+        <th style="padding:9px 12px;text-align:left;font-weight:600;">Vendedor</th>
+        <th style="padding:9px 12px;text-align:left;font-weight:600;white-space:nowrap;">Cód.</th>
+        <th style="padding:9px 12px;text-align:left;font-weight:600;">Cliente</th>
+        <th style="padding:9px 12px;text-align:left;font-weight:600;">Equipamento(s)</th>
+      </tr></thead><tbody>`;
+
+  lista.forEach((r, i) => {
+    const equipsStr = r.equipamentos.map(e => e.tipo + (e.tag ? ` #${e.tag}` : '')).join(', ');
+    html += `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
+      <td style="padding:8px 12px;font-size:12px;color:var(--muted);white-space:nowrap;">${r.vendedor}</td>
+      <td style="padding:8px 12px;font-size:12px;color:var(--muted);">${r.cod}</td>
+      <td style="padding:8px 12px;font-weight:500;">${r.nome}</td>
+      <td style="padding:8px 12px;font-size:12px;">${equipsStr}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  cont.innerHTML = html;
+}
+
+async function exportContratosPorRegistarExcel() {
+  if (!window._contratosPorRegistar) return;
+  if (!window.XLSX) {
+    await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+  }
+  const vendFilt = document.getElementById('contratos-pr-vendedor')?.value || '';
+  let lista = window._contratosPorRegistar;
+  if (vendFilt) lista = lista.filter(r => r.vendedor === vendFilt);
+
+  const rows = [['Vendedor','Cód.','Cliente','Equipamentos']];
+  lista.forEach(r => rows.push([
+    r.vendedor, r.cod, r.nome,
+    r.equipamentos.map(e => e.tipo + (e.tag ? ' #'+e.tag : '')).join(', ')
+  ]));
+
+  const ws = window.XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:20},{wch:10},{wch:40},{wch:40}];
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Contratos por Registar');
+  window.XLSX.writeFile(wb, 'contratos_por_registar.xlsx');
+}
+
 // ─── EDIT ─────────────────────────────────────────────
 function openEdit(id) {
   const registo = allData.find(r => r.id === id);
@@ -2820,7 +3062,13 @@ function switchTab(tab) {
   if (tab === 'pendentes') loadPendentes();
   if (tab === 'resumo') loadResumo();
   if (tab === 'at') loadAtTab();
-  if (tab === 'contratos') { const pc = document.getElementById('panel-contratos'); if(pc) loadContratosTab(); }
+  if (tab === 'registos') {
+    // default to novo sub-tab
+    switchSubTab('registos', window._registosSubTab || 'novo');
+  }
+  if (tab === 'contratos') {
+    switchSubTab('contratos', window._contratosSubTab || 'registados');
+  }
   if (tab === 'historico-at') loadATHistorico();
   if (tab === 'sem-compras') initSemCompras();
   if (tab === 'fora-sp') initForaSP();
