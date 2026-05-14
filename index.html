@@ -849,7 +849,7 @@
     </div>
     <div id="sub-panel-novo" style="display:block;">
 
-  <div class="panel active" id="panel-novo">
+  <div id="panel-novo">
     <div class="form-card">
       <div class="form-row">
         <div class="form-group">
@@ -903,7 +903,7 @@
   <!-- LISTA -->
     </div><!-- end sub-panel-novo -->
     <div id="sub-panel-lista" style="display:none;">
-  <div class="panel" id="panel-lista">
+  <div id="panel-lista">
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center">
       <select id="filtro-vendedor-lista" class="form-input" style="flex:1;min-width:140px;max-width:200px;padding:7px 10px;font-size:13px" onchange="renderTable()">
         <option value="">Todos os vendedores</option>
@@ -940,7 +940,7 @@
   <!-- CLIENTES POR REGISTAR -->
     </div><!-- end sub-panel-lista -->
     <div id="sub-panel-pendentes" style="display:none;">
-  <div class="panel" id="panel-pendentes">
+  <div id="panel-pendentes">
     <div class="pending-toolbar">
       <input type="text" id="pending-search" placeholder="🔍 Pesquisar cliente, código ou vendedor…" oninput="renderPendentes()">
       <select id="pending-filter-vendedor" onchange="renderPendentes()">
@@ -3058,8 +3058,7 @@ function switchTab(tab) {
     const activeTab = document.querySelector(`.tab[onclick*="'${tab}'"]`);
     if (activeTab) activeTab.classList.add('active');
   } catch(e) {}
-  if (tab === 'lista') loadData();
-  if (tab === 'pendentes') loadPendentes();
+  // lista and pendentes now handled via switchSubTab
   if (tab === 'resumo') loadResumo();
   if (tab === 'at') loadAtTab();
   if (tab === 'registos') {
