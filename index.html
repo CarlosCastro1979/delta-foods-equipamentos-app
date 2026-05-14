@@ -2954,61 +2954,68 @@ async function loadResumo() {
       if (codRegistados.has(normCodR(c.cod))) vendedores[v].registados++;
     });
 
-    const totalSistema = _listaStats.length;
+    const totalSistema   = _listaStats.length;
     const totalRegistados = _listaStats.filter(c => codRegistados.has(normCodR(c.cod))).length;
     const totalPendentes = totalSistema - totalRegistados;
     const pctGlobal = totalSistema > 0 ? Math.round(totalRegistados/totalSistema*100) : 0;
 
-    let html = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-      <div class="stat-box"><div class="stat-num">${totalSistema}</div><div class="stat-label">Total Sistema</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--accent2)">${totalRegistados}</div><div class="stat-label">Registados</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--accent)">${totalPendentes}</div><div class="stat-label">Por Registar</div></div>
-    </div>
-    <div style="margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>Progresso global</span><span style="font-weight:600">${pctGlobal}%</span></div>
-      <div style="background:var(--border);border-radius:4px;height:8px"><div style="background:var(--accent2);height:8px;border-radius:4px;width:${pctGlobal}%"></div></div>
-    </div>`;
+    const sectionStyle = 'margin-bottom:28px;';
+    const titleStyle = 'font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:12px;';
+    const thStyle = 'padding:8px 12px;font-weight:600;font-size:12px;color:var(--muted);white-space:nowrap;';
+    const tdStyle = 'padding:7px 12px;font-size:13px;border-bottom:1px solid #f0f0f0;';
 
-    // Table per vendedor
-    html += `<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
-      <thead>
-        <tr style="background:#f5f5f5;border-bottom:2px solid var(--accent)">
-          <th style="padding:10px 12px;text-align:left;font-weight:700">Vendedor</th>
-          <th style="padding:10px 12px;text-align:center;font-weight:700">Total</th>
-          <th style="padding:10px 12px;text-align:center;font-weight:700;color:var(--accent2)">Registados</th>
-          <th style="padding:10px 12px;text-align:center;font-weight:700;color:var(--accent)">Por Registar</th>
-          <th style="padding:10px 12px;text-align:center;font-weight:700">% Concluído</th>
-          <th style="padding:10px 12px;text-align:left;font-weight:700">Progresso</th>
-        </tr>
-      </thead>
-      <tbody>`;
-    Object.entries(vendedores).sort((a,b) => b[1].registados/b[1].total - a[1].registados/a[1].total).forEach(([vend, stats]) => {
-      const pct = stats.total > 0 ? Math.round(stats.registados/stats.total*100) : 0;
-      const pctColor = pct >= 100 ? 'var(--accent2)' : pct >= 50 ? '#f59e0b' : 'var(--accent)';
-      html += `<tr style="border-bottom:1px solid var(--border);background:var(--surface)">
-        <td style="padding:10px 12px;font-weight:600">${vend}</td>
-        <td style="padding:10px 12px;text-align:center">${stats.total}</td>
-        <td style="padding:10px 12px;text-align:center;color:var(--accent2);font-weight:600">${stats.registados}</td>
-        <td style="padding:10px 12px;text-align:center;color:var(--accent);font-weight:600">${stats.total - stats.registados}</td>
-        <td style="padding:10px 12px;text-align:center">
-          <span style="background:${pct>=100?'#e8f5e9':pct>=50?'#fff3e0':'#ffebee'};color:${pctColor};padding:3px 10px;border-radius:20px;font-weight:700">${pct}%</span>
-        </td>
-        <td style="padding:10px 12px;min-width:120px">
-          <div style="background:var(--border);border-radius:4px;height:6px"><div style="background:${pctColor};height:6px;border-radius:4px;width:${pct}%"></div></div>
-        </td>
+    // ── SECÇÃO 1: REGISTO DE CLIENTES ──
+    let html = `<div style="${sectionStyle}">
+      <div style="${titleStyle}">Registo de Clientes</div>
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+        <div style="background:#f9f9f9;border:1px solid #e8e8e8;border-radius:8px;padding:12px 20px;min-width:100px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;">${totalSistema}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Total</div>
+        </div>
+        <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:12px 20px;min-width:100px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#16a34a;">${totalRegistados}</div>
+          <div style="font-size:11px;color:#166534;margin-top:2px;">Registados</div>
+        </div>
+        <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 20px;min-width:100px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#c8102e;">${totalPendentes}</div>
+          <div style="font-size:11px;color:#991b1b;margin-top:2px;">Por Registar</div>
+        </div>
+        <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:12px 20px;min-width:100px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:#1d4ed8;">${pctGlobal}%</div>
+          <div style="font-size:11px;color:#1e40af;margin-top:2px;">Global</div>
+        </div>
+      </div>
+      <table style="width:auto;border-collapse:collapse;font-size:13px;min-width:480px;">
+        <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+          <th style="${thStyle}text-align:left;">Vendedor</th>
+          <th style="${thStyle}text-align:center;">Total</th>
+          <th style="${thStyle}text-align:center;color:#16a34a;">Registados</th>
+          <th style="${thStyle}text-align:center;color:#c8102e;">Por Registar</th>
+          <th style="${thStyle}text-align:center;">%</th>
+          <th style="${thStyle}text-align:left;min-width:100px;">Progresso</th>
+        </tr></thead><tbody>`;
+
+    Object.entries(vendedores).sort((a,b) => b[1].registados/b[1].total - a[1].registados/a[1].total).forEach(([vend, s]) => {
+      const pct = s.total > 0 ? Math.round(s.registados/s.total*100) : 0;
+      const pCol = pct>=100?'#16a34a':pct>=50?'#d97706':'#c8102e';
+      html += `<tr style="border-bottom:1px solid #f0f0f0;">
+        <td style="${tdStyle}font-weight:500;">${vend}</td>
+        <td style="${tdStyle}text-align:center;">${s.total}</td>
+        <td style="${tdStyle}text-align:center;color:#16a34a;font-weight:600;">${s.registados}</td>
+        <td style="${tdStyle}text-align:center;color:#c8102e;font-weight:600;">${s.total-s.registados}</td>
+        <td style="${tdStyle}text-align:center;"><span style="background:${pct>=100?'#F0FDF4':pct>=50?'#FFFBEB':'#FEF2F2'};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700;font-size:12px;">${pct}%</span></td>
+        <td style="${tdStyle}min-width:100px;"><div style="background:#e8e8e8;border-radius:3px;height:5px;"><div style="background:${pCol};height:5px;border-radius:3px;width:${pct}%;"></div></div></td>
       </tr>`;
     });
-    html += `</tbody></table>`;
+    html += `</tbody></table></div>`;
 
-    // ── SECÇÃO CONTRATOS ──────────────────────────────────
-    html += `<div style="margin-top:32px;">
-      <div style="font-size:15px;font-weight:600;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid var(--accent);">📊 Contratos — Resumo por Vendedor</div>
-      <div id="resumo-contratos-content" style="font-size:13px;color:var(--muted);">A calcular...</div>
+    // ── SECÇÃO 2: CONTRATOS (placeholder, filled by loadResumoCont) ──
+    html += `<div style="${sectionStyle}">
+      <div style="${titleStyle}">Contratos — Cobertura por Vendedor</div>
+      <div id="resumo-contratos-content" style="color:var(--muted);font-size:13px;">A calcular...</div>
     </div>`;
 
     document.getElementById('resumo-content').innerHTML = html;
-
-    // Load contratos summary async
     loadResumoCont();
   } catch(e) {
     document.getElementById('resumo-content').innerHTML =
@@ -3020,77 +3027,73 @@ async function loadResumoCont() {
   const cont = document.getElementById('resumo-contratos-content');
   if (!cont) return;
   try {
-    // Get all registos with equipamentos and contratos
     const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,equipamentos,contratos', {
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
     });
     const registos = await res.json();
     if (!Array.isArray(registos)) return;
 
-    // Per vendedor: count with professional equip, count with contract
     const stats = {};
     for (const r of registos) {
       const v = r.vendedor || '—';
-      if (!stats[v]) stats[v] = { comEquipProf: 0, comContrato: 0, porRegistar: 0 };
-
+      if (!stats[v]) stats[v] = { comEquipProf: 0, comContrato: 0 };
       const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
-      const temEquipProf = equips.some(e => isEquipamentoProfissionalNosso(e.tipo));
-      if (!temEquipProf) continue;
-
+      if (!equips.some(e => isEquipamentoProfissionalNosso(e.tipo))) continue;
       stats[v].comEquipProf++;
-      const temContrato = Array.isArray(r.contratos) && r.contratos.length > 0;
-      if (temContrato) stats[v].comContrato++;
-      else stats[v].porRegistar++;
+      if (Array.isArray(r.contratos) && r.contratos.length > 0) stats[v].comContrato++;
     }
 
-    const vendedores = Object.keys(stats).sort();
     const totalEquip = Object.values(stats).reduce((s,d) => s + d.comEquipProf, 0);
     const totalContr = Object.values(stats).reduce((s,d) => s + d.comContrato, 0);
-    const totalPR    = Object.values(stats).reduce((s,d) => s + d.porRegistar, 0);
+    const totalPR    = totalEquip - totalContr;
+    const pctGlobal  = totalEquip > 0 ? Math.round(totalContr/totalEquip*100) : 0;
 
-    let html = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px;">
-      <div style="background:#F0FDF4;border-radius:8px;padding:14px;text-align:center;">
-        <div style="font-size:24px;font-weight:700;color:#16a34a;">${totalContr}</div>
-        <div style="font-size:12px;color:#166534;margin-top:2px;">Com contrato</div>
+    const thStyle = 'padding:8px 12px;font-weight:600;font-size:12px;color:var(--muted);white-space:nowrap;';
+    const tdStyle = 'padding:7px 12px;font-size:13px;border-bottom:1px solid #f0f0f0;';
+
+    let html = `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+      <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:12px 20px;min-width:100px;text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:#16a34a;">${totalContr}</div>
+        <div style="font-size:11px;color:#166534;margin-top:2px;">Com contrato</div>
       </div>
-      <div style="background:#FEF2F2;border-radius:8px;padding:14px;text-align:center;">
-        <div style="font-size:24px;font-weight:700;color:#c8102e;">${totalPR}</div>
-        <div style="font-size:12px;color:#991b1b;margin-top:2px;">Por registar</div>
+      <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:12px 20px;min-width:100px;text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:#c8102e;">${totalPR}</div>
+        <div style="font-size:11px;color:#991b1b;margin-top:2px;">Por registar</div>
       </div>
-      <div style="background:#F0F9FF;border-radius:8px;padding:14px;text-align:center;">
-        <div style="font-size:24px;font-weight:700;color:#0369a1;">${totalEquip > 0 ? Math.round(totalContr/totalEquip*100) : 0}%</div>
-        <div style="font-size:12px;color:#075985;margin-top:2px;">Cobertura</div>
+      <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:12px 20px;min-width:100px;text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:#1d4ed8;">${pctGlobal}%</div>
+        <div style="font-size:11px;color:#1e40af;margin-top:2px;">Cobertura</div>
       </div>
     </div>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <table style="width:auto;border-collapse:collapse;font-size:13px;min-width:420px;">
       <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
-        <th style="padding:8px 12px;text-align:left;font-weight:600;">Vendedor</th>
-        <th style="padding:8px 12px;text-align:center;font-weight:600;">Com equip. prof.</th>
-        <th style="padding:8px 12px;text-align:center;font-weight:600;color:#16a34a;">Com contrato</th>
-        <th style="padding:8px 12px;text-align:center;font-weight:600;color:#c8102e;">Por registar</th>
-        <th style="padding:8px 12px;text-align:center;font-weight:600;">Cobertura</th>
+        <th style="${thStyle}text-align:left;">Vendedor</th>
+        <th style="${thStyle}text-align:center;">Com equip.</th>
+        <th style="${thStyle}text-align:center;color:#16a34a;">Com contrato</th>
+        <th style="${thStyle}text-align:center;color:#c8102e;">Por registar</th>
+        <th style="${thStyle}text-align:center;">Cobertura</th>
       </tr></thead><tbody>`;
 
-    vendedores.forEach((v, i) => {
-      const d = stats[v];
-      const pct = d.comEquipProf > 0 ? Math.round(d.comContrato / d.comEquipProf * 100) : 0;
-      const pctCor = pct >= 80 ? '#16a34a' : pct >= 50 ? '#d97706' : '#c8102e';
-      const pctBg  = pct >= 80 ? '#F0FDF4' : pct >= 50 ? '#FFFBEB' : '#FEF2F2';
+    Object.entries(stats).sort((a,b) => a[0].localeCompare(b[0])).forEach(([v, d], i) => {
+      const pct = d.comEquipProf > 0 ? Math.round(d.comContrato/d.comEquipProf*100) : 0;
+      const pCol = pct>=80?'#16a34a':pct>=50?'#d97706':'#c8102e';
+      const pBg  = pct>=80?'#F0FDF4':pct>=50?'#FFFBEB':'#FEF2F2';
+      const pr   = d.comEquipProf - d.comContrato;
       html += `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
-        <td style="padding:8px 12px;font-weight:500;">${v}</td>
-        <td style="padding:8px 12px;text-align:center;">${d.comEquipProf}</td>
-        <td style="padding:8px 12px;text-align:center;font-weight:600;color:#16a34a;">${d.comContrato}</td>
-        <td style="padding:8px 12px;text-align:center;font-weight:${d.porRegistar>0?'700':'400'};color:${d.porRegistar>0?'#c8102e':'var(--muted)'};">${d.porRegistar||'—'}</td>
-        <td style="padding:8px 12px;text-align:center;"><span style="background:${pctBg};color:${pctCor};padding:2px 10px;border-radius:12px;font-weight:700;">${pct}%</span></td>
+        <td style="${tdStyle}font-weight:500;">${v}</td>
+        <td style="${tdStyle}text-align:center;">${d.comEquipProf}</td>
+        <td style="${tdStyle}text-align:center;color:#16a34a;font-weight:600;">${d.comContrato}</td>
+        <td style="${tdStyle}text-align:center;font-weight:${pr>0?'700':'400'};color:${pr>0?'#c8102e':'var(--muted)'};">${pr||'—'}</td>
+        <td style="${tdStyle}text-align:center;"><span style="background:${pBg};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700;font-size:12px;">${pct}%</span></td>
       </tr>`;
     });
 
     html += `<tr style="border-top:2px solid var(--border);background:#f9f9f9;">
-      <td style="padding:8px 12px;font-weight:700;">Total</td>
-      <td style="padding:8px 12px;text-align:center;font-weight:700;">${totalEquip}</td>
-      <td style="padding:8px 12px;text-align:center;font-weight:700;color:#16a34a;">${totalContr}</td>
-      <td style="padding:8px 12px;text-align:center;font-weight:700;color:${totalPR>0?'#c8102e':'var(--muted)'};">${totalPR||'—'}</td>
-      <td style="padding:8px 12px;text-align:center;"><span style="background:#F0F9FF;color:#0369a1;padding:2px 10px;border-radius:12px;font-weight:700;">${totalEquip>0?Math.round(totalContr/totalEquip*100):0}%</span></td>
+      <td style="${tdStyle}font-weight:700;">Total</td>
+      <td style="${tdStyle}text-align:center;font-weight:700;">${totalEquip}</td>
+      <td style="${tdStyle}text-align:center;font-weight:700;color:#16a34a;">${totalContr}</td>
+      <td style="${tdStyle}text-align:center;font-weight:700;color:${totalPR>0?'#c8102e':'var(--muted)'};">${totalPR||'—'}</td>
+      <td style="${tdStyle}text-align:center;"><span style="background:#EFF6FF;color:#1d4ed8;padding:2px 8px;border-radius:10px;font-weight:700;font-size:12px;">${pctGlobal}%</span></td>
     </tr></tbody></table>`;
 
     cont.innerHTML = html;
