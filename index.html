@@ -2973,7 +2973,7 @@ async function loadResumo() {
     const normCodR = v => String(v || '').trim().replace(/^0+/, '') || '0';
     const codRegistados = new Set(registados.map(r => normCodR(r.cod)));
 
-    const _listaStats = localStorage.getItem('delta_clientes_sistema') ? JSON.parse(localStorage.getItem('delta_clientes_sistema')) : CLIENTES_SISTEMA;
+    const _listaStats = CLIENTES_SISTEMA; // sempre usa a lista do código — igual em todos os PCs
     _listaStats.forEach(c => {
       const v = c.vendedor;
       if (!vendedores[v]) vendedores[v] = { total: 0, registados: 0 };
