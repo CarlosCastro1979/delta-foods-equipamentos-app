@@ -135,6 +135,7 @@
 
   .panel { display: none; }
   .panel.active { display: block; }
+  .sub-panel { display: block; } /* inner panels always visible, controlled by parent */
 
   /* FORM */
   .form-card {
@@ -849,7 +850,7 @@
     </div>
     <div id="sub-panel-novo" style="display:block;">
 
-  <div id="panel-novo">
+  <div id="panel-novo" class="sub-panel">
     <div class="form-card">
       <div class="form-row">
         <div class="form-group">
@@ -903,7 +904,7 @@
   <!-- LISTA -->
     </div><!-- end sub-panel-novo -->
     <div id="sub-panel-lista" style="display:none;">
-  <div id="panel-lista">
+  <div id="panel-lista" class="sub-panel">
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center">
       <select id="filtro-vendedor-lista" class="form-input" style="flex:1;min-width:140px;max-width:200px;padding:7px 10px;font-size:13px" onchange="renderTable()">
         <option value="">Todos os vendedores</option>
@@ -940,7 +941,7 @@
   <!-- CLIENTES POR REGISTAR -->
     </div><!-- end sub-panel-lista -->
     <div id="sub-panel-pendentes" style="display:none;">
-  <div id="panel-pendentes">
+  <div id="panel-pendentes" class="sub-panel">
     <div class="pending-toolbar">
       <input type="text" id="pending-search" placeholder="🔍 Pesquisar cliente, código ou vendedor…" oninput="renderPendentes()">
       <select id="pending-filter-vendedor" onchange="renderPendentes()">
@@ -2740,15 +2741,27 @@ function renderPendentes() {
   const countEl = document.getElementById('pending-count-badge');
   if (countEl) countEl.textContent = `${filtered.length} de ${pendentesData.length} por registar`;
 
-  document.getElementById('pending-body').innerHTML = filtered.length
+  const pendingBody = document.getElementById('pending-body');
+  if (!pendingBody) return;
+  pendingBody.innerHTML = filtered.length
     ? filtered.map(c => `<tr>
         <td>${c.cod}</td>
         <td>${c.nome}</td>
         <td>${c.cep||'—'}</td>
         <td><span class="vendedor-badge">${c.vendedor||'—'}</span></td>
-        <td><button class="btn-edit" onclick="preencherNovo('${c.cod}','${c.nome.replace(/'/g,"\'")}','${c.cep||''}','${c.vendedor||''}')">→ Registar</button></td>
+        <td><button class="btn-edit" data-cod="${c.cod}" data-nome="${c.nome.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" data-cep="${c.cep||''}" data-vend="${c.vendedor||''}">→ Registar</button></td>
       </tr>`).join('')
     : '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente por registar!</td></tr>';
+
+  // Event delegation for Registar buttons
+  if (!pendingBody._hasRegistarListener) {
+    pendingBody._hasRegistarListener = true;
+    pendingBody.addEventListener('click', function(e) {
+      const btn = e.target.closest('[data-cod]');
+      if (!btn) return;
+      preencherNovo(btn.dataset.cod, btn.dataset.nome, btn.dataset.cep, btn.dataset.vend);
+    });
+  }
 }
 
 function preencherNovo(cod, nome, cep, vendedor) {
