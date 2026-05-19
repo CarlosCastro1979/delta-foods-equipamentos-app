@@ -2471,7 +2471,7 @@ function switchSubTab(group, sub) {
       if (panel) panel.style.display = active ? 'block' : 'none';
     });
     if (sub === 'novo') { addEquipRow(); setStatus(null); } // init form
-    if (sub === 'lista') loadData();
+    if (sub === 'lista') loadData(true); // força refresh
     if (sub === 'pendentes') loadPendentes();
   }
   if (group === 'contratos') {
