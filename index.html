@@ -2960,14 +2960,12 @@ function cancelarImport() {
 // ─── RESUMO ──────────────────────────────────────────
 async function loadResumo() {
   try {
-    let registados = getRegistosCache();
-    if (!registados) {
-      const res = await fetch(SUPA_URL + '?select=vendedor,cod', { headers: {
-        'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY
-      }});
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      registados = await res.json();
-    }
+    // Vai sempre ao Supabase para ter dados frescos
+    const res = await fetch(SUPA_URL + '?select=vendedor,cod', { headers: {
+      'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY
+    }});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const registados = await res.json();
 
     const vendedores = {};
     const normCodR = v => String(v || '').trim().replace(/^0+/, '') || '0';
