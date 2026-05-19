@@ -135,7 +135,7 @@
 
   .panel { display: none; }
   .panel.active { display: block; }
-  /* sub-panels controlled by JS only */
+
 
   /* FORM */
   .form-card {
@@ -851,7 +851,7 @@
     </div>
     <!-- Sub-panels -->
     <div id="sub-panel-novo" style="display:none;">
-<div id="panel-novo" class="sub-panel">
+<div id="panel-novo">
     <div class="form-card">
       <div class="form-row">
         <div class="form-group">
@@ -906,7 +906,7 @@
 
     </div>
     <div id="sub-panel-lista" style="display:none;">
-<div id="panel-lista" class="sub-panel">
+<div id="panel-lista">
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center">
       <select id="filtro-vendedor-lista" class="form-input" style="flex:1;min-width:140px;max-width:200px;padding:7px 10px;font-size:13px" onchange="renderTable()">
         <option value="">Todos os vendedores</option>
@@ -944,7 +944,7 @@
 
     </div>
     <div id="sub-panel-pendentes" style="display:none;">
-<div id="panel-pendentes" class="sub-panel">
+<div id="panel-pendentes">
     <div class="pending-toolbar">
       <input type="text" id="pending-search" placeholder="🔍 Pesquisar cliente, código ou vendedor…" oninput="renderPendentes()">
       <select id="pending-filter-vendedor" onchange="renderPendentes()">
