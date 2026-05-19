@@ -834,6 +834,7 @@
   <!-- NOVO REGISTO -->
   <!-- PANEL: REGISTO CLIENTES (com sub-abas) -->
   <div class="panel active" id="panel-registos">
+    <!-- Sub-tab buttons -->
     <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px;">
       <button id="sub-novo" onclick="switchSubTab('registos','novo')"
         style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-2px;color:var(--accent);">
@@ -848,9 +849,9 @@
         ⏳ Por Registar
       </button>
     </div>
-    <div id="sub-panel-novo" style="display:block;">
-
-  <div id="panel-novo" class="sub-panel">
+    <!-- Sub-panels -->
+    <div id="sub-panel-novo" style="display:none;">
+<div id="panel-novo" class="sub-panel">
     <div class="form-card">
       <div class="form-row">
         <div class="form-group">
@@ -902,9 +903,10 @@
   </div>
 
   <!-- LISTA -->
-    </div><!-- end sub-panel-novo -->
+
+    </div>
     <div id="sub-panel-lista" style="display:none;">
-  <div id="panel-lista" class="sub-panel">
+<div id="panel-lista" class="sub-panel">
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center">
       <select id="filtro-vendedor-lista" class="form-input" style="flex:1;min-width:140px;max-width:200px;padding:7px 10px;font-size:13px" onchange="renderTable()">
         <option value="">Todos os vendedores</option>
@@ -939,9 +941,10 @@
 </div>
 
   <!-- CLIENTES POR REGISTAR -->
-    </div><!-- end sub-panel-lista -->
+
+    </div>
     <div id="sub-panel-pendentes" style="display:none;">
-  <div id="panel-pendentes" class="sub-panel">
+<div id="panel-pendentes" class="sub-panel">
     <div class="pending-toolbar">
       <input type="text" id="pending-search" placeholder="🔍 Pesquisar cliente, código ou vendedor…" oninput="renderPendentes()">
       <select id="pending-filter-vendedor" onchange="renderPendentes()">
@@ -985,12 +988,7 @@
         </label>
         <button class="btn btn-primary btn-sm" onclick="processarCSVImport()">🔍 Detectar novos clientes</button>
       </div>
-    </div>
-  </div>
 
-  <!-- RESUMO -->
-    </div><!-- end sub-panel-pendentes -->
-  </div><!-- end panel-registos -->
 
   <div class="panel" id="panel-resumo">
     <div id="resumo-content"></div>
@@ -4626,3 +4624,5 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 </body>
+
+
