@@ -135,7 +135,7 @@
 
   .panel { display: none; }
   .panel.active { display: block; }
-  .sub-panel { display: block; } /* inner panels always visible, controlled by parent */
+  .sub-panel { display: none; } /* controlled by switchSubTab */
 
   /* FORM */
   .form-card {
@@ -4593,6 +4593,8 @@ function exportATHistoricoExcel() {
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   addEquipRow();
+  // Inicializa sub-abas
+  switchSubTab('registos', 'novo');
   // Verificar ligação silenciosamente
   try {
     const res = await fetch(SUPA_URL + '?select=id&limit=1', { headers: HEADERS });
