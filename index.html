@@ -891,6 +891,10 @@
         style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--muted);">
         ⏳ Por Registar
       </button>
+      <button id="sub-vendedores" onclick="switchSubTab('registos','vendedores')"
+        style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--muted);">
+        👥 Vendedores
+      </button>
     </div>
     <!-- Sub-panels -->
     <div id="sub-panel-novo" style="display:none;">
@@ -1038,6 +1042,51 @@
   </div>
 </div>
 </div>
+
+  <!-- SUB-PANEL: VENDEDORES -->
+  <div id="sub-panel-vendedores" style="display:none;">
+    <div style="max-width:560px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <h2 style="font-size:15px;font-weight:600;color:var(--text);margin:0">👥 Cadastro de Vendedores</h2>
+          <p style="font-size:12px;color:var(--muted);margin:4px 0 0 0">Códigos SAP usados no import. Terminados em 999 = anulados (apagados automaticamente).</p>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="abrirFormVendedor()">＋ Adicionar</button>
+      </div>
+
+      <div id="vendedores-form" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="flex:1;min-width:120px;">
+            <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;">Código SAP (Nº Pess.)</label>
+            <input type="number" id="vend-cod-input" class="form-input" placeholder="ex: 99520007" style="width:100%;">
+          </div>
+          <div style="flex:2;min-width:160px;">
+            <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;">Nome do Vendedor</label>
+            <input type="text" id="vend-nome-input" class="form-input" placeholder="ex: PAULO FONTES" style="width:100%;text-transform:uppercase;">
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary btn-sm" onclick="salvarVendedor()">Guardar</button>
+            <button class="btn btn-secondary btn-sm" onclick="fecharFormVendedor()">Cancelar</button>
+          </div>
+        </div>
+        <div id="vend-form-error" style="color:var(--danger);font-size:12px;margin-top:8px;display:none;"></div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Código SAP</th>
+            <th>Nome</th>
+            <th style="width:80px;text-align:center;">Tipo</th>
+            <th style="width:60px;"></th>
+          </tr></thead>
+          <tbody id="vendedores-body">
+            <tr><td colspan="4" style="text-align:center;padding:24px;color:var(--muted)">A carregar...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
 <div class="panel" id="panel-resumo">
     <div id="resumo-content"></div>
@@ -1522,6 +1571,122 @@ function clearRegistosCache() {
   localStorage.removeItem(REGISTOS_CACHE_TS);
 }
 
+// ─── CADASTRO DE VENDEDORES ───────────────────────────
+const VEND_STORE_KEY = 'delta_vendedores_cadastro';
+
+const VENDEDORES_DEFAULT = [
+  { cod: 99520002, nome: 'HÉLCIO GRÉGIO' },
+  { cod: 99520006, nome: 'DANIELA SANTOS' },
+  { cod: 99520007, nome: 'PAULO FONTES' },
+  { cod: 99520010, nome: 'FILIPE NEVES' },
+  { cod: 99520015, nome: 'HÉLCIO GRÉGIO' },
+  { cod: 99520016, nome: 'DANIELA SANTOS' },
+  { cod: 99520017, nome: 'PAULO FONTES' },
+];
+
+function getVendedoresCadastro() {
+  try {
+    const s = localStorage.getItem(VEND_STORE_KEY);
+    return s ? JSON.parse(s) : VENDEDORES_DEFAULT;
+  } catch(e) { return VENDEDORES_DEFAULT; }
+}
+
+function saveVendedoresCadastro(list) {
+  localStorage.setItem(VEND_STORE_KEY, JSON.stringify(list));
+}
+
+// Devolve mapa { codigoSAP: nomeVendedor } apenas para activos (não 999)
+function getVendedoresMap() {
+  const list = getVendedoresCadastro();
+  const map = {};
+  list.forEach(v => {
+    if (!String(v.cod).endsWith('999')) map[parseInt(v.cod)] = v.nome;
+  });
+  return map;
+}
+
+function renderVendedoresTable() {
+  const tbody = document.getElementById('vendedores-body');
+  if (!tbody) return;
+  const list = getVendedoresCadastro();
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--muted)">Nenhum vendedor cadastrado.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map((v, i) => {
+    const isAnulado = String(v.cod).endsWith('999');
+    return `<tr style="${isAnulado ? 'opacity:.6;' : ''}">
+      <td style="font-family:var(--font-mono);font-size:12px;">${v.cod}</td>
+      <td style="font-weight:500;">${v.nome}</td>
+      <td style="text-align:center;">
+        ${isAnulado
+          ? '<span style="font-size:11px;background:#ffebee;color:#c62828;padding:2px 8px;border-radius:10px;font-weight:600;">ANULADO</span>'
+          : '<span style="font-size:11px;background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-weight:600;">ACTIVO</span>'}
+      </td>
+      <td style="text-align:center;">
+        <button class="btn-edit" style="font-size:11px;padding:3px 8px;color:var(--danger);border-color:var(--danger);" onclick="removerVendedor(${i})">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function abrirFormVendedor() {
+  document.getElementById('vendedores-form').style.display = 'block';
+  document.getElementById('vend-cod-input').focus();
+  document.getElementById('vend-form-error').style.display = 'none';
+}
+
+function fecharFormVendedor() {
+  document.getElementById('vendedores-form').style.display = 'none';
+  document.getElementById('vend-cod-input').value = '';
+  document.getElementById('vend-nome-input').value = '';
+}
+
+function salvarVendedor() {
+  const cod = parseInt(document.getElementById('vend-cod-input').value.trim());
+  const nome = document.getElementById('vend-nome-input').value.trim().toUpperCase();
+  const errEl = document.getElementById('vend-form-error');
+  if (!cod || isNaN(cod)) { errEl.textContent = 'Código SAP inválido.'; errEl.style.display='block'; return; }
+  if (!nome) { errEl.textContent = 'Nome obrigatório.'; errEl.style.display='block'; return; }
+  const list = getVendedoresCadastro();
+  if (list.find(v => v.cod === cod)) { errEl.textContent = 'Este código já existe.'; errEl.style.display='block'; return; }
+  list.push({ cod, nome });
+  list.sort((a,b) => a.cod - b.cod);
+  saveVendedoresCadastro(list);
+  fecharFormVendedor();
+  renderVendedoresTable();
+  toast('Vendedor adicionado.');
+}
+
+function removerVendedor(idx) {
+  const list = getVendedoresCadastro();
+  const v = list[idx];
+  if (!confirm(`Remover "${v.nome}" (${v.cod})?`)) return;
+  list.splice(idx, 1);
+  saveVendedoresCadastro(list);
+  renderVendedoresTable();
+  toast('Vendedor removido.');
+}
+
+// ─── APAGAR ANULADOS DO SUPABASE ─────────────────────
+async function apagarAnuladosSupabase(codsAnulados) {
+  if (!codsAnulados.length) return { apagados: 0, erros: 0 };
+  let apagados = 0, erros = 0;
+  for (const cod of codsAnulados) {
+    try {
+      // Apagar da tabela registos (o campo contratos está embutido no registo)
+      const res = await fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}`, {
+        method: 'DELETE',
+        headers: { ...HEADERS, 'Prefer': 'return=minimal' }
+      });
+      if (res.ok) apagados++;
+      else erros++;
+    } catch(e) { erros++; }
+  }
+  clearRegistosCache();
+  return { apagados, erros };
+}
+
 function toggleFiltroInvalidos() {
   const cb = document.getElementById('filtro-invalidos');
   const badge = document.getElementById('invalidos-badge');
@@ -1558,7 +1723,7 @@ function renderTable() {
   const totalInvalidos = (allData||[]).filter(r => !codsValidos.has(String(r.cod||'').trim())).length;
   const badgeEl = document.getElementById('invalidos-badge');
   if (badgeEl) {
-    badgeEl.textContent = totalInvalidos > 0 ? `⚠ ${totalInvalidos} código${totalInvalidos>1?'s':''} inválido${totalInvalidos>1?'s':''}` : '';
+    badgeEl.textContent = totalInvalidos > 0 ? `⚠ ${totalInvalidos} código${totalInvalidos>1?'s':''} inválido${totalInvalidos>1?'s':''} — ver Por Registar` : '';
     badgeEl.style.display = totalInvalidos > 0 ? 'inline-flex' : 'none';
   }
 
@@ -2524,7 +2689,7 @@ async function exportForaSPExcel() {
 function switchSubTab(group, sub) {
   if (group === 'registos') {
     window._registosSubTab = sub;
-    ['novo','lista','pendentes'].forEach(s => {
+    ['novo','lista','pendentes','vendedores'].forEach(s => {
       const btn = document.getElementById('sub-' + s);
       const panel = document.getElementById('sub-panel-' + s);
       const active = s === sub;
@@ -2535,9 +2700,10 @@ function switchSubTab(group, sub) {
       }
       if (panel) panel.style.display = active ? 'block' : 'none';
     });
-    if (sub === 'novo') { addEquipRow(); setStatus(null); } // init form
-    if (sub === 'lista') loadData(true); // força refresh
+    if (sub === 'novo') { addEquipRow(); setStatus(null); }
+    if (sub === 'lista') loadData(true);
     if (sub === 'pendentes') loadPendentes();
+    if (sub === 'vendedores') renderVendedoresTable();
   }
   if (group === 'contratos') {
     window._contratosSubTab = sub;
@@ -2772,13 +2938,23 @@ async function loadPendentes() {
     // Use registos cache if available
     let data = getRegistosCache();
     if (!data) {
-      const res = await fetch(SUPA_URL + '?select=cod', { headers: HEADERS });
+      const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor', { headers: HEADERS });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       data = await res.json();
     }
     const normCod = v => String(v || '').trim().replace(/^0+/, '') || '0';
-    const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
-    pendentesData = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
+    const codsListaAtiva = new Set(listaAtiva.map(c => normCod(c.cod)));
+    const codRegistados  = new Set((data || []).map(r => normCod(r.cod)));
+
+    // 1. Clientes da lista activa que ainda não foram registados
+    const porRegistar = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
+
+    // 2. Registos no Supabase cujo código já não existe na lista activa → inválidos
+    const invalidos = (data || [])
+      .filter(r => !codsListaAtiva.has(normCod(r.cod)))
+      .map(r => ({ cod: r.cod, nome: r.nome || '—', cep: '', vendedor: r.vendedor || '—', _invalido: true }));
+
+    pendentesData = [...invalidos, ...porRegistar];
   } catch(e) {
     console.error('loadPendentes error:', e);
     pendentesData = listaAtiva;
@@ -2801,19 +2977,40 @@ function renderPendentes() {
   if (search) filtered = filtered.filter(c => c.nome.toLowerCase().includes(search) || c.cod.toLowerCase().includes(search) || (c.vendedor||'').toLowerCase().includes(search));
   if (vendFilt) filtered = filtered.filter(c => c.vendedor === vendFilt);
 
+  const invalidos = filtered.filter(c => c._invalido);
+  const normais   = filtered.filter(c => !c._invalido);
   const countEl = document.getElementById('pending-count-badge');
-  if (countEl) countEl.textContent = `${filtered.length} de ${pendentesData.length} por registar`;
+  if (countEl) {
+    let txt = `${normais.length} por registar`;
+    if (invalidos.length) txt += ` · ⚠ ${invalidos.length} inválido(s)`;
+    countEl.textContent = txt;
+  }
 
   const pendingBody = document.getElementById('pending-body');
   if (!pendingBody) return;
-  pendingBody.innerHTML = filtered.length
-    ? filtered.map(c => `<tr>
-        <td>${c.cod}</td>
+
+  const renderRow = c => {
+    if (c._invalido) {
+      // Código inválido — marcado a vermelho, sem botão Registar
+      return `<tr class="row-invalid">
+        <td><span class="cod-invalid" title="Código não encontrado na lista SAP — verificar com o vendedor">${c.cod} ⚠</span></td>
         <td>${c.nome}</td>
-        <td>${c.cep||'—'}</td>
+        <td>—</td>
         <td><span class="vendedor-badge">${c.vendedor||'—'}</span></td>
-        <td><button class="btn-edit" data-cod="${c.cod}" data-nome="${c.nome.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" data-cep="${c.cep||''}" data-vend="${c.vendedor||''}">→ Registar</button></td>
-      </tr>`).join('')
+        <td style="font-size:11px;color:var(--danger);font-weight:600;">Código inválido</td>
+      </tr>`;
+    }
+    return `<tr>
+      <td>${c.cod}</td>
+      <td>${c.nome}</td>
+      <td>${c.cep||'—'}</td>
+      <td><span class="vendedor-badge">${c.vendedor||'—'}</span></td>
+      <td><button class="btn-edit" data-cod="${c.cod}" data-nome="${c.nome.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" data-cep="${c.cep||''}" data-vend="${c.vendedor||''}">→ Registar</button></td>
+    </tr>`;
+  };
+
+  pendingBody.innerHTML = filtered.length
+    ? filtered.map(renderRow).join('')
     : '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente por registar!</td></tr>';
 
   // Event delegation for Registar buttons
@@ -2903,18 +3100,12 @@ async function processarRawExcel(rows, headers) {
     return;
   }
 
-  // Mapa Nº pess. → vendedor (derivado do ficheiro SAP)
-  const NPESS_VENDEDOR = {
-    99520002: 'HÉLCIO GRÉGIO',
-    99520006: 'DANIELA SANTOS',
-    99520007: 'PAULO FONTES',
-    99520010: 'FILIPE NEVES',
-    99520015: 'HÉLCIO GRÉGIO',
-    99520016: 'DANIELA SANTOS',
-    99520017: 'PAULO FONTES',
-  };
+  // Mapa Nº pess. → vendedor (do cadastro dinâmico — sub-aba Vendedores)
+  const NPESS_VENDEDOR = getVendedoresMap();
 
   const novaLista = [];
+  const codsAnulados = []; // clientes com vendedor terminado em 999
+
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || !row[iCliente]) continue;
@@ -2922,13 +3113,20 @@ async function processarRawExcel(rows, headers) {
     const nome   = String(row[iNome]||'').trim().toUpperCase();
     const cep    = iCEP >= 0 ? String(row[iCEP]||'').trim() : '';
     const npess  = iNPess >= 0 ? parseInt(row[iNPess]) : 0;
-    const vendedor = NPESS_VENDEDOR[npess] || '';
     if (!cod || !nome) continue;
-    if (!vendedor) continue; // ignora códigos de vendedor não reconhecidos
+
+    // Anulado: código de vendedor termina em 999
+    if (String(npess).endsWith('999')) {
+      codsAnulados.push(cod);
+      continue;
+    }
+
+    const vendedor = NPESS_VENDEDOR[npess] || '';
+    if (!vendedor) continue; // código desconhecido — ignora silenciosamente
     novaLista.push({cod, nome, cep, vendedor});
   }
 
-  if (!novaLista.length) { toast('Nenhum cliente válido encontrado.', 'error'); return; }
+  if (!novaLista.length && !codsAnulados.length) { toast('Nenhum cliente válido encontrado.', 'error'); return; }
 
   const listaAtual = localStorage.getItem('delta_clientes_sistema')
     ? JSON.parse(localStorage.getItem('delta_clientes_sistema')) : CLIENTES_SISTEMA;
@@ -2936,16 +3134,25 @@ async function processarRawExcel(rows, headers) {
   const codNova  = new Set(novaLista.map(c => String(c.cod)));
   const adicionados = novaLista.filter(c => !codAtual.has(c.cod)).length;
   const removidos   = listaAtual.filter(c => !codNova.has(String(c.cod))).length;
-  const semVendedor = novaLista.filter(c => !c.vendedor).length;
 
-  pendingImportBuffer = novaLista;
-  let msg = `Lista com ${novaLista.length} clientes`;
+  let msg = `Lista com ${novaLista.length} clientes activos`;
   if (adicionados > 0) msg += ` · +${adicionados} novos`;
   if (removidos > 0)   msg += ` · -${removidos} removidos`;
+  if (codsAnulados.length > 0) msg += `\n⚠ ${codsAnulados.length} cliente(s) ANULADO(S) serão apagados do Supabase`;
 
-  // Confirma directamente via dialog
   if (confirm(`${msg}\n\nConfirmas a importação?`)) {
+    pendingImportBuffer = novaLista;
     confirmarImport();
+
+    // Apagar anulados do Supabase em background
+    if (codsAnulados.length > 0) {
+      toast(`A apagar ${codsAnulados.length} cliente(s) anulado(s)...`);
+      apagarAnuladosSupabase(codsAnulados).then(({ apagados, erros }) => {
+        let msg2 = `✅ ${apagados} registo(s) anulado(s) apagado(s)`;
+        if (erros > 0) msg2 += ` · ${erros} erro(s)`;
+        toast(msg2, erros > 0 ? 'error' : 'success');
+      });
+    }
   } else {
     pendingImportBuffer = [];
     toast('Importação cancelada.');
