@@ -2957,7 +2957,6 @@ let pendentesData = [];
 async function loadPendentes() {
   const listaAtiva = getListaClientesActiva();
   const codsListaAtiva = new Set(listaAtiva.map(c => String(c.cod).trim()));
-  const vendedoresActivos = new Set(Object.values(getVendedoresMap())); // nomes dos vendedores válidos
 
   try {
     // Ir sempre ao Supabase para ter dados frescos (registos actuais)
@@ -2969,18 +2968,16 @@ async function loadPendentes() {
       setRegistosCache(data);
     }
     const normCod = v => String(v || '').trim().replace(/^0+/, '') || '0';
+    const codsListaActivaNorm = new Set(listaAtiva.map(c => normCod(c.cod)));
     const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
 
     // 1. Clientes da lista activa sem registo → por registar normais
     const porRegistar = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
 
-    // 2. Registos no Supabase com vendedor válido MAS código fora da lista activa → revisão
+    // 2. Registos no Supabase cujo código NÃO existe na lista SAP activa → revisão
+    // (independentemente do vendedor — se não está na lista, precisa revisão)
     const paraRevisao = (data || [])
-      .filter(r => {
-        const cod = String(r.cod||'').trim();
-        const vend = String(r.vendedor||'').trim().toUpperCase();
-        return !codsListaAtiva.has(cod) && vendedoresActivos.has(vend);
-      })
+      .filter(r => !codsListaActivaNorm.has(normCod(r.cod)))
       .map(r => ({
         cod: r.cod, nome: r.nome || '—', cep: '', vendedor: r.vendedor || '—', _revisao: true
       }));
