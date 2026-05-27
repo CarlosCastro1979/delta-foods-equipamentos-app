@@ -2943,18 +2943,10 @@ async function loadPendentes() {
       data = await res.json();
     }
     const normCod = v => String(v || '').trim().replace(/^0+/, '') || '0';
-    const codsListaAtiva = new Set(listaAtiva.map(c => normCod(c.cod)));
-    const codRegistados  = new Set((data || []).map(r => normCod(r.cod)));
+    const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
 
-    // 1. Clientes da lista activa que ainda não foram registados
-    const porRegistar = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
-
-    // 2. Registos no Supabase cujo código já não existe na lista activa → inválidos
-    const invalidos = (data || [])
-      .filter(r => !codsListaAtiva.has(normCod(r.cod)))
-      .map(r => ({ cod: r.cod, nome: r.nome || '—', cep: '', vendedor: r.vendedor || '—', _invalido: true }));
-
-    pendentesData = [...invalidos, ...porRegistar];
+    // Apenas clientes da lista activa que ainda não foram registados
+    pendentesData = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
   } catch(e) {
     console.error('loadPendentes error:', e);
     pendentesData = listaAtiva;
@@ -2977,40 +2969,20 @@ function renderPendentes() {
   if (search) filtered = filtered.filter(c => c.nome.toLowerCase().includes(search) || c.cod.toLowerCase().includes(search) || (c.vendedor||'').toLowerCase().includes(search));
   if (vendFilt) filtered = filtered.filter(c => c.vendedor === vendFilt);
 
-  const invalidos = filtered.filter(c => c._invalido);
-  const normais   = filtered.filter(c => !c._invalido);
   const countEl = document.getElementById('pending-count-badge');
-  if (countEl) {
-    let txt = `${normais.length} por registar`;
-    if (invalidos.length) txt += ` · ⚠ ${invalidos.length} inválido(s)`;
-    countEl.textContent = txt;
-  }
+  if (countEl) countEl.textContent = `${filtered.length} de ${pendentesData.length} por registar`;
 
   const pendingBody = document.getElementById('pending-body');
   if (!pendingBody) return;
 
-  const renderRow = c => {
-    if (c._invalido) {
-      // Código inválido — marcado a vermelho, sem botão Registar
-      return `<tr class="row-invalid">
-        <td><span class="cod-invalid" title="Código não encontrado na lista SAP — verificar com o vendedor">${c.cod} ⚠</span></td>
-        <td>${c.nome}</td>
-        <td>—</td>
-        <td><span class="vendedor-badge">${c.vendedor||'—'}</span></td>
-        <td style="font-size:11px;color:var(--danger);font-weight:600;">Código inválido</td>
-      </tr>`;
-    }
-    return `<tr>
-      <td>${c.cod}</td>
-      <td>${c.nome}</td>
-      <td>${c.cep||'—'}</td>
-      <td><span class="vendedor-badge">${c.vendedor||'—'}</span></td>
-      <td><button class="btn-edit" data-cod="${c.cod}" data-nome="${c.nome.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" data-cep="${c.cep||''}" data-vend="${c.vendedor||''}">→ Registar</button></td>
-    </tr>`;
-  };
-
   pendingBody.innerHTML = filtered.length
-    ? filtered.map(renderRow).join('')
+    ? filtered.map(c => `<tr>
+        <td>${c.cod}</td>
+        <td>${c.nome}</td>
+        <td>${c.cep||'—'}</td>
+        <td><span class="vendedor-badge">${c.vendedor||'—'}</span></td>
+        <td><button class="btn-edit" data-cod="${c.cod}" data-nome="${c.nome.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" data-cep="${c.cep||''}" data-vend="${c.vendedor||''}">→ Registar</button></td>
+      </tr>`).join('')
     : '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente por registar!</td></tr>';
 
   // Event delegation for Registar buttons
