@@ -4337,8 +4337,13 @@ async function loadContratosTab(forceRefresh = false) {
           (dataFim.getMonth() - today.getMonth());
         const pctConsumo = totalContratado > 0 ? (consumoReal / totalContratado) * 100 : 0;
         let alerta = null;
-        if (pctTotal !== null && pctTotal >= 85) alerta = 'volume'; // alerta baseado em % vs total contrato
-        else if (mesesParaFim <= 6 && mesesParaFim >= 0) alerta = 'tempo';
+        // Alertas baseados exclusivamente no volume (o contrato vive pelo consumo, não pelo tempo)
+        // 1. Contrato finalizado: consumo >= 100% do total contratado
+        if (pctTotal !== null && pctTotal >= 100) alerta = 'finalizado';
+        // 2. Perto do fim: consumo >= 80% do total (faltam <= 20% do volume)
+        else if (pctTotal !== null && pctTotal >= 80) alerta = 'perto_fim';
+        // 3. Sem consumo: consumo real <= 50% do esperado YTD (muito abaixo do ritmo)
+        else if (consumoEsperado > 0 && consumoReal <= consumoEsperado * 0.5) alerta = 'sem_consumo';
 
         rows.push({
           cod: r.cod, nome: r.nome, vendedor: r.vendedor || '—', contrato: r.contrato || '—',
@@ -4413,7 +4418,7 @@ async function loadContratosTab(forceRefresh = false) {
     <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
 
     // Main contracts table
-    html += `<div><table style="width:auto;border-collapse:collapse;font-size:12px;">
+    html += `<div style="overflow-x:auto;width:100%;"><table style="width:100%;min-width:900px;border-collapse:collapse;font-size:12px;">
       <thead><tr style="background:#f5f5f5;color:#333;text-align:left;border-bottom:2px solid #c8102e">
         <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">CÓD</th>
         <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">CLIENTE</th>
@@ -4439,10 +4444,12 @@ async function loadContratosTab(forceRefresh = false) {
     rows.forEach((r, idx) => {
       const td = `padding:8px 10px;border:1px solid #eee;font-size:11px;${idx%2===0?'background:#fff;':'background:#fafafa;'}`;
       const pBg = pctBg2(r.pct); const pCol = pctColor2(r.pct);
-      const alertaHtml = r.alerta === 'volume'
-        ? `<span style="background:#ffebee;color:#c62828;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">⚠️ Volume</span>`
-        : r.alerta === 'tempo'
-        ? `<span style="background:#fff3e0;color:#f57c00;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">⏳ Tempo</span>`
+      const alertaHtml = r.alerta === 'finalizado'
+        ? `<span style="background:#e8f5e9;color:#1b5e20;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">✅ Contrato Finalizado — Negociar</span>`
+        : r.alerta === 'perto_fim'
+        ? `<span style="background:#fff3e0;color:#e65100;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🔔 Perto do Final — Negociar</span>`
+        : r.alerta === 'sem_consumo'
+        ? `<span style="background:#ffebee;color:#b71c1c;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🚫 Sem Consumo — Analisar</span>`
         : `<span style="color:#aaa;font-size:10px">—</span>`;
       html += `<tr>
         <td style="${td}color:var(--muted)">${r.cod}</td>
