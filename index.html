@@ -3018,12 +3018,25 @@ function renderPendentes() {
   if (!pendingBody) return;
 
   const renderRow = c => c._revisao
-    ? `<tr class="row-invalid">
-        <td><span class="cod-invalid" title="Código registado mas não encontrado na lista SAP actual">${c.cod} ⚠</span></td>
+    ? `<tr class="row-invalid" data-cod-orig="${c.cod}">
+        <td>
+          <span class="cod-invalid" title="Código registado mas não encontrado na lista SAP actual">${c.cod} ⚠</span>
+          <div class="edit-cod-inline" id="edit-inline-${c.cod}" style="display:none;margin-top:4px;display:none;align-items:center;gap:6px;">
+            <input type="text" class="form-input" id="input-cod-${c.cod}" placeholder="Novo código SAP"
+              style="width:120px;padding:4px 8px;font-size:12px;"
+              onkeydown="if(event.key==='Enter')corrigirCodRevisao('${c.cod}')">
+            <button class="btn btn-primary btn-sm" style="padding:3px 10px;font-size:11px;" onclick="corrigirCodRevisao('${c.cod}')">✓</button>
+            <button class="btn btn-secondary btn-sm" style="padding:3px 8px;font-size:11px;" onclick="cancelarEditCod('${c.cod}')">✕</button>
+          </div>
+          <div id="err-cod-${c.cod}" style="color:var(--danger);font-size:11px;display:none;margin-top:2px;"></div>
+        </td>
         <td>${c.nome}</td>
         <td>—</td>
         <td><span class="vendedor-badge">${c.vendedor||'—'}</span></td>
-        <td style="font-size:11px;color:var(--danger);font-weight:600;white-space:nowrap;">⚠ Requer revisão</td>
+        <td style="white-space:nowrap;">
+          <button class="btn-edit" style="font-size:11px;padding:3px 10px;color:var(--danger);border-color:var(--danger);"
+            onclick="abrirEditCod('${c.cod}')">✏ Corrigir código</button>
+        </td>
       </tr>`
     : `<tr>
         <td>${c.cod}</td>
@@ -3045,6 +3058,58 @@ function renderPendentes() {
       if (!btn) return;
       preencherNovo(btn.dataset.cod, btn.dataset.nome, btn.dataset.cep, btn.dataset.vend);
     });
+  }
+}
+
+function abrirEditCod(codOrig) {
+  const el = document.getElementById('edit-inline-' + codOrig);
+  if (el) { el.style.display = 'flex'; document.getElementById('input-cod-' + codOrig)?.focus(); }
+}
+
+function cancelarEditCod(codOrig) {
+  const el = document.getElementById('edit-inline-' + codOrig);
+  if (el) el.style.display = 'none';
+  const err = document.getElementById('err-cod-' + codOrig);
+  if (err) err.style.display = 'none';
+}
+
+async function corrigirCodRevisao(codOrig) {
+  const input = document.getElementById('input-cod-' + codOrig);
+  const errEl = document.getElementById('err-cod-' + codOrig);
+  const novoCod = (input?.value || '').trim();
+
+  if (!novoCod) { if(errEl){errEl.textContent='Introduz um código.';errEl.style.display='block';} return; }
+
+  // Verificar se o novo código existe na lista SAP activa
+  const listaAtiva = getListaClientesActiva();
+  const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
+  const clienteSAP = listaAtiva.find(c => normCod(c.cod) === normCod(novoCod));
+
+  if (!clienteSAP) {
+    if(errEl){errEl.textContent='Código não encontrado na lista SAP activa.';errEl.style.display='block';}
+    return;
+  }
+
+  // Actualizar no Supabase — procurar pelo código original
+  try {
+    input.disabled = true;
+    const res = await fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(codOrig)}`, {
+      method: 'PATCH',
+      headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({
+        cod: clienteSAP.cod,
+        nome: clienteSAP.nome,
+        cep: clienteSAP.cep || '',
+        vendedor: clienteSAP.vendedor
+      })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    clearRegistosCache();
+    toast(`✅ Código corrigido: ${codOrig} → ${clienteSAP.cod} (${clienteSAP.nome})`);
+    await loadPendentes(); // recarrega a lista
+  } catch(e) {
+    if(errEl){errEl.textContent='Erro ao actualizar: ' + e.message;errEl.style.display='block';}
+    if(input) input.disabled = false;
   }
 }
 
