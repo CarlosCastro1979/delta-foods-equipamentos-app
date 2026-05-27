@@ -136,20 +136,7 @@
   .panel { display: none !important; }
   .panel.active { display: block !important; }
 
-  /* Contratos table responsive */
-  .contratos-table { width:100%; border-collapse:collapse; font-size:13px; }
-  .contratos-table th, .contratos-table td { padding:8px 10px; border:1px solid #eee; }
-  .contratos-table th { font-size:11px; font-weight:700; white-space:nowrap; }
-  @media (max-width: 900px) {
-    .contratos-table { font-size:11px; }
-    .contratos-table th, .contratos-table td { padding:6px 6px; }
-    .col-hide-md { display:none; }
-  }
-  @media (max-width: 600px) {
-    .contratos-table { font-size:10px; }
-    .contratos-table th, .contratos-table td { padding:4px 4px; }
-    .col-hide-sm { display:none; }
-  }
+
 
 
   /* FORM */
@@ -4195,9 +4182,9 @@ function filtrarContratosVendedor() {
       : `<span style="color:#aaa;font-size:11px">—</span>`;
     html += `<tr>
       <td style="${td}font-weight:500">${r.nome}</td>
-      <td class="col-hide-sm" style="${td}">${r.contrato}</td>
-      <td class="col-hide-md" style="${td}white-space:nowrap">${r.inicio}</td>
-      <td class="col-hide-sm" style="${td}white-space:nowrap">${r.fimFmt}</td>
+      <td style="${td}">${r.contrato}</td>
+      <td style="${td}white-space:nowrap">${r.inicio}</td>
+      <td style="${td}white-space:nowrap">${r.fimFmt}</td>
       <td style="${td}text-align:right">${fmtNum(r.consumoMes, r.unidade)}</td>
       <td style="${td}text-align:right">${fmtNum(r.totalContratado, r.unidade)}</td>
       <td style="${td}text-align:right">${r.consumoEsperado !== null ? fmtNum(r.consumoEsperado, r.unidade) : '—'}</td>
