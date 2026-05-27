@@ -101,7 +101,7 @@
   .dot.offline { background: var(--danger); }
 
   /* LAYOUT */
-  .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+  .container { max-width: 100%; margin: 0 auto; padding: 16px 24px; }
 
   /* TABS */
   .tabs {
@@ -4064,6 +4064,56 @@ async function loadContratosTab(forceRefresh = false) {
       </table>
     </div>
     <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
+
+    // Main contracts table
+    html += `<div><table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="background:#f5f5f5;color:#333;text-align:left;border-bottom:2px solid #c8102e">
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">CÓD</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">CLIENTE</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">CONTRATO</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">INÍCIO</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:center">DUR.</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">FIM</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:right">CONS./MÊS</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:right">TOTAL</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:right">ESPERADO</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:right">REAL</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:center;background:#EFF6FF">% TOTAL ⚠️</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:center;background:#F0FDF4">% YTD</th>
+        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:center">ALERTA</th>
+      </tr></thead><tbody>`;
+
+    const fmtNum2 = (n, u) => u === 'Kg'
+      ? n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' Kg'
+      : Math.round(n).toLocaleString('pt-BR')+' Cáps';
+    const pctColor2 = p => p===null?'#888':p>=90?'#2e7d32':p>=60?'#f57c00':'#c62828';
+    const pctBg2    = p => p===null?'#f5f5f5':p>=90?'#e8f5e9':p>=60?'#fff3e0':'#ffebee';
+
+    rows.forEach((r, idx) => {
+      const td = `padding:8px 10px;border:1px solid #eee;font-size:11px;${idx%2===0?'background:#fff;':'background:#fafafa;'}`;
+      const pBg = pctBg2(r.pct); const pCol = pctColor2(r.pct);
+      const alertaHtml = r.alerta === 'volume'
+        ? `<span style="background:#ffebee;color:#c62828;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">⚠️ Volume</span>`
+        : r.alerta === 'tempo'
+        ? `<span style="background:#fff3e0;color:#f57c00;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">⏳ Tempo</span>`
+        : `<span style="color:#aaa;font-size:10px">—</span>`;
+      html += `<tr>
+        <td style="${td}color:var(--muted)">${r.cod}</td>
+        <td style="${td}font-weight:500">${r.nome}</td>
+        <td style="${td}">${r.contrato}</td>
+        <td style="${td}white-space:nowrap">${r.inicio}</td>
+        <td style="${td}text-align:center">${r.duracao}</td>
+        <td style="${td}white-space:nowrap">${r.fimFmt}</td>
+        <td style="${td}text-align:right">${fmtNum2(r.consumoMes,r.unidade)}</td>
+        <td style="${td}text-align:right">${fmtNum2(r.totalContratado,r.unidade)}</td>
+        <td style="${td}text-align:right">${r.consumoEsperado!==null?fmtNum2(r.consumoEsperado,r.unidade):'—'}</td>
+        <td style="${td}text-align:right;font-weight:600">${r.consumoReal!==null?fmtNum2(r.consumoReal,r.unidade):'—'}</td>
+        <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal!==null?`<span style="background:${pctBg2(r.pctTotal)};color:${pctColor2(r.pctTotal)};padding:2px 8px;border-radius:10px;font-weight:700">${r.pctTotal}%</span>`:'—'}</td>
+        <td style="${td}text-align:center;background:#F8FFF9">${r.pct!==null&&r.mesesDecorridos>0?`<span style="background:${pBg};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700">${r.pct}%</span>`:'—'}</td>
+        <td style="${td}text-align:center">${alertaHtml}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
 
     // Popula filtro de vendedores
     const vendedoresContr = [...new Set(rows.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
