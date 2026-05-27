@@ -3236,8 +3236,7 @@ function getListaClientesActiva() {
   } catch(e) { return CLIENTES_SISTEMA; }
 }
 
-// pendingImportBuffer mantido para compatibilidade interna
-let pendingImportBuffer = [];
+// confirmarImport — compatibilidade com import-bar do CSV antigo
 function confirmarImport() {
   if (!pendingImportBuffer.length) return;
   localStorage.setItem('delta_clientes_sistema', JSON.stringify(pendingImportBuffer));
