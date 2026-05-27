@@ -1721,7 +1721,7 @@ function toggleFiltroInvalidos() {
 function getCodsListaAtiva() {
   try {
     const saved = localStorage.getItem('delta_clientes_sistema');
-    const lista = saved ? JSON.parse(saved) : CLIENTES_SISTEMA;
+    const lista = getListaClientesActiva();
     return new Set(lista.map(c => String(c.cod).trim()));
   } catch(e) { return new Set(); }
 }
@@ -2001,7 +2001,7 @@ async function initSemCompras() {
   // Actualiza filtro de vendedores
   const sel = document.getElementById('sc-vendedor');
   if (sel && sel.options.length <= 1) {
-    const vendedores = [...new Set(CLIENTES_SISTEMA.map(c => c.vendedor).filter(Boolean))].sort();
+    const vendedores = [...new Set(getListaClientesActiva().map(c => c.vendedor).filter(Boolean))].sort();
     sel.innerHTML = '<option value="">Todos os vendedores</option>' +
       vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
   }
@@ -2082,7 +2082,7 @@ async function handleSCFileImport(event) {
   // Actualiza filtro de vendedores
   const sel = document.getElementById('sc-vendedor');
   if (sel && sel.options.length <= 1) {
-    const vendedores = [...new Set(CLIENTES_SISTEMA.map(c => c.vendedor).filter(Boolean))].sort();
+    const vendedores = [...new Set(getListaClientesActiva().map(c => c.vendedor).filter(Boolean))].sort();
     sel.innerHTML = '<option value="">Todos os vendedores</option>' +
       vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
   }
@@ -2282,7 +2282,7 @@ function renderSemCompras() {
 
   // Calcula meses sem comprar por cliente
   const resultado = [];
-  for (const cli of CLIENTES_SISTEMA) {
+  for (const cli of getListaClientesActiva()) {
     if (vendFilt && cli.vendedor !== vendFilt) continue;
     const codNorm = normalizaCodSC(cli.cod);
     const ultimaCompra = scVendasData[codNorm] || scVendasData[cli.cod] || null;
@@ -2491,7 +2491,7 @@ async function exportSCExcel() {
   const hoje = scDataRef || new Date();
 
   const rows = [['Vendedor','Cód.','Nome','CEP','Última Compra','Meses sem comprar','Faixa','Situação Dívida','Total Vencido (R$)']];
-  for (const cli of CLIENTES_SISTEMA) {
+  for (const cli of getListaClientesActiva()) {
     if (vendFilt && cli.vendedor !== vendFilt) continue;
     const codNorm = normalizaCodSC(cli.cod);
     const ultimaCompra = scVendasData[codNorm] || scVendasData[cli.cod] || null;
@@ -2567,7 +2567,7 @@ function initForaSP() {
 
   // Calcula dinamicamente a partir de CLIENTES_SISTEMA
   // Exclui automaticamente se o cliente for removido da lista dos 495
-  foraSPCache = CLIENTES_SISTEMA
+  foraSPCache = getListaClientesActiva()
     .map(c => {
       const est = estadoPorCEP(c.cep);
       const v = VENDAS_FORA_SP_LOOKUP[c.cod] || null;
@@ -3331,7 +3331,7 @@ async function loadResumo() {
     const normCodR = v => String(v || '').trim().replace(/^0+/, '') || '0';
     const codRegistados = new Set(registados.map(r => normCodR(r.cod)));
 
-    const _listaStats = CLIENTES_SISTEMA; // sempre usa a lista do código — igual em todos os PCs
+    const _listaStats = getListaClientesActiva(); // usa sempre a lista activa (localStorage ou hardcoded)
     _listaStats.forEach(c => {
       const v = c.vendedor;
       if (!vendedores[v]) vendedores[v] = { total: 0, registados: 0 };
@@ -3546,7 +3546,7 @@ let atTipoEquip = ''; // 'comercial' or 'domestico'
 
 function loadAtTab() {
   const savedList = localStorage.getItem('delta_clientes_sistema');
-  const lista = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
+  const lista = getListaClientesActiva();
   const vendedores = [...new Set(lista.map(c => c.vendedor).filter(Boolean))].sort();
   const sel = document.getElementById('at-vendedor');
   sel.innerHTML = '<option value="">— Selecionar vendedor —</option>' +
@@ -3599,7 +3599,7 @@ async function atOnTipoEquipChange() {
   if (!atTipoEquip || !vendedor) return;
 
   const savedList = localStorage.getItem('delta_clientes_sistema');
-  const lista = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
+  const lista = getListaClientesActiva();
   const clientesVendedor = lista.filter(c => c.vendedor === vendedor);
 
   document.getElementById('at-cliente').innerHTML = '<option value="">A filtrar clientes...</option>';
