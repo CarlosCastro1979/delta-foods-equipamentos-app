@@ -895,6 +895,10 @@
         style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--muted);">
         👥 Vendedores
       </button>
+      <button id="sub-carga-sap" onclick="switchSubTab('registos','carga-sap')"
+        style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--muted);">
+        📥 Carregar Lista SAP
+      </button>
     </div>
     <!-- Sub-panels -->
     <div id="sub-panel-novo" style="display:none;">
@@ -1027,18 +1031,6 @@
       </table>
     </div>
 
-    <div class="import-section">
-      <p class="import-hint">📂 Actualização mensal — cola a nova lista de clientes em CSV para detectar os que faltam:</p>
-      <textarea id="csv-import-area" placeholder="Cola aqui o CSV (colunas: cod,nome,cep,vendedor) ou usa o botão abaixo"></textarea>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <label class="btn btn-secondary btn-sm" style="cursor:pointer">
-          📁 Carregar ficheiro Excel/CSV
-          <input type="file" id="file-import-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFileImport(event)">
-        </label>
-        <button class="btn btn-primary btn-sm" onclick="processarCSVImport()">🔍 Detectar novos clientes</button>
-      </div>
-
-
   </div>
 </div>
 </div>
@@ -1084,6 +1076,36 @@
             <tr><td colspan="4" style="text-align:center;padding:24px;color:var(--muted)">A carregar...</td></tr>
           </tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUB-PANEL: CARREGAR LISTA SAP -->
+  <div id="sub-panel-carga-sap" style="display:none;">
+    <div style="max-width:600px;">
+      <div style="margin-bottom:16px;">
+        <h2 style="font-size:15px;font-weight:600;color:var(--text);margin:0 0 4px 0">📥 Carregar Lista de Clientes SAP</h2>
+        <p style="font-size:12px;color:var(--muted);margin:0">Carrega o Excel exportado do SAP. A lista activa é substituída integralmente — anulados (vendedor 999) são apagados do Supabase.</p>
+      </div>
+
+      <label class="btn btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;margin-bottom:20px;">
+        📁 Selecionar ficheiro Excel SAP
+        <input type="file" id="sap-file-input" accept=".xlsx,.xls" style="display:none" onchange="carregarListaSAP(event)">
+      </label>
+
+      <div id="sap-load-status" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;">
+        <div id="sap-status-text" style="font-size:13px;color:var(--text);margin-bottom:12px;"></div>
+        <div style="display:flex;gap:8px;">
+          <button id="sap-confirm-btn" class="btn btn-primary btn-sm" onclick="confirmarCargaSAP()">✅ Confirmar importação</button>
+          <button class="btn btn-secondary btn-sm" onclick="cancelarCargaSAP()">Cancelar</button>
+        </div>
+      </div>
+
+      <div id="sap-result" style="display:none;font-size:13px;padding:12px 16px;border-radius:8px;border:1px solid #c8e6c9;background:#e8f5e9;color:#2e7d32;"></div>
+
+      <div style="margin-top:24px;padding:14px 16px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Última carga</div>
+        <div id="sap-ultima-carga" style="font-size:13px;color:var(--text);">—</div>
       </div>
     </div>
   </div>
@@ -2689,7 +2711,7 @@ async function exportForaSPExcel() {
 function switchSubTab(group, sub) {
   if (group === 'registos') {
     window._registosSubTab = sub;
-    ['novo','lista','pendentes','vendedores'].forEach(s => {
+    ['novo','lista','pendentes','vendedores','carga-sap'].forEach(s => {
       const btn = document.getElementById('sub-' + s);
       const panel = document.getElementById('sub-panel-' + s);
       const active = s === sub;
@@ -2704,6 +2726,7 @@ function switchSubTab(group, sub) {
     if (sub === 'lista') loadData(true);
     if (sub === 'pendentes') loadPendentes();
     if (sub === 'vendedores') renderVendedoresTable();
+    if (sub === 'carga-sap') renderUltimaCargaSAP();
   }
   if (group === 'contratos') {
     window._contratosSubTab = sub;
@@ -2932,21 +2955,37 @@ async function salvarEdicao() {
 let pendentesData = [];
 
 async function loadPendentes() {
-  const savedList = localStorage.getItem('delta_clientes_sistema');
-  const listaAtiva = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
+  const listaAtiva = getListaClientesActiva();
+  const codsListaAtiva = new Set(listaAtiva.map(c => String(c.cod).trim()));
+  const vendedoresActivos = new Set(Object.values(getVendedoresMap())); // nomes dos vendedores válidos
+
   try {
-    // Use registos cache if available
+    // Ir sempre ao Supabase para ter dados frescos (registos actuais)
     let data = getRegistosCache();
     if (!data) {
       const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor', { headers: HEADERS });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       data = await res.json();
+      setRegistosCache(data);
     }
     const normCod = v => String(v || '').trim().replace(/^0+/, '') || '0';
     const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
 
-    // Apenas clientes da lista activa que ainda não foram registados
-    pendentesData = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
+    // 1. Clientes da lista activa sem registo → por registar normais
+    const porRegistar = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
+
+    // 2. Registos no Supabase com vendedor válido MAS código fora da lista activa → revisão
+    const paraRevisao = (data || [])
+      .filter(r => {
+        const cod = String(r.cod||'').trim();
+        const vend = String(r.vendedor||'').trim().toUpperCase();
+        return !codsListaAtiva.has(cod) && vendedoresActivos.has(vend);
+      })
+      .map(r => ({
+        cod: r.cod, nome: r.nome || '—', cep: '', vendedor: r.vendedor || '—', _revisao: true
+      }));
+
+    pendentesData = [...paraRevisao, ...porRegistar];
   } catch(e) {
     console.error('loadPendentes error:', e);
     pendentesData = listaAtiva;
@@ -2969,20 +3008,36 @@ function renderPendentes() {
   if (search) filtered = filtered.filter(c => c.nome.toLowerCase().includes(search) || c.cod.toLowerCase().includes(search) || (c.vendedor||'').toLowerCase().includes(search));
   if (vendFilt) filtered = filtered.filter(c => c.vendedor === vendFilt);
 
+  const revisao = filtered.filter(c => c._revisao);
+  const normais  = filtered.filter(c => !c._revisao);
   const countEl = document.getElementById('pending-count-badge');
-  if (countEl) countEl.textContent = `${filtered.length} de ${pendentesData.length} por registar`;
+  if (countEl) {
+    let txt = `${normais.length} por registar`;
+    if (revisao.length) txt += ` · ⚠ ${revisao.length} precisam revisão`;
+    countEl.textContent = txt;
+  }
 
   const pendingBody = document.getElementById('pending-body');
   if (!pendingBody) return;
 
-  pendingBody.innerHTML = filtered.length
-    ? filtered.map(c => `<tr>
+  const renderRow = c => c._revisao
+    ? `<tr class="row-invalid">
+        <td><span class="cod-invalid" title="Código registado mas não encontrado na lista SAP actual">${c.cod} ⚠</span></td>
+        <td>${c.nome}</td>
+        <td>—</td>
+        <td><span class="vendedor-badge">${c.vendedor||'—'}</span></td>
+        <td style="font-size:11px;color:var(--danger);font-weight:600;white-space:nowrap;">⚠ Requer revisão</td>
+      </tr>`
+    : `<tr>
         <td>${c.cod}</td>
         <td>${c.nome}</td>
         <td>${c.cep||'—'}</td>
         <td><span class="vendedor-badge">${c.vendedor||'—'}</span></td>
         <td><button class="btn-edit" data-cod="${c.cod}" data-nome="${c.nome.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" data-cep="${c.cep||''}" data-vend="${c.vendedor||''}">→ Registar</button></td>
-      </tr>`).join('')
+      </tr>`;
+
+  pendingBody.innerHTML = filtered.length
+    ? filtered.map(renderRow).join('')
     : '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente por registar!</td></tr>';
 
   // Event delegation for Registar buttons
@@ -3026,177 +3081,179 @@ function switchTabDirect(tab) {
 let pendingImportBuffer = [];
 let pendingVendedorMap = {};
 
-async function handleFileImport(event) {
+// ─── CARREGAR LISTA SAP ──────────────────────────────
+let _sapImportBuffer = null; // { novaLista, codsAnulados }
+
+async function carregarListaSAP(event) {
   const file = event.target.files[0];
   if (!file) return;
-  const name = file.name.toLowerCase();
-  if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
-    toast('A carregar Excel...');
-    if (!window.XLSX) {
-      await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
-    }
-    const buf = await file.arrayBuffer();
-    const wb = window.XLSX.read(buf, {type:'array'});
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    // Try to detect if it's a raw SAP/ERP export (has "Cliente" and "Nome 1" columns)
-    const rows = window.XLSX.utils.sheet_to_json(ws, {header:1});
-    const headers = (rows[0]||[]).map(h => String(h||'').trim());
-    const isRawExport = headers.includes('Cliente') && headers.some(h => h.includes('Nome'));
-    if (isRawExport) {
-      await processarRawExcel(rows, headers);
-    } else {
-      const csv = window.XLSX.utils.sheet_to_csv(ws, {FS:';'});
-      document.getElementById('csv-import-area').value = csv;
-      toast('Excel convertido — a processar...');
-      processarCSVImport();
-    }
-  } else if (name.endsWith('.csv')) {
-    const text = await file.text();
-    document.getElementById('csv-import-area').value = text;
-    processarCSVImport();
-  } else {
-    toast('Usa ficheiro .xlsx, .xls ou .csv', 'error');
-  }
   event.target.value = '';
-}
 
-async function processarRawExcel(rows, headers) {
-  // Columns in the raw export: Cliente, Nome 1, CEP (no vendedor column)
+  document.getElementById('sap-load-status').style.display = 'none';
+  document.getElementById('sap-result').style.display = 'none';
+
+  toast('A ler ficheiro...');
+
+  if (!window.XLSX) {
+    await new Promise((res,rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+
+  const buf = await file.arrayBuffer();
+  const wb  = window.XLSX.read(buf, {type:'array'});
+  const ws  = wb.Sheets[wb.SheetNames[0]];
+  const rows = window.XLSX.utils.sheet_to_json(ws, {header:1});
+  const headers = (rows[0]||[]).map(h => String(h||'').trim());
+
   const iCliente = headers.indexOf('Cliente');
   const iNome    = headers.findIndex(h => h.includes('Nome'));
   const iCEP     = headers.indexOf('CEP');
-  const iNPess   = headers.findIndex(h => h.includes('pess'));
+  const iNPess   = headers.findIndex(h => h.toLowerCase().includes('pess'));
 
   if (iCliente === -1 || iNome === -1) {
-    toast('Colunas "Cliente" e "Nome" não encontradas no ficheiro.', 'error');
+    toast('Colunas "Cliente" e "Nome" não encontradas. Verifica o ficheiro.', 'error');
     return;
   }
 
-  // Mapa Nº pess. → vendedor (do cadastro dinâmico — sub-aba Vendedores)
-  const NPESS_VENDEDOR = getVendedoresMap();
-
-  const novaLista = [];
-  const codsAnulados = []; // clientes com vendedor terminado em 999
+  const NPESS_VENDEDOR = getVendedoresMap(); // apenas activos (não 999)
+  const novaLista    = [];
+  const codsAnulados = [];
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || !row[iCliente]) continue;
-    const cod    = String(row[iCliente]||'').trim();
-    const nome   = String(row[iNome]||'').trim().toUpperCase();
-    const cep    = iCEP >= 0 ? String(row[iCEP]||'').trim() : '';
-    const npess  = iNPess >= 0 ? parseInt(row[iNPess]) : 0;
+    const cod   = String(row[iCliente]||'').trim();
+    const nome  = String(row[iNome]||'').trim().toUpperCase();
+    const cep   = iCEP  >= 0 ? String(row[iCEP] ||'').trim() : '';
+    const npess = iNPess >= 0 ? parseInt(row[iNPess]) : 0;
     if (!cod || !nome) continue;
 
-    // Anulado: código de vendedor termina em 999
     if (String(npess).endsWith('999')) {
       codsAnulados.push(cod);
       continue;
     }
-
     const vendedor = NPESS_VENDEDOR[npess] || '';
-    if (!vendedor) continue; // código desconhecido — ignora silenciosamente
+    if (!vendedor) continue; // código desconhecido — ignora
     novaLista.push({cod, nome, cep, vendedor});
   }
 
-  if (!novaLista.length && !codsAnulados.length) { toast('Nenhum cliente válido encontrado.', 'error'); return; }
+  if (!novaLista.length && !codsAnulados.length) {
+    toast('Nenhum cliente válido encontrado. Verifica o ficheiro e o cadastro de vendedores.', 'error');
+    return;
+  }
 
-  const listaAtual = localStorage.getItem('delta_clientes_sistema')
-    ? JSON.parse(localStorage.getItem('delta_clientes_sistema')) : CLIENTES_SISTEMA;
-  const codAtual = new Set(listaAtual.map(c => String(c.cod)));
-  const codNova  = new Set(novaLista.map(c => String(c.cod)));
+  // Calcular diferenças em relação à lista actual
+  const listaAtual = getListaClientesActiva();
+  const codAtual   = new Set(listaAtual.map(c => String(c.cod)));
+  const codNova    = new Set(novaLista.map(c => String(c.cod)));
   const adicionados = novaLista.filter(c => !codAtual.has(c.cod)).length;
   const removidos   = listaAtual.filter(c => !codNova.has(String(c.cod))).length;
 
-  let msg = `Lista com ${novaLista.length} clientes activos`;
-  if (adicionados > 0) msg += ` · +${adicionados} novos`;
-  if (removidos > 0)   msg += ` · -${removidos} removidos`;
-  if (codsAnulados.length > 0) msg += `\n⚠ ${codsAnulados.length} cliente(s) ANULADO(S) serão apagados do Supabase`;
+  // Registos no Supabase com código de vendedor válido mas código cliente fora da nova lista
+  // → precisam de revisão (serão assinalados em Por Registar)
+  // Calculado depois da confirmação em loadPendentes
 
-  if (confirm(`${msg}\n\nConfirmas a importação?`)) {
-    pendingImportBuffer = novaLista;
-    confirmarImport();
+  _sapImportBuffer = { novaLista, codsAnulados, fileName: file.name };
 
-    // Apagar anulados do Supabase em background
-    if (codsAnulados.length > 0) {
-      toast(`A apagar ${codsAnulados.length} cliente(s) anulado(s)...`);
-      apagarAnuladosSupabase(codsAnulados).then(({ apagados, erros }) => {
-        let msg2 = `✅ ${apagados} registo(s) anulado(s) apagado(s)`;
-        if (erros > 0) msg2 += ` · ${erros} erro(s)`;
-        toast(msg2, erros > 0 ? 'error' : 'success');
-      });
-    }
-  } else {
-    pendingImportBuffer = [];
-    toast('Importação cancelada.');
-  }
+  let statusHtml = `<strong>${novaLista.length}</strong> clientes activos`;
+  if (adicionados) statusHtml += ` &nbsp;·&nbsp; <span style="color:#2e7d32">+${adicionados} novos</span>`;
+  if (removidos)   statusHtml += ` &nbsp;·&nbsp; <span style="color:#f57c00">-${removidos} removidos</span>`;
+  if (codsAnulados.length) statusHtml += `<br><span style="color:#c62828">⚠ ${codsAnulados.length} anulado(s) serão apagados do Supabase</span>`;
+
+  document.getElementById('sap-status-text').innerHTML = statusHtml;
+  document.getElementById('sap-load-status').style.display = 'block';
 }
 
-async function processarCSVImport() {
-  const text = document.getElementById('csv-import-area').value.trim();
-  if (!text) { toast('Cola ou carrega um ficheiro CSV primeiro.', 'error'); return; }
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const novaLista = [];
-  const firstLine = lines[0].toLowerCase();
-  const startIdx = (firstLine.includes('cod') || firstLine.includes('cliente') || firstLine.includes('nome')) ? 1 : 0;
-  const savedVMap = JSON.parse(localStorage.getItem('delta_vendedor_map')||'{}');
-  const activeVMap = Object.assign({}, VENDEDOR_MAP, savedVMap);
-  const newVendedorMappings = {};
-  const sampleCols = (lines[startIdx]||'').split(/[,;\t]/);
-  const is6col = sampleCols.length >= 6;
-  for (let i = startIdx; i < lines.length; i++) {
-    const cols = lines[i].split(/[,;\t]/);
-    let cod, nome, cep, vendedor;
-    if (is6col && cols.length >= 5) {
-      cod  = (cols[1]||'').replace(/"/g,'').trim();
-      nome = (cols[2]||'').replace(/"/g,'').trim().toUpperCase();
-      cep  = (cols[3]||'').replace(/"/g,'').trim();
-      const codVend  = (cols[4]||'').replace(/"/g,'').trim();
-      const nomeVend = (cols[5]||'').replace(/"/g,'').trim().toUpperCase();
-      if (codVend && nomeVend) { newVendedorMappings[codVend] = nomeVend; vendedor = nomeVend; }
-      else vendedor = activeVMap[codVend] || codVend;
-    } else if (cols.length >= 3) {
-      cod  = (cols[0]||'').replace(/"/g,'').trim();
-      nome = (cols[1]||'').replace(/"/g,'').trim().toUpperCase();
-      cep  = (cols[2]||'').replace(/"/g,'').trim();
-      const rawV = (cols[3]||'').replace(/"/g,'').trim();
-      vendedor = activeVMap[rawV] || rawV.toUpperCase();
-    } else { continue; }
-    if (cod && nome) novaLista.push({cod, nome, cep, vendedor});
+async function confirmarCargaSAP() {
+  if (!_sapImportBuffer) return;
+  const { novaLista, codsAnulados, fileName } = _sapImportBuffer;
+
+  document.getElementById('sap-confirm-btn').disabled = true;
+  document.getElementById('sap-confirm-btn').textContent = 'A processar...';
+
+  // 1. Guardar nova lista activa
+  localStorage.setItem('delta_clientes_sistema', JSON.stringify(novaLista));
+  localStorage.setItem('delta_sap_ultima_carga', JSON.stringify({
+    data: new Date().toISOString(), ficheiro: fileName, total: novaLista.length, anulados: codsAnulados.length
+  }));
+  foraSPCache = null;
+  clearRegistosCache();
+
+  // 2. Apagar anulados do Supabase
+  let apagados = 0, erros = 0;
+  if (codsAnulados.length) {
+    const r = await apagarAnuladosSupabase(codsAnulados);
+    apagados = r.apagados; erros = r.erros;
   }
-  if (Object.keys(newVendedorMappings).length > 0) {
-    const merged = Object.assign({}, activeVMap, newVendedorMappings);
-    localStorage.setItem('delta_vendedor_map', JSON.stringify(merged));
-  }
-  if (novaLista.length === 0) { toast('Nenhum dado válido encontrado.', 'error'); return; }
-  const savedList = localStorage.getItem('delta_clientes_sistema');
-  const listaAtual = savedList ? JSON.parse(savedList) : CLIENTES_SISTEMA;
-  const codAtual = new Set(listaAtual.map(c => String(c.cod)));
-  const codNova = new Set(novaLista.map(c => String(c.cod)));
-  const adicionados = novaLista.filter(c => !codAtual.has(String(c.cod))).length;
-  const removidos = listaAtual.filter(c => !codNova.has(String(c.cod))).length;
-  pendingImportBuffer = novaLista;
-  let msg = `Lista com ${novaLista.length} clientes`;
-  if (adicionados > 0) msg += ` · +${adicionados} novos`;
-  if (removidos > 0) msg += ` · -${removidos} removidos`;
-  msg += ` — substituir lista completa?`;
-  document.getElementById('import-bar-text').textContent = msg;
-  document.getElementById('pending-import-bar').style.display = 'block';
-  document.getElementById('csv-import-area').value = '';
+
+  // 3. Resultado
+  let msg = `✅ Lista actualizada com ${novaLista.length} clientes.`;
+  if (apagados) msg += ` ${apagados} registo(s) anulado(s) apagado(s).`;
+  if (erros)    msg += ` ⚠ ${erros} erro(s) ao apagar.`;
+
+  document.getElementById('sap-load-status').style.display = 'none';
+  const resultEl = document.getElementById('sap-result');
+  resultEl.textContent = msg;
+  resultEl.style.display = 'block';
+  renderUltimaCargaSAP();
+
+  _sapImportBuffer = null;
+  document.getElementById('sap-confirm-btn').disabled = false;
+  document.getElementById('sap-confirm-btn').textContent = '✅ Confirmar importação';
+
+  toast(msg);
 }
 
+function cancelarCargaSAP() {
+  _sapImportBuffer = null;
+  document.getElementById('sap-load-status').style.display = 'none';
+  document.getElementById('sap-result').style.display = 'none';
+}
+
+function renderUltimaCargaSAP() {
+  const el = document.getElementById('sap-ultima-carga');
+  if (!el) return;
+  try {
+    const saved = localStorage.getItem('delta_sap_ultima_carga');
+    if (!saved) { el.textContent = 'Nenhuma carga efectuada neste browser.'; return; }
+    const { data, ficheiro, total, anulados } = JSON.parse(saved);
+    const d = new Date(data);
+    el.innerHTML = `<strong>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</strong>
+      &nbsp;·&nbsp; ${ficheiro}
+      &nbsp;·&nbsp; ${total} clientes activos
+      ${anulados ? `&nbsp;·&nbsp; <span style="color:#c62828">${anulados} anulado(s) removidos</span>` : ''}`;
+  } catch(e) { el.textContent = '—'; }
+}
+
+function getListaClientesActiva() {
+  try {
+    const s = localStorage.getItem('delta_clientes_sistema');
+    return s ? JSON.parse(s) : CLIENTES_SISTEMA;
+  } catch(e) { return CLIENTES_SISTEMA; }
+}
+
+// pendingImportBuffer mantido para compatibilidade interna
+let pendingImportBuffer = [];
 function confirmarImport() {
+  if (!pendingImportBuffer.length) return;
   localStorage.setItem('delta_clientes_sistema', JSON.stringify(pendingImportBuffer));
-  foraSPCache = null; // reset fora SP — recalcula com nova lista
+  foraSPCache = null;
+  clearRegistosCache();
   const count = pendingImportBuffer.length;
   pendingImportBuffer = [];
-  document.getElementById('pending-import-bar').style.display = 'none';
+  const bar = document.getElementById('pending-import-bar');
+  if (bar) bar.style.display = 'none';
   toast(`✅ Lista atualizada com ${count} clientes!`);
   loadPendentes();
 }
-
 function cancelarImport() {
   pendingImportBuffer = [];
-  document.getElementById('pending-import-bar').style.display = 'none';
+  const bar = document.getElementById('pending-import-bar');
+  if (bar) bar.style.display = 'none';
 }
 
 // ─── RESUMO ──────────────────────────────────────────
