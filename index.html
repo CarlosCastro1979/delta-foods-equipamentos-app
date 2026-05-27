@@ -365,8 +365,25 @@
     max-width: 0;
   }
 
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: rgba(255,255,255,0.02); }
+  tr.row-invalid td { background: #fff8f0; }
+  tr.row-invalid:hover td { background: #fff0e0; }
+  .cod-invalid { color: #c62828; font-weight: 700; cursor: help; }
+  .badge-invalid {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    background: #fff3e0;
+    border: 1px solid #ffb74d;
+    color: #e65100;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .badge-invalid:hover { background: #ffe0b2; }
+  .badge-invalid.active { background: #ff6d00; color: #fff; border-color: #ff6d00; }
 
   .equip-tag {
     display: inline-block;
@@ -941,7 +958,9 @@
       <input type="text" id="filtro-nome" placeholder="🔍 Nome cliente" oninput="renderTable()" style="flex:1;min-width:160px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface)">
       <button class="btn btn-secondary btn-sm" onclick="loadData(true)">↻ Atualizar</button>
       <button class="btn btn-secondary btn-sm" onclick="exportExcel()">⬇ Excel</button>
+      <button id="invalidos-badge" class="badge-invalid" onclick="toggleFiltroInvalidos()" title="Clica para filtrar só os códigos inválidos"></button>
       <span id="record-count" style="font-size:12px;color:var(--muted);font-family:var(--font-mono)"></span>
+      <input type="checkbox" id="filtro-invalidos" style="display:none" onchange="renderTable()">
     </div>
     <div class="table-wrap">
       <table>
@@ -1503,16 +1522,45 @@ function clearRegistosCache() {
   localStorage.removeItem(REGISTOS_CACHE_TS);
 }
 
+function toggleFiltroInvalidos() {
+  const cb = document.getElementById('filtro-invalidos');
+  const badge = document.getElementById('invalidos-badge');
+  if (!cb) return;
+  cb.checked = !cb.checked;
+  if (badge) badge.classList.toggle('active', cb.checked);
+  renderTable();
+}
+
+function getCodsListaAtiva() {
+  try {
+    const saved = localStorage.getItem('delta_clientes_sistema');
+    const lista = saved ? JSON.parse(saved) : CLIENTES_SISTEMA;
+    return new Set(lista.map(c => String(c.cod).trim()));
+  } catch(e) { return new Set(); }
+}
+
 function renderTable() {
   const vendFilt = document.getElementById('filtro-vendedor-lista')?.value || '';
   const codFilt = document.getElementById('filtro-cod')?.value?.trim()?.toLowerCase() || '';
   const nomeFilt = document.getElementById('filtro-nome')?.value?.trim()?.toLowerCase() || '';
+  const soInvalidos = document.getElementById('filtro-invalidos')?.checked || false;
   const tabelaBody = document.getElementById('table-body');
+
+  const codsValidos = getCodsListaAtiva();
 
   let filtered = allData || [];
   if (vendFilt) filtered = filtered.filter(r => r.vendedor === vendFilt);
   if (codFilt) filtered = filtered.filter(r => (r.cod||'').toLowerCase().includes(codFilt));
   if (nomeFilt) filtered = filtered.filter(r => (r.nome||'').toLowerCase().includes(nomeFilt));
+  if (soInvalidos) filtered = filtered.filter(r => !codsValidos.has(String(r.cod||'').trim()));
+
+  // Contar inválidos no total (antes do filtro de texto)
+  const totalInvalidos = (allData||[]).filter(r => !codsValidos.has(String(r.cod||'').trim())).length;
+  const badgeEl = document.getElementById('invalidos-badge');
+  if (badgeEl) {
+    badgeEl.textContent = totalInvalidos > 0 ? `⚠ ${totalInvalidos} código${totalInvalidos>1?'s':''} inválido${totalInvalidos>1?'s':''}` : '';
+    badgeEl.style.display = totalInvalidos > 0 ? 'inline-flex' : 'none';
+  }
 
   const countEl = document.getElementById('record-count');
   if (countEl) countEl.textContent = `${filtered.length} de ${(allData||[]).length} registos`;
@@ -1528,8 +1576,13 @@ function renderTable() {
       `<span class="equip-tag-badge">${e.tipo}${e.tag ? ` <span class="tag-num">#${e.tag}</span>` : ''}</span>`
     ).join('');
     const dataFmt = r.data ? (()=>{ try { const d=new Date(r.data.includes('T')?r.data:r.data+'T12:00:00'); return isNaN(d)?r.data:d.toLocaleDateString('pt-BR'); } catch(e){ return r.data; } })() : '—';
-    return `<tr>
-      <td>${r.cod || '—'}</td>
+    const isInvalid = codsValidos.size > 0 && !codsValidos.has(String(r.cod||'').trim());
+    const rowStyle = isInvalid ? ' class="row-invalid"' : '';
+    const codCell = isInvalid
+      ? `<td><span class="cod-invalid" title="Código não encontrado na lista de clientes SAP">${r.cod || '—'} ⚠</span></td>`
+      : `<td>${r.cod || '—'}</td>`;
+    return `<tr${rowStyle}>
+      ${codCell}
       <td>${r.nome || '—'}</td>
       <td>${r.cep || '—'}</td>
       <td>${r.contrato || '—'}</td>
