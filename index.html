@@ -5525,8 +5525,6 @@ async function ctGerar() {
     const bytes = new Uint8Array(binaryStr.length);
     for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
 
-    if (!window.PizZip) throw new Error('PizZip não carregou. Verifica a ligação à internet.');
-    if (!window.Docxtemplater) throw new Error('Docxtemplater não carregou. Verifica a ligação à internet.');
     const zip = new PizZip(bytes);
     const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
     doc.render(data);
