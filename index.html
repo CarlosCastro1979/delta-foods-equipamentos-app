@@ -1725,7 +1725,7 @@ async function salvarRegisto() {
     const res = await fetch(SUPA_URL, {
       method: 'POST',
       headers: HEADERS,
-      body: JSON.stringify({ id: crypto.randomUUID(), vendedor, cod, nome, cep, contrato, contratos, equipamentos, data: new Date().toISOString().slice(0,10) })
+      body: JSON.stringify({ id: crypto.randomUUID(), vendedor, cod, nome, cep, contrato, contratos, equipamentos, data: new Date().toISOString().slice(0,10), manual: true })
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
@@ -3146,7 +3146,7 @@ async function loadPendentes() {
     // Ir sempre ao Supabase para ter dados frescos (registos actuais)
     let data = getRegistosCache();
     if (!data) {
-      const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor', { headers: HEADERS });
+      const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,manual', { headers: HEADERS });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       data = await res.json();
       setRegistosCache(data);
@@ -3161,7 +3161,7 @@ async function loadPendentes() {
     // 2. Registos no Supabase cujo código NÃO existe na lista SAP activa → revisão
     // Excluir os criados manualmente pelos vendedores (manual:true) — esses estão ok
     const paraRevisao = (data || [])
-      .filter(r => !codsListaActivaNorm.has(normCod(r.cod)))
+      .filter(r => !codsListaActivaNorm.has(normCod(r.cod)) && !r.manual)
       .map(r => ({
         cod: r.cod, nome: r.nome || '—', cep: '', vendedor: r.vendedor || '—', _revisao: true
       }));
@@ -3442,7 +3442,7 @@ async function confirmarCargaSAP() {
   // → remover flag manual, corrigir nome/cep/vendedor com dados do SAP
   let atualizados = 0;
   try {
-    const resM = await fetch(SUPA_URL + '?select=id,cod,nome', { headers: HEADERS }); // sem filtro manual — coluna não existe ainda
+    const resM = await fetch(SUPA_URL + '?manual=eq.true&select=id,cod,nome', { headers: HEADERS });
     if (resM.ok) {
       const manuais = await resM.json();
       const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
@@ -3455,7 +3455,7 @@ async function confirmarCargaSAP() {
           const patch = await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
             method: 'PATCH',
             headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ nome: sapCliente.nome, cep: sapCliente.cep || '', vendedor: sapCliente.vendedor })
+            body: JSON.stringify({ nome: sapCliente.nome, cep: sapCliente.cep || '', vendedor: sapCliente.vendedor, manual: false })
           });
           if (patch.ok) atualizados++;
         }
@@ -3469,7 +3469,7 @@ async function confirmarCargaSAP() {
           await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
             method: 'PATCH',
             headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-            // manual flag removido — coluna não existe no Supabase
+            body: JSON.stringify({ manual: false })
           });
         }
       }
