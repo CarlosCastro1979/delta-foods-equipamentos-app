@@ -855,7 +855,7 @@
   .ct-section-title{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px;text-transform:uppercase;letter-spacing:.04em;}
   .ct-lbl{display:block;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--muted);margin-bottom:4px;letter-spacing:.04em;}
   .ct-req{color:var(--accent);}
-  .ct-table{width:auto;border-collapse:collapse;font-size:12px;}
+  .ct-table{width:100%;border-collapse:collapse;font-size:12px;}
   .ct-table th{background:#f3f4f6;padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);}
   .ct-table td{padding:3px 3px;border:1px solid var(--border);}
   .ct-table td input,.ct-table td select{width:100%;box-sizing:border-box;border:none;background:transparent;font-size:12px;padding:4px 6px;}
@@ -3722,6 +3722,13 @@ function switchTab(tab) {
     const activeTab = document.querySelector(`.tab[onclick*="'${tab}'"]`);
     if (activeTab) activeTab.classList.add('active');
   } catch(e) {}
+
+  // Esconder sempre todos os sub-panels de registos quando mudamos de menu
+  ['novo','lista','pendentes','vendedores','carga-sap'].forEach(s => {
+    const p = document.getElementById('sub-panel-' + s);
+    if (p) p.style.display = 'none';
+  });
+
   // lista and pendentes now handled via switchSubTab
   if (tab === 'resumo') loadResumo();
   if (tab === 'at') loadAtTab();
@@ -5523,8 +5530,15 @@ async function ctGerar() {
     showToast('Contrato gerado: ' + filename, 'success');
     setTimeout(() => ctAbrirEmail(filename, data), 800);
   } catch(e) {
-    console.error(e);
-    showToast('Erro ao gerar: ' + e.message, 'error');
+    console.error('ctGerar error:', e);
+    const msg = e?.message || e?.toString() || 'erro desconhecido';
+    // Se for erro do Docxtemplater, mostrar detalhes
+    if (e?.properties?.errors) {
+      const details = e.properties.errors.map(er => er.message).join(', ');
+      showToast('Erro no template: ' + details, 'error');
+    } else {
+      showToast('Erro ao gerar: ' + msg, 'error');
+    }
   }
 }
 
@@ -5597,18 +5611,18 @@ async function loadEquipCatalog() {
     }
 
     if (!data.length) { el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)">Sem equipamentos cadastrados. Clica "+ Adicionar".</div>'; return; }
-    let html = '<table class="ct-table" style="width:auto;min-width:unset;"><thead><tr>'
-      + '<th style="white-space:nowrap">Código</th>'
-      + '<th style="white-space:nowrap">Descrição</th>'
-      + '<th style="white-space:nowrap;text-align:right">Valor (R$)</th>'
-      + '<th style="white-space:nowrap;text-align:center">Ativo</th>'
-      + '<th style="white-space:nowrap;text-align:center">Ações</th>'
+    let html = '<table class="ct-table" style="width:100%;"><thead><tr>'
+      + '<th style="width:100px">Código</th>'
+      + '<th>Descrição</th>'
+      + '<th style="width:110px;text-align:right">Valor (R$)</th>'
+      + '<th style="width:60px;text-align:center">Ativo</th>'
+      + '<th style="width:100px;text-align:center">Ações</th>'
       + '</tr></thead><tbody>';
     data.forEach(e => {
       html += '<tr>';
-      html += '<td style="padding:6px 10px;font-family:monospace;font-size:12px;white-space:nowrap">' + e.codigo + '</td>';
-      html += '<td style="padding:6px 10px;white-space:nowrap">' + e.descricao + '</td>';
-      html += '<td style="padding:6px 10px;text-align:right;font-weight:600;white-space:nowrap">' + parseFloat(e.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2}) + '</td>';
+      html += '<td style="padding:6px 10px;font-family:monospace;font-size:12px">' + e.codigo + '</td>';
+      html += '<td style="padding:6px 10px">' + e.descricao + '</td>';
+      html += '<td style="padding:6px 10px;text-align:right;font-weight:600">' + parseFloat(e.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2}) + '</td>';
       html += '<td style="padding:6px 10px;text-align:center">' + (e.ativo ? '<span style="color:#16a34a;font-size:14px">✓</span>' : '<span style="color:#dc2626;font-size:14px">✗</span>') + '</td>';
       html += '<td style="padding:4px 8px;text-align:center;white-space:nowrap">'
         + '<button class="btn btn-secondary btn-sm" title="Editar" onclick="editEquip(' + e.id + ')" style="padding:3px 8px">✏️</button> '
