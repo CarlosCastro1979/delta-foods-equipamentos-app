@@ -133,7 +133,7 @@
 
   .tab:hover:not(.active) { color: var(--text); }
 
-  .panel { display: none !important; }
+  .panel { display: none !important; padding: 0 48px; }
   .panel.active { display: block !important; }
 
 
@@ -749,6 +749,8 @@
   @media (max-width: 600px) {
     .top-bar { padding: 10px 16px; }
     .container { padding: 16px 16px; }
+    .panel { padding: 0 16px; }
+    #sub-panel-vendedores, #sub-panel-carga-sap { padding: 0 16px !important; }
     .form-row { grid-template-columns: 1fr; }
     .table-toolbar { flex-direction: column; align-items: stretch; }
     .table-toolbar input { width: 100%; }
@@ -1054,7 +1056,7 @@
 </div>
 
   <!-- SUB-PANEL: VENDEDORES -->
-  <div id="sub-panel-vendedores" style="display:none;">
+  <div id="sub-panel-vendedores" style="display:none;padding:0 48px;">
     <div style="max-width:560px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
         <div>
@@ -1099,7 +1101,7 @@
   </div>
 
   <!-- SUB-PANEL: CARREGAR LISTA SAP -->
-  <div id="sub-panel-carga-sap" style="display:none;">
+  <div id="sub-panel-carga-sap" style="display:none;padding:0 48px;">
     <div style="max-width:600px;">
       <div style="margin-bottom:16px;">
         <h2 style="font-size:15px;font-weight:600;color:var(--text);margin:0 0 4px 0">📥 Carregar Lista de Clientes SAP</h2>
