@@ -3146,7 +3146,7 @@ async function loadPendentes() {
     // Ir sempre ao Supabase para ter dados frescos (registos actuais)
     let data = getRegistosCache();
     if (!data) {
-      const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,manual', { headers: HEADERS });
+      const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor', { headers: HEADERS });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       data = await res.json();
       setRegistosCache(data);
