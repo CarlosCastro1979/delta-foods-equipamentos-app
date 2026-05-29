@@ -917,6 +917,7 @@ var _unused_placeholder = 1;
     <button class="tab" onclick="switchTab('historico-at')">🔧 Histórico AT</button>
     <button class="tab" onclick="switchTab('sem-compras')">⚠️ Sem Compras</button>
     <button class="tab" onclick="switchTab('fora-sp')">📍 Fora SP</button>
+    <button class="tab" onclick="switchTab('dados')">⚙ Dados</button>
   </div>
 
   <!-- NOVO REGISTO -->
@@ -940,10 +941,7 @@ var _unused_placeholder = 1;
         style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--muted);">
         👥 Vendedores
       </button>
-      <button id="sub-carga-sap" onclick="switchSubTab('registos','carga-sap')"
-        style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--muted);">
-        📥 Carregar Lista SAP
-      </button>
+
     </div>
     <!-- Sub-panels -->
     <div id="sub-panel-novo" style="display:none;">
@@ -1508,14 +1506,7 @@ var _unused_placeholder = 1;
           <option value="9">Mais de 9 meses</option>
           <option value="12">Mais de 12 meses</option>
         </select>
-        <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:flex;align-items:center;gap:6px;min-height:36px;">
-          📂 Carregar vendas
-          <input type="file" id="sc-file-input" accept=".xlsx,.xls" multiple style="display:none" onchange="handleSCFileImport(event)">
-        </label>
-        <label class="btn btn-secondary btn-sm" style="cursor:pointer;display:flex;align-items:center;gap:6px;min-height:36px;">
-          💰 Carregar dívidas
-          <input type="file" id="sc-dividas-input" accept=".xlsx,.xls" style="display:none" onchange="handleSCDividasImport(event)">
-        </label>
+
         <button class="btn btn-secondary btn-sm" onclick="exportSCExcel()" style="min-height:36px;">⬇ Excel</button>
       </div>
     </div>
@@ -1555,6 +1546,78 @@ var _unused_placeholder = 1;
     </div>
     <div id="fsp-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
     <div id="fsp-content"></div>
+  </div>
+
+  <div class="panel" id="panel-dados">
+    <div id="dados-pin-gate" style="max-width:360px;margin:40px auto;text-align:center;">
+      <div style="font-size:48px;margin-bottom:16px;">🔒</div>
+      <h2 style="font-size:18px;font-weight:600;margin-bottom:8px;">Área de Carregamentos</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Introduz o PIN para aceder.</p>
+      <div style="display:flex;gap:8px;justify-content:center;">
+        <input type="password" id="dados-pin-input" class="form-input" placeholder="PIN"
+          maxlength="6" style="text-align:center;font-size:20px;letter-spacing:8px;width:140px;"
+          onkeydown="if(event.key==='Enter')verificarDadosPin()">
+        <button class="btn btn-primary" onclick="verificarDadosPin()">Entrar</button>
+      </div>
+      <div id="dados-pin-erro" style="color:var(--danger);font-size:12px;margin-top:8px;display:none;">PIN incorrecto.</div>
+    </div>
+
+    <div id="dados-content" style="display:none;">
+      <h2 style="font-size:18px;font-weight:600;margin-bottom:24px;">⚙ Gestão de Dados</h2>
+
+      <!-- CARREGAR VENDAS -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="font-size:22px;">📊</span>
+          <div>
+            <div style="font-weight:600;font-size:15px;">Carregar Vendas</div>
+            <div style="font-size:12px;color:var(--muted);">Excel SAP — Hierarquia GRÃO (Kg) e CÁPSULAS (÷0.0055). Deduplicação por cliente+data.</div>
+          </div>
+        </div>
+        <div id="dados-vendas-status"></div>
+        <input type="file" id="dados-vendas-input" accept=".xlsx,.xls" style="display:none" onchange="processVendasFile(event)">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="document.getElementById('dados-vendas-input').click()">📂 Selecionar ficheiro</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearVendas()" style="color:var(--danger);border-color:var(--danger);">🗑 Limpar todas as vendas</button>
+        </div>
+      </div>
+
+      <!-- CARREGAR LISTA SAP -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="font-size:22px;">👥</span>
+          <div>
+            <div style="font-weight:600;font-size:15px;">Carregar Lista SAP</div>
+            <div style="font-size:12px;color:var(--muted);">Excel SAP de clientes. Anulados (vendedor 999) são apagados do Supabase.</div>
+          </div>
+        </div>
+        <input type="file" id="dados-sap-input" accept=".xlsx,.xls" style="display:none" onchange="carregarListaSAP(event)">
+        <div id="sap-load-status" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px;">
+          <div id="sap-status-text" style="font-size:13px;margin-bottom:10px;"></div>
+          <div style="display:flex;gap:8px;">
+            <button id="sap-confirm-btn" class="btn btn-primary btn-sm" onclick="confirmarCargaSAP()">✅ Confirmar</button>
+            <button class="btn btn-secondary btn-sm" onclick="cancelarCargaSAP()">Cancelar</button>
+          </div>
+        </div>
+        <div id="sap-result" style="display:none;font-size:13px;padding:10px 14px;border-radius:8px;border:1px solid #c8e6c9;background:#e8f5e9;color:#2e7d32;margin-bottom:10px;"></div>
+        <button class="btn btn-primary btn-sm" onclick="document.getElementById('dados-sap-input').click()">📂 Selecionar ficheiro</button>
+        <div id="sap-ultima-carga" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+      </div>
+
+      <!-- CARREGAR DÍVIDAS -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="font-size:22px;">💰</span>
+          <div>
+            <div style="font-weight:600;font-size:15px;">Carregar Dívidas</div>
+            <div style="font-size:12px;color:var(--muted);">Excel com histórico de dívidas dos clientes.</div>
+          </div>
+        </div>
+        <input type="file" id="dados-dividas-input" accept=".xlsx,.xls" style="display:none" onchange="handleSCDividasImport(event)">
+        <button class="btn btn-primary btn-sm" onclick="document.getElementById('dados-dividas-input').click()">📂 Selecionar ficheiro</button>
+      </div>
+
+    </div>
   </div>
 
   <div class="panel" id="panel-historico-at">
@@ -1967,6 +2030,21 @@ async function apagarAnuladosSupabase(codsAnulados) {
   }
   clearRegistosCache();
   return { apagados, erros };
+}
+
+// ─── PIN ÁREA DADOS ──────────────────────────────────
+function verificarDadosPin() {
+  const pin = document.getElementById('dados-pin-input')?.value;
+  const errEl = document.getElementById('dados-pin-erro');
+  if (pin === '1304') {
+    document.getElementById('dados-pin-gate').style.display = 'none';
+    document.getElementById('dados-content').style.display = 'block';
+    renderUltimaCargaSAP();
+    if (errEl) errEl.style.display = 'none';
+  } else {
+    if (errEl) { errEl.style.display = 'block'; }
+    document.getElementById('dados-pin-input').value = '';
+  }
 }
 
 function toggleFiltroInvalidos() {
@@ -4260,7 +4338,8 @@ function showVendasImport() {
   document.getElementById('vendas-pin-step').style.display = 'block';
   document.getElementById('vendas-upload-step').style.display = 'none';
   document.getElementById('vendas-pin-input').value = '';
-  document.getElementById('vendas-status').innerHTML = '';
+  const _vsEl = document.getElementById('dados-vendas-status') || document.getElementById('vendas-status');
+  _vsEl.innerHTML = '';
   setTimeout(() => document.getElementById('vendas-pin-input').focus(), 100);
 }
 function closeVendasModal() {
@@ -4321,10 +4400,12 @@ async function processVendasFile(event) {
 
   // Get existing vendas and their dates to avoid duplicates
   const existingVendas = await getVendas();
-  const existingDates = new Set(existingVendas.map(v => v.data));
+  // Deduplicação por cod+data (não só por data — diferentes clientes podem ter
+  // vendas na mesma data e não devem ser ignorados)
+  const existingKeys = new Set(existingVendas.map(v => v.cod + '|' + v.data));
 
   const newVendas = [];
-  const newDates = new Set();
+  const newKeys = new Set();
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
@@ -4341,20 +4422,20 @@ async function processVendasFile(event) {
     if (isNaN(peso)) continue;
     const tipo = hierarq.includes('GRÃO') ? 'GRÃO' : 'CAPSULAS';
     const qty = tipo === 'GRÃO' ? peso : Math.round(peso / 0.0055);
-    newDates.add(dataStr);
-    if (!existingDates.has(dataStr)) {
+    const key = cod + '|' + dataStr;
+    newKeys.add(key);
+    if (!existingKeys.has(key)) {
       newVendas.push({cod, data: dataStr, tipo, qty, peso});
     }
   }
 
-  // Find truly new dates
-  const datasIgnoradas = [...newDates].filter(d => existingDates.has(d)).length;
-  const datasNovas = [...newDates].filter(d => !existingDates.has(d)).length;
+  const datasIgnoradas = [...newKeys].filter(k => existingKeys.has(k)).length;
+  const datasNovas = [...newKeys].filter(k => !existingKeys.has(k)).length;
 
   if (!newVendas.length) {
-    document.getElementById('vendas-status').innerHTML =
+    (document.getElementById('dados-vendas-status') || document.getElementById('vendas-status')).innerHTML =
       `<div style="background:#fff3e0;border-radius:6px;padding:10px;font-size:12px;color:#e65100">
-        ℹ️ Nenhum novo registo — todas as datas já estavam importadas.
+        ℹ️ Nenhum novo registo — todas as combinações cliente+data já estavam importadas.
       </div>`;
     return;
   }
