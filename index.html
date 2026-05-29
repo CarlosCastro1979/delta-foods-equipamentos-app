@@ -986,9 +986,16 @@ var _unused_placeholder = 1;
       </div>
 
       <div class="form-group">
-        <label>Equipamentos *</label>
+        <label>Equipamentos</label>
         <div class="equip-list" id="equip-list"></div>
-        <button class="btn-add-equip" onclick="addEquipRow()">+ Adicionar equipamento</button>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+          <button class="btn-add-equip" onclick="addEquipRow()">+ Adicionar equipamento</button>
+          <button type="button" id="btn-sem-equip" class="btn btn-secondary btn-sm" onclick="toggleSemEquipamentos()"
+            style="font-size:12px;padding:5px 12px;">📭 Sem equipamentos</button>
+        </div>
+        <div id="sem-equip-aviso" style="display:none;margin-top:6px;padding:6px 10px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;font-size:12px;color:#f57c00;">
+          ⚠ Registo sem equipamentos — cliente será aceite na mesma.
+        </div>
       </div>
 
       <div class="form-actions">
@@ -1657,6 +1664,33 @@ const CLIENTES_SISTEMA = [{"cod": "748133", "nome": "COTOXO PIZZA BAR EIRELLI", 
 const VENDEDOR_MAP = {"99520002": "HÉLCIO GRÉGIO", "99520007": "PAULO FONTES", "99520006": "DANIELA SANTOS", "99520017": "PAULO FONTES", "99520010": "FILIPE NEVES", "99520016": "DANIELA SANTOS", "99520015": "HÉLCIO GRÉGIO"};
 
 // ─── EQUIPMENT ROWS ──────────────────────────────────
+function toggleSemEquipamentos() {
+  const btn = document.getElementById('btn-sem-equip');
+  const aviso = document.getElementById('sem-equip-aviso');
+  const equipList = document.getElementById('equip-list');
+  const addBtn = document.querySelector('.btn-add-equip');
+  const isActive = btn.classList.toggle('active');
+
+  if (isActive) {
+    btn.style.background = 'var(--accent)';
+    btn.style.color = '#fff';
+    btn.style.borderColor = 'var(--accent)';
+    btn.textContent = '✓ Sem equipamentos';
+    aviso.style.display = 'block';
+    // Limpar e ocultar as linhas de equipamento
+    equipList.innerHTML = '';
+    if (addBtn) addBtn.style.display = 'none';
+  } else {
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+    btn.textContent = '📭 Sem equipamentos';
+    aviso.style.display = 'none';
+    addEquipRow();
+    if (addBtn) addBtn.style.display = '';
+  }
+}
+
 function addEquipRow(tipo='', tag='') {
   const list = document.getElementById('equip-list');
   const row = document.createElement('div');
@@ -1714,8 +1748,10 @@ async function salvarRegisto() {
   if (!vendedor || !cod || !nome || !cep) {
     toast('Preenche todos os campos obrigatórios.', 'error'); return;
   }
-  if (!equipamentos.length) {
-    toast('Adicione pelo menos um equipamento.', 'error'); return;
+  // Equipamentos opcionais — aceitar sem equipamentos se botão "Sem equipamentos" activo
+  const semEquip = document.getElementById('btn-sem-equip')?.classList.contains('active');
+  if (!equipamentos.length && !semEquip) {
+    toast('Adiciona pelo menos um equipamento ou clica "Sem equipamentos".', 'error'); return;
   }
 
   const btn = document.getElementById('btn-save');
@@ -1753,6 +1789,13 @@ function limparForm() {
   document.getElementById('f-contrato-extra').style.display = 'none';
   document.getElementById('f-contratos-list').innerHTML = '';
   document.getElementById('equip-list').innerHTML = '';
+  // Resetar botão sem equipamentos
+  const bse = document.getElementById('btn-sem-equip');
+  if (bse) { bse.classList.remove('active'); bse.style.cssText=''; bse.textContent='📭 Sem equipamentos'; }
+  const sae = document.getElementById('sem-equip-aviso');
+  if (sae) sae.style.display = 'none';
+  const abe = document.querySelector('.btn-add-equip');
+  if (abe) abe.style.display = '';
   addEquipRow();
 }
 
