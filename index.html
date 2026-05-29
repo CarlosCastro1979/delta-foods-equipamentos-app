@@ -1407,8 +1407,8 @@ var _unused_placeholder = 1;
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
             <div><label class="ct-lbl">Testemunha 1 — Nome <span class="ct-req">*</span></label><input id="ct_t1_nome" class="form-input" placeholder="Nome completo"></div>
             <div><label class="ct-lbl">CPF <span class="ct-req">*</span></label><input id="ct_t1_cpf" class="form-input" placeholder="000.000.000-00"></div>
-            <div><label class="ct-lbl">Testemunha 2 — Nome <span class="ct-req">*</span></label><input id="ct_t2_nome" class="form-input" placeholder="Nome completo"></div>
-            <div><label class="ct-lbl">CPF <span class="ct-req">*</span></label><input id="ct_t2_cpf" class="form-input" placeholder="000.000.000-00"></div>
+            <div><label class="ct-lbl">Testemunha 2 — Nome <span style="color:var(--muted);font-size:10px">(opcional)</span></label><input id="ct_t2_nome" class="form-input" placeholder="Nome completo"></div>
+            <div><label class="ct-lbl">CPF <span style="color:var(--muted);font-size:10px">(opcional)</span></label><input id="ct_t2_cpf" class="form-input" placeholder="000.000.000-00"></div>
           </div>
         </div>
 
@@ -5418,8 +5418,6 @@ function ctValidateStep(step) {
     if (!desc1) errs.push('Escolhe pelo menos 1 equipamento no Anexo I');
     if (!g('ct_t1_nome')) errs.push('Nome Testemunha 1 obrigatorio');
     if (!g('ct_t1_cpf')) errs.push('CPF Testemunha 1 obrigatorio');
-    if (!g('ct_t2_nome')) errs.push('Nome Testemunha 2 obrigatorio');
-    if (!g('ct_t2_cpf')) errs.push('CPF Testemunha 2 obrigatorio');
   }
   return errs;
 }
@@ -5447,7 +5445,7 @@ function ctBuildReview() {
   html += field('Prazo pagamento', g('ct_dias_num') + ' dias (' + numToExtenso(parseInt(g('ct_dias_num'))||0) + ')');
   html += field('Valor equipamentos', 'R$ ' + g('ct_valor_equip'));
   html += field('Testemunha 1', g('ct_t1_nome') + ' / ' + g('ct_t1_cpf'));
-  html += field('Testemunha 2', g('ct_t2_nome') + ' / ' + g('ct_t2_cpf'));
+  if (g('ct_t2_nome')) html += field('Testemunha 2', g('ct_t2_nome') + ' / ' + g('ct_t2_cpf'));
   html += '</div>';
 
   html += '<div style="font-size:13px;font-weight:700;color:var(--accent);margin:12px 0 6px">Anexo I</div>';
@@ -5593,8 +5591,8 @@ async function ctGerar() {
     // #19-22 Tabela 0 (testemunhas): Nome T1, CPF T1, Nome T2, CPF T2
     docXml = replaceOnce(docXml, 'xxxx', esc(data.TEST1_NOME));
     docXml = replaceOnce(docXml, 'xxxx', esc(data.TEST1_CPF));
-    docXml = replaceOnce(docXml, 'xxxx', esc(data.TEST2_NOME));
-    docXml = replaceOnce(docXml, 'xxxx', esc(data.TEST2_CPF));
+    docXml = replaceOnce(docXml, 'xxxx', esc(data.TEST2_NOME || ''));
+    docXml = replaceOnce(docXml, 'xxxx', esc(data.TEST2_CPF || ''));
 
     // #23-62 Tabela 1 — Anexo I (equipamentos comodato): 8 linhas × 5 colunas
     for (let i = 1; i <= 8; i++) {
@@ -5626,6 +5624,38 @@ async function ctGerar() {
       /(-\s*)(\.)((?:<\/w:t>.*?<w:t[^>]*>)*,\s*com sede)/,
       `$1${esc(data.COMOD_EMPRESA)}$3`
     );
+
+    // ─── Limpeza do documento ───────────────────────────
+
+    // 1. Remover highlight amarelo de todos os runs
+    docXml = docXml.replace(/<w:highlight w:val="yellow"\/>/g, '');
+
+    // 2. Remover "kg/Caps" e "Kgs/Caps" — a unidade já vem no valor preenchido
+    //    Substituir o conteúdo dos runs por string vazia (preserva formatação dos runs vizinhos)
+    docXml = docXml
+      .replace('>kg</w:t>', '></w:t>')
+      .replace('>gs</w:t>', '></w:t>')
+      .replace('>K</w:t>', '></w:t>');
+    // Remover os dois runs /Caps (substituir pelo identificador único do run)
+    // Run /Caps #1 (após kg): rsidR="00BF1F56"
+    // Run /Caps #2 (após gs): rsidR="00886DBF" com texto /Caps
+    docXml = docXml
+      .replace(/w:rsidR="00BF1F56"[^>]*><w:rPr>.*?<\/w:rPr><w:t[^>]*>\/Caps<\/w:t><\/w:r>/s, 'w:rsidR="00BF1F56"><w:rPr></w:rPr><w:t></w:t></w:r>')
+      .replace(/>\/Caps<\/w:t><\/w:r>/, '></w:t></w:r>');
+
+    // 3. Esvaziar os comentários
+    zip.file('word/comments.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:comments>');
+    zip.file('word/commentsExtended.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml/cex"></w15:commentsEx>');
+
+    // Remover marcadores de comentário do document.xml
+    docXml = docXml
+      .replace(/<w:commentRangeStart[^>]*\/>/g, '')
+      .replace(/<w:commentRangeEnd[^>]*\/>/g, '')
+      .replace(/<w:commentReference[^>]*\/>/g, '');
 
     // Guardar o XML modificado no zip
     zip.file('word/document.xml', docXml);
