@@ -1698,7 +1698,7 @@ async function salvarRegisto() {
     const res = await fetch(SUPA_URL, {
       method: 'POST',
       headers: HEADERS,
-      body: JSON.stringify({ id: crypto.randomUUID(), vendedor, cod, nome, cep, contrato, contratos, equipamentos, data: new Date().toISOString().slice(0,10) })
+      body: JSON.stringify({ id: crypto.randomUUID(), vendedor, cod, nome, cep, contrato, contratos, equipamentos, data: new Date().toISOString().slice(0,10), manual: true })
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
@@ -3119,7 +3119,7 @@ async function loadPendentes() {
     // Ir sempre ao Supabase para ter dados frescos (registos actuais)
     let data = getRegistosCache();
     if (!data) {
-      const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor', { headers: HEADERS });
+      const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,manual', { headers: HEADERS });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       data = await res.json();
       setRegistosCache(data);
@@ -3132,9 +3132,9 @@ async function loadPendentes() {
     const porRegistar = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
 
     // 2. Registos no Supabase cujo código NÃO existe na lista SAP activa → revisão
-    // (independentemente do vendedor — se não está na lista, precisa revisão)
+    // Excluir os criados manualmente pelos vendedores (manual:true) — esses estão ok
     const paraRevisao = (data || [])
-      .filter(r => !codsListaActivaNorm.has(normCod(r.cod)))
+      .filter(r => !codsListaActivaNorm.has(normCod(r.cod)) && !r.manual)
       .map(r => ({
         cod: r.cod, nome: r.nome || '—', cep: '', vendedor: r.vendedor || '—', _revisao: true
       }));
@@ -3409,9 +3409,49 @@ async function confirmarCargaSAP() {
     apagados = r.apagados; erros = r.erros;
   }
 
-  // 3. Resultado
+  // 3. Actualizar registos manuais que aparecem na nova lista SAP
+  // → remover flag manual, corrigir nome/cep/vendedor com dados do SAP
+  let atualizados = 0;
+  try {
+    const resM = await fetch(SUPA_URL + '?manual=eq.true&select=id,cod,nome', { headers: HEADERS });
+    if (resM.ok) {
+      const manuais = await resM.json();
+      const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
+      const sapMap = {};
+      novaLista.forEach(c => { sapMap[normCod(c.cod)] = c; });
+      for (const reg of manuais) {
+        const sapCliente = sapMap[normCod(reg.cod)];
+        if (sapCliente) {
+          // Existe no SAP — actualizar nome/cep/vendedor e remover flag manual
+          const patch = await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
+            method: 'PATCH',
+            headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ nome: sapCliente.nome, cep: sapCliente.cep || '', vendedor: sapCliente.vendedor, manual: false })
+          });
+          if (patch.ok) atualizados++;
+        }
+        // Se não existe no SAP, fica com manual:true e aparece em "Por Registar" como revisão na próxima carga
+        // (loadPendentes já trata isto quando manual:false e código não existe)
+      }
+      // Marcar manuais que NÃO estão na lista SAP como manual:false para aparecerem em revisão
+      for (const reg of manuais) {
+        const sapCliente = sapMap[normCod(reg.cod)];
+        if (!sapCliente) {
+          await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
+            method: 'PATCH',
+            headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ manual: false })
+          });
+        }
+      }
+      clearRegistosCache();
+    }
+  } catch(e) { console.warn('Erro ao actualizar manuais:', e); }
+
+  // 4. Resultado
   let msg = `✅ Lista actualizada com ${novaLista.length} clientes.`;
   if (apagados) msg += ` ${apagados} registo(s) anulado(s) apagado(s).`;
+  if (atualizados) msg += ` ${atualizados} registo(s) manual(ais) validado(s) pelo SAP.`;
   if (erros)    msg += ` ⚠ ${erros} erro(s) ao apagar.`;
 
   document.getElementById('sap-load-status').style.display = 'none';
@@ -3684,8 +3724,9 @@ function switchTab(tab) {
   if (tab === 'resumo') loadResumo();
   if (tab === 'at') loadAtTab();
   if (tab === 'registos') {
-    // default to novo sub-tab
-    switchSubTab('registos', window._registosSubTab || 'novo');
+    // sempre reset para 'novo' ao entrar no menu principal
+    window._registosSubTab = 'novo';
+    switchSubTab('registos', 'novo');
   }
   if (tab === 'contratos') {
     switchSubTab('contratos', window._contratosSubTab || 'registados');
@@ -5491,11 +5532,47 @@ function loadCtScript(src) {
 async function loadEquipCatalog() {
   const el = document.getElementById('equip-catalog-list');
   if (!el) return;
+
+  // Pré-popular com equipamentos base se a tabela estiver vazia
+  const EQUIP_BASE = [
+    { codigo: 'AUTODEL',  descricao: 'AUTOMATICA DELONGHI',          valor: 0 },
+    { codigo: 'MQ1G',     descricao: 'MAQ. MAYOR DIG. 1GR. PRETA',   valor: 0 },
+    { codigo: 'MQ2G',     descricao: 'MAQ. MAYOR DIG. 2GR. PRETA',   valor: 0 },
+    { codigo: 'MQ3G',     descricao: 'MAQ. MAYOR DIG. 3GR. PRETA',   valor: 0 },
+    { codigo: 'MRAN',     descricao: 'MOINHO RANCILIO KYRO 65 OD',   valor: 0 },
+    { codigo: 'MMAY',     descricao: 'MOINHO MAYOR IBERYA',           valor: 0 },
+    { codigo: 'MAYORQ',   descricao: 'MAYOR Q',                       valor: 0 },
+    { codigo: 'QUORUM',   descricao: 'QUORUM',                        valor: 0 },
+    { codigo: 'MQDOM',    descricao: 'MAQ DOMESTICA DELTA Q',         valor: 0 },
+    { codigo: 'EQUIPROP', descricao: 'EQUIPAMENTO PROPRIO',           valor: 0 },
+  ];
+
   try {
     const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/equipamentos_comodato?order=descricao', {
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
     });
-    const data = await res.json();
+    let data = await res.json();
+
+    // Se vazio, inserir os equipamentos base
+    if (!data.length) {
+      toast('A carregar equipamentos base...');
+      for (const eq of EQUIP_BASE) {
+        try {
+          await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/equipamentos_comodato', {
+            method: 'POST',
+            headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ ...eq, ativo: true })
+          });
+        } catch(e) { /* ignora erros individuais */ }
+      }
+      // Recarregar após inserção
+      const res2 = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/equipamentos_comodato?order=descricao', {
+        headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+      });
+      data = await res2.json();
+      toast('✅ Equipamentos base carregados.');
+    }
+
     if (!data.length) { el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)">Sem equipamentos cadastrados. Clica "+ Adicionar".</div>'; return; }
     let html = '<table class="ct-table"><thead><tr><th>Código</th><th>Descrição</th><th style="width:120px">Valor (R$)</th><th style="width:70px">Ativo</th><th style="width:80px">Ações</th></tr></thead><tbody>';
     data.forEach(e => {
