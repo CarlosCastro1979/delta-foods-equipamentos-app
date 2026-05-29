@@ -5613,12 +5613,22 @@ async function loadEquipCatalog() {
       html += '<td style="padding:4px 8px;text-align:center;white-space:nowrap">'
         + '<button class="btn btn-secondary btn-sm" title="Editar" onclick="editEquip(' + e.id + ')" style="padding:3px 8px">✏️</button> '
         + '<button class="btn btn-secondary btn-sm" title="' + (e.ativo ? 'Desactivar' : 'Activar') + '" onclick="toggleEquip(' + e.id + ',' + !e.ativo + ')" style="padding:3px 8px">' + (e.ativo ? '🚫' : '✓') + '</button> '
-        + '<button class="btn btn-secondary btn-sm" title="Eliminar" onclick="deleteEquip(' + e.id + ',\'' + e.descricao.replace(/'/g,'\\'+'\''') + '\')" style="padding:3px 8px;color:var(--danger);border-color:var(--danger)">🗑</button>'
+        + '<button class="btn btn-secondary btn-sm" title="Eliminar" data-del-id="' + e.id + '" data-del-desc="' + (e.descricao||'').replace(/"/g, '&quot;') + '" style="padding:3px 8px;color:var(--danger);border-color:var(--danger)">🗑</button>'
         + '</td>';
       html += '</tr>';
     });
     html += '</tbody></table>';
     el.innerHTML = html;
+
+    // Event delegation para botão eliminar (evita problemas com escape de strings)
+    if (!el._delListener) {
+      el._delListener = true;
+      el.addEventListener('click', function(ev) {
+        const btn = ev.target.closest('[data-del-id]');
+        if (!btn) return;
+        deleteEquip(btn.dataset.delId, btn.dataset.delDesc);
+      });
+    }
   } catch(e) { el.innerHTML = '<div style="padding:20px;color:#dc2626">Erro: ' + e.message + '</div>'; }
 }
 
