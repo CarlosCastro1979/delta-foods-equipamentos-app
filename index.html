@@ -855,7 +855,7 @@
   .ct-section-title{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px;text-transform:uppercase;letter-spacing:.04em;}
   .ct-lbl{display:block;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--muted);margin-bottom:4px;letter-spacing:.04em;}
   .ct-req{color:var(--accent);}
-  .ct-table{width:100%;border-collapse:collapse;font-size:12px;}
+  .ct-table{width:auto;border-collapse:collapse;font-size:12px;}
   .ct-table th{background:#f3f4f6;padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);}
   .ct-table td{padding:3px 3px;border:1px solid var(--border);}
   .ct-table td input,.ct-table td select{width:100%;box-sizing:border-box;border:none;background:transparent;font-size:12px;padding:4px 6px;}
@@ -5574,14 +5574,24 @@ async function loadEquipCatalog() {
     }
 
     if (!data.length) { el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)">Sem equipamentos cadastrados. Clica "+ Adicionar".</div>'; return; }
-    let html = '<table class="ct-table"><thead><tr><th>Código</th><th>Descrição</th><th style="width:120px">Valor (R$)</th><th style="width:70px">Ativo</th><th style="width:80px">Ações</th></tr></thead><tbody>';
+    let html = '<table class="ct-table" style="width:auto;min-width:unset;"><thead><tr>'
+      + '<th style="white-space:nowrap">Código</th>'
+      + '<th style="white-space:nowrap">Descrição</th>'
+      + '<th style="white-space:nowrap;text-align:right">Valor (R$)</th>'
+      + '<th style="white-space:nowrap;text-align:center">Ativo</th>'
+      + '<th style="white-space:nowrap;text-align:center">Ações</th>'
+      + '</tr></thead><tbody>';
     data.forEach(e => {
       html += '<tr>';
-      html += '<td style="padding:6px 8px;font-family:monospace;font-size:12px">' + e.codigo + '</td>';
-      html += '<td style="padding:6px 8px">' + e.descricao + '</td>';
-      html += '<td style="padding:6px 8px;text-align:right;font-weight:600">' + parseFloat(e.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2}) + '</td>';
-      html += '<td style="padding:6px 8px;text-align:center">' + (e.ativo ? '<span style="color:#16a34a">✓</span>' : '<span style="color:#dc2626">✗</span>') + '</td>';
-      html += '<td style="padding:6px 8px;text-align:center"><button class="btn btn-secondary btn-sm" onclick="editEquip(' + e.id + ')">✏️</button> <button class="btn btn-secondary btn-sm" onclick="toggleEquip(' + e.id + ',' + !e.ativo + ')">' + (e.ativo ? '🚫' : '✓') + '</button></td>';
+      html += '<td style="padding:6px 10px;font-family:monospace;font-size:12px;white-space:nowrap">' + e.codigo + '</td>';
+      html += '<td style="padding:6px 10px;white-space:nowrap">' + e.descricao + '</td>';
+      html += '<td style="padding:6px 10px;text-align:right;font-weight:600;white-space:nowrap">' + parseFloat(e.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2}) + '</td>';
+      html += '<td style="padding:6px 10px;text-align:center">' + (e.ativo ? '<span style="color:#16a34a;font-size:14px">✓</span>' : '<span style="color:#dc2626;font-size:14px">✗</span>') + '</td>';
+      html += '<td style="padding:4px 8px;text-align:center;white-space:nowrap">'
+        + '<button class="btn btn-secondary btn-sm" title="Editar" onclick="editEquip(' + e.id + ')" style="padding:3px 8px">✏️</button> '
+        + '<button class="btn btn-secondary btn-sm" title="' + (e.ativo ? 'Desactivar' : 'Activar') + '" onclick="toggleEquip(' + e.id + ',' + !e.ativo + ')" style="padding:3px 8px">' + (e.ativo ? '🚫' : '✓') + '</button> '
+        + '<button class="btn btn-secondary btn-sm" title="Eliminar" onclick="deleteEquip(' + e.id + ',\'' + e.descricao.replace(/'/g,'\\'+'\''') + '\')" style="padding:3px 8px;color:var(--danger);border-color:var(--danger)">🗑</button>'
+        + '</td>';
       html += '</tr>';
     });
     html += '</tbody></table>';
@@ -5629,6 +5639,19 @@ async function saveEquip() {
     showToast('Equipamento guardado','success');
     loadEquipCatalog();
   } catch(e) { showToast('Erro: ' + e.message,'error'); }
+}
+
+async function deleteEquip(id, descricao) {
+  if (!confirm(`Eliminar "${descricao}"?\nEsta acção não pode ser desfeita.`)) return;
+  try {
+    const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/equipamentos_comodato?id=eq.' + id, {
+      method: 'DELETE',
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Prefer': 'return=minimal' }
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    toast('Equipamento eliminado.');
+    loadEquipCatalog();
+  } catch(e) { toast('Erro: ' + e.message, 'error'); }
 }
 
 async function toggleEquip(id, ativo) {
