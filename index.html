@@ -3332,6 +3332,7 @@ async function carregarListaSAP(event) {
   const iNome    = headers.findIndex(h => h.includes('Nome'));
   const iCEP     = headers.indexOf('CEP');
   const iNPess   = headers.findIndex(h => h.toLowerCase().includes('pess'));
+  const iCNPJ    = headers.findIndex(h => h.includes('ID fiscal') || h.includes('fiscal'));
 
   if (iCliente === -1 || iNome === -1) {
     toast('Colunas "Cliente" e "Nome" não encontradas. Verifica o ficheiro.', 'error');
@@ -3357,7 +3358,8 @@ async function carregarListaSAP(event) {
     }
     const vendedor = NPESS_VENDEDOR[npess] || '';
     if (!vendedor) continue; // código desconhecido — ignora
-    novaLista.push({cod, nome, cep, vendedor});
+    const cnpj = iCNPJ >= 0 ? String(row[iCNPJ]||'').trim() : '';
+    novaLista.push({cod, nome, cep, vendedor, cnpj});
   }
 
   if (!novaLista.length && !codsAnulados.length) {
@@ -5297,13 +5299,34 @@ async function ctBuscarCliente() {
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
     });
     const data = await res.json();
+
+    // Também procurar CNPJ na lista SAP activa (tem o campo cnpj do Excel)
+    const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
+    const listaAtiva = getListaClientesActiva();
+    const clienteSAP = listaAtiva.find(c => normCod(c.cod) === normCod(cod));
+    const cnpjSAP = clienteSAP?.cnpj || '';
+
+    // Formatar CNPJ: 00.000.000/0000-00
+    const fmtCNPJ = raw => {
+      const d = String(raw||'').replace(/\D/g,'');
+      if (d.length === 14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+      return raw;
+    };
+
     if (data && data.length) {
       const r = data[0];
-      document.getElementById('ct_empresa').value = r.nome || '';
-      document.getElementById('ct_cnpj').value = r.cnpj || '';
-      document.getElementById('ct_found_txt').textContent = r.nome + (r.vendedor ? ' · ' + r.vendedor : '');
+      document.getElementById('ct_empresa').value = r.nome || (clienteSAP?.nome || '');
+      document.getElementById('ct_cnpj').value = fmtCNPJ(r.cnpj || cnpjSAP);
+      document.getElementById('ct_found_txt').textContent = (r.nome || clienteSAP?.nome || '') + (r.vendedor ? ' · ' + r.vendedor : '');
       document.getElementById('ct_cliente_found').style.display = 'block';
       showToast('Cliente encontrado: ' + r.nome, 'success');
+    } else if (clienteSAP) {
+      // Encontrado na lista SAP mas sem registo no Supabase
+      document.getElementById('ct_empresa').value = clienteSAP.nome || '';
+      document.getElementById('ct_cnpj').value = fmtCNPJ(cnpjSAP);
+      document.getElementById('ct_found_txt').textContent = clienteSAP.nome + ' · ' + clienteSAP.vendedor + ' (lista SAP)';
+      document.getElementById('ct_cliente_found').style.display = 'block';
+      showToast('Cliente encontrado na lista SAP: ' + clienteSAP.nome, 'success');
     } else {
       showToast('Cliente não encontrado — preenche manualmente', 'error');
       document.getElementById('ct_cliente_found').style.display = 'none';
