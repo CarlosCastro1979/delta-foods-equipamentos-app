@@ -2885,7 +2885,7 @@ function switchSubTab(group, sub) {
   }
   if (group === 'contratos') {
     window._contratosSubTab = sub;
-    ['registados','por-registar'].forEach(s => {
+    ['registados','por-registar','gerar','equipamentos'].forEach(s => {
       const btn = document.getElementById('sub-contratos-' + s);
       const panel = document.getElementById('sub-panel-contratos-' + s);
       const active = s === sub;
