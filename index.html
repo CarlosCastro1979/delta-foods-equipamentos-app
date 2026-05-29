@@ -1635,7 +1635,14 @@ var _unused_placeholder = 1;
       <div class="form-group">
         <label>Equipamentos</label>
         <div class="equip-list" id="edit-equip-list"></div>
-        <button class="btn-add-equip" onclick="addEditEquipRow()">+ Adicionar equipamento</button>
+        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+          <button class="btn-add-equip" onclick="addEditEquipRow()">+ Adicionar equipamento</button>
+          <button type="button" id="btn-sem-equip-edit" class="btn btn-secondary btn-sm" onclick="toggleSemEquipamentosEdit()"
+            style="font-size:12px;padding:5px 12px;">📭 Sem equipamentos</button>
+        </div>
+        <div id="sem-equip-aviso-edit" style="display:none;margin-top:6px;padding:6px 10px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;font-size:12px;color:#f57c00;">
+          ⚠ Registo sem equipamentos — cliente será aceite na mesma.
+        </div>
       </div>
       <div class="form-actions">
         <button class="btn btn-primary" id="btn-save-edit" onclick="salvarEdicao()">💾 Guardar Alterações</button>
@@ -1710,6 +1717,32 @@ function getEquipamentos(listId) {
     tipo: row.querySelector('.equip-select').value,
     tag: row.querySelector('.equip-tag').value.trim()
   })).filter(e => e.tipo);
+}
+
+function toggleSemEquipamentosEdit() {
+  const btn = document.getElementById('btn-sem-equip-edit');
+  const aviso = document.getElementById('sem-equip-aviso-edit');
+  const equipList = document.getElementById('edit-equip-list');
+  const addBtn = document.querySelector('#edit-equip-list ~ div .btn-add-equip');
+  const isActive = btn.classList.toggle('active');
+
+  if (isActive) {
+    btn.style.background = 'var(--accent)';
+    btn.style.color = '#fff';
+    btn.style.borderColor = 'var(--accent)';
+    btn.textContent = '✓ Sem equipamentos';
+    aviso.style.display = 'block';
+    equipList.innerHTML = '';
+    if (addBtn) addBtn.style.display = 'none';
+  } else {
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+    btn.textContent = '📭 Sem equipamentos';
+    aviso.style.display = 'none';
+    addEditEquipRow();
+    if (addBtn) addBtn.style.display = '';
+  }
 }
 
 function addEditEquipRow(tipo='', tag='') {
@@ -3155,6 +3188,7 @@ async function salvarEdicao() {
   const contrato = document.getElementById('e-contrato').value.trim();
   const contratos = getContratos('e');
   const equipamentos = getEquipamentos('edit-equip-list');
+  const semEquipEdit = document.getElementById('btn-sem-equip-edit')?.classList.contains('active');
 
   if (!vendedor || !cod || !nome || !cep) {
     toast('Preenche todos os campos obrigatórios.', 'error'); return;
@@ -5238,7 +5272,6 @@ _resizeObserver.observe(document.body, { childList: true, subtree: true });
 
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
-  addEquipRow();
   // Inicializa sub-abas com pequeno delay para garantir DOM pronto
   setTimeout(() => switchSubTab('registos', 'novo'), 10);
   // Verificar ligação silenciosamente
