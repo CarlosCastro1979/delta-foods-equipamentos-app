@@ -5508,15 +5508,17 @@ async function ctGerar() {
     if (!window.PizZip || !window.Docxtemplater) {
       showToast('A carregar bibliotecas...', 'info');
       // Tentar cdnjs primeiro, depois unpkg como fallback
-      try {
-        await loadCtScript('https://cdnjs.cloudflare.com/ajax/libs/pizzip/3.1.4/pizzip.min.js');
-      } catch(e1) {
-        await loadCtScript('https://unpkg.com/pizzip@3.1.4/dist/pizzip.min.js');
+      // Carregar PizZip
+      if (!window.PizZip) {
+        try { await loadCtScript('https://cdnjs.cloudflare.com/ajax/libs/pizzip/3.1.4/pizzip.min.js'); } catch(e) {}
+        if (!window.PizZip) await loadCtScript('https://unpkg.com/pizzip@3.1.7/dist/pizzip.min.js');
       }
-      try {
-        await loadCtScript('https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.37.12/docxtemplater.js');
-      } catch(e2) {
-        await loadCtScript('https://unpkg.com/docxtemplater@3.37.12/build/docxtemplater.js');
+      // Carregar Docxtemplater (UMD build que expõe global)
+      if (!window.Docxtemplater) {
+        try { await loadCtScript('https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.37.12/docxtemplater.js'); } catch(e) {}
+        if (!window.Docxtemplater) await loadCtScript('https://unpkg.com/docxtemplater@3.37.12/build/docxtemplater.js');
+        // Se ainda não existe como global, tentar versão mais antiga com UMD garantido
+        if (!window.Docxtemplater) await loadCtScript('https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.26.2/docxtemplater.js');
       }
     }
 
@@ -5525,6 +5527,8 @@ async function ctGerar() {
     const bytes = new Uint8Array(binaryStr.length);
     for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
 
+    if (!window.PizZip) throw new Error('PizZip não carregou. Verifica a ligação à internet.');
+    if (!window.Docxtemplater) throw new Error('Docxtemplater não carregou. Verifica a ligação à internet.');
     const zip = new PizZip(bytes);
     const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
     doc.render(data);
