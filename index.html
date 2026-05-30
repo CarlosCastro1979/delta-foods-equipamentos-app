@@ -1353,15 +1353,23 @@ var _unused_placeholder = 1;
 
     <!-- SUB: Registados -->
     <div id="sub-panel-contratos-registados" style="display:block;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
         <h2 style="font-size:16px;font-weight:600;color:var(--text)">📊 Cumprimento de Contratos</h2>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <select id="contratos-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="filtrarContratosVendedor()">
-            <option value="">Todos os vendedores</option>
-          </select>
           <button class="btn btn-secondary btn-sm" onclick="exportContratosExcel()">⬇ Excel</button>
-          <button class="btn btn-primary btn-sm" onclick="showVendasImport()" style="background:var(--accent)">⬆ Carregar Vendas</button>
         </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+        <select id="contratos-vendedor" class="form-input" style="min-width:160px;height:36px;font-size:13px;" onchange="filtrarContratosVendedor()">
+          <option value="">Todos os vendedores</option>
+        </select>
+        <input type="text" id="contratos-search-cod" class="form-input" placeholder="🔍 Código"
+          style="width:110px;height:36px;font-size:13px;" oninput="filtrarContratosVendedor()">
+        <input type="text" id="contratos-search-nome" class="form-input" placeholder="🔍 Nome cliente"
+          style="min-width:180px;flex:1;height:36px;font-size:13px;" oninput="filtrarContratosVendedor()">
+        <input type="text" id="contratos-search-num" class="form-input" placeholder="🔍 Nº Contrato"
+          style="width:130px;height:36px;font-size:13px;" oninput="filtrarContratosVendedor()">
+        <span id="contratos-count" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
       </div>
       <div id="contratos-content"><div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A carregar...</div></div>
     </div>
@@ -5109,10 +5117,21 @@ function filtrarContratosVendedor() {
   const allRows = window._contratosAllRows;
   if (!allRows) { loadContratosTab(true); return; }
 
-  const rows = vendFilt ? allRows.filter(r => r.vendedor === vendFilt) : allRows;
+  const codFilt  = (document.getElementById('contratos-search-cod')?.value||'').trim().toLowerCase();
+  const nomeFilt = (document.getElementById('contratos-search-nome')?.value||'').trim().toLowerCase();
+  const numFilt  = (document.getElementById('contratos-search-num')?.value||'').trim().toLowerCase();
+
+  let rows = vendFilt ? allRows.filter(r => r.vendedor === vendFilt) : allRows;
+  if (codFilt)  rows = rows.filter(r => String(r.cod||'').toLowerCase().includes(codFilt));
+  if (nomeFilt) rows = rows.filter(r => String(r.nome||'').toLowerCase().includes(nomeFilt));
+  if (numFilt)  rows = rows.filter(r => String(r.contrato||'').toLowerCase().includes(numFilt));
+
+  const countEl = document.getElementById('contratos-count');
+  if (countEl) countEl.textContent = rows.length < allRows.length ? `${rows.length} de ${allRows.length}` : `${allRows.length} contratos`;
+
   if (!rows.length) {
     document.getElementById('contratos-content').innerHTML =
-      '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum contrato para este vendedor.</div>';
+      '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum contrato para este filtro.</div>';
     return;
   }
 
@@ -5178,6 +5197,7 @@ function filtrarContratosVendedor() {
       <th style="padding:10px 12px;font-weight:700;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:12px;background:#EFF6FF">% vs<br>TOTAL ⚠️</th>
       <th style="padding:10px 12px;font-weight:700;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:12px;background:#F0FDF4">% vs<br>YTD</th>
       <th style="padding:10px 12px;font-weight:700;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:12px">ALERTA</th>
+      <th style="padding:10px 12px;font-weight:700;text-align:center;white-space:nowrap;border:1px solid #ddd;font-size:12px">📄 DOCS</th>
     </tr></thead><tbody>`;
 
   rows.forEach((r, idx) => {
@@ -5188,7 +5208,11 @@ function filtrarContratosVendedor() {
       : r.alerta === 'tempo'
       ? `<span style="background:#fff3e0;color:#f57c00;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700">⏳ Tempo</span>`
       : `<span style="color:#aaa;font-size:11px">—</span>`;
+    const docPath = `${r.cod}/${r.contrato}`;
+    const nfKey = `nf|${docPath}`;
+    const ctKey = `ct|${docPath}`;
     html += `<tr>
+      <td style="${td}font-size:11px;color:var(--muted)">${r.cod}</td>
       <td style="${td}font-weight:500">${r.nome}</td>
       <td style="${td}">${r.contrato}</td>
       <td style="${td}white-space:nowrap">${r.inicio}</td>
@@ -5200,11 +5224,147 @@ function filtrarContratosVendedor() {
       <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal !== null ? `<span style="background:${pctBg(r.pctTotal)};color:${pctColor(r.pctTotal)};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pctTotal}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
       <td style="${td}text-align:center;background:#F8FFF9">${r.pct !== null && r.mesesDecorridos > 0 ? `<span style="background:${pBg};color:${pCol};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pct}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
       <td style="${td}text-align:center">${alertaHtml}</td>
+      <td style="${td}text-align:center;white-space:nowrap">
+        <button onclick="contratoUploadPdf('nf','${docPath}')" title="Nota Fiscal"
+          style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
+          id="btn-nf-${r.cod}-${r.contrato}">📄 NF</button>
+        <button onclick="contratoUploadPdf('ct','${docPath}')" title="Contrato Assinado"
+          style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
+          id="btn-ct-${r.cod}-${r.contrato}">✍ CT</button>
+      </td>
     </tr>`;
   });
 
   html += `</tbody></table></div>`;
   document.getElementById('contratos-content').innerHTML = html;
+  // Verificar docs existentes no Storage após render
+  setTimeout(() => contratoCheckDocs(rows), 300);
+}
+
+// ─── SUPABASE STORAGE — PDFs de Contratos ────────────
+const STORAGE_URL = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
+const STORAGE_BUCKET = 'contratos';
+
+function contratoUploadPdf(tipo, docPath) {
+  // tipo: 'nf' ou 'ct'
+  const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
+  const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
+  const storagePath = `${docPath}/${fileName}`;
+
+  // Criar input file temporário
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/pdf';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') { toast('Apenas ficheiros PDF são aceites.', 'error'); return; }
+
+    const [cod, numContrato] = docPath.split('/');
+    const btnId = `btn-${tipo}-${cod}-${numContrato}`;
+    const btn = document.getElementById(btnId);
+    if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+    toast(`A fazer upload de ${label}...`);
+
+    try {
+      // Tentar upload (upsert — substitui se já existir)
+      const res = await fetch(`${STORAGE_URL}/${STORAGE_BUCKET}/${storagePath}`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPA_KEY,
+          'Authorization': 'Bearer ' + SUPA_KEY,
+          'Content-Type': 'application/pdf',
+          'x-upsert': 'true'
+        },
+        body: file
+      });
+
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err);
+      }
+
+      toast(`✅ ${label} guardada com sucesso.`, 'success');
+      if (btn) {
+        btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
+        btn.style.borderColor = '#16a34a';
+        btn.style.color = '#16a34a';
+        btn.disabled = false;
+        // Adicionar botão de download
+        contratoAddDownloadBtn(btn, tipo, storagePath, label);
+      }
+    } catch(e) {
+      toast('Erro no upload: ' + e.message, 'error');
+      if (btn) { btn.textContent = tipo === 'nf' ? '📄 NF' : '✍ CT'; btn.disabled = false; }
+    }
+  };
+  input.click();
+}
+
+function contratoAddDownloadBtn(uploadBtn, tipo, storagePath, label) {
+  // Remover botão de download anterior se existir
+  const existingDl = uploadBtn.nextElementSibling;
+  if (existingDl && existingDl.dataset.dlBtn) existingDl.remove();
+
+  const dlBtn = document.createElement('button');
+  dlBtn.dataset.dlBtn = '1';
+  dlBtn.title = `Ver/Download ${label}`;
+  dlBtn.textContent = '⬇';
+  dlBtn.style.cssText = 'background:none;border:1px solid #1976d2;border-radius:4px;padding:2px 5px;cursor:pointer;font-size:11px;margin:1px;color:#1976d2;';
+  dlBtn.onclick = () => contratoDownloadPdf(storagePath, label);
+  uploadBtn.parentElement.insertBefore(dlBtn, uploadBtn.nextSibling);
+}
+
+async function contratoDownloadPdf(storagePath, label) {
+  try {
+    const res = await fetch(`${STORAGE_URL}/authenticated/${STORAGE_BUCKET}/${storagePath}`, {
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+    });
+    if (!res.ok) throw new Error('Ficheiro não encontrado');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch(e) {
+    toast('Erro ao abrir ficheiro: ' + e.message, 'error');
+  }
+}
+
+async function contratoCheckDocs(allRows) {
+  // Verificar quais contratos já têm PDFs no Storage e actualizar os botões
+  if (!allRows || !allRows.length) return;
+  try {
+    // Listar todos os ficheiros no bucket
+    const res = await fetch(`https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/list/${STORAGE_BUCKET}`, {
+      method: 'POST',
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefix: '', limit: 1000, offset: 0 })
+    });
+    if (!res.ok) return;
+    const files = await res.json();
+    const existingPaths = new Set((files||[]).map(f => f.name));
+
+    allRows.forEach(r => {
+      const docPath = `${r.cod}/${r.contrato}`;
+      const cod = r.cod; const num = r.contrato;
+
+      ['nf','ct'].forEach(tipo => {
+        const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
+        const storagePath = `${docPath}/${fileName}`;
+        const btnId = `btn-${tipo}-${cod}-${num}`;
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
+
+        if (existingPaths.has(storagePath)) {
+          btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
+          btn.style.borderColor = '#16a34a';
+          btn.style.color = '#16a34a';
+          contratoAddDownloadBtn(btn, tipo, storagePath, label);
+        }
+      });
+    });
+  } catch(e) { console.warn('contratoCheckDocs:', e); }
 }
 
 function renderContratosFromCache(html) {
