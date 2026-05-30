@@ -5017,10 +5017,10 @@ async function loadContratosTab(forceRefresh = false) {
         <td style="${td}text-align:center;white-space:nowrap">
           <button onclick="contratoUploadPdf('nf','${r.cod}/${r.contrato}')" title="Nota Fiscal"
             style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
-            id="btn-nf-${r.cod}-${r.contrato}">📄 NF</button>
+            id="btn-nf-${r.cod}-${(r.contrato||"").replace(/\//g,'_')}">📄 NF</button>
           <button onclick="contratoUploadPdf('ct','${r.cod}/${r.contrato}')" title="Contrato Assinado"
             style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
-            id="btn-ct-${r.cod}-${r.contrato}">✍ CT</button>
+            id="btn-ct-${r.cod}-${(r.contrato||"").replace(/\//g,'_')}">✍ CT</button>
         </td>
       </tr>`;
     });
@@ -5223,10 +5223,10 @@ function filtrarContratosVendedor() {
       <td style="${td}text-align:center;white-space:nowrap">
         <button onclick="contratoUploadPdf('nf','${docPath}')" title="Nota Fiscal"
           style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
-          id="btn-nf-${r.cod}-${r.contrato}">📄 NF</button>
+          id="btn-nf-${r.cod}-${(r.contrato||"").replace(/\//g,'_')}">📄 NF</button>
         <button onclick="contratoUploadPdf('ct','${docPath}')" title="Contrato Assinado"
           style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
-          id="btn-ct-${r.cod}-${r.contrato}">✍ CT</button>
+          id="btn-ct-${r.cod}-${(r.contrato||"").replace(/\//g,'_')}">✍ CT</button>
       </td>
     </tr>`;
   });
@@ -5249,7 +5249,9 @@ function contratoUploadPdf(tipo, docPath) {
   const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
   const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
   const storagePath = `${docPath}/${fileName}`;
-  const [cod, numContrato] = docPath.split('/');
+  const slashIdx = docPath.indexOf('/');
+  const cod = docPath.slice(0, slashIdx);
+  const numContrato = docPath.slice(slashIdx + 1); // pode ter / no nome do contrato
 
   const input = document.createElement('input');
   input.type = 'file';
@@ -5259,7 +5261,7 @@ function contratoUploadPdf(tipo, docPath) {
     if (!file) return;
     if (file.type !== 'application/pdf') { toast('Apenas PDFs são aceites.', 'error'); return; }
 
-    const btnId = `btn-${tipo}-${cod}-${numContrato}`;
+    const btnId = `btn-${tipo}-${cod}-${numContrato.replace(/_/g,'_')}`;
     const btn = document.getElementById(btnId);
     if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
     toast(`A fazer upload de ${label}...`);
