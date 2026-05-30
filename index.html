@@ -1353,23 +1353,16 @@ var _unused_placeholder = 1;
 
     <!-- SUB: Registados -->
     <div id="sub-panel-contratos-registados" style="display:block;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-        <h2 style="font-size:16px;font-weight:600;color:var(--text)">📊 Cumprimento de Contratos</h2>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <button class="btn btn-secondary btn-sm" onclick="exportContratosExcel()">⬇ Excel</button>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
-        <select id="contratos-vendedor" class="form-input" style="min-width:160px;height:36px;font-size:13px;" onchange="filtrarContratosVendedor()">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+        <h2 style="font-size:16px;font-weight:600;color:var(--text);margin:0;margin-right:8px;">📊 Cumprimento de Contratos</h2>
+        <select id="contratos-vendedor" class="form-input" style="width:160px;height:32px;font-size:12px;padding:0 8px;" onchange="filtrarContratosVendedor()">
           <option value="">Todos os vendedores</option>
         </select>
-        <input type="text" id="contratos-search-cod" class="form-input" placeholder="🔍 Código"
-          style="width:110px;height:36px;font-size:13px;" oninput="filtrarContratosVendedor()">
-        <input type="text" id="contratos-search-nome" class="form-input" placeholder="🔍 Nome cliente"
-          style="min-width:180px;flex:1;height:36px;font-size:13px;" oninput="filtrarContratosVendedor()">
-        <input type="text" id="contratos-search-num" class="form-input" placeholder="🔍 Nº Contrato"
-          style="width:130px;height:36px;font-size:13px;" oninput="filtrarContratosVendedor()">
+        <input type="text" id="contratos-search-cod" class="form-input" placeholder="Código" style="width:80px;height:32px;font-size:12px;padding:0 8px;" oninput="filtrarContratosVendedor()">
+        <input type="text" id="contratos-search-nome" class="form-input" placeholder="Nome cliente" style="width:200px;height:32px;font-size:12px;padding:0 8px;" oninput="filtrarContratosVendedor()">
+        <input type="text" id="contratos-search-num" class="form-input" placeholder="Nº Contrato" style="width:110px;height:32px;font-size:12px;padding:0 8px;" oninput="filtrarContratosVendedor()">
         <span id="contratos-count" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+        <button class="btn btn-secondary btn-sm" onclick="exportContratosExcel()" style="margin-left:auto;">⬇ Excel</button>
       </div>
       <div id="contratos-content"><div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A carregar...</div></div>
     </div>
@@ -4988,7 +4981,7 @@ async function loadContratosTab(forceRefresh = false) {
     <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
 
     // Main contracts table
-    html += `<div style="overflow-x:auto;width:100%;"><table style="width:100%;min-width:900px;border-collapse:collapse;font-size:12px;">
+    html += `<div style="overflow-x:auto;width:100%;"><table style="width:100%;min-width:1100px;border-collapse:collapse;font-size:12px;">
       <thead><tr style="background:#f5f5f5;color:#333;text-align:left;border-bottom:2px solid #c8102e">
         <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">CÓD</th>
         <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">CLIENTE</th>
