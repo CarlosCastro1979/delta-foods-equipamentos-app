@@ -4809,7 +4809,7 @@ async function loadContratosTab(forceRefresh = false) {
 
   try {
     // Fetch all registos with contratos from Supabase
-    const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,contrato,contratos', {headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }});
+    const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,contrato,contratos,docs', {headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }});
     let registos = await res.json();
 
     // Filter only those with contratos array
@@ -5036,7 +5036,7 @@ async function loadContratosTab(forceRefresh = false) {
     }
     // Construir mapa de docs para marcar botões
     const docsMap = {};
-    data.forEach(r => { if (r.docs) docsMap[String(r.cod)] = r.docs; });
+    registos.forEach(r => { if (r.docs) docsMap[String(r.cod)] = r.docs; });
     window._contratosDocsMap = docsMap;
     window._contratosAllRows = rows;
     contratosCache = html;
