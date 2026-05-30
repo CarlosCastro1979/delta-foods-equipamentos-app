@@ -5323,40 +5323,32 @@ async function contratoDownloadPdf(storagePath, label) {
 }
 
 async function contratoCheckDocs(allRows) {
-  // Verificar quais contratos já têm PDFs no Storage e actualizar os botões
   if (!allRows || !allRows.length) return;
-  try {
-    // Listar todos os ficheiros no bucket
-    const res = await fetch(`https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/list/${STORAGE_BUCKET}`, {
-      method: 'POST',
-      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prefix: '', limit: 1000, offset: 0 })
-    });
-    if (!res.ok) return;
-    const files = await res.json();
-    const existingPaths = new Set((files||[]).map(f => f.name));
-
-    allRows.forEach(r => {
-      const docPath = `${r.cod}/${r.contrato}`;
-      const cod = r.cod; const num = r.contrato;
-
-      ['nf','ct'].forEach(tipo => {
-        const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
-        const storagePath = `${docPath}/${fileName}`;
-        const btnId = `btn-${tipo}-${cod}-${num}`;
-        const btn = document.getElementById(btnId);
-        if (!btn) return;
-        const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
-
-        if (existingPaths.has(storagePath)) {
+  // Verificar cada contrato individualmente usando HEAD request
+  // (list não funciona recursivamente com subpastas)
+  for (const r of allRows) {
+    const docPath = `${r.cod}/${r.contrato}`;
+    for (const tipo of ['nf', 'ct']) {
+      const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
+      const storagePath = `${docPath}/${fileName}`;
+      const btnId = `btn-${tipo}-${r.cod}-${r.contrato}`;
+      const btn = document.getElementById(btnId);
+      if (!btn) continue;
+      try {
+        const res = await fetch(`${STORAGE_URL}/authenticated/${STORAGE_BUCKET}/${storagePath}`, {
+          method: 'HEAD',
+          headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+        });
+        if (res.ok) {
+          const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
           btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
           btn.style.borderColor = '#16a34a';
           btn.style.color = '#16a34a';
           contratoAddDownloadBtn(btn, tipo, storagePath, label);
         }
-      });
-    });
-  } catch(e) { console.warn('contratoCheckDocs:', e); }
+      } catch(e) { /* ficheiro não existe */ }
+    }
+  }
 }
 
 function renderContratosFromCache(html) {
