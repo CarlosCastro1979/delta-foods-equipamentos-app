@@ -5260,7 +5260,7 @@ function contratoUploadPdf(tipo, docPath) {
 
     try {
       // Tentar upload (upsert — substitui se já existir)
-      const res = await fetch(`${STORAGE_URL}/${STORAGE_BUCKET}/${storagePath}`, {
+      const res = await fetch(`https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/${STORAGE_BUCKET}/${storagePath}`, {
         method: 'POST',
         headers: {
           'apikey': SUPA_KEY,
@@ -5276,14 +5276,14 @@ function contratoUploadPdf(tipo, docPath) {
         throw new Error(err);
       }
 
+      const pubUrlAfterUpload = `https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`;
       toast(`✅ ${label} guardada com sucesso.`, 'success');
       if (btn) {
         btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
         btn.style.borderColor = '#16a34a';
         btn.style.color = '#16a34a';
         btn.disabled = false;
-        // Adicionar botão de download
-        contratoAddDownloadBtn(btn, tipo, storagePath, label);
+        contratoAddDownloadBtn(btn, tipo, pubUrlAfterUpload, label);
       }
     } catch(e) {
       toast('Erro no upload: ' + e.message, 'error');
@@ -5307,21 +5307,9 @@ function contratoAddDownloadBtn(uploadBtn, tipo, storagePath, label) {
   uploadBtn.parentElement.insertBefore(dlBtn, uploadBtn.nextSibling);
 }
 
-async function contratoDownloadPdf(storagePath, label) {
-  try {
-    // Gerar signed URL válida por 1 hora
-    const signRes = await fetch(`https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/sign/${STORAGE_BUCKET}/${storagePath}`, {
-      method: 'POST',
-      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expiresIn: 3600 })
-    });
-    if (!signRes.ok) throw new Error('Ficheiro não encontrado');
-    const { signedURL } = await signRes.json();
-    const fullUrl = `https://qnscwppgljobelplgbkp.supabase.co${signedURL}`;
-    window.open(fullUrl, '_blank');
-  } catch(e) {
-    toast('Erro ao abrir ficheiro: ' + e.message, 'error');
-  }
+async function contratoDownloadPdf(url, label) {
+  // url já é o URL público completo
+  window.open(url, '_blank');
 }
 
 async function contratoCheckDocs(allRows) {
@@ -5337,18 +5325,14 @@ async function contratoCheckDocs(allRows) {
       const btn = document.getElementById(btnId);
       if (!btn) continue;
       try {
-        // Tentar gerar signed URL — se funcionar o ficheiro existe
-        const signRes = await fetch(`https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/sign/${STORAGE_BUCKET}/${storagePath}`, {
-          method: 'POST',
-          headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ expiresIn: 3600 })
-        });
-        if (signRes.ok) {
+        const pubUrl = `https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`;
+        const checkRes = await fetch(pubUrl, { method: 'HEAD' });
+        if (checkRes.ok) {
           const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
           btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
           btn.style.borderColor = '#16a34a';
           btn.style.color = '#16a34a';
-          contratoAddDownloadBtn(btn, tipo, storagePath, label);
+          contratoAddDownloadBtn(btn, tipo, pubUrl, label);
         }
       } catch(e) { /* ficheiro não existe */ }
     }
