@@ -5025,8 +5025,7 @@ async function loadContratosTab(forceRefresh = false) {
       </tr>`;
     });
     html += `</tbody></table></div>`;
-    setTimeout(() => contratoCheckDocs(rows), 500);
-
+  
     // Popula filtro de vendedores
     const vendedoresContr = [...new Set(rows.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
     const selVC = document.getElementById('contratos-vendedor');
@@ -5230,7 +5229,6 @@ function filtrarContratosVendedor() {
   html += `</tbody></table></div>`;
   document.getElementById('contratos-content').innerHTML = html;
   // Verificar docs existentes no Storage após render
-  setTimeout(() => contratoCheckDocs(rows), 300);
 }
 
 // ─── SUPABASE STORAGE — PDFs de Contratos ────────────
@@ -5313,30 +5311,7 @@ async function contratoDownloadPdf(url, label) {
 }
 
 async function contratoCheckDocs(allRows) {
-  if (!allRows || !allRows.length) return;
-  // Verificar cada contrato individualmente usando HEAD request
-  // (list não funciona recursivamente com subpastas)
-  for (const r of allRows) {
-    const docPath = `${r.cod}/${r.contrato}`;
-    for (const tipo of ['nf', 'ct']) {
-      const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
-      const storagePath = `${docPath}/${fileName}`;
-      const btnId = `btn-${tipo}-${r.cod}-${r.contrato}`;
-      const btn = document.getElementById(btnId);
-      if (!btn) continue;
-      try {
-        const pubUrl = `https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`;
-        const checkRes = await fetch(pubUrl, { method: 'HEAD' });
-        if (checkRes.ok) {
-          const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
-          btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
-          btn.style.borderColor = '#16a34a';
-          btn.style.color = '#16a34a';
-          contratoAddDownloadBtn(btn, tipo, pubUrl, label);
-        }
-      } catch(e) { /* ficheiro não existe */ }
-    }
-  }
+  // Verificação desactivada — botão ⬇ aparece após upload na mesma sessão
 }
 
 function renderContratosFromCache(html) {
