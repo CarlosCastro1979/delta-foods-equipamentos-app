@@ -4964,22 +4964,24 @@ async function loadContratosTab(forceRefresh = false) {
     </div>
     <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
 
-    // Main contracts table
-    html += `<div style="overflow-x:auto;width:100%;"><table style="width:100%;min-width:1100px;border-collapse:collapse;font-size:12px;">
-      <thead><tr style="background:#f5f5f5;color:#333;text-align:left;border-bottom:2px solid #c8102e">
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">CÓD</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">CLIENTE</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">CONTRATO</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">INÍCIO</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:center">DUR.</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd">FIM</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:right">CONS./MÊS</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:right">TOTAL</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:right">ESPERADO</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:right">REAL</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:center;background:#EFF6FF">% TOTAL ⚠️</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:center;background:#F0FDF4">% YTD</th>
-        <th style="padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;text-align:center">ALERTA</th>
+    // Main contracts table — cabeçalho com coluna DOCS
+    const TH2 = 'padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;background:#f5f5f5;';
+    html += `<div style="overflow-x:auto;width:100%"><table style="border-collapse:collapse;font-size:12px;width:max-content;min-width:100%">
+      <thead><tr>
+        <th style="${TH2}">CÓD</th>
+        <th style="${TH2}min-width:180px">CLIENTE</th>
+        <th style="${TH2}">CONTRATO</th>
+        <th style="${TH2}">INÍCIO</th>
+        <th style="${TH2}text-align:center">DUR.</th>
+        <th style="${TH2}">FIM</th>
+        <th style="${TH2}text-align:right">CONS./MÊS</th>
+        <th style="${TH2}text-align:right">TOTAL</th>
+        <th style="${TH2}text-align:right">ESPERADO</th>
+        <th style="${TH2}text-align:right">REAL</th>
+        <th style="${TH2}text-align:center">% TOTAL 🔺</th>
+        <th style="${TH2}text-align:center">% YTD</th>
+        <th style="${TH2}text-align:center;min-width:160px">ALERTA</th>
+        <th style="${TH2}text-align:center;min-width:100px">📄 DOCS</th>
       </tr></thead><tbody>`;
 
     const fmtNum2 = (n, u) => u === 'Kg'
@@ -5012,9 +5014,18 @@ async function loadContratosTab(forceRefresh = false) {
         <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal!==null?`<span style="background:${pctBg2(r.pctTotal)};color:${pctColor2(r.pctTotal)};padding:2px 8px;border-radius:10px;font-weight:700">${r.pctTotal}%</span>`:'—'}</td>
         <td style="${td}text-align:center;background:#F8FFF9">${r.pct!==null&&r.mesesDecorridos>0?`<span style="background:${pBg};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700">${r.pct}%</span>`:'—'}</td>
         <td style="${td}text-align:center;overflow:hidden;">${alertaHtml}</td>
+        <td style="${td}text-align:center;white-space:nowrap">
+          <button onclick="contratoUploadPdf('nf','${r.cod}/${r.contrato}')" title="Nota Fiscal"
+            style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
+            id="btn-nf-${r.cod}-${r.contrato}">📄 NF</button>
+          <button onclick="contratoUploadPdf('ct','${r.cod}/${r.contrato}')" title="Contrato Assinado"
+            style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
+            id="btn-ct-${r.cod}-${r.contrato}">✍ CT</button>
+        </td>
       </tr>`;
     });
     html += `</tbody></table></div>`;
+    setTimeout(() => contratoCheckDocs(rows), 500);
 
     // Popula filtro de vendedores
     const vendedoresContr = [...new Set(rows.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
