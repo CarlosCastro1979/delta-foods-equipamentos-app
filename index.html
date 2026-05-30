@@ -5278,32 +5278,34 @@ function contratoUploadPdf(tipo, docPath) {
       });
       if (!res.ok) throw new Error('Upload falhou: ' + res.status);
 
-      // Guardar referência no Supabase (campo docs no registo)
-      // Buscar o registo do cliente pelo código
-      const regsRes = await fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS });
-      if (regsRes.ok) {
-        const regs = await regsRes.json();
-        if (regs.length) {
+      const pubUrl = `${STORAGE_PUBLIC}/${storagePath}`;
+
+      // Actualizar botão imediatamente — independente do Supabase
+      if (btn) {
+        btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
+        btn.style.borderColor = '#16a34a';
+        btn.style.color = '#16a34a';
+        btn.disabled = false;
+        contratoSetDownloadBtn(btn, pubUrl, label);
+      }
+      toast(`✅ ${label} guardada.`, 'success');
+
+      // Guardar referência no Supabase em background (não bloqueia)
+      fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS })
+        .then(r => r.json())
+        .then(regs => {
+          if (!regs.length) return;
           const reg = regs[0];
           const docs = reg.docs || {};
           if (!docs[numContrato]) docs[numContrato] = {};
           docs[numContrato][tipo] = storagePath;
-          await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
+          return fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
             method: 'PATCH',
             headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
             body: JSON.stringify({ docs })
           });
-        }
-      }
-
-      const pubUrl = `${STORAGE_PUBLIC}/${storagePath}`;
-      toast(`✅ ${label} guardada.`, 'success');
-      if (btn) {
-        btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
-        btn.style.cssText += ';border-color:#16a34a;color:#16a34a;';
-        btn.disabled = false;
-        contratoSetDownloadBtn(btn, pubUrl, label);
-      }
+        })
+        .catch(e => console.warn('docs save:', e));
     } catch(err) {
       toast('Erro: ' + err.message, 'error');
       if (btn) { btn.textContent = tipo === 'nf' ? '📄 NF' : '✍ CT'; btn.disabled = false; }
