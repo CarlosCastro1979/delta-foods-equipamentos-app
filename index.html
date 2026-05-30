@@ -985,15 +985,15 @@ var _unused_placeholder = 1;
 
       <div class="form-group">
         <label>Equipamentos</label>
-        <div class="equip-list" id="equip-list"></div>
-        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
-          <button class="btn-add-equip" onclick="addEquipRow()">+ Adicionar equipamento</button>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
           <button type="button" id="btn-sem-equip" class="btn btn-secondary btn-sm" onclick="toggleSemEquipamentos()"
             style="font-size:12px;padding:5px 12px;">📭 Sem equipamentos</button>
         </div>
-        <div id="sem-equip-aviso" style="display:none;margin-top:6px;padding:6px 10px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;font-size:12px;color:#f57c00;">
+        <div id="sem-equip-aviso" style="display:none;margin-bottom:8px;padding:6px 10px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;font-size:12px;color:#f57c00;">
           ⚠ Registo sem equipamentos — cliente será aceite na mesma.
         </div>
+        <div class="equip-list" id="equip-list"></div>
+        <button class="btn-add-equip" onclick="addEquipRow()" style="margin-top:6px;">+ Adicionar equipamento</button>
       </div>
 
       <div class="form-actions">
@@ -1166,109 +1166,166 @@ var _unused_placeholder = 1;
   </div>
 
   <div class="panel" id="panel-at">
-    <div style="max-width:600px;margin:0 auto">
-      <h2 style="font-size:16px;font-weight:600;margin-bottom:16px;color:var(--text)">🔧 Pedido de Assistência Técnica</h2>
+    <!-- Sub-abas AT -->
+    <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:24px;">
+      <button id="at-sub-chamado" onclick="atSwitchSub('chamado')"
+        style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-2px;color:var(--accent);">
+        🔧 Chamado Técnico
+      </button>
+      <button id="at-sub-instalacao" onclick="atSwitchSub('instalacao')"
+        style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--muted);">
+        📦 Instalação
+      </button>
+    </div>
 
-      <div class="form-group">
-        <label class="form-label">Vendedor</label>
-        <select id="at-vendedor" class="form-input" onchange="atOnVendedorChange()">
-          <option value="">— Selecionar vendedor —</option>
-          <option value="DANIELA SANTOS">DANIELA SANTOS</option>
-<option value="FILIPE NEVES">FILIPE NEVES</option>
-<option value="HÉLCIO GRÉGIO">HÉLCIO GRÉGIO</option>
-<option value="PAULO FONTES">PAULO FONTES</option>
-        </select>
-      </div>
+    <!-- SUB: Chamado Técnico -->
+    <div id="at-panel-chamado" style="max-width:600px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
 
-      <div class="form-group" id="at-tipo-equip-group" style="display:none">
-        <label class="form-label">Tipo de equipamento</label>
-        <select id="at-tipo-equip" class="form-input" onchange="atOnTipoEquipChange()">
-          <option value="">— Selecionar tipo —</option>
-          <option value="comercial">☕ Equipamento Profissional</option>
-          <option value="domestico">🏠 Máquina Doméstica Delta Q</option>
-        </select>
-      </div>
-
-      <div class="form-group" id="at-cliente-search-group" style="display:none">
-        <label class="form-label">Pesquisar cliente (código ou nome)</label>
-        <input type="text" id="at-cliente-search" class="form-input" placeholder="Digite código ou nome..." oninput="atFiltrarLista()" autocomplete="off">
-      </div>
-
-      <div class="form-group" id="at-cliente-group" style="display:none">
-        <label class="form-label">Cliente</label>
-        <select id="at-cliente" class="form-input" size="5" onchange="atPreencherCliente()" style="height:auto;min-height:44px">
-          <option value="">— Seleciona o vendedor primeiro —</option>
-        </select>
-      </div>
-
-      <div class="form-group" id="at-cliente-info-box" style="display:none">
-        <div style="background:var(--surface2);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--muted)">
-          <span id="at-cliente-info"></span>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Vendedor</label>
+          <select id="at-vendedor" class="form-input" onchange="atOnVendedorChange()">
+            <option value="">— Selecionar —</option>
+          </select>
         </div>
+
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Tipo de equipamento</label>
+          <select id="at-tipo-equip" class="form-input" onchange="atOnTipoEquipChange()" disabled>
+            <option value="">— Selecionar vendedor —</option>
+            <option value="comercial">☕ Equipamento Profissional</option>
+            <option value="domestico">🏠 Máquina Doméstica Delta Q</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin:0;grid-column:1/-1">
+          <label class="form-label">Pesquisar cliente</label>
+          <input type="text" id="at-cliente-search" class="form-input" placeholder="Código ou nome..." oninput="atFiltrarLista()" autocomplete="off" disabled>
+        </div>
+
+        <div class="form-group" style="margin:0;grid-column:1/-1">
+          <label class="form-label">Cliente</label>
+          <select id="at-cliente" class="form-input" size="4" onchange="atPreencherCliente()" style="height:auto;min-height:44px" disabled>
+            <option value="">— Seleciona vendedor e tipo primeiro —</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="at-cliente-info-box" style="margin:0;grid-column:1/-1;display:none">
+          <div style="background:var(--surface2);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--muted)">
+            <span id="at-cliente-info"></span>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin:0;grid-column:1/-1">
+          <label class="form-label">Equipamento(s)</label>
+          <select id="at-equipamento" class="form-input" multiple size="4" style="min-height:100px" disabled>
+            <option value="">— Seleciona primeiro o cliente —</option>
+          </select>
+          <div style="margin-top:4px;font-size:11px;color:var(--muted)">Ctrl+clique para selecionar vários</div>
+        </div>
+
+        <div class="form-group" id="at-modelo-dom-group" style="margin:0;grid-column:1/-1;display:none">
+          <label class="form-label">Modelo da máquina</label>
+          <select id="at-modelo-dom" class="form-input">
+            <option value="">— Selecionar modelo —</option>
+            <option value="Qool Auto">Qool Auto</option>
+            <option value="Quick">Quick</option>
+            <option value="MiniQool">MiniQool</option>
+            <option value="Qool Evolution">Qool Evolution</option>
+            <option value="MiniMilk">MiniMilk</option>
+            <option value="Milkq Qool">Milkq Qool</option>
+            <option value="Iconiq">Iconiq</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Tipo de avaria</label>
+          <select id="at-avaria-tipo" class="form-input" onchange="atToggleOutraAvaria()" disabled>
+            <option value="">— Selecionar —</option>
+            <option value="Não faz café / sem extração">Não faz café / sem extração</option>
+            <option value="Avaria no moinho">Avaria no moinho</option>
+            <option value="Fuga de água">Fuga de água</option>
+            <option value="Erro no display / painel">Erro no display / painel</option>
+            <option value="Temperatura incorreta">Temperatura incorreta</option>
+            <option value="Ruído anormal">Ruído anormal</option>
+            <option value="Bomba com problemas">Bomba com problemas</option>
+            <option value="Resistência com problemas">Resistência com problemas</option>
+            <option value="Não liga">Não liga</option>
+            <option value="Afinação e Manutenção Geral">Afinação e Manutenção Geral</option>
+            <option value="Preventiva">Preventiva</option>
+            <option value="Desinstalação">Desinstalação</option>
+            <option value="Outra avaria">Outra avaria</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Urgência</label>
+          <select id="at-urgencia" class="form-input" disabled>
+            <option value="Normal">Normal</option>
+            <option value="Urgente">🔴 Urgente</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="at-outra-avaria-box" style="margin:0;grid-column:1/-1;display:none">
+          <label class="form-label">Descreve a outra avaria</label>
+          <input type="text" id="at-outra-avaria" class="form-input" placeholder="Descreve a avaria">
+        </div>
+
+        <div class="form-group" style="margin:0;grid-column:1/-1">
+          <label class="form-label">Descrição <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
+          <textarea id="at-descricao" class="form-input" rows="3" placeholder="Informações adicionais para o técnico..." style="display:block;width:100%;resize:vertical;min-height:70px;font-family:inherit;font-size:14px;" disabled></textarea>
+        </div>
+
       </div>
 
-      <div class="form-group" id="at-equipamento-group" style="display:none">
-        <label class="form-label">Equipamento(s) — seleciona um ou mais</label>
-        <select id="at-equipamento" class="form-input" multiple size="4" style="min-height:120px">
-          <option value="">— Seleciona primeiro o cliente —</option>
-        </select>
-        <div id="at-equip-selected-info" style="margin-top:6px;font-size:12px;color:var(--muted)">Mantém Ctrl (PC) ou toca para selecionar vários</div>
-      </div>
-      <div class="form-group" id="at-modelo-dom-group" style="display:none">
-        <label class="form-label">Modelo da máquina</label>
-        <select id="at-modelo-dom" class="form-input">
-          <option value="">— Selecionar modelo —</option>
-          <option value="Qool Auto">Qool Auto</option>
-          <option value="Quick">Quick</option>
-          <option value="MiniQool">MiniQool</option>
-          <option value="Qool Evolution">Qool Evolution</option>
-          <option value="MiniMilk">MiniMilk</option>
-          <option value="Milkq Qool">Milkq Qool</option>
-          <option value="Iconiq">Iconiq</option>
-        </select>
-      </div>
-
-      <div class="form-group" id="at-avaria-group" style="display:none">
-        <label class="form-label">Tipo de avaria detectada</label>
-        <select id="at-avaria-tipo" class="form-input" onchange="atToggleOutraAvaria()">
-          <option value="">— Selecionar tipo de avaria —</option>
-          <option value="Não faz café / sem extração">Não faz café / sem extração</option>
-          <option value="Avaria no moinho">Avaria no moinho</option>
-          <option value="Fuga de água">Fuga de água</option>
-          <option value="Erro no display / painel">Erro no display / painel</option>
-          <option value="Temperatura incorreta">Temperatura incorreta</option>
-          <option value="Ruído anormal">Ruído anormal</option>
-          <option value="Bomba com problemas">Bomba com problemas</option>
-          <option value="Resistência com problemas">Resistência com problemas</option>
-          <option value="Não liga">Não liga</option>
-          <option value="Afinação e Manutenção Geral">Afinação e Manutenção Geral</option>
-          <option value="Preventiva">Preventiva</option>
-          <option value="Instalação">Instalação</option>
-          <option value="Desinstalação">Desinstalação</option>
-          <option value="Outra avaria">Outra avaria</option>
-        </select>
-      </div>
-
-      <div class="form-group" id="at-outra-avaria-box" style="display:none">
-        <label class="form-label">Descreve a outra avaria</label>
-        <input type="text" id="at-outra-avaria" class="form-input" placeholder="Descreve a avaria">
-      </div>
-
-      <div class="form-group" id="at-descricao-group" style="display:none">
-        <label class="form-label">Descrição detalhada <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
-        <textarea id="at-descricao" class="form-input" rows="3" placeholder="Informações adicionais para o técnico..." style="display:block;width:100%;resize:vertical;min-height:80px;font-family:inherit;font-size:14px;margin-top:4px"></textarea>
-      </div>
-
-      <div class="form-group" id="at-urgencia-group" style="display:none">
-        <label class="form-label">Urgência</label>
-        <select id="at-urgencia" class="form-input">
-          <option value="Normal">Normal</option>
-          <option value="Urgente">🔴 Urgente</option>
-        </select>
-      </div>
-
-      <button id="at-submit-btn" class="btn-primary" onclick="enviarPedidoAT()" style="width:100%;padding:12px;font-size:15px;margin-top:4px;display:none">
+      <button id="at-submit-btn" class="btn btn-primary" onclick="enviarPedidoAT()" style="width:100%;padding:12px;font-size:15px;" disabled>
         📧 Registar e Enviar Pedido AT
+      </button>
+    </div>
+
+    <!-- SUB: Instalação -->
+    <div id="at-panel-instalacao" style="display:none;max-width:500px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+
+        <div class="form-group" style="margin:0;grid-column:1/-1">
+          <label class="form-label">Código do cliente <span style="color:var(--accent)">*</span></label>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="inst-cod" class="form-input" placeholder="Código SAP" style="flex:1"
+              oninput="instBuscarCliente()">
+            <div id="inst-cod-status" style="display:flex;align-items:center;font-size:13px;color:var(--muted);white-space:nowrap;"></div>
+          </div>
+          <div id="inst-cliente-info" style="margin-top:6px;padding:8px 12px;background:var(--surface2);border-radius:6px;font-size:13px;display:none;"></div>
+        </div>
+
+        <div class="form-group" style="margin:0;grid-column:1/-1">
+          <label class="form-label">Equipamentos a instalar <span style="color:var(--accent)">*</span></label>
+          <div id="inst-equip-list"></div>
+          <button class="btn-add-equip" onclick="addInstEquipRow()" style="margin-top:6px;">+ Adicionar equipamento</button>
+        </div>
+
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Data desejada <span style="color:var(--accent)">*</span></label>
+          <input type="date" id="inst-data" class="form-input"
+            min="${new Date().toISOString().slice(0,10)}">
+        </div>
+
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Urgência</label>
+          <select id="inst-urgencia" class="form-input">
+            <option value="Normal">Normal</option>
+            <option value="Urgente">🔴 Urgente</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin:0;grid-column:1/-1">
+          <label class="form-label">Observações <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
+          <textarea id="inst-obs" class="form-input" rows="2" placeholder="Informações adicionais..." style="display:block;width:100%;resize:vertical;font-family:inherit;font-size:14px;"></textarea>
+        </div>
+
+      </div>
+
+      <button class="btn btn-primary" onclick="enviarPedidoInstalacao()" style="width:100%;padding:12px;font-size:15px;">
+        📧 Registar Pedido de Instalação
       </button>
     </div>
   </div>
@@ -1697,15 +1754,15 @@ var _unused_placeholder = 1;
       </div>
       <div class="form-group">
         <label>Equipamentos</label>
-        <div class="equip-list" id="edit-equip-list"></div>
-        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
-          <button class="btn-add-equip" onclick="addEditEquipRow()">+ Adicionar equipamento</button>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
           <button type="button" id="btn-sem-equip-edit" class="btn btn-secondary btn-sm" onclick="toggleSemEquipamentosEdit()"
             style="font-size:12px;padding:5px 12px;">📭 Sem equipamentos</button>
         </div>
-        <div id="sem-equip-aviso-edit" style="display:none;margin-top:6px;padding:6px 10px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;font-size:12px;color:#f57c00;">
+        <div id="sem-equip-aviso-edit" style="display:none;margin-bottom:8px;padding:6px 10px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px;font-size:12px;color:#f57c00;">
           ⚠ Registo sem equipamentos — cliente será aceite na mesma.
         </div>
+        <div class="equip-list" id="edit-equip-list"></div>
+        <button class="btn-add-equip" onclick="addEditEquipRow()" style="margin-top:6px;">+ Adicionar equipamento</button>
       </div>
       <div class="form-actions">
         <button class="btn btn-primary" id="btn-save-edit" onclick="salvarEdicao()">💾 Guardar Alterações</button>
@@ -3060,7 +3117,18 @@ function switchSubTab(group, sub) {
       }
       if (panel) panel.style.display = active ? 'block' : 'none';
     });
-    if (sub === 'novo') { addEquipRow(); setStatus(null); }
+    if (sub === 'novo') {
+      const el = document.getElementById('equip-list');
+      if (el) { el.innerHTML = ''; }
+      const bse = document.getElementById('btn-sem-equip');
+      if (bse) { bse.classList.remove('active'); bse.style.cssText=''; bse.textContent='📭 Sem equipamentos'; }
+      const sae = document.getElementById('sem-equip-aviso');
+      if (sae) sae.style.display = 'none';
+      const abe = document.querySelector('.btn-add-equip');
+      if (abe) abe.style.display = '';
+      addEquipRow();
+      setStatus(null);
+    }
     if (sub === 'lista') loadData(true);
     if (sub === 'pendentes') loadPendentes();
     if (sub === 'vendedores') renderVendedoresTable();
@@ -3698,6 +3766,113 @@ function cancelarImport() {
   if (bar) bar.style.display = 'none';
 }
 
+// ─── AT: INSTALAÇÃO ──────────────────────────────────
+function addInstEquipRow(tipo='') {
+  const list = document.getElementById('inst-equip-list');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;align-items:center;';
+  // Opções do catálogo
+  const equipCatalogOpts = equipCatalog.length
+    ? equipCatalog.filter(e => e.ativo).map(e => `<option value="${e.descricao}" ${e.descricao===tipo?'selected':''}>${e.descricao}</option>`).join('')
+    : EQUIPAMENTOS.map(e => `<option value="${e}" ${e===tipo?'selected':''}>${e}</option>`).join('');
+  row.innerHTML = `
+    <select class="form-input" style="flex:2">
+      <option value="">— Selecionar equipamento —</option>
+      ${equipCatalogOpts}
+    </select>
+    <input type="number" class="form-input" placeholder="Qtd" style="width:70px;flex:none" value="1" min="1">
+    <button type="button" onclick="this.parentElement.remove()"
+      style="background:none;border:1px solid var(--danger);color:var(--danger);border-radius:6px;width:32px;height:32px;cursor:pointer;flex:none;">✕</button>`;
+  list.appendChild(row);
+}
+
+async function instBuscarCliente() {
+  const cod = document.getElementById('inst-cod').value.trim();
+  const infoEl = document.getElementById('inst-cliente-info');
+  const statusEl = document.getElementById('inst-cod-status');
+  if (cod.length < 3) { infoEl.style.display = 'none'; statusEl.textContent = ''; return; }
+
+  const lista = getListaClientesActiva();
+  const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
+  const cliente = lista.find(c => normCod(c.cod) === normCod(cod) || c.cod === cod);
+  if (cliente) {
+    infoEl.innerHTML = `<strong>${cliente.nome}</strong> · ${cliente.vendedor} · CEP ${cliente.cep||'—'}`;
+    infoEl.style.display = 'block';
+    statusEl.innerHTML = '<span style="color:#16a34a">✓</span>';
+  } else {
+    infoEl.style.display = 'none';
+    statusEl.innerHTML = '<span style="color:var(--danger)">✗ não encontrado</span>';
+  }
+}
+
+async function enviarPedidoInstalacao() {
+  const cod = document.getElementById('inst-cod').value.trim();
+  const data = document.getElementById('inst-data').value;
+  const obs = document.getElementById('inst-obs').value.trim();
+  const urgencia = document.getElementById('inst-urgencia').value;
+
+  if (!cod) { toast('Código do cliente obrigatório.', 'error'); return; }
+  if (!data) { toast('Data desejada obrigatória.', 'error'); return; }
+
+  // Recolher equipamentos
+  const rows = document.querySelectorAll('#inst-equip-list > div');
+  const equipamentos = [];
+  rows.forEach(row => {
+    const sel = row.querySelector('select');
+    const qty = parseInt(row.querySelector('input')?.value) || 1;
+    if (sel?.value) {
+      for (let i = 0; i < qty; i++) equipamentos.push({ tipo: sel.value, tag: '' });
+    }
+  });
+  if (!equipamentos.length) { toast('Adiciona pelo menos um equipamento.', 'error'); return; }
+
+  const lista = getListaClientesActiva();
+  const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
+  const cliente = lista.find(c => normCod(c.cod) === normCod(cod) || c.cod === cod);
+
+  const chamado = {
+    id: crypto.randomUUID(),
+    cod,
+    nome_cliente: cliente?.nome || cod,
+    vendedor: cliente?.vendedor || '',
+    tipo_equip: 'instalacao',
+    equipamentos,
+    avaria: 'Instalação',
+    descricao: obs || '',
+    urgencia,
+    data_instalacao: data,
+    data: new Date().toISOString().slice(0,10),
+    estado: 'aberto'
+  };
+
+  try {
+    const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/chamados_at', {
+      method: 'POST',
+      headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify(chamado)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+
+    // Email
+    const dataFmt = new Date(data + 'T12:00:00').toLocaleDateString('pt-BR');
+    const equipsStr = equipamentos.map(e => e.tipo).join(', ');
+    const mailto = `mailto:daniela.kucinski@deltafoodsbrasil.com.br?cc=filipe.neves@deltafoodsbrasil.com.br&subject=Pedido de Instalação — ${cliente?.nome||cod}&body=Pedido de instalação:%0A%0ACliente: ${encodeURIComponent(cliente?.nome||cod)} (${cod})%0AVendedor: ${encodeURIComponent(cliente?.vendedor||'')}%0AEquipamentos: ${encodeURIComponent(equipsStr)}%0AData desejada: ${encodeURIComponent(dataFmt)}%0AUrgência: ${urgencia}${obs?'%0AObservações: '+encodeURIComponent(obs):''}`;
+    window.open(mailto, '_blank');
+
+    toast('✅ Pedido de instalação registado.', 'success');
+    document.getElementById('inst-cod').value = '';
+    document.getElementById('inst-data').value = '';
+    document.getElementById('inst-obs').value = '';
+    document.getElementById('inst-equip-list').innerHTML = '';
+    document.getElementById('inst-cliente-info').style.display = 'none';
+    document.getElementById('inst-cod-status').textContent = '';
+    addInstEquipRow();
+  } catch(e) {
+    toast('Erro: ' + e.message, 'error');
+  }
+}
+
 // ─── RESUMO ──────────────────────────────────────────
 async function loadResumo() {
   try {
@@ -3933,147 +4108,144 @@ const AT_DOMESTICO = 'MAQ DOMESTICA DELTA Q';
 let atListaAtiva = [];
 let atTipoEquip = ''; // 'comercial' or 'domestico'
 
+// ─── AT: Switch sub-abas ─────────────────────────────
+function atSwitchSub(sub) {
+  ['chamado','instalacao'].forEach(s => {
+    const btn = document.getElementById('at-sub-' + s);
+    const panel = document.getElementById('at-panel-' + s);
+    const active = s === sub;
+    if (btn) {
+      btn.style.borderBottom = active ? '2px solid var(--accent)' : 'none';
+      btn.style.color = active ? 'var(--accent)' : 'var(--muted)';
+      btn.style.marginBottom = active ? '-2px' : '0';
+    }
+    if (panel) panel.style.display = active ? 'block' : 'none';
+  });
+  if (sub === 'instalacao') { addInstEquipRow(); }
+}
+
 function loadAtTab() {
-  const savedList = localStorage.getItem('delta_clientes_sistema');
   const lista = getListaClientesActiva();
   const vendedores = [...new Set(lista.map(c => c.vendedor).filter(Boolean))].sort();
   const sel = document.getElementById('at-vendedor');
-  sel.innerHTML = '<option value="">— Selecionar vendedor —</option>' +
+  if (sel) sel.innerHTML = '<option value="">— Selecionar —</option>' +
     vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
-  // Reset all
-  atTipoEquip = '';
-  atListaAtiva = [];
-  ['at-tipo-equip-group','at-cliente-search-group','at-cliente-group','at-cliente-info-box',
-   'at-equipamento-group','at-avaria-group','at-descricao-group','at-urgencia-group'].forEach(id => {
-    document.getElementById(id).style.display = 'none';
-  });
-  document.getElementById('at-submit-btn').style.display = 'none';
-  document.getElementById('at-tipo-equip').value = '';
-  document.getElementById('at-cliente-search').value = '';
+
+  // Reset campos — todos visíveis mas disabled
+  atTipoEquip = ''; atListaAtiva = [];
+  atSetDisabled('at-tipo-equip', true, '— Selecionar vendedor —');
+  atSetDisabled('at-cliente-search', true);
+  atSetDisabled('at-cliente', true);
+  atSetDisabled('at-avaria-tipo', true);
+  atSetDisabled('at-urgencia', true);
+  atSetDisabled('at-descricao', true);
+  atSetDisabled('at-submit-btn', true);
   document.getElementById('at-cliente-info-box').style.display = 'none';
-  // Load chamados history
-  const histSec = document.getElementById('at-history-section');
-  if (histSec) {
-    const chamados = getATChamados();
-    histSec.style.display = chamados.length ? 'block' : 'none';
-    loadATResumo();
+  const eg = document.getElementById('at-equipamento');
+  if (eg) { eg.disabled = true; eg.innerHTML = '<option>— Seleciona primeiro o cliente —</option>'; }
+  const modeloGrp = document.getElementById('at-modelo-dom-group');
+  if (modeloGrp) modeloGrp.style.display = 'none';
+  const outGrp = document.getElementById('at-outra-avaria-box');
+  if (outGrp) outGrp.style.display = 'none';
+
+  // Init sub-aba chamado
+  atSwitchSub('chamado');
+  // Reset instalação
+  document.getElementById('inst-cod').value = '';
+  document.getElementById('inst-data').value = '';
+  document.getElementById('inst-obs').value = '';
+  document.getElementById('inst-equip-list').innerHTML = '';
+  document.getElementById('inst-cliente-info').style.display = 'none';
+}
+
+function atSetDisabled(id, disabled, placeholder) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.disabled = disabled;
+  if (placeholder && el.tagName === 'SELECT') {
+    el.options[0].text = placeholder;
   }
 }
 
 function atOnVendedorChange() {
   const vendedor = document.getElementById('at-vendedor').value;
-  // Reset downstream
-  atTipoEquip = '';
-  atListaAtiva = [];
-  document.getElementById('at-tipo-equip').value = '';
-  ['at-cliente-search-group','at-cliente-group','at-cliente-info-box',
-   'at-equipamento-group','at-avaria-group','at-descricao-group','at-urgencia-group'].forEach(id => {
-    document.getElementById(id).style.display = 'none';
-  });
-  document.getElementById('at-submit-btn').style.display = 'none';
-  document.getElementById('at-tipo-equip-group').style.display = vendedor ? 'block' : 'none';
+  atTipoEquip = ''; atListaAtiva = [];
+  // Desbloquear tipo de equipamento se vendedor seleccionado
+  const tipoEl = document.getElementById('at-tipo-equip');
+  if (tipoEl) {
+    tipoEl.disabled = !vendedor;
+    tipoEl.options[0].text = vendedor ? '— Selecionar tipo —' : '— Selecionar vendedor —';
+    tipoEl.value = '';
+  }
+  // Reset campos a jusante
+  atSetDisabled('at-cliente-search', true);
+  const cliEl = document.getElementById('at-cliente');
+  if (cliEl) { cliEl.disabled = true; cliEl.innerHTML = '<option>— Seleciona vendedor e tipo primeiro —</option>'; }
+  atSetDisabled('at-avaria-tipo', true);
+  atSetDisabled('at-urgencia', true);
+  atSetDisabled('at-descricao', true);
+  atSetDisabled('at-submit-btn', true);
+  document.getElementById('at-cliente-info-box').style.display = 'none';
+  const eg = document.getElementById('at-equipamento');
+  if (eg) { eg.disabled = true; eg.innerHTML = '<option>— Seleciona primeiro o cliente —</option>'; }
 }
 
 async function atOnTipoEquipChange() {
-  // Show/hide modelo field and equipment field based on type
   const modeloGroup = document.getElementById('at-modelo-dom-group');
   if (modeloGroup) modeloGroup.style.display = 'none';
-  const equipGroup = document.getElementById('at-equipamento-group');
-  if (equipGroup) equipGroup.style.display = 'none';
-  // Reset equipment select
-  const equipSel0 = document.getElementById('at-equipamento');
-  if (equipSel0) equipSel0.innerHTML = '<option value="">— Seleciona primeiro o cliente —</option>';
   const vendedor = document.getElementById('at-vendedor').value;
   atTipoEquip = document.getElementById('at-tipo-equip').value;
+
+  // Reset campos a jusante
+  const cliEl = document.getElementById('at-cliente');
+  if (cliEl) { cliEl.innerHTML = '<option>A filtrar clientes...</option>'; cliEl.disabled = true; }
+  const cliSearch = document.getElementById('at-cliente-search');
+  if (cliSearch) { cliSearch.value = ''; cliSearch.disabled = true; }
+  atSetDisabled('at-avaria-tipo', true);
+  atSetDisabled('at-urgencia', true);
+  atSetDisabled('at-descricao', true);
+  atSetDisabled('at-submit-btn', true);
+  document.getElementById('at-cliente-info-box').style.display = 'none';
+  const eg = document.getElementById('at-equipamento');
+  if (eg) { eg.disabled = true; eg.innerHTML = '<option>— Seleciona primeiro o cliente —</option>'; }
+
   if (!atTipoEquip || !vendedor) return;
 
-  const savedList = localStorage.getItem('delta_clientes_sistema');
   const lista = getListaClientesActiva();
   const clientesVendedor = lista.filter(c => c.vendedor === vendedor);
 
-  document.getElementById('at-cliente').innerHTML = '<option value="">A filtrar clientes...</option>';
-  ['at-cliente-search-group','at-cliente-group'].forEach(id => {
-    document.getElementById(id).style.display = 'block';
-  });
-  ['at-cliente-info-box','at-equipamento-group','at-avaria-group',
-   'at-descricao-group','at-urgencia-group'].forEach(id => {
-    document.getElementById(id).style.display = 'none';
-  });
-  document.getElementById('at-submit-btn').style.display = 'none';
-  document.getElementById('at-cliente-search').value = '';
-
+  // Filtrar clientes que têm equipamentos do tipo seleccionado
+  let codsComEquip = new Set();
   try {
-    // Busca TODOS os registos do vendedor directamente no Supabase
-    // (não depende da lista estática de clientes — apanha todos os registados)
-    const vendedorEnc = encodeURIComponent(vendedor);
-    const resp = await fetch(
-      `${SUPA_URL}?vendedor=eq.${vendedorEnc}&select=cod,nome,cep,equipamentos`,
-      { headers: HEADERS }
-    );
-    const data = await resp.json();
-
-    // Filter clients by equipment type
-    const clientesElegiveis = [];
-    (data || []).forEach(r => {
+    let data = getRegistosCache();
+    if (!data) {
+      const res = await fetch(SUPA_URL + '?select=cod,equipamentos', { headers: HEADERS });
+      if (res.ok) { data = await res.json(); setRegistosCache(data); }
+    }
+    (data||[]).forEach(r => {
       const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
-      const temEquip = equips.some(e => {
-        if (!e.tipo) return false;
-        const tipoUp = e.tipo.toUpperCase().trim();
-        if (atTipoEquip === 'domestico') {
-          return tipoUp.includes(AT_DOMESTICO);
-        } else {
-          return !tipoUp.includes(AT_DOMESTICO) && !AT_EXCLUIR_EQUIP.some(ex => tipoUp.includes(ex));
-        }
+      const temTipo = equips.some(e => {
+        const t = (e.tipo||'').toUpperCase();
+        if (atTipoEquip === 'domestico') return t.includes(AT_DOMESTICO);
+        return !t.includes(AT_DOMESTICO) && !AT_EXCLUIR_EQUIP.some(ex => t.includes(ex));
       });
-      if (temEquip) {
-        clientesElegiveis.push({
-          cod: String(r.cod || ''),
-          nome: r.nome || r.cod || '—',
-          cep: r.cep || '',
-          vendedor: vendedor,
-          // equipamentos elegíveis para este tipo
-          equipsElegiveis: equips.filter(e => {
-            if (!e.tipo) return false;
-            const tipoUp = e.tipo.toUpperCase().trim();
-            return atTipoEquip === 'domestico'
-              ? tipoUp.includes(AT_DOMESTICO)
-              : !tipoUp.includes(AT_DOMESTICO) && !AT_EXCLUIR_EQUIP.some(ex => tipoUp.includes(ex));
-          })
-        });
-      }
+      if (temTipo) codsComEquip.add(String(r.cod).trim());
     });
+  } catch(e) { console.warn(e); }
 
-    // Remove duplicados (mesmo cod, mantém o mais recente)
-    const seen = new Set();
-    atListaAtiva = clientesElegiveis
-      .filter(c => { if (seen.has(c.cod)) return false; seen.add(c.cod); return true; })
-      .sort((a, b) => a.nome.localeCompare(b.nome));
+  atListaAtiva = clientesVendedor.filter(c => codsComEquip.has(String(c.cod).trim()));
+  const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
+  if (!atListaAtiva.length) atListaAtiva = clientesVendedor;
 
-  } catch(err) {
-    console.error('atOnTipoEquipChange error:', err);
-    atListaAtiva = [...clientesVendedor].sort((a, b) => a.nome.localeCompare(b.nome));
+  // Preencher e desbloquear lista de clientes
+  if (cliEl) {
+    cliEl.innerHTML = '<option value="">— Selecionar cliente —</option>' +
+      atListaAtiva.map(c => `<option value="${c.cod}">${c.cod} — ${c.nome}</option>`).join('');
+    cliEl.disabled = false;
   }
-  atRenderClientesList(atListaAtiva);
-}
+  if (cliSearch) cliSearch.disabled = false;
 
-function atFiltrarLista() {
-  const q = document.getElementById('at-cliente-search').value.trim().toLowerCase();
-  if (!atListaAtiva.length) return;
-  const filtered = q
-    ? atListaAtiva.filter(c => c.cod.toLowerCase().includes(q) || c.nome.toLowerCase().includes(q))
-    : atListaAtiva;
-  atRenderClientesList(filtered);
-}
 
-function atRenderClientesList(lista) {
-  const sel = document.getElementById('at-cliente');
-  if (!lista.length) {
-    sel.innerHTML = '<option value="">Nenhum cliente com equipamentos elegíveis</option>';
-    return;
-  }
-  sel.innerHTML = '<option value="">— Selecionar cliente (' + lista.length + ') —</option>' +
-    lista.map(c => `<option value="${c.cod}" data-nome="${c.nome}" data-cep="${c.cep}" data-vendedor="${c.vendedor}">${c.nome} (${c.cod})</option>`).join('');
-}
 
 async function atPreencherCliente() {
   const sel = document.getElementById('at-cliente');
@@ -4137,16 +4309,15 @@ async function atPreencherCliente() {
     selEquip.innerHTML = '<option value="">Erro ao carregar equipamentos</option>';
   }
 
-  // Show remaining fields
-  ['at-avaria-group','at-descricao-group','at-urgencia-group'].forEach(id => {
-    document.getElementById(id).style.display = 'block';
-  });
-  // Show modelo only for doméstico; show equipment only for profissional
+  // Desbloquear campos a jusante
+  atSetDisabled('at-avaria-tipo', false);
+  atSetDisabled('at-urgencia', false);
+  atSetDisabled('at-descricao', false);
+  atSetDisabled('at-submit-btn', false);
+  // Modelo só para doméstico; equipamento só para profissional
   const modeloGroup = document.getElementById('at-modelo-dom-group');
-  const equipGroup2 = document.getElementById('at-equipamento-group');
   if (modeloGroup) modeloGroup.style.display = atTipoEquip === 'domestico' ? 'block' : 'none';
-  if (equipGroup2) equipGroup2.style.display = atTipoEquip === 'comercial' ? 'block' : 'none';
-  document.getElementById('at-submit-btn').style.display = 'block';
+  if (selEquip) selEquip.disabled = atTipoEquip !== 'comercial';
 }
 
 function atToggleOutraAvaria() {
