@@ -5034,9 +5034,14 @@ async function loadContratosTab(forceRefresh = false) {
       selVC.innerHTML = '<option value="">Todos os vendedores</option>' +
         vendedoresContr.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
     }
+    // Construir mapa de docs para marcar botões
+    const docsMap = {};
+    data.forEach(r => { if (r.docs) docsMap[String(r.cod)] = r.docs; });
+    window._contratosDocsMap = docsMap;
     window._contratosAllRows = rows;
     contratosCache = html;
     cont.innerHTML = html;
+    setTimeout(() => contratoMarkExisting(rows, docsMap), 100);
 
     // Event delegation for resumo table clicks (once only)
     if (!cont._resumoListenerAdded) {
@@ -5232,33 +5237,36 @@ function filtrarContratosVendedor() {
 }
 
 // ─── SUPABASE STORAGE — PDFs de Contratos ────────────
-const STORAGE_URL = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
 const STORAGE_BUCKET = 'contratos';
+const STORAGE_BASE = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
+const STORAGE_PUBLIC = STORAGE_BASE + '/public/' + STORAGE_BUCKET;
+
+// docs_index: { "cod/contrato": {nf: true/false, ct: true/false} }
+// Guardado na tabela registos no campo docs_index (jsonb)
+// Para não precisar de consultar o Storage em runtime
 
 function contratoUploadPdf(tipo, docPath) {
-  // tipo: 'nf' ou 'ct'
   const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
   const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
   const storagePath = `${docPath}/${fileName}`;
+  const [cod, numContrato] = docPath.split('/');
 
-  // Criar input file temporário
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'application/pdf';
   input.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.type !== 'application/pdf') { toast('Apenas ficheiros PDF são aceites.', 'error'); return; }
+    if (file.type !== 'application/pdf') { toast('Apenas PDFs são aceites.', 'error'); return; }
 
-    const [cod, numContrato] = docPath.split('/');
     const btnId = `btn-${tipo}-${cod}-${numContrato}`;
     const btn = document.getElementById(btnId);
     if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
     toast(`A fazer upload de ${label}...`);
 
     try {
-      // Tentar upload (upsert — substitui se já existir)
-      const res = await fetch(`https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/${STORAGE_BUCKET}/${storagePath}`, {
+      // Upload para o Storage (bucket público)
+      const res = await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
         method: 'POST',
         headers: {
           'apikey': SUPA_KEY,
@@ -5268,50 +5276,71 @@ function contratoUploadPdf(tipo, docPath) {
         },
         body: file
       });
+      if (!res.ok) throw new Error('Upload falhou: ' + res.status);
 
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(err);
+      // Guardar referência no Supabase (campo docs no registo)
+      // Buscar o registo do cliente pelo código
+      const regsRes = await fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS });
+      if (regsRes.ok) {
+        const regs = await regsRes.json();
+        if (regs.length) {
+          const reg = regs[0];
+          const docs = reg.docs || {};
+          if (!docs[numContrato]) docs[numContrato] = {};
+          docs[numContrato][tipo] = storagePath;
+          await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
+            method: 'PATCH',
+            headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+            body: JSON.stringify({ docs })
+          });
+        }
       }
 
-      const pubUrlAfterUpload = `https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`;
-      toast(`✅ ${label} guardada com sucesso.`, 'success');
+      const pubUrl = `${STORAGE_PUBLIC}/${storagePath}`;
+      toast(`✅ ${label} guardada.`, 'success');
       if (btn) {
         btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
-        btn.style.borderColor = '#16a34a';
-        btn.style.color = '#16a34a';
+        btn.style.cssText += ';border-color:#16a34a;color:#16a34a;';
         btn.disabled = false;
-        contratoAddDownloadBtn(btn, tipo, pubUrlAfterUpload, label);
+        contratoSetDownloadBtn(btn, pubUrl, label);
       }
-    } catch(e) {
-      toast('Erro no upload: ' + e.message, 'error');
+    } catch(err) {
+      toast('Erro: ' + err.message, 'error');
       if (btn) { btn.textContent = tipo === 'nf' ? '📄 NF' : '✍ CT'; btn.disabled = false; }
     }
   };
   input.click();
 }
 
-function contratoAddDownloadBtn(uploadBtn, tipo, storagePath, label) {
-  // Remover botão de download anterior se existir
-  const existingDl = uploadBtn.nextElementSibling;
-  if (existingDl && existingDl.dataset.dlBtn) existingDl.remove();
-
-  const dlBtn = document.createElement('button');
-  dlBtn.dataset.dlBtn = '1';
-  dlBtn.title = `Ver/Download ${label}`;
-  dlBtn.textContent = '⬇';
-  dlBtn.style.cssText = 'background:none;border:1px solid #1976d2;border-radius:4px;padding:2px 5px;cursor:pointer;font-size:11px;margin:1px;color:#1976d2;';
-  dlBtn.onclick = () => contratoDownloadPdf(storagePath, label);
-  uploadBtn.parentElement.insertBefore(dlBtn, uploadBtn.nextSibling);
+function contratoSetDownloadBtn(uploadBtn, pubUrl, label) {
+  // Remover btn ⬇ anterior se existir
+  let dl = uploadBtn.parentElement.querySelector('[data-dl="1"]');
+  if (dl) dl.remove();
+  dl = document.createElement('button');
+  dl.dataset.dl = '1';
+  dl.title = 'Abrir ' + label;
+  dl.textContent = '⬇';
+  dl.style.cssText = 'background:none;border:1px solid #1976d2;border-radius:4px;padding:2px 5px;cursor:pointer;font-size:11px;margin:1px;color:#1976d2;';
+  dl.onclick = () => window.open(pubUrl, '_blank');
+  uploadBtn.insertAdjacentElement('afterend', dl);
 }
 
-async function contratoDownloadPdf(url, label) {
-  // url já é o URL público completo
-  window.open(url, '_blank');
-}
-
-async function contratoCheckDocs(allRows) {
-  // Verificação desactivada — botão ⬇ aparece após upload na mesma sessão
+function contratoMarkExisting(allRows, docsMap) {
+  // docsMap: { "cod": { docs: { "numContrato": { nf: path, ct: path } } } }
+  if (!allRows || !docsMap) return;
+  allRows.forEach(r => {
+    const regDocs = docsMap[String(r.cod)];
+    if (!regDocs || !regDocs[r.contrato]) return;
+    const contractDocs = regDocs[r.contrato];
+    ['nf','ct'].forEach(tipo => {
+      if (!contractDocs[tipo]) return;
+      const btn = document.getElementById(`btn-${tipo}-${r.cod}-${r.contrato}`);
+      if (!btn) return;
+      btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
+      btn.style.cssText += ';border-color:#16a34a;color:#16a34a;';
+      contratoSetDownloadBtn(btn, `${STORAGE_PUBLIC}/${contractDocs[tipo]}`, tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado');
+    });
+  });
 }
 
 function renderContratosFromCache(html) {
