@@ -4249,8 +4249,10 @@ async function atPreencherCliente() {
   info.innerHTML = `<strong>${opt.dataset.nome}</strong> &nbsp;·&nbsp; Cód: ${opt.value} &nbsp;·&nbsp; CEP: ${opt.dataset.cep}`;
   box.style.display = 'block';
 
+  if (!selEquip) return;
   selEquip.innerHTML = '<option value="">A carregar equipamentos...</option>';
-  document.getElementById('at-equipamento-group').style.display = 'block';
+  const equipGroup = document.getElementById('at-equipamento-group');
+  if (equipGroup) equipGroup.style.display = 'block';
 
   try {
     const resp = await fetch(
@@ -4285,7 +4287,7 @@ async function atPreencherCliente() {
         Array.from(selEquip.options).forEach(opt => opt.selected = true);
         document.getElementById('at-equipamento-group').style.display = 'none';
       } else {
-        document.getElementById('at-equipamento-group').style.display = 'block';
+      
         document.getElementById('at-equip-selected-info').style.display = 'block';
       }
     }
