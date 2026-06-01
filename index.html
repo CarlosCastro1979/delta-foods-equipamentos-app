@@ -5013,12 +5013,11 @@ async function loadContratosTab(forceRefresh = false) {
         <td style="${td}text-align:center;background:#F8FFF9">${r.pct!==null&&r.mesesDecorridos>0?`<span style="background:${pBg};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700">${r.pct}%</span>`:'—'}</td>
         <td style="${td}text-align:center;overflow:hidden;">${alertaHtml}</td>
         <td style="${td}text-align:center;white-space:nowrap">
-          <button data-upload-tipo="nf" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}"
-            onclick="contratoUploadPdf('nf','${r.cod}/${r.contrato}')" title="Nota Fiscal"
-            style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px">📄 NF</button>
-          <button data-upload-tipo="ct" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}"
-            onclick="contratoUploadPdf('ct','${r.cod}/${r.contrato}')" title="Contrato Assinado"
-            style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px">✍ CT</button>
+          <button onclick="contratoAbrirDocs('${r.cod}','${r.contrato}')"
+            style="background:none;border:1px solid #aaa;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;"
+            title="Gerir documentos">📁</button>
+          <span data-upload-tipo="nf" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
+          <span data-upload-tipo="ct" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
         </td>
       </tr>`;
     });
@@ -5219,12 +5218,11 @@ function filtrarContratosVendedor() {
       <td style="${td}text-align:center;background:#F8FFF9">${r.pct !== null && r.mesesDecorridos > 0 ? `<span style="background:${pBg};color:${pCol};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pct}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
       <td style="${td}text-align:center">${alertaHtml}</td>
       <td style="${td}text-align:center;white-space:nowrap">
-        <button data-upload-tipo="nf" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}"
-          onclick="contratoUploadPdf('nf','${docPath}')" title="Nota Fiscal"
-          style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px">📄 NF</button>
-        <button data-upload-tipo="ct" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}"
-          onclick="contratoUploadPdf('ct','${docPath}')" title="Contrato Assinado"
-          style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px">✍ CT</button>
+        <button onclick="contratoAbrirDocs('${r.cod}','${r.contrato}')"
+          style="background:none;border:1px solid #aaa;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;"
+          title="Gerir documentos">📁</button>
+          <span data-upload-tipo="nf" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
+          <span data-upload-tipo="ct" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
       </td>
     </tr>`;
   });
@@ -5329,7 +5327,135 @@ function contratoUploadPdf(tipo, docPath) {
   input.click();
 }
 
+// ─── MODAL DOCS DE CONTRATOS ─────────────────────────
+function contratoAbrirDocs(cod, num) {
+  const modal = document.getElementById('docs-modal');
+  document.getElementById('docs-modal-titulo').textContent = `Documentos — ${num}`;
+  document.getElementById('docs-modal-cod').value = cod;
+  document.getElementById('docs-modal-num').value = num;
+
+  // Ver estado actual dos docs
+  let localDocs = {};
+  try { localDocs = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch(e) {}
+
+  ['nf','ct'].forEach(tipo => {
+    const hasDoc = !!localDocs[tipo];
+    const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
+    const icon = tipo === 'nf' ? '📄' : '✍';
+    const row = document.getElementById('docs-row-' + tipo);
+    row.innerHTML = hasDoc
+      ? `<span style="color:#16a34a;font-weight:600">${icon} ${label}</span>
+         <div style="display:flex;gap:6px;margin-top:4px;">
+           <button class="btn btn-secondary btn-sm" onclick="contratoDocsDownload('${cod}','${num}','${tipo}')" style="font-size:12px;">⬇ Abrir</button>
+           <button class="btn btn-secondary btn-sm" onclick="contratoDocsUpload('${cod}','${num}','${tipo}')" style="font-size:12px;">↩ Substituir</button>
+           <button class="btn btn-secondary btn-sm" onclick="contratoDocsDelete('${cod}','${num}','${tipo}')" style="font-size:12px;color:var(--danger);border-color:var(--danger);">🗑 Eliminar</button>
+         </div>`
+      : `<span style="color:var(--muted)">${icon} ${label} — não carregado</span>
+         <div style="margin-top:4px;">
+           <button class="btn btn-primary btn-sm" onclick="contratoDocsUpload('${cod}','${num}','${tipo}')" style="font-size:12px;">⬆ Carregar PDF</button>
+         </div>`;
+  });
+
+  modal.style.display = 'flex';
+}
+
+function contratoDocsUpload(cod, num, tipo) {
+  const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'application/pdf';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
+    const storagePath = `${cod}/${num}/${fileName}`;
+    const statusEl = document.getElementById('docs-status');
+    statusEl.textContent = 'A carregar...'; statusEl.style.color = 'var(--muted)';
+    try {
+      const res = await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
+        method: 'POST',
+        headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
+        body: file
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      // Guardar no localStorage
+      const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
+      if (!saved[num]) saved[num] = {};
+      saved[num][tipo] = storagePath;
+      localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
+      // Guardar no Supabase
+      fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS })
+        .then(r=>r.json()).then(regs => {
+          if (!regs.length) return;
+          const reg = regs[0]; const docs = reg.docs || {};
+          if (!docs[num]) docs[num] = {};
+          docs[num][tipo] = storagePath;
+          return fetch(`${SUPA_URL}?id=eq.${reg.id}`, { method:'PATCH', headers:{...HEADERS,'Content-Type':'application/json','Prefer':'return=minimal'}, body:JSON.stringify({docs}) });
+        }).catch(()=>{});
+      statusEl.textContent = '✅ ' + label + ' guardada!'; statusEl.style.color = '#16a34a';
+      // Actualizar indicador no botão 📁
+      contratoMarcarBotao(cod, num, tipo);
+      // Reabrir modal para mostrar estado actualizado
+      setTimeout(() => contratoAbrirDocs(cod, num), 500);
+    } catch(err) {
+      statusEl.textContent = 'Erro: ' + err.message; statusEl.style.color = 'var(--danger)';
+    }
+  };
+  input.click();
+}
+
+function contratoDocsDownload(cod, num, tipo) {
+  const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
+  window.open(`${STORAGE_PUBLIC}/${cod}/${num}/${fileName}`, '_blank');
+}
+
+async function contratoDocsDelete(cod, num, tipo) {
+  const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
+  if (!confirm(`Eliminar ${label}?`)) return;
+  const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
+  const storagePath = `${cod}/${num}/${fileName}`;
+  await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
+    method:'DELETE', headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}
+  });
+  // Remover localStorage
+  try {
+    const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
+    if (saved[num]) { delete saved[num][tipo]; localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved)); }
+  } catch(e) {}
+  // Remover Supabase
+  fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers:HEADERS })
+    .then(r=>r.json()).then(regs => {
+      if (!regs.length) return;
+      const reg = regs[0]; const docs = reg.docs || {};
+      if (docs[num]) { delete docs[num][tipo]; }
+      return fetch(`${SUPA_URL}?id=eq.${reg.id}`, { method:'PATCH', headers:{...HEADERS,'Content-Type':'application/json','Prefer':'return=minimal'}, body:JSON.stringify({docs}) });
+    }).catch(()=>{});
+  // Actualizar botão
+  contratoMarcarBotao(cod, num, tipo, true);
+  contratoAbrirDocs(cod, num);
+}
+
+function contratoMarcarBotao(cod, num, tipo, removed) {
+  // Actualizar o ícone do botão 📁 para mostrar se tem docs
+  const spans = document.querySelectorAll(`[data-upload-tipo][data-upload-cod="${cod}"][data-upload-num="${num}"]`);
+  spans.forEach(s => { if (s.dataset.uploadTipo === tipo) s.dataset.hasDoc = removed ? '' : '1'; });
+  // Actualizar cor do botão 📁
+  const btn = document.querySelector(`button[onclick*="contratoAbrirDocs('${cod}','${num}')"]`);
+  if (!btn) return;
+  const allSpans = document.querySelectorAll(`[data-upload-cod="${cod}"][data-upload-num="${num}"]`);
+  const anyDoc = [...allSpans].some(s => s.dataset.hasDoc === '1');
+  btn.style.borderColor = anyDoc ? '#16a34a' : '#aaa';
+  btn.style.color = anyDoc ? '#16a34a' : '';
+  btn.textContent = anyDoc ? '📁✅' : '📁';
+}
+
+function contratoFecharDocs() {
+  document.getElementById('docs-modal').style.display = 'none';
+  document.getElementById('docs-status').textContent = '';
+}
+
 function contratoSetDownloadBtn(uploadBtn, pubUrl, label) {
+  // Mantido para compatibilidade — já não usado directamente
+}
   const tipo = uploadBtn.dataset.uploadTipo;
   const cod = uploadBtn.dataset.uploadCod;
   const num = uploadBtn.dataset.uploadNum;
@@ -5399,27 +5525,30 @@ function contratoMarkExisting(allRows, docsMap) {
   allRows.forEach(r => {
     const cod = String(r.cod);
     const num = r.contrato;
-
-    // Verificar Supabase docs
     const supabaseDocs = (docsMap || {})[cod]?.[num] || {};
-    // Verificar localStorage
     let localDocs = {};
     try { localDocs = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch(e) {}
-
+    // Sincronizar localStorage com Supabase
+    if (Object.keys(supabaseDocs).length) {
+      try {
+        const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
+        saved[num] = { ...localDocs, ...supabaseDocs };
+        localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
+      } catch(e) {}
+    }
+    const allDocs = { ...localDocs, ...supabaseDocs };
+    const hasNf = !!allDocs['nf'];
+    const hasCt = !!allDocs['ct'];
+    if (!hasNf && !hasCt) return;
+    // Marcar os spans hidden
     ['nf','ct'].forEach(tipo => {
-      const path = supabaseDocs[tipo] || localDocs[tipo];
-      if (!path) return;
-      // Encontrar botão por data attributes
-      let foundBtn = null;
-      document.querySelectorAll(`[data-upload-tipo="${tipo}"]`).forEach(b => {
-        if (b.dataset.uploadCod === cod && b.dataset.uploadNum === num) foundBtn = b;
+      document.querySelectorAll(`[data-upload-tipo="${tipo}"][data-upload-cod="${cod}"][data-upload-num="${num}"]`).forEach(s => {
+        s.dataset.hasDoc = allDocs[tipo] ? '1' : '';
       });
-      if (!foundBtn) return;
-      foundBtn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
-      foundBtn.style.borderColor = '#16a34a';
-      foundBtn.style.color = '#16a34a';
-      contratoSetDownloadBtn(foundBtn, `${STORAGE_PUBLIC}/${path}`, tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado');
     });
+    // Actualizar botão 📁
+    const btn = document.querySelector(`button[onclick*="contratoAbrirDocs('${cod}','${num}')"]`);
+    if (btn) { btn.style.borderColor = '#16a34a'; btn.style.color = '#16a34a'; btn.textContent = '📁✅'; }
   });
 }
 
@@ -6593,6 +6722,23 @@ function showToast(msg, type) {
 }
 
 </script>
+<!-- MODAL DOCS CONTRATOS -->
+<div id="docs-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border-radius:12px;padding:24px;width:90%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <h3 id="docs-modal-titulo" style="font-size:15px;font-weight:600;margin:0;">Documentos</h3>
+      <button onclick="contratoFecharDocs()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+    </div>
+    <input type="hidden" id="docs-modal-cod">
+    <input type="hidden" id="docs-modal-num">
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div id="docs-row-nf" style="padding:12px;background:var(--surface2);border-radius:8px;"></div>
+      <div id="docs-row-ct" style="padding:12px;background:var(--surface2);border-radius:8px;"></div>
+    </div>
+    <div id="docs-status" style="margin-top:12px;font-size:13px;text-align:center;min-height:20px;"></div>
+  </div>
+</div>
+
 </body>
 
 
