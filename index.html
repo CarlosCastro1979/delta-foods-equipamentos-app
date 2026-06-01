@@ -1130,15 +1130,8 @@ var _unused_placeholder = 1;
         <input type="file" id="sap-file-input" accept=".xlsx,.xls" style="display:none" onchange="carregarListaSAP(event)">
       </label>
 
-      <div id="sap-load-status" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;">
-        <div id="sap-status-text" style="font-size:13px;color:var(--text);margin-bottom:12px;"></div>
-        <div style="display:flex;gap:8px;">
-          <button id="sap-confirm-btn" class="btn btn-primary btn-sm" onclick="confirmarCargaSAP()">✅ Confirmar importação</button>
-          <button class="btn btn-secondary btn-sm" onclick="cancelarCargaSAP()">Cancelar</button>
-        </div>
-      </div>
-
-      <div id="sap-result" style="display:none;font-size:13px;padding:12px 16px;border-radius:8px;border:1px solid #c8e6c9;background:#e8f5e9;color:#2e7d32;"></div>
+      <div id="sap-load-status-old" style="display:none"></div>
+      <div id="sap-result-old" style="display:none"></div>
 
       <div style="margin-top:24px;padding:14px 16px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);">
         <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Última carga</div>
@@ -3637,7 +3630,10 @@ async function confirmarCargaSAP() {
   // 1. Guardar nova lista activa
   localStorage.setItem('delta_clientes_sistema', JSON.stringify(novaLista));
   localStorage.setItem('delta_sap_ultima_carga', JSON.stringify({
-    data: new Date().toISOString(), ficheiro: fileName, total: novaLista.length, anulados: codsAnulados.length
+    data: new Date().toISOString(), ficheiro: fileName, total: novaLista.length,
+    anulados: codsAnulados.length,
+    adicionados: _sapImportBuffer._adicionados || 0,
+    removidos: _sapImportBuffer._removidos || 0
   }));
   foraSPCache = null;
   clearRegistosCache();
@@ -3719,12 +3715,15 @@ function renderUltimaCargaSAP() {
   try {
     const saved = localStorage.getItem('delta_sap_ultima_carga');
     if (!saved) { el.textContent = 'Nenhuma carga efectuada neste browser.'; return; }
-    const { data, ficheiro, total, anulados } = JSON.parse(saved);
+    const { data, ficheiro, total, anulados, adicionados, removidos } = JSON.parse(saved);
     const d = new Date(data);
-    el.innerHTML = `<strong>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</strong>
+    let html = `<strong>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</strong>
       &nbsp;·&nbsp; ${ficheiro}
-      &nbsp;·&nbsp; ${total} clientes activos
-      ${anulados ? `&nbsp;·&nbsp; <span style="color:#c62828">${anulados} anulado(s) removidos</span>` : ''}`;
+      &nbsp;·&nbsp; <span style="color:#2e7d32">${total} clientes activos</span>`;
+    if (adicionados) html += ` &nbsp;·&nbsp; <span style="color:#1976d2">+${adicionados} novos</span>`;
+    if (removidos)   html += ` &nbsp;·&nbsp; <span style="color:#f57c00">-${removidos} removidos</span>`;
+    if (anulados)    html += ` &nbsp;·&nbsp; <span style="color:#c62828">${anulados} anulado(s) apagado(s)</span>`;
+    el.innerHTML = html;
   } catch(e) { el.textContent = '—'; }
 }
 
@@ -5437,8 +5436,10 @@ async function contratoDocsDelete(cod, num, tipo) {
   if (!confirm(`Eliminar ${label}?`)) return;
   const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
   const storagePath = `${cod}/${num}/${fileName}`;
-  await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
-    method:'DELETE', headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}
+  // DELETE no Supabase Storage — endpoint correcto para bucket público
+  await fetch(`https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/${STORAGE_BUCKET}/${storagePath}`, {
+    method:'DELETE',
+    headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'}
   });
   // Remover localStorage
   try {
