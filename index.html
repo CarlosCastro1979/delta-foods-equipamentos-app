@@ -4228,10 +4228,29 @@ async function atOnTipoEquipChange() {
   // Preencher e desbloquear lista de clientes
   if (cliEl) {
     cliEl.innerHTML = '<option value="">— Selecionar cliente —</option>' +
-      atListaAtiva.map(c => `<option value="${c.cod}">${c.cod} — ${c.nome}</option>`).join('');
+      atListaAtiva.map(c => `<option value="${c.cod}" data-nome="${(c.nome||'').replace(/"/g,'&quot;')}" data-cep="${c.cep||''}">${c.cod} — ${c.nome}</option>`).join('');
+    // Guardar lista activa para filtro de pesquisa
+    cliEl._listaCompleta = cliEl.innerHTML;
     cliEl.disabled = false;
   }
   if (cliSearch) cliSearch.disabled = false;
+}
+
+function atFiltrarLista() {
+  const search = (document.getElementById('at-cliente-search')?.value || '').toLowerCase().trim();
+  const cliEl = document.getElementById('at-cliente');
+  if (!cliEl || !cliEl._listaCompleta) return;
+  if (!search) {
+    cliEl.innerHTML = cliEl._listaCompleta;
+    return;
+  }
+  // Filtrar opções pelo texto
+  const parser = new DOMParser();
+  const doc = parser.parseFromString('<select>' + cliEl._listaCompleta + '</select>', 'text/html');
+  const opts = [...doc.querySelectorAll('option')];
+  cliEl.innerHTML = opts
+    .filter(o => !o.value || o.textContent.toLowerCase().includes(search))
+    .map(o => o.outerHTML).join('');
 }
 
 async function atPreencherCliente() {
@@ -4246,12 +4265,17 @@ async function atPreencherCliente() {
     return;
   }
 
-  info.innerHTML = `<strong>${opt.dataset.nome}</strong> &nbsp;·&nbsp; Cód: ${opt.value} &nbsp;·&nbsp; CEP: ${opt.dataset.cep}`;
+  // nome pode estar em dataset.nome ou no texto da opção
+  const nomeCliente = opt.dataset.nome || opt.textContent.replace(opt.value + ' — ', '').trim();
+  const cepCliente = opt.dataset.cep || '';
+  info.innerHTML = `<strong>${nomeCliente}</strong> &nbsp;·&nbsp; Cód: ${opt.value} &nbsp;·&nbsp; CEP: ${cepCliente || '—'}`;
   box.style.display = 'block';
 
   if (!selEquip) return;
   selEquip.innerHTML = '<option value="">A carregar equipamentos...</option>';
 
+  window._atClienteNome = nomeCliente;
+  window._atClienteCod = opt.value;
   try {
     const resp = await fetch(
       `${SUPA_URL}?cod=eq.${opt.value}&select=equipamentos,contrato`,
@@ -4345,9 +4369,9 @@ async function enviarPedidoAT() {
   if (avariaTipo === 'Outra avaria' && !outraAvaria) { toast('Descreve a avaria.', 'error'); return; }
 
   const avaria      = avariaTipo === 'Outra avaria' ? outraAvaria : avariaTipo;
-  const clienteNome = clienteOpt.dataset.nome;
+  const clienteNome = clienteOpt?.dataset?.nome || window._atClienteNome || clienteOpt?.textContent?.replace(clienteSel.value + ' — ', '').trim() || clienteSel.value;
   const clienteCod  = clienteSel.value;
-  const clienteCep  = clienteOpt.dataset.cep;
+  const clienteCep  = clienteOpt?.dataset?.cep || '';
   const data = new Date().toLocaleDateString('pt-BR');
   const hora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
 
@@ -5455,33 +5479,6 @@ function contratoFecharDocs() {
 
 function contratoSetDownloadBtn(uploadBtn, pubUrl, label) {
   // Mantido para compatibilidade — já não usado directamente
-}
-  const tipo = uploadBtn.dataset.uploadTipo;
-  const cod = uploadBtn.dataset.uploadCod;
-  const num = uploadBtn.dataset.uploadNum;
-
-  // Remover botões anteriores deste tipo
-  const parent = uploadBtn.parentElement;
-  const existing = parent.querySelectorAll(`[data-dl-tipo="${tipo}"]`);
-  existing.forEach(e => e.remove());
-
-  // Botão download ⬇
-  const dl = document.createElement('button');
-  dl.dataset.dlTipo = tipo;
-  dl.title = 'Abrir ' + label;
-  dl.textContent = '⬇';
-  dl.style.cssText = 'background:none;border:1px solid #1976d2;border-radius:4px;padding:2px 5px;cursor:pointer;font-size:11px;margin:1px;color:#1976d2;';
-  dl.onclick = () => window.open(pubUrl, '_blank');
-  uploadBtn.insertAdjacentElement('afterend', dl);
-
-  // Botão eliminar 🗑
-  const del = document.createElement('button');
-  del.dataset.dlTipo = tipo;
-  del.title = 'Eliminar ' + label;
-  del.textContent = '🗑';
-  del.style.cssText = 'background:none;border:1px solid #dc2626;border-radius:4px;padding:2px 4px;cursor:pointer;font-size:10px;margin:1px;color:#dc2626;';
-  del.onclick = () => contratoDeletePdf(tipo, cod, num, pubUrl, uploadBtn, label);
-  dl.insertAdjacentElement('afterend', del);
 }
 
 async function contratoDeletePdf(tipo, cod, num, pubUrl, uploadBtn, label) {
