@@ -4072,7 +4072,10 @@ const EQUIPAMENTOS = [
   'MAYOR Q',
   'QUORUM',
   'MAQ DOMESTICA DELTA Q',
-  'EQUIPAMENTO PROPRIO'
+  'EQUIPAMENTO PROPRIO',
+  'CÓDIGO DE ENTREGA',
+  'CLIENTE DE OUTROS PRODUTOS',
+  'CLIENTE CONTENCIOSO'
 ];
 
 let allData = [];
@@ -5418,6 +5421,26 @@ function contratoAbrirDocs(cod, num) {
          </div>`;
   });
 
+  // Actualizar botão 📁 em tempo real
+  const btnDoc = document.querySelector(`button[onclick*="contratoAbrirDocs('${cod}','${num}')"]`);
+  if (btnDoc) {
+    let localDocs2 = {};
+    try { localDocs2 = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch(e) {}
+    const nfOk = !!localDocs2['nf'];
+    const ctOk = !!localDocs2['ct'];
+    if (nfOk || ctOk) {
+      btnDoc.style.borderColor = '#16a34a';
+      btnDoc.style.color = '#16a34a';
+      let indicator = nfOk && ctOk ? ' ✓✓' : nfOk ? ' NF✓' : ' CT✓';
+      btnDoc.innerHTML = '📁' + indicator;
+      btnDoc.title = (nfOk ? '✅ NF carregada' : '❌ NF em falta') + '\n' + (ctOk ? '✅ CT carregado' : '❌ CT em falta');
+    } else {
+      btnDoc.style.borderColor = '#aaa';
+      btnDoc.style.color = '';
+      btnDoc.innerHTML = '📁';
+      btnDoc.title = 'Gerir documentos';
+    }
+  }
   modal.style.display = 'flex';
 }
 
@@ -5583,9 +5606,22 @@ function contratoMarkExisting(allRows, docsMap) {
         s.dataset.hasDoc = allDocs[tipo] ? '1' : '';
       });
     });
-    // Actualizar botão 📁
+    // Actualizar botão 📁 com indicadores NF/CT
     const btn = document.querySelector(`button[onclick*="contratoAbrirDocs('${cod}','${num}')"]`);
-    if (btn) { btn.style.borderColor = '#16a34a'; btn.style.color = '#16a34a'; btn.textContent = '📁✅'; }
+    if (btn) {
+      const nfOk = !!allDocs['nf'];
+      const ctOk = !!allDocs['ct'];
+      btn.style.borderColor = '#16a34a';
+      btn.style.color = '#16a34a';
+      // Mostrar quais docs existem
+      let indicator = '';
+      if (nfOk && ctOk) indicator = ' ✓✓';
+      else if (nfOk) indicator = ' NF✓';
+      else if (ctOk) indicator = ' CT✓';
+      btn.innerHTML = '📁' + indicator;
+      btn.title = (nfOk ? '✅ NF carregada' : '❌ NF em falta') + '
+' + (ctOk ? '✅ CT carregado' : '❌ CT em falta');
+    }
   });
 }
 
