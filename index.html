@@ -5280,7 +5280,16 @@ function contratoUploadPdf(tipo, docPath) {
 
       const pubUrl = `${STORAGE_PUBLIC}/${storagePath}`;
 
-      // Actualizar botão — procurar por data attributes
+      // 1. Guardar em localStorage imediatamente
+      const docsLocalKey = 'delta_docs_' + cod;
+      try {
+        const saved = JSON.parse(localStorage.getItem(docsLocalKey) || '{}');
+        if (!saved[numContrato]) saved[numContrato] = {};
+        saved[numContrato][tipo] = storagePath;
+        localStorage.setItem(docsLocalKey, JSON.stringify(saved));
+      } catch(e) {}
+
+      // 2. Actualizar botão imediatamente
       const allBtns = document.querySelectorAll(`[data-upload-tipo="${tipo}"]`);
       let foundBtn = null;
       allBtns.forEach(b => {
@@ -5296,7 +5305,7 @@ function contratoUploadPdf(tipo, docPath) {
       }
       toast(`✅ ${label} guardada.`, 'success');
 
-      // Guardar referência no Supabase em background (não bloqueia)
+      // 3. Guardar no Supabase em background
       fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS })
         .then(r => r.json())
         .then(regs => {
@@ -5311,7 +5320,7 @@ function contratoUploadPdf(tipo, docPath) {
             body: JSON.stringify({ docs })
           });
         })
-        .catch(e => console.warn('docs save:', e));
+        .catch(e => console.warn('docs save supabase:', e));
     } catch(err) {
       toast('Erro: ' + err.message, 'error');
       if (btn) { btn.textContent = tipo === 'nf' ? '📄 NF' : '✍ CT'; btn.disabled = false; }
@@ -5334,19 +5343,30 @@ function contratoSetDownloadBtn(uploadBtn, pubUrl, label) {
 }
 
 function contratoMarkExisting(allRows, docsMap) {
-  // docsMap: { "cod": { docs: { "numContrato": { nf: path, ct: path } } } }
-  if (!allRows || !docsMap) return;
+  if (!allRows) return;
   allRows.forEach(r => {
-    const regDocs = docsMap[String(r.cod)];
-    if (!regDocs || !regDocs[r.contrato]) return;
-    const contractDocs = regDocs[r.contrato];
+    const cod = String(r.cod);
+    const num = r.contrato;
+
+    // Verificar Supabase docs
+    const supabaseDocs = (docsMap || {})[cod]?.[num] || {};
+    // Verificar localStorage
+    let localDocs = {};
+    try { localDocs = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch(e) {}
+
     ['nf','ct'].forEach(tipo => {
-      if (!contractDocs[tipo]) return;
-      const btn = document.getElementById(`btn-${tipo}-${r.cod}-${r.contrato}`);
-      if (!btn) return;
-      btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
-      btn.style.cssText += ';border-color:#16a34a;color:#16a34a;';
-      contratoSetDownloadBtn(btn, `${STORAGE_PUBLIC}/${contractDocs[tipo]}`, tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado');
+      const path = supabaseDocs[tipo] || localDocs[tipo];
+      if (!path) return;
+      // Encontrar botão por data attributes
+      let foundBtn = null;
+      document.querySelectorAll(`[data-upload-tipo="${tipo}"]`).forEach(b => {
+        if (b.dataset.uploadCod === cod && b.dataset.uploadNum === num) foundBtn = b;
+      });
+      if (!foundBtn) return;
+      foundBtn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
+      foundBtn.style.borderColor = '#16a34a';
+      foundBtn.style.color = '#16a34a';
+      contratoSetDownloadBtn(foundBtn, `${STORAGE_PUBLIC}/${path}`, tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado');
     });
   });
 }
