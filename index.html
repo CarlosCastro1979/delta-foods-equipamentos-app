@@ -5330,16 +5330,68 @@ function contratoUploadPdf(tipo, docPath) {
 }
 
 function contratoSetDownloadBtn(uploadBtn, pubUrl, label) {
-  // Remover btn ⬇ anterior se existir
-  let dl = uploadBtn.parentElement.querySelector('[data-dl="1"]');
-  if (dl) dl.remove();
-  dl = document.createElement('button');
-  dl.dataset.dl = '1';
+  const tipo = uploadBtn.dataset.uploadTipo;
+  const cod = uploadBtn.dataset.uploadCod;
+  const num = uploadBtn.dataset.uploadNum;
+
+  // Remover botões anteriores deste tipo
+  const parent = uploadBtn.parentElement;
+  const existing = parent.querySelectorAll(`[data-dl-tipo="${tipo}"]`);
+  existing.forEach(e => e.remove());
+
+  // Botão download ⬇
+  const dl = document.createElement('button');
+  dl.dataset.dlTipo = tipo;
   dl.title = 'Abrir ' + label;
   dl.textContent = '⬇';
   dl.style.cssText = 'background:none;border:1px solid #1976d2;border-radius:4px;padding:2px 5px;cursor:pointer;font-size:11px;margin:1px;color:#1976d2;';
   dl.onclick = () => window.open(pubUrl, '_blank');
   uploadBtn.insertAdjacentElement('afterend', dl);
+
+  // Botão eliminar 🗑
+  const del = document.createElement('button');
+  del.dataset.dlTipo = tipo;
+  del.title = 'Eliminar ' + label;
+  del.textContent = '🗑';
+  del.style.cssText = 'background:none;border:1px solid #dc2626;border-radius:4px;padding:2px 4px;cursor:pointer;font-size:10px;margin:1px;color:#dc2626;';
+  del.onclick = () => contratoDeletePdf(tipo, cod, num, pubUrl, uploadBtn, label);
+  dl.insertAdjacentElement('afterend', del);
+}
+
+async function contratoDeletePdf(tipo, cod, num, pubUrl, uploadBtn, label) {
+  if (!confirm(`Eliminar ${label}?`)) return;
+  const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
+  const storagePath = `${cod}/${num}/${fileName}`;
+  try {
+    // Apagar do Storage
+    await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
+      method: 'DELETE',
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+    });
+    // Remover do localStorage
+    try {
+      const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
+      if (saved[num]) { delete saved[num][tipo]; localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved)); }
+    } catch(e) {}
+    // Remover do Supabase
+    fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS })
+      .then(r => r.json()).then(regs => {
+        if (!regs.length) return;
+        const reg = regs[0]; const docs = reg.docs || {};
+        if (docs[num]) { delete docs[num][tipo]; }
+        return fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
+          method: 'PATCH',
+          headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ docs })
+        });
+      }).catch(e => console.warn(e));
+    // Restaurar botão original
+    uploadBtn.textContent = tipo === 'nf' ? '📄 NF' : '✍ CT';
+    uploadBtn.style.borderColor = '#aaa'; uploadBtn.style.color = '';
+    const parent = uploadBtn.parentElement;
+    parent.querySelectorAll(`[data-dl-tipo="${tipo}"]`).forEach(e => e.remove());
+    toast(`${label} eliminada.`, 'success');
+  } catch(e) { toast('Erro: ' + e.message, 'error'); }
 }
 
 function contratoMarkExisting(allRows, docsMap) {
@@ -5790,10 +5842,17 @@ async function ctBuscarCliente() {
 
     if (data && data.length) {
       const r = data[0];
-      // CNPJ: tenta do registo Supabase, depois da lista SAP, depois deixa vazio
       const cnpjFinal = r.cnpj || cnpjSAP || '';
       document.getElementById('ct_empresa').value = r.nome || clienteSAP?.nome || '';
       document.getElementById('ct_cnpj').value = fmtCNPJ(cnpjFinal);
+      // Se o registo não tem CNPJ mas a lista SAP tem, guardar no Supabase para outros dispositivos
+      if (!r.cnpj && cnpjSAP && r.id) {
+        fetch(`${SUPA_URL}?id=eq.${r.id}`, {
+          method: 'PATCH',
+          headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ cnpj: cnpjSAP })
+        }).catch(()=>{});
+      }
       document.getElementById('ct_found_txt').textContent = (r.nome || clienteSAP?.nome || '') + (r.vendedor ? ' · ' + r.vendedor : '');
       document.getElementById('ct_cliente_found').style.display = 'block';
       showToast('Cliente encontrado: ' + r.nome, 'success');
