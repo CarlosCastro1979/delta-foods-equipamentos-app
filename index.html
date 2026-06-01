@@ -3684,7 +3684,11 @@ async function confirmarCargaSAP() {
     }
   } catch(e) { console.warn('Erro ao actualizar manuais:', e); }
 
-  // 4. Resultado
+  // 4. Publicar no Supabase para outros dispositivos
+  await publicarListaClientesSupabase(novaLista);
+  toast('A sincronizar com outros dispositivos...', 'info');
+
+  // 5. Resultado
   let msg = `✅ Lista actualizada com ${novaLista.length} clientes.`;
   if (apagados) msg += ` ${apagados} registo(s) anulado(s) apagado(s).`;
   if (atualizados) msg += ` ${atualizados} registo(s) manual(ais) validado(s) pelo SAP.`;
@@ -3732,6 +3736,41 @@ function getListaClientesActiva() {
     const s = localStorage.getItem('delta_clientes_sistema');
     return s ? JSON.parse(s) : CLIENTES_SISTEMA;
   } catch(e) { return CLIENTES_SISTEMA; }
+}
+
+// Sincronizar lista de clientes do Supabase para localStorage
+async function sincronizarListaClientes() {
+  try {
+    const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/lista_clientes?id=eq.v1&select=data,atualizado_em', {
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
+    });
+    if (!res.ok) return;
+    const rows = await res.json();
+    if (!rows.length || !rows[0].data) return;
+    // Verificar se é mais recente que o que temos
+    const remoteTs = new Date(rows[0].atualizado_em).getTime();
+    const localTs = parseInt(localStorage.getItem('delta_clientes_ts') || '0');
+    if (remoteTs > localTs) {
+      localStorage.setItem('delta_clientes_sistema', JSON.stringify(rows[0].data));
+      localStorage.setItem('delta_clientes_ts', remoteTs.toString());
+      console.log('Lista de clientes sincronizada do Supabase:', rows[0].data.length, 'clientes');
+      return true; // actualizado
+    }
+    return false;
+  } catch(e) { console.warn('sincronizarListaClientes:', e); return false; }
+}
+
+// Publicar lista local para o Supabase (chamado após carga SAP)
+async function publicarListaClientesSupabase(lista) {
+  try {
+    const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/lista_clientes', {
+      method: 'POST',
+      headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
+      body: JSON.stringify({ id: 'v1', data: lista, atualizado_em: new Date().toISOString() })
+    });
+    if (res.ok) console.log('Lista publicada no Supabase');
+    return res.ok;
+  } catch(e) { console.warn('publicarListaClientesSupabase:', e); return false; }
 }
 
 // confirmarImport — compatibilidade com import-bar do CSV antigo
@@ -5816,6 +5855,10 @@ function exportATHistoricoExcel() {
 
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
+  // Sincronizar lista de clientes do Supabase (para todos os dispositivos ficarem actualizados)
+  sincronizarListaClientes().then(actualizado => {
+    if (actualizado) toast('✅ Lista de clientes actualizada.', 'success');
+  });
   // Inicializa sub-abas com pequeno delay para garantir DOM pronto
   setTimeout(() => switchSubTab('registos', 'novo'), 10);
   // Verificar ligação silenciosamente
