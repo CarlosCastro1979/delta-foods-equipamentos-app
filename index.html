@@ -5619,8 +5619,7 @@ function contratoMarkExisting(allRows, docsMap) {
       else if (nfOk) indicator = ' NF✓';
       else if (ctOk) indicator = ' CT✓';
       btn.innerHTML = '📁' + indicator;
-      btn.title = (nfOk ? '✅ NF carregada' : '❌ NF em falta') + '
-' + (ctOk ? '✅ CT carregado' : '❌ CT em falta');
+      btn.title = (nfOk ? '✅ NF carregada' : '❌ NF em falta') + '\n' + (ctOk ? '✅ CT carregado' : '❌ CT em falta');
     }
   });
 }
