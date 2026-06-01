@@ -5277,13 +5277,19 @@ function contratoUploadPdf(tipo, docPath) {
 
       const pubUrl = `${STORAGE_PUBLIC}/${storagePath}`;
 
-      // Actualizar botão imediatamente — independente do Supabase
-      if (btn) {
-        btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
-        btn.style.borderColor = '#16a34a';
-        btn.style.color = '#16a34a';
-        btn.disabled = false;
-        contratoSetDownloadBtn(btn, pubUrl, label);
+      // Actualizar botão — procurar por data attributes
+      const allBtns = document.querySelectorAll(`[data-upload-tipo="${tipo}"]`);
+      let foundBtn = null;
+      allBtns.forEach(b => {
+        if (b.dataset.uploadCod === cod && b.dataset.uploadNum === numContrato) foundBtn = b;
+      });
+      const targetBtn = foundBtn || btn;
+      if (targetBtn) {
+        targetBtn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
+        targetBtn.style.borderColor = '#16a34a';
+        targetBtn.style.color = '#16a34a';
+        targetBtn.disabled = false;
+        contratoSetDownloadBtn(targetBtn, pubUrl, label);
       }
       toast(`✅ ${label} guardada.`, 'success');
 
