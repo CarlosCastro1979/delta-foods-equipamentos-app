@@ -4240,9 +4240,6 @@ async function atPreencherCliente() {
 
   if (!opt || !opt.value) {
     box.style.display = 'none';
-    document.getElementById('at-equipamento-group').style.display = 'none';
-    ['at-avaria-group','at-descricao-group','at-urgencia-group'].forEach(id => document.getElementById(id).style.display = 'none');
-    document.getElementById('at-submit-btn').style.display = 'none';
     return;
   }
 
@@ -4251,8 +4248,6 @@ async function atPreencherCliente() {
 
   if (!selEquip) return;
   selEquip.innerHTML = '<option value="">A carregar equipamentos...</option>';
-  const equipGroup = document.getElementById('at-equipamento-group');
-  if (equipGroup) equipGroup.style.display = 'block';
 
   try {
     const resp = await fetch(
@@ -4285,10 +4280,8 @@ async function atPreencherCliente() {
       // Para comercial: mostra o select para o utilizador escolher
       if (atTipoEquip === 'domestico') {
         Array.from(selEquip.options).forEach(opt => opt.selected = true);
-        document.getElementById('at-equipamento-group').style.display = 'none';
       } else {
       
-        document.getElementById('at-equip-selected-info').style.display = 'block';
       }
     }
   } catch(err) {
@@ -5017,12 +5010,12 @@ async function loadContratosTab(forceRefresh = false) {
         <td style="${td}text-align:center;background:#F8FFF9">${r.pct!==null&&r.mesesDecorridos>0?`<span style="background:${pBg};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700">${r.pct}%</span>`:'—'}</td>
         <td style="${td}text-align:center;overflow:hidden;">${alertaHtml}</td>
         <td style="${td}text-align:center;white-space:nowrap">
-          <button onclick="contratoUploadPdf('nf','${r.cod}/${r.contrato}')" title="Nota Fiscal"
-            style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
-            id="btn-nf-${r.cod}-${(r.contrato||"").replace(/\//g,'_')}">📄 NF</button>
-          <button onclick="contratoUploadPdf('ct','${r.cod}/${r.contrato}')" title="Contrato Assinado"
-            style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
-            id="btn-ct-${r.cod}-${(r.contrato||"").replace(/\//g,'_')}">✍ CT</button>
+          <button data-upload-tipo="nf" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}"
+            onclick="contratoUploadPdf('nf','${r.cod}/${r.contrato}')" title="Nota Fiscal"
+            style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px">📄 NF</button>
+          <button data-upload-tipo="ct" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}"
+            onclick="contratoUploadPdf('ct','${r.cod}/${r.contrato}')" title="Contrato Assinado"
+            style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px">✍ CT</button>
         </td>
       </tr>`;
     });
@@ -5223,12 +5216,12 @@ function filtrarContratosVendedor() {
       <td style="${td}text-align:center;background:#F8FFF9">${r.pct !== null && r.mesesDecorridos > 0 ? `<span style="background:${pBg};color:${pCol};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pct}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
       <td style="${td}text-align:center">${alertaHtml}</td>
       <td style="${td}text-align:center;white-space:nowrap">
-        <button onclick="contratoUploadPdf('nf','${docPath}')" title="Nota Fiscal"
-          style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
-          id="btn-nf-${r.cod}-${(r.contrato||"").replace(/\//g,'_')}">📄 NF</button>
-        <button onclick="contratoUploadPdf('ct','${docPath}')" title="Contrato Assinado"
-          style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
-          id="btn-ct-${r.cod}-${(r.contrato||"").replace(/\//g,'_')}">✍ CT</button>
+        <button data-upload-tipo="nf" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}"
+          onclick="contratoUploadPdf('nf','${docPath}')" title="Nota Fiscal"
+          style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px">📄 NF</button>
+        <button data-upload-tipo="ct" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}"
+          onclick="contratoUploadPdf('ct','${docPath}')" title="Contrato Assinado"
+          style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px">✍ CT</button>
       </td>
     </tr>`;
   });
@@ -5768,8 +5761,10 @@ async function ctBuscarCliente() {
 
     if (data && data.length) {
       const r = data[0];
-      document.getElementById('ct_empresa').value = r.nome || (clienteSAP?.nome || '');
-      document.getElementById('ct_cnpj').value = fmtCNPJ(r.cnpj || cnpjSAP);
+      // CNPJ: tenta do registo Supabase, depois da lista SAP, depois deixa vazio
+      const cnpjFinal = r.cnpj || cnpjSAP || '';
+      document.getElementById('ct_empresa').value = r.nome || clienteSAP?.nome || '';
+      document.getElementById('ct_cnpj').value = fmtCNPJ(cnpjFinal);
       document.getElementById('ct_found_txt').textContent = (r.nome || clienteSAP?.nome || '') + (r.vendedor ? ' · ' + r.vendedor : '');
       document.getElementById('ct_cliente_found').style.display = 'block';
       showToast('Cliente encontrado: ' + r.nome, 'success');
