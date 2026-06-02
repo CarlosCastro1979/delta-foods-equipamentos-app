@@ -2357,7 +2357,12 @@ async function scLoadFromSupabase() {
     scVendasData = {};
     let lastUpdate = '';
     for (const row of data) {
-      scVendasData[row.cod_cliente] = new Date(row.ultima_compra);
+      // Guardar com a chave normalizada E a original para garantir match
+      const codNorm = String(row.cod_cliente || '').trim().replace(/^0+/, '') || '0';
+      const codOrig = String(row.cod_cliente || '').trim();
+      const dt = new Date(row.ultima_compra);
+      scVendasData[codNorm] = dt;
+      scVendasData[codOrig] = dt;
       if (row.updated_at > lastUpdate) lastUpdate = row.updated_at;
     }
     scLoaded = true;
@@ -4620,30 +4625,30 @@ async function processVendasFile(event) {
   const existingVendas = await getVendas();
   // Deduplicação por cod+data (não só por data — diferentes clientes podem ter
   // vendas na mesma data e não devem ser ignorados)
-  const existingKeys = new Set(existingVendas.map(v => v.cod + '|' + v.data));
+  const existingKeys = new Set(existingVendas.map(v => v.cod + '|' + v.data + '|' + (v.tipo||'')));
 
   const newVendas = [];
   const newKeys = new Set();
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    const hierarq = String(row[iHierarq] || '');
-    if (!hierarq.includes('GRÃO') && !hierarq.includes('CÁPSULAS')) continue;
     const emissor = String(row[iEmissor] || '').trim();
     const cod = emissor.split(/\s+/)[0].trim();
-    if (!cod) continue;
+    if (!cod || !/^\d+$/.test(cod)) continue; // só códigos numéricos
     const dataStr = String(row[iData] || '').trim();
     if (!dataStr) continue;
     const pesoRaw = row[iPeso];
-    if (pesoRaw === null || pesoRaw === undefined || pesoRaw === '') continue;
     const peso = parseFloat(pesoRaw);
-    if (isNaN(peso)) continue;
-    const tipo = hierarq.includes('GRÃO') ? 'GRÃO' : 'CAPSULAS';
-    const qty = tipo === 'GRÃO' ? peso : Math.round(peso / 0.0055);
-    const key = cod + '|' + dataStr;
-    newKeys.add(key);
-    if (!existingKeys.has(key)) {
-      newVendas.push({cod, data: dataStr, tipo, qty, peso});
+    // tipo e qty só para GRÃO/CÁPSULAS (contratos) — para Sem Compras basta a data
+    const hierarq = String(row[iHierarq] || '');
+    const isGraoCaps = hierarq.includes('GRÃO') || hierarq.includes('CÁPSULAS');
+    const tipo = isGraoCaps ? (hierarq.includes('GRÃO') ? 'GRÃO' : 'CAPSULAS') : 'OUTRO';
+    const qty = isGraoCaps && !isNaN(peso) ? (tipo === 'GRÃO' ? peso : Math.round(peso / 0.0055)) : 0;
+    const key = cod + '|' + dataStr + '|' + tipo;
+    newKeys.add(cod + '|' + dataStr); // para dedup por cliente+data
+    const dedupKey = cod + '|' + dataStr + '|' + tipo;
+    if (!existingKeys.has(dedupKey)) {
+      newVendas.push({cod, data: dataStr, tipo, qty, peso: isNaN(peso) ? 0 : peso});
     }
   }
 
