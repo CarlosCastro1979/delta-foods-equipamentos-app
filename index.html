@@ -450,7 +450,16 @@ function goPage(id){
   document.getElementById(id).classList.add('active');
   const map={'p-add':'nb-add','p-list':'nb-list','p-analysis':'nb-analysis'};
   document.getElementById(map[id]).classList.add('active');
-  if(id==='p-list'){fillCatFilter('fl-cat');renderList();}
+  if(id==='p-list'){
+    fillCatFilter('fl-cat');
+    if(activeCanalFilter==='retalho'){
+      buildSubTabs();
+      document.getElementById('retalho-sub-tabs').style.display='flex';
+      document.getElementById('retalho-sub-tabs').style.alignItems='center';
+      document.getElementById('btn-add-cliente').style.display='inline-flex';
+    }
+    renderList();
+  }
   if(id==='p-analysis'){fillCatFilter('a-cat');renderAnalysis();}
 }
 
@@ -485,13 +494,20 @@ function getClientes(){
 
 function buildSubTabs(){
   const row = document.getElementById('sub-tabs-row');
+  if(!row) return;
   const clientes = getClientes();
-  let html = `<button class="sub-tab ${activeSubTab==='geral'?'active':''}" id="subtab-geral" onclick="switchSubTab(this,'geral')">📊 Geral</button>`;
+  let html = `<button class="sub-tab ${activeSubTab==='geral'?'active':''}" onclick="switchSubTab(this,'geral')">📊 Geral</button>`;
   clientes.forEach(c=>{
     const label = c.charAt(0).toUpperCase()+c.slice(1);
-    html += `<button class="sub-tab ${activeSubTab===c?'active':''}" onclick="switchSubTab(this,'${c}')">🛍️ ${label}</button>`;
+    const icon = c==='carrefour'?'🛍️':'🏪';
+    html += `<button class="sub-tab ${activeSubTab===c?'active':''}" onclick="switchSubTab(this,'${c}')">${icon} ${label}</button>`;
   });
   row.innerHTML = html;
+  // mostrar container e botão
+  const wrap = document.getElementById('retalho-sub-tabs');
+  const addBtn = document.getElementById('btn-add-cliente');
+  if(wrap){ wrap.style.display='flex'; wrap.style.alignItems='center'; wrap.style.gap='0'; }
+  if(addBtn){ addBtn.style.display='inline-flex'; }
 }
 
 function switchSubTab(btn,tab){
@@ -1015,7 +1031,15 @@ function renderAnalysis(){
   miniDoughnut('chartH',hArr);miniDoughnut('chartR',rArr);miniDoughnut('chartD',dArr);
 }
 
-(async()=>{await loadRecords();})();
+(async()=>{
+  await loadRecords();
+  // Se estiver na aba retalho, inicializar sub-tabs
+  if(activeCanalFilter==='retalho'){
+    buildSubTabs();
+    document.getElementById('retalho-sub-tabs').style.display='flex';
+    document.getElementById('btn-add-cliente').style.display='inline-flex';
+  }
+})();
 </script>
 </body>
 </html>
