@@ -7,9 +7,6 @@
 <link rel="manifest" href="/delta-foods-equipamentos-app/manifest.json">
 <meta name="theme-color" content="#c8102e">
 <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Delta Foods">
 <link rel="apple-touch-icon" href="/delta-foods-equipamentos-app/icon-192.png">
@@ -1130,8 +1127,15 @@ var _unused_placeholder = 1;
         <input type="file" id="sap-file-input" accept=".xlsx,.xls" style="display:none" onchange="carregarListaSAP(event)">
       </label>
 
-      <div id="sap-load-status-old" style="display:none"></div>
-      <div id="sap-result-old" style="display:none"></div>
+      <div id="sap-load-status" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px;">
+        <div id="sap-status-text" style="font-size:13px;color:var(--text);margin-bottom:12px;"></div>
+        <div style="display:flex;gap:8px;">
+          <button id="sap-confirm-btn" class="btn btn-primary btn-sm" onclick="confirmarCargaSAP()">✅ Confirmar importação</button>
+          <button class="btn btn-secondary btn-sm" onclick="cancelarCargaSAP()">Cancelar</button>
+        </div>
+      </div>
+
+      <div id="sap-result" style="display:none;font-size:13px;padding:12px 16px;border-radius:8px;border:1px solid #c8e6c9;background:#e8f5e9;color:#2e7d32;"></div>
 
       <div style="margin-top:24px;padding:14px 16px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);">
         <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Última carga</div>
@@ -1609,11 +1613,10 @@ var _unused_placeholder = 1;
           <span style="font-size:22px;">📊</span>
           <div>
             <div style="font-weight:600;font-size:15px;">Carregar Vendas</div>
-            <div style="font-size:12px;color:var(--muted);">Excel SAP — Todas as linhas de venda. Deduplicação por cliente+data+tipo.</div>
+            <div style="font-size:12px;color:var(--muted);">Excel SAP — Hierarquia GRÃO (Kg) e CÁPSULAS (÷0.0055). Deduplicação por cliente+data.</div>
           </div>
         </div>
         <div id="dados-vendas-status"></div>
-        <div id="dados-vendas-ultima" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
         <input type="file" id="dados-vendas-input" accept=".xlsx,.xls" style="display:none" onchange="processVendasFile(event)">
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-primary btn-sm" onclick="document.getElementById('dados-vendas-input').click()">📂 Selecionar ficheiro</button>
@@ -2072,21 +2075,6 @@ async function apagarAnuladosSupabase(codsAnulados) {
 }
 
 // ─── PIN ÁREA DADOS ──────────────────────────────────
-function renderUltimaVendasCarga() {
-  const el = document.getElementById('dados-vendas-ultima');
-  if (!el) return;
-  try {
-    const saved = localStorage.getItem('delta_vendas_ultima_carga');
-    if (!saved) { el.textContent = 'Nenhuma carga efectuada neste browser.'; return; }
-    const { data, ficheiro, novos, ignorados } = JSON.parse(saved);
-    const d = new Date(data);
-    el.innerHTML = `<strong>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</strong>
-      &nbsp;·&nbsp; ${ficheiro}
-      &nbsp;·&nbsp; <span style="color:#16a34a">+${novos} novos</span>
-      &nbsp;·&nbsp; <span style="color:var(--muted)">${ignorados} ignorados</span>`;
-  } catch(e) { el.textContent = '—'; }
-}
-
 function verificarDadosPin() {
   const pin = document.getElementById('dados-pin-input')?.value;
   const errEl = document.getElementById('dados-pin-erro');
@@ -2094,7 +2082,6 @@ function verificarDadosPin() {
     document.getElementById('dados-pin-gate').style.display = 'none';
     document.getElementById('dados-content').style.display = 'block';
     renderUltimaCargaSAP();
-    renderUltimaVendasCarga();
     if (errEl) errEl.style.display = 'none';
   } else {
     if (errEl) { errEl.style.display = 'block'; }
@@ -2374,12 +2361,7 @@ async function scLoadFromSupabase() {
     scVendasData = {};
     let lastUpdate = '';
     for (const row of data) {
-      // Guardar com a chave normalizada E a original para garantir match
-      const codNorm = String(row.cod_cliente || '').trim().replace(/^0+/, '') || '0';
-      const codOrig = String(row.cod_cliente || '').trim();
-      const dt = new Date(row.ultima_compra);
-      scVendasData[codNorm] = dt;
-      scVendasData[codOrig] = dt;
+      scVendasData[row.cod_cliente] = new Date(row.ultima_compra);
       if (row.updated_at > lastUpdate) lastUpdate = row.updated_at;
     }
     scLoaded = true;
@@ -3652,10 +3634,7 @@ async function confirmarCargaSAP() {
   // 1. Guardar nova lista activa
   localStorage.setItem('delta_clientes_sistema', JSON.stringify(novaLista));
   localStorage.setItem('delta_sap_ultima_carga', JSON.stringify({
-    data: new Date().toISOString(), ficheiro: fileName, total: novaLista.length,
-    anulados: codsAnulados.length,
-    adicionados: _sapImportBuffer._adicionados || 0,
-    removidos: _sapImportBuffer._removidos || 0
+    data: new Date().toISOString(), ficheiro: fileName, total: novaLista.length, anulados: codsAnulados.length
   }));
   foraSPCache = null;
   clearRegistosCache();
@@ -3706,11 +3685,7 @@ async function confirmarCargaSAP() {
     }
   } catch(e) { console.warn('Erro ao actualizar manuais:', e); }
 
-  // 4. Publicar no Supabase para outros dispositivos
-  await publicarListaClientesSupabase(novaLista);
-  toast('A sincronizar com outros dispositivos...', 'info');
-
-  // 5. Resultado
+  // 4. Resultado
   let msg = `✅ Lista actualizada com ${novaLista.length} clientes.`;
   if (apagados) msg += ` ${apagados} registo(s) anulado(s) apagado(s).`;
   if (atualizados) msg += ` ${atualizados} registo(s) manual(ais) validado(s) pelo SAP.`;
@@ -3741,15 +3716,12 @@ function renderUltimaCargaSAP() {
   try {
     const saved = localStorage.getItem('delta_sap_ultima_carga');
     if (!saved) { el.textContent = 'Nenhuma carga efectuada neste browser.'; return; }
-    const { data, ficheiro, total, anulados, adicionados, removidos } = JSON.parse(saved);
+    const { data, ficheiro, total, anulados } = JSON.parse(saved);
     const d = new Date(data);
-    let html = `<strong>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</strong>
+    el.innerHTML = `<strong>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</strong>
       &nbsp;·&nbsp; ${ficheiro}
-      &nbsp;·&nbsp; <span style="color:#2e7d32">${total} clientes activos</span>`;
-    if (adicionados) html += ` &nbsp;·&nbsp; <span style="color:#1976d2">+${adicionados} novos</span>`;
-    if (removidos)   html += ` &nbsp;·&nbsp; <span style="color:#f57c00">-${removidos} removidos</span>`;
-    if (anulados)    html += ` &nbsp;·&nbsp; <span style="color:#c62828">${anulados} anulado(s) apagado(s)</span>`;
-    el.innerHTML = html;
+      &nbsp;·&nbsp; ${total} clientes activos
+      ${anulados ? `&nbsp;·&nbsp; <span style="color:#c62828">${anulados} anulado(s) removidos</span>` : ''}`;
   } catch(e) { el.textContent = '—'; }
 }
 
@@ -3758,41 +3730,6 @@ function getListaClientesActiva() {
     const s = localStorage.getItem('delta_clientes_sistema');
     return s ? JSON.parse(s) : CLIENTES_SISTEMA;
   } catch(e) { return CLIENTES_SISTEMA; }
-}
-
-// Sincronizar lista de clientes do Supabase para localStorage
-async function sincronizarListaClientes() {
-  try {
-    const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/lista_clientes?id=eq.v1&select=data,atualizado_em', {
-      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
-    });
-    if (!res.ok) return;
-    const rows = await res.json();
-    if (!rows.length || !rows[0].data) return;
-    // Verificar se é mais recente que o que temos
-    const remoteTs = new Date(rows[0].atualizado_em).getTime();
-    const localTs = parseInt(localStorage.getItem('delta_clientes_ts') || '0');
-    if (remoteTs > localTs) {
-      localStorage.setItem('delta_clientes_sistema', JSON.stringify(rows[0].data));
-      localStorage.setItem('delta_clientes_ts', remoteTs.toString());
-      console.log('Lista de clientes sincronizada do Supabase:', rows[0].data.length, 'clientes');
-      return true; // actualizado
-    }
-    return false;
-  } catch(e) { console.warn('sincronizarListaClientes:', e); return false; }
-}
-
-// Publicar lista local para o Supabase (chamado após carga SAP)
-async function publicarListaClientesSupabase(lista) {
-  try {
-    const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/lista_clientes', {
-      method: 'POST',
-      headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({ id: 'v1', data: lista, atualizado_em: new Date().toISOString() })
-    });
-    if (res.ok) console.log('Lista publicada no Supabase');
-    return res.ok;
-  } catch(e) { console.warn('publicarListaClientesSupabase:', e); return false; }
 }
 
 // confirmarImport — compatibilidade com import-bar do CSV antigo
@@ -4094,10 +4031,7 @@ const EQUIPAMENTOS = [
   'MAYOR Q',
   'QUORUM',
   'MAQ DOMESTICA DELTA Q',
-  'EQUIPAMENTO PROPRIO',
-  'CÓDIGO DE ENTREGA',
-  'CLIENTE DE OUTROS PRODUTOS',
-  'CLIENTE CONTENCIOSO'
+  'EQUIPAMENTO PROPRIO'
 ];
 
 let allData = [];
@@ -4291,29 +4225,10 @@ async function atOnTipoEquipChange() {
   // Preencher e desbloquear lista de clientes
   if (cliEl) {
     cliEl.innerHTML = '<option value="">— Selecionar cliente —</option>' +
-      atListaAtiva.map(c => `<option value="${c.cod}" data-nome="${(c.nome||'').replace(/"/g,'&quot;')}" data-cep="${c.cep||''}">${c.cod} — ${c.nome}</option>`).join('');
-    // Guardar lista activa para filtro de pesquisa
-    cliEl._listaCompleta = cliEl.innerHTML;
+      atListaAtiva.map(c => `<option value="${c.cod}">${c.cod} — ${c.nome}</option>`).join('');
     cliEl.disabled = false;
   }
   if (cliSearch) cliSearch.disabled = false;
-}
-
-function atFiltrarLista() {
-  const search = (document.getElementById('at-cliente-search')?.value || '').toLowerCase().trim();
-  const cliEl = document.getElementById('at-cliente');
-  if (!cliEl || !cliEl._listaCompleta) return;
-  if (!search) {
-    cliEl.innerHTML = cliEl._listaCompleta;
-    return;
-  }
-  // Filtrar opções pelo texto
-  const parser = new DOMParser();
-  const doc = parser.parseFromString('<select>' + cliEl._listaCompleta + '</select>', 'text/html');
-  const opts = [...doc.querySelectorAll('option')];
-  cliEl.innerHTML = opts
-    .filter(o => !o.value || o.textContent.toLowerCase().includes(search))
-    .map(o => o.outerHTML).join('');
 }
 
 async function atPreencherCliente() {
@@ -4325,20 +4240,18 @@ async function atPreencherCliente() {
 
   if (!opt || !opt.value) {
     box.style.display = 'none';
+    document.getElementById('at-equipamento-group').style.display = 'none';
+    ['at-avaria-group','at-descricao-group','at-urgencia-group'].forEach(id => document.getElementById(id).style.display = 'none');
+    document.getElementById('at-submit-btn').style.display = 'none';
     return;
   }
 
-  // nome pode estar em dataset.nome ou no texto da opção
-  const nomeCliente = opt.dataset.nome || opt.textContent.replace(opt.value + ' — ', '').trim();
-  const cepCliente = opt.dataset.cep || '';
-  info.innerHTML = `<strong>${nomeCliente}</strong> &nbsp;·&nbsp; Cód: ${opt.value} &nbsp;·&nbsp; CEP: ${cepCliente || '—'}`;
+  info.innerHTML = `<strong>${opt.dataset.nome}</strong> &nbsp;·&nbsp; Cód: ${opt.value} &nbsp;·&nbsp; CEP: ${opt.dataset.cep}`;
   box.style.display = 'block';
 
-  if (!selEquip) return;
   selEquip.innerHTML = '<option value="">A carregar equipamentos...</option>';
+  document.getElementById('at-equipamento-group').style.display = 'block';
 
-  window._atClienteNome = nomeCliente;
-  window._atClienteCod = opt.value;
   try {
     const resp = await fetch(
       `${SUPA_URL}?cod=eq.${opt.value}&select=equipamentos,contrato`,
@@ -4370,8 +4283,10 @@ async function atPreencherCliente() {
       // Para comercial: mostra o select para o utilizador escolher
       if (atTipoEquip === 'domestico') {
         Array.from(selEquip.options).forEach(opt => opt.selected = true);
+        document.getElementById('at-equipamento-group').style.display = 'none';
       } else {
-      
+        document.getElementById('at-equipamento-group').style.display = 'block';
+        document.getElementById('at-equip-selected-info').style.display = 'block';
       }
     }
   } catch(err) {
@@ -4432,9 +4347,9 @@ async function enviarPedidoAT() {
   if (avariaTipo === 'Outra avaria' && !outraAvaria) { toast('Descreve a avaria.', 'error'); return; }
 
   const avaria      = avariaTipo === 'Outra avaria' ? outraAvaria : avariaTipo;
-  const clienteNome = clienteOpt?.dataset?.nome || window._atClienteNome || clienteOpt?.textContent?.replace(clienteSel.value + ' — ', '').trim() || clienteSel.value;
+  const clienteNome = clienteOpt.dataset.nome;
   const clienteCod  = clienteSel.value;
-  const clienteCep  = clienteOpt?.dataset?.cep || '';
+  const clienteCep  = clienteOpt.dataset.cep;
   const data = new Date().toLocaleDateString('pt-BR');
   const hora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
 
@@ -4579,14 +4494,6 @@ function showVendasImport() {
   document.getElementById('vendas-upload-step').style.display = 'none';
   document.getElementById('vendas-pin-input').value = '';
   const _vsEl = document.getElementById('dados-vendas-status') || document.getElementById('vendas-status');
-  // Guardar data da última carga
-  localStorage.setItem('delta_vendas_ultima_carga', JSON.stringify({
-    data: new Date().toISOString(),
-    ficheiro: event.target.files?.[0]?.name || 'desconhecido',
-    novos: newVendas.length,
-    ignorados: datasIgnoradas
-  }));
-  renderUltimaVendasCarga();
   _vsEl.innerHTML = '';
   setTimeout(() => document.getElementById('vendas-pin-input').focus(), 100);
 }
@@ -4650,30 +4557,30 @@ async function processVendasFile(event) {
   const existingVendas = await getVendas();
   // Deduplicação por cod+data (não só por data — diferentes clientes podem ter
   // vendas na mesma data e não devem ser ignorados)
-  const existingKeys = new Set(existingVendas.map(v => v.cod + '|' + v.data + '|' + (v.tipo||'')));
+  const existingKeys = new Set(existingVendas.map(v => v.cod + '|' + v.data));
 
   const newVendas = [];
   const newKeys = new Set();
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
+    const hierarq = String(row[iHierarq] || '');
+    if (!hierarq.includes('GRÃO') && !hierarq.includes('CÁPSULAS')) continue;
     const emissor = String(row[iEmissor] || '').trim();
     const cod = emissor.split(/\s+/)[0].trim();
-    if (!cod || !/^\d+$/.test(cod)) continue; // só códigos numéricos
+    if (!cod) continue;
     const dataStr = String(row[iData] || '').trim();
     if (!dataStr) continue;
     const pesoRaw = row[iPeso];
+    if (pesoRaw === null || pesoRaw === undefined || pesoRaw === '') continue;
     const peso = parseFloat(pesoRaw);
-    // tipo e qty só para GRÃO/CÁPSULAS (contratos) — para Sem Compras basta a data
-    const hierarq = String(row[iHierarq] || '');
-    const isGraoCaps = hierarq.includes('GRÃO') || hierarq.includes('CÁPSULAS');
-    const tipo = isGraoCaps ? (hierarq.includes('GRÃO') ? 'GRÃO' : 'CAPSULAS') : 'OUTRO';
-    const qty = isGraoCaps && !isNaN(peso) ? (tipo === 'GRÃO' ? peso : Math.round(peso / 0.0055)) : 0;
-    const key = cod + '|' + dataStr + '|' + tipo;
-    newKeys.add(cod + '|' + dataStr); // para dedup por cliente+data
-    const dedupKey = cod + '|' + dataStr + '|' + tipo;
-    if (!existingKeys.has(dedupKey)) {
-      newVendas.push({cod, data: dataStr, tipo, qty, peso: isNaN(peso) ? 0 : peso});
+    if (isNaN(peso)) continue;
+    const tipo = hierarq.includes('GRÃO') ? 'GRÃO' : 'CAPSULAS';
+    const qty = tipo === 'GRÃO' ? peso : Math.round(peso / 0.0055);
+    const key = cod + '|' + dataStr;
+    newKeys.add(key);
+    if (!existingKeys.has(key)) {
+      newVendas.push({cod, data: dataStr, tipo, qty, peso});
     }
   }
 
@@ -4902,7 +4809,7 @@ async function loadContratosTab(forceRefresh = false) {
 
   try {
     // Fetch all registos with contratos from Supabase
-    const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,contrato,contratos,docs', {headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }});
+    const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,contrato,contratos', {headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }});
     let registos = await res.json();
 
     // Filter only those with contratos array
@@ -5108,11 +5015,12 @@ async function loadContratosTab(forceRefresh = false) {
         <td style="${td}text-align:center;background:#F8FFF9">${r.pct!==null&&r.mesesDecorridos>0?`<span style="background:${pBg};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700">${r.pct}%</span>`:'—'}</td>
         <td style="${td}text-align:center;overflow:hidden;">${alertaHtml}</td>
         <td style="${td}text-align:center;white-space:nowrap">
-          <button onclick="contratoAbrirDocs('${r.cod}','${r.contrato}')"
-            style="background:none;border:1px solid #aaa;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;"
-            title="Gerir documentos">📁</button>
-          <span data-upload-tipo="nf" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
-          <span data-upload-tipo="ct" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
+          <button onclick="contratoUploadPdf('nf','${r.cod}/${r.contrato}')" title="Nota Fiscal"
+            style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
+            id="btn-nf-${r.cod}-${r.contrato}">📄 NF</button>
+          <button onclick="contratoUploadPdf('ct','${r.cod}/${r.contrato}')" title="Contrato Assinado"
+            style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
+            id="btn-ct-${r.cod}-${r.contrato}">✍ CT</button>
         </td>
       </tr>`;
     });
@@ -5128,7 +5036,7 @@ async function loadContratosTab(forceRefresh = false) {
     }
     // Construir mapa de docs para marcar botões
     const docsMap = {};
-    registos.forEach(r => { if (r.docs) docsMap[String(r.cod)] = r.docs; });
+    data.forEach(r => { if (r.docs) docsMap[String(r.cod)] = r.docs; });
     window._contratosDocsMap = docsMap;
     window._contratosAllRows = rows;
     contratosCache = html;
@@ -5313,11 +5221,12 @@ function filtrarContratosVendedor() {
       <td style="${td}text-align:center;background:#F8FFF9">${r.pct !== null && r.mesesDecorridos > 0 ? `<span style="background:${pBg};color:${pCol};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pct}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
       <td style="${td}text-align:center">${alertaHtml}</td>
       <td style="${td}text-align:center;white-space:nowrap">
-        <button onclick="contratoAbrirDocs('${r.cod}','${r.contrato}')"
-          style="background:none;border:1px solid #aaa;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;"
-          title="Gerir documentos">📁</button>
-          <span data-upload-tipo="nf" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
-          <span data-upload-tipo="ct" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
+        <button onclick="contratoUploadPdf('nf','${docPath}')" title="Nota Fiscal"
+          style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
+          id="btn-nf-${r.cod}-${r.contrato}">📄 NF</button>
+        <button onclick="contratoUploadPdf('ct','${docPath}')" title="Contrato Assinado"
+          style="background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;cursor:pointer;font-size:11px;margin:1px"
+          id="btn-ct-${r.cod}-${r.contrato}">✍ CT</button>
       </td>
     </tr>`;
   });
@@ -5340,9 +5249,7 @@ function contratoUploadPdf(tipo, docPath) {
   const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
   const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
   const storagePath = `${docPath}/${fileName}`;
-  const slashIdx = docPath.indexOf('/');
-  const cod = docPath.slice(0, slashIdx);
-  const numContrato = docPath.slice(slashIdx + 1); // pode ter / no nome do contrato
+  const [cod, numContrato] = docPath.split('/');
 
   const input = document.createElement('input');
   input.type = 'file';
@@ -5352,7 +5259,7 @@ function contratoUploadPdf(tipo, docPath) {
     if (!file) return;
     if (file.type !== 'application/pdf') { toast('Apenas PDFs são aceites.', 'error'); return; }
 
-    const btnId = `btn-${tipo}-${cod}-${numContrato.replace(/_/g,'_')}`;
+    const btnId = `btn-${tipo}-${cod}-${numContrato}`;
     const btn = document.getElementById(btnId);
     if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
     toast(`A fazer upload de ${label}...`);
@@ -5371,49 +5278,32 @@ function contratoUploadPdf(tipo, docPath) {
       });
       if (!res.ok) throw new Error('Upload falhou: ' + res.status);
 
-      const pubUrl = `${STORAGE_PUBLIC}/${storagePath}`;
-
-      // 1. Guardar em localStorage imediatamente
-      const docsLocalKey = 'delta_docs_' + cod;
-      try {
-        const saved = JSON.parse(localStorage.getItem(docsLocalKey) || '{}');
-        if (!saved[numContrato]) saved[numContrato] = {};
-        saved[numContrato][tipo] = storagePath;
-        localStorage.setItem(docsLocalKey, JSON.stringify(saved));
-      } catch(e) {}
-
-      // 2. Actualizar botão imediatamente
-      const allBtns = document.querySelectorAll(`[data-upload-tipo="${tipo}"]`);
-      let foundBtn = null;
-      allBtns.forEach(b => {
-        if (b.dataset.uploadCod === cod && b.dataset.uploadNum === numContrato) foundBtn = b;
-      });
-      const targetBtn = foundBtn || btn;
-      if (targetBtn) {
-        targetBtn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
-        targetBtn.style.borderColor = '#16a34a';
-        targetBtn.style.color = '#16a34a';
-        targetBtn.disabled = false;
-        contratoSetDownloadBtn(targetBtn, pubUrl, label);
-      }
-      toast(`✅ ${label} guardada.`, 'success');
-
-      // 3. Guardar no Supabase em background
-      fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS })
-        .then(r => r.json())
-        .then(regs => {
-          if (!regs.length) return;
+      // Guardar referência no Supabase (campo docs no registo)
+      // Buscar o registo do cliente pelo código
+      const regsRes = await fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS });
+      if (regsRes.ok) {
+        const regs = await regsRes.json();
+        if (regs.length) {
           const reg = regs[0];
           const docs = reg.docs || {};
           if (!docs[numContrato]) docs[numContrato] = {};
           docs[numContrato][tipo] = storagePath;
-          return fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
+          await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
             method: 'PATCH',
             headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
             body: JSON.stringify({ docs })
           });
-        })
-        .catch(e => console.warn('docs save supabase:', e));
+        }
+      }
+
+      const pubUrl = `${STORAGE_PUBLIC}/${storagePath}`;
+      toast(`✅ ${label} guardada.`, 'success');
+      if (btn) {
+        btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
+        btn.style.cssText += ';border-color:#16a34a;color:#16a34a;';
+        btn.disabled = false;
+        contratoSetDownloadBtn(btn, pubUrl, label);
+      }
     } catch(err) {
       toast('Erro: ' + err.message, 'error');
       if (btn) { btn.textContent = tipo === 'nf' ? '📄 NF' : '✍ CT'; btn.disabled = false; }
@@ -5422,235 +5312,34 @@ function contratoUploadPdf(tipo, docPath) {
   input.click();
 }
 
-// ─── MODAL DOCS DE CONTRATOS ─────────────────────────
-function contratoAbrirDocs(cod, num) {
-  const modal = document.getElementById('docs-modal');
-  document.getElementById('docs-modal-titulo').textContent = `Documentos — ${num}`;
-  document.getElementById('docs-modal-cod').value = cod;
-  document.getElementById('docs-modal-num').value = num;
-
-  // Ver estado actual dos docs
-  let localDocs = {};
-  try { localDocs = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch(e) {}
-
-  ['nf','ct'].forEach(tipo => {
-    const hasDoc = !!localDocs[tipo];
-    const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
-    const icon = tipo === 'nf' ? '📄' : '✍';
-    const row = document.getElementById('docs-row-' + tipo);
-    row.innerHTML = hasDoc
-      ? `<span style="color:#16a34a;font-weight:600">${icon} ${label}</span>
-         <div style="display:flex;gap:6px;margin-top:4px;">
-           <button class="btn btn-secondary btn-sm" onclick="contratoDocsDownload('${cod}','${num}','${tipo}')" style="font-size:12px;">⬇ Abrir</button>
-           <button class="btn btn-secondary btn-sm" onclick="contratoDocsUpload('${cod}','${num}','${tipo}')" style="font-size:12px;">↩ Substituir</button>
-           <button class="btn btn-secondary btn-sm" onclick="contratoDocsDelete('${cod}','${num}','${tipo}')" style="font-size:12px;color:var(--danger);border-color:var(--danger);">🗑 Eliminar</button>
-         </div>`
-      : `<span style="color:var(--muted)">${icon} ${label} — não carregado</span>
-         <div style="margin-top:4px;">
-           <button class="btn btn-primary btn-sm" onclick="contratoDocsUpload('${cod}','${num}','${tipo}')" style="font-size:12px;">⬆ Carregar PDF</button>
-         </div>`;
-  });
-
-  // Actualizar botão 📁 em tempo real
-  const btnDoc = document.querySelector(`button[onclick*="contratoAbrirDocs('${cod}','${num}')"]`);
-  if (btnDoc) {
-    let localDocs2 = {};
-    try { localDocs2 = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch(e) {}
-    const nfOk = !!localDocs2['nf'];
-    const ctOk = !!localDocs2['ct'];
-    if (nfOk || ctOk) {
-      btnDoc.style.borderColor = '#16a34a';
-      btnDoc.style.color = '#16a34a';
-      let indicator = nfOk && ctOk ? ' ✓✓' : nfOk ? ' NF✓' : ' CT✓';
-      btnDoc.innerHTML = '📁' + indicator;
-      btnDoc.title = (nfOk ? '✅ NF carregada' : '❌ NF em falta') + '\n' + (ctOk ? '✅ CT carregado' : '❌ CT em falta');
-    } else {
-      btnDoc.style.borderColor = '#aaa';
-      btnDoc.style.color = '';
-      btnDoc.innerHTML = '📁';
-      btnDoc.title = 'Gerir documentos';
-    }
-  }
-  modal.style.display = 'flex';
-}
-
-function contratoDocsUpload(cod, num, tipo) {
-  const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
-  const input = document.createElement('input');
-  input.type = 'file'; input.accept = 'application/pdf';
-  input.onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
-    const storagePath = `${cod}/${num}/${fileName}`;
-    const statusEl = document.getElementById('docs-status');
-    statusEl.textContent = 'A carregar...'; statusEl.style.color = 'var(--muted)';
-    try {
-      const res = await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
-        method: 'POST',
-        headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
-        body: file
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      // Guardar no localStorage
-      const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
-      if (!saved[num]) saved[num] = {};
-      saved[num][tipo] = storagePath;
-      localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
-      // Guardar no Supabase
-      fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS })
-        .then(r=>r.json()).then(regs => {
-          if (!regs.length) return;
-          const reg = regs[0]; const docs = reg.docs || {};
-          if (!docs[num]) docs[num] = {};
-          docs[num][tipo] = storagePath;
-          return fetch(`${SUPA_URL}?id=eq.${reg.id}`, { method:'PATCH', headers:{...HEADERS,'Content-Type':'application/json','Prefer':'return=minimal'}, body:JSON.stringify({docs}) });
-        }).catch(()=>{});
-      statusEl.textContent = '✅ ' + label + ' guardada!'; statusEl.style.color = '#16a34a';
-      // Actualizar indicador no botão 📁
-      contratoMarcarBotao(cod, num, tipo);
-      // Reabrir modal para mostrar estado actualizado
-      setTimeout(() => contratoAbrirDocs(cod, num), 500);
-    } catch(err) {
-      statusEl.textContent = 'Erro: ' + err.message; statusEl.style.color = 'var(--danger)';
-    }
-  };
-  input.click();
-}
-
-function contratoDocsDownload(cod, num, tipo) {
-  const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
-  window.open(`${STORAGE_PUBLIC}/${cod}/${num}/${fileName}`, '_blank');
-}
-
-async function contratoDocsDelete(cod, num, tipo) {
-  const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
-  if (!confirm(`Eliminar ${label}?`)) return;
-  const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
-  const storagePath = `${cod}/${num}/${fileName}`;
-  // DELETE no Supabase Storage — endpoint correcto para bucket público
-  await fetch(`https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/${STORAGE_BUCKET}/${storagePath}`, {
-    method:'DELETE',
-    headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'}
-  });
-  // Remover localStorage
-  try {
-    const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
-    if (saved[num]) { delete saved[num][tipo]; localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved)); }
-  } catch(e) {}
-  // Remover Supabase
-  fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers:HEADERS })
-    .then(r=>r.json()).then(regs => {
-      if (!regs.length) return;
-      const reg = regs[0]; const docs = reg.docs || {};
-      if (docs[num]) { delete docs[num][tipo]; }
-      return fetch(`${SUPA_URL}?id=eq.${reg.id}`, { method:'PATCH', headers:{...HEADERS,'Content-Type':'application/json','Prefer':'return=minimal'}, body:JSON.stringify({docs}) });
-    }).catch(()=>{});
-  // Actualizar botão
-  contratoMarcarBotao(cod, num, tipo, true);
-  contratoAbrirDocs(cod, num);
-}
-
-function contratoMarcarBotao(cod, num, tipo, removed) {
-  // Actualizar o ícone do botão 📁 para mostrar se tem docs
-  const spans = document.querySelectorAll(`[data-upload-tipo][data-upload-cod="${cod}"][data-upload-num="${num}"]`);
-  spans.forEach(s => { if (s.dataset.uploadTipo === tipo) s.dataset.hasDoc = removed ? '' : '1'; });
-  // Actualizar cor do botão 📁
-  const btn = document.querySelector(`button[onclick*="contratoAbrirDocs('${cod}','${num}')"]`);
-  if (!btn) return;
-  const allSpans = document.querySelectorAll(`[data-upload-cod="${cod}"][data-upload-num="${num}"]`);
-  const anyDoc = [...allSpans].some(s => s.dataset.hasDoc === '1');
-  btn.style.borderColor = anyDoc ? '#16a34a' : '#aaa';
-  btn.style.color = anyDoc ? '#16a34a' : '';
-  btn.textContent = anyDoc ? '📁✅' : '📁';
-}
-
-function contratoFecharDocs() {
-  document.getElementById('docs-modal').style.display = 'none';
-  document.getElementById('docs-status').textContent = '';
-}
-
 function contratoSetDownloadBtn(uploadBtn, pubUrl, label) {
-  // Mantido para compatibilidade — já não usado directamente
-}
-
-async function contratoDeletePdf(tipo, cod, num, pubUrl, uploadBtn, label) {
-  if (!confirm(`Eliminar ${label}?`)) return;
-  const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
-  const storagePath = `${cod}/${num}/${fileName}`;
-  try {
-    // Apagar do Storage
-    await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
-      method: 'DELETE',
-      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
-    });
-    // Remover do localStorage
-    try {
-      const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
-      if (saved[num]) { delete saved[num][tipo]; localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved)); }
-    } catch(e) {}
-    // Remover do Supabase
-    fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS })
-      .then(r => r.json()).then(regs => {
-        if (!regs.length) return;
-        const reg = regs[0]; const docs = reg.docs || {};
-        if (docs[num]) { delete docs[num][tipo]; }
-        return fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
-          method: 'PATCH',
-          headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ docs })
-        });
-      }).catch(e => console.warn(e));
-    // Restaurar botão original
-    uploadBtn.textContent = tipo === 'nf' ? '📄 NF' : '✍ CT';
-    uploadBtn.style.borderColor = '#aaa'; uploadBtn.style.color = '';
-    const parent = uploadBtn.parentElement;
-    parent.querySelectorAll(`[data-dl-tipo="${tipo}"]`).forEach(e => e.remove());
-    toast(`${label} eliminada.`, 'success');
-  } catch(e) { toast('Erro: ' + e.message, 'error'); }
+  // Remover btn ⬇ anterior se existir
+  let dl = uploadBtn.parentElement.querySelector('[data-dl="1"]');
+  if (dl) dl.remove();
+  dl = document.createElement('button');
+  dl.dataset.dl = '1';
+  dl.title = 'Abrir ' + label;
+  dl.textContent = '⬇';
+  dl.style.cssText = 'background:none;border:1px solid #1976d2;border-radius:4px;padding:2px 5px;cursor:pointer;font-size:11px;margin:1px;color:#1976d2;';
+  dl.onclick = () => window.open(pubUrl, '_blank');
+  uploadBtn.insertAdjacentElement('afterend', dl);
 }
 
 function contratoMarkExisting(allRows, docsMap) {
-  if (!allRows) return;
+  // docsMap: { "cod": { docs: { "numContrato": { nf: path, ct: path } } } }
+  if (!allRows || !docsMap) return;
   allRows.forEach(r => {
-    const cod = String(r.cod);
-    const num = r.contrato;
-    const supabaseDocs = (docsMap || {})[cod]?.[num] || {};
-    let localDocs = {};
-    try { localDocs = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch(e) {}
-    // Sincronizar localStorage com Supabase
-    if (Object.keys(supabaseDocs).length) {
-      try {
-        const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
-        saved[num] = { ...localDocs, ...supabaseDocs };
-        localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
-      } catch(e) {}
-    }
-    const allDocs = { ...localDocs, ...supabaseDocs };
-    const hasNf = !!allDocs['nf'];
-    const hasCt = !!allDocs['ct'];
-    if (!hasNf && !hasCt) return;
-    // Marcar os spans hidden
+    const regDocs = docsMap[String(r.cod)];
+    if (!regDocs || !regDocs[r.contrato]) return;
+    const contractDocs = regDocs[r.contrato];
     ['nf','ct'].forEach(tipo => {
-      document.querySelectorAll(`[data-upload-tipo="${tipo}"][data-upload-cod="${cod}"][data-upload-num="${num}"]`).forEach(s => {
-        s.dataset.hasDoc = allDocs[tipo] ? '1' : '';
-      });
+      if (!contractDocs[tipo]) return;
+      const btn = document.getElementById(`btn-${tipo}-${r.cod}-${r.contrato}`);
+      if (!btn) return;
+      btn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
+      btn.style.cssText += ';border-color:#16a34a;color:#16a34a;';
+      contratoSetDownloadBtn(btn, `${STORAGE_PUBLIC}/${contractDocs[tipo]}`, tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado');
     });
-    // Actualizar botão 📁 com indicadores NF/CT
-    const btn = document.querySelector(`button[onclick*="contratoAbrirDocs('${cod}','${num}')"]`);
-    if (btn) {
-      const nfOk = !!allDocs['nf'];
-      const ctOk = !!allDocs['ct'];
-      btn.style.borderColor = '#16a34a';
-      btn.style.color = '#16a34a';
-      // Mostrar quais docs existem
-      let indicator = '';
-      if (nfOk && ctOk) indicator = ' ✓✓';
-      else if (nfOk) indicator = ' NF✓';
-      else if (ctOk) indicator = ' CT✓';
-      btn.innerHTML = '📁' + indicator;
-      btn.title = (nfOk ? '✅ NF carregada' : '❌ NF em falta') + '\n' + (ctOk ? '✅ CT carregado' : '❌ CT em falta');
-    }
   });
 }
 
@@ -5920,10 +5609,6 @@ function exportATHistoricoExcel() {
 
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
-  // Sincronizar lista de clientes do Supabase (para todos os dispositivos ficarem actualizados)
-  sincronizarListaClientes().then(actualizado => {
-    if (actualizado) toast('✅ Lista de clientes actualizada.', 'success');
-  });
   // Inicializa sub-abas com pequeno delay para garantir DOM pronto
   setTimeout(() => switchSubTab('registos', 'novo'), 10);
   // Verificar ligação silenciosamente
@@ -6077,17 +5762,8 @@ async function ctBuscarCliente() {
 
     if (data && data.length) {
       const r = data[0];
-      const cnpjFinal = r.cnpj || cnpjSAP || '';
-      document.getElementById('ct_empresa').value = r.nome || clienteSAP?.nome || '';
-      document.getElementById('ct_cnpj').value = fmtCNPJ(cnpjFinal);
-      // Se o registo não tem CNPJ mas a lista SAP tem, guardar no Supabase para outros dispositivos
-      if (!r.cnpj && cnpjSAP && r.id) {
-        fetch(`${SUPA_URL}?id=eq.${r.id}`, {
-          method: 'PATCH',
-          headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ cnpj: cnpjSAP })
-        }).catch(()=>{});
-      }
+      document.getElementById('ct_empresa').value = r.nome || (clienteSAP?.nome || '');
+      document.getElementById('ct_cnpj').value = fmtCNPJ(r.cnpj || cnpjSAP);
       document.getElementById('ct_found_txt').textContent = (r.nome || clienteSAP?.nome || '') + (r.vendedor ? ' · ' + r.vendedor : '');
       document.getElementById('ct_cliente_found').style.display = 'block';
       showToast('Cliente encontrado: ' + r.nome, 'success');
@@ -6828,23 +6504,6 @@ function showToast(msg, type) {
 }
 
 </script>
-<!-- MODAL DOCS CONTRATOS -->
-<div id="docs-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;">
-  <div style="background:var(--surface);border-radius:12px;padding:24px;width:90%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <h3 id="docs-modal-titulo" style="font-size:15px;font-weight:600;margin:0;">Documentos</h3>
-      <button onclick="contratoFecharDocs()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
-    </div>
-    <input type="hidden" id="docs-modal-cod">
-    <input type="hidden" id="docs-modal-num">
-    <div style="display:flex;flex-direction:column;gap:16px;">
-      <div id="docs-row-nf" style="padding:12px;background:var(--surface2);border-radius:8px;"></div>
-      <div id="docs-row-ct" style="padding:12px;background:var(--surface2);border-radius:8px;"></div>
-    </div>
-    <div id="docs-status" style="margin-top:12px;font-size:13px;text-align:center;min-height:20px;"></div>
-  </div>
-</div>
-
 </body>
 
 
