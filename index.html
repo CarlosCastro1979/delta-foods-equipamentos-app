@@ -1646,6 +1646,243 @@ var _unused_placeholder = 1;
     <div id="pros-content"></div>
   </div>
 
+  <!-- MODAL CLIENTE GANHO -->
+  <div id="pros-ganho-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1100;overflow-y:auto;">
+    <div style="background:var(--surface);border-radius:12px;max-width:780px;margin:30px auto;padding:28px;position:relative;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <div>
+          <h2 style="font-size:17px;font-weight:600;color:#16a34a;">✅ Cliente Ganho — Cadastro SAP</h2>
+          <div id="pros-ganho-nome-label" style="font-size:13px;color:var(--muted);margin-top:2px;"></div>
+        </div>
+        <button onclick="prosGanhoFechar()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);">✕</button>
+      </div>
+
+      <!-- SECÇÃO: Cabeçalho -->
+      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">CABEÇALHO</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Motivo</label>
+            <select id="pg-motivo" class="form-input" style="width:100%;font-size:13px;">
+              <option>Abertura de Cliente</option>
+              <option>Alteração de Cliente</option>
+              <option>Cancelamento de Cliente</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Empresa</label>
+            <select id="pg-empresa" class="form-input" style="width:100%;font-size:13px;" onchange="prosGanhoEmpresaChange()">
+              <option value="GN52 - Delta Foods Brasil">GN52 - Delta Foods Brasil</option>
+              <option value="GN53 - Q-Brasil">GN53 - Q-Brasil</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Grupo de Contas</label>
+            <select id="pg-grupo" class="form-input" style="width:100%;font-size:13px;">
+              <option>BR01 - Clientes PJ</option>
+              <option>BR02 - Clientes PF</option>
+            </select>
+          </div>
+        </div>
+        <!-- Campos automáticos -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-top:8px;">
+          <div>
+            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Dept. Comercial (auto)</label>
+            <div id="pg-dept" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Org. Vendas (auto)</label>
+            <div id="pg-org" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Escrit. Vendas (auto)</label>
+            <div id="pg-escrit" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Centro Fornecedor (auto)</label>
+            <div id="pg-centro" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECÇÃO: Dados Gerais -->
+      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">DADOS GERAIS</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Nome / Razão Social *</label>
+            <input type="text" id="pg-nome" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CNPJ / CPF *</label>
+            <input type="text" id="pg-cnpj" class="form-input" style="width:100%;font-size:13px;" placeholder="00.000.000/0000-00">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Nome Fantasia</label>
+            <input type="text" id="pg-fantasia" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Inscrição Estadual</label>
+            <input type="text" id="pg-ie" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Email</label>
+            <input type="text" id="pg-email" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Tel. 1</label>
+              <input type="text" id="pg-tel1" class="form-input" style="width:100%;font-size:13px;">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Tel. 2</label>
+              <input type="text" id="pg-tel2" class="form-input" style="width:100%;font-size:13px;">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECÇÃO: Endereço -->
+      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">ENDEREÇO</div>
+        <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Rua *</label>
+            <input type="text" id="pg-rua" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Nro.</label>
+            <input type="text" id="pg-nro" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Complemento</label>
+            <input type="text" id="pg-supl" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Bairro</label>
+            <input type="text" id="pg-bairro" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CEP</label>
+            <input type="text" id="pg-cep" class="form-input" style="width:100%;font-size:13px;" placeholder="00000-000">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Cidade</label>
+            <input type="text" id="pg-cidade" class="form-input" style="width:100%;font-size:13px;" value="SÃO PAULO">
+          </div>
+        </div>
+      </div>
+
+      <!-- SECÇÃO: Área de Vendas -->
+      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">ÁREA DE VENDAS</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Canal Distribuição</label>
+            <select id="pg-canal" class="form-input" style="width:100%;font-size:13px;" onchange="prosGanhoCanalChange()">
+              <option value="00 - Grupo Nabeiro">00 - Grupo Nabeiro</option>
+              <option value="01 - Retalhista">01 - Retalhista</option>
+              <option value="03 - Delta Office">03 - Delta Office</option>
+              <option value="04 - Restauração" selected>04 - Restauração</option>
+              <option value="09 - E-commerce">09 - E-commerce</option>
+              <option value="12 - Balcão Geral">12 - Balcão Geral</option>
+              <option value="13 - Revendedores">13 - Revendedores</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Região (Estado)</label>
+            <select id="pg-regiao" class="form-input" style="width:100%;font-size:13px;" onchange="prosGanhoRegiaoChange()">
+              <option value="AC - Acre">AC - Acre</option><option value="AL - Alagoas">AL - Alagoas</option>
+              <option value="AM - Amazonas">AM - Amazonas</option><option value="AP - Amapá">AP - Amapá</option>
+              <option value="BA - Bahia">BA - Bahia</option><option value="CE - Ceará">CE - Ceará</option>
+              <option value="DF - Brasília">DF - Brasília</option><option value="ES - Espírito Santo">ES - Espírito Santo</option>
+              <option value="GO - Goiás">GO - Goiás</option><option value="MA - Maranhão">MA - Maranhão</option>
+              <option value="MG - Minas Gerais">MG - Minas Gerais</option><option value="MS - Mato Grosso do Sul">MS - Mato Grosso do Sul</option>
+              <option value="MT - Mato Grosso">MT - Mato Grosso</option><option value="PA - Pará">PA - Pará</option>
+              <option value="PB - Paraíba">PB - Paraíba</option><option value="PE - Pernambuco">PE - Pernambuco</option>
+              <option value="PI - Piauí">PI - Piauí</option><option value="PR - Paraná">PR - Paraná</option>
+              <option value="RJ - Rio de Janeiro">RJ - Rio de Janeiro</option><option value="RN - Rio Grande do Norte">RN - Rio Grande do Norte</option>
+              <option value="RO - Rondônia">RO - Rondônia</option><option value="RR - Roraima">RR - Roraima</option>
+              <option value="RS - Rio Grande do Sul">RS - Rio Grande do Sul</option><option value="SC - Santa Catarina">SC - Santa Catarina</option>
+              <option value="SE - Sergipe">SE - Sergipe</option><option value="SP - São Paulo" selected>SP - São Paulo</option>
+              <option value="TO - Tocantins">TO - Tocantins</option><option value="ZF - Zona Franca Manaus">ZF - Zona Franca Manaus</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Contrib. ICMS</label>
+            <select id="pg-icms" class="form-input" style="width:100%;font-size:13px;">
+              <option value="Z1 - Contribuinte ICMS">Z1 - Contribuinte ICMS</option>
+              <option value="Z2 - Isento sem I.E.">Z2 - Isento sem I.E.</option>
+              <option value="Z9 - Não Contribuinte de ICMS" selected>Z9 - Não Contribuinte de ICMS</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Cond. Pagamento</label>
+            <select id="pg-pagto" class="form-input" style="width:100%;font-size:13px;">
+              <option>BR07 - Até 7 dias s/ desconto</option>
+              <option>BR14 - 14 dias sem desconto</option>
+              <option>BR21 - 21 dias sem desconto</option>
+              <option>BR28 - 28 dias sem desconto</option>
+              <option selected>BR30 - 30 dias sem desconto</option>
+              <option>BR42 - 42 dias sem desconto</option>
+              <option>BR60 - 60 dias sem desconto</option>
+              <option>BR90 - 90 dias sem desconto</option>
+              <option>BR99 - Pronto Pagamento s/desconto</option>
+              <option>BRZ2 - Pagamento em 2x 30/60</option>
+              <option>BRZ3 - Pagamento em 3x 30/60/90</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Rota</label>
+            <select id="pg-rota" class="form-input" style="width:100%;font-size:13px;">
+              <option>0 - Rota 0</option><option>1 - Rota 1</option><option>2 - Rota 2</option>
+              <option selected>3 - Rota 3</option><option>4 - Rota 4</option><option>5 - Rota 5</option>
+              <option>6 - Rota 6</option><option>7 - Rota 7</option><option>8 - Rota 8</option><option>9 - Rota 9</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Equipe Vendas (auto)</label>
+            <div id="pg-equipe" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Esquema Fiscal (auto)</label>
+            <div id="pg-fiscal" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Vendedor</label>
+          <select id="pg-vendedor" class="form-input" style="width:100%;font-size:13px;"></select>
+        </div>
+        <div style="margin-top:10px;">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Sector Industrial</label>
+          <select id="pg-sector" class="form-input" style="width:100%;font-size:13px;">
+            <option value="">— Selecionar —</option>
+            <option>1000 ( Canal:01 | CNPJ:Sim | I.E.:Sim | Revende:Sim )</option>
+            <option>2000 ( Canal:03 | CNPJ:Sim | I.E.:Sim | Revende:Consumidor Final )</option>
+            <option>3000 ( Canal:03 | CNPJ:Sim | I.E.:Não | Revende:Consumidor Final )</option>
+            <option>5000 ( Canal:04 | CNPJ:Sim | I.E.:Sim | Revende:Sim )</option>
+            <option>2000 ( Canal:09 | CNPJ:Sim | I.E.:Sim | Revende:Consumidor Final )</option>
+            <option>3000 ( Canal:09 | CNPJ:Sim | I.E.:Não | Revende:Consumidor Final )</option>
+            <option>3000 ( Canal:09 | CNPJ:Não | I.E.:Não | Revende:Consumidor Final )</option>
+            <option>2000 ( Canal:12 | CNPJ:Sim | I.E.:Sim | Revende:Consumidor Final )</option>
+            <option>3000 ( Canal:12 | CNPJ:Sim | I.E.:Não | Revende:Consumidor Final )</option>
+            <option>1000 ( Canal:13 | CNPJ:Sim | I.E.:Sim | Revende:Sim )</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
+        <button class="btn btn-secondary" onclick="prosGanhoFechar()">Cancelar</button>
+        <button class="btn btn-primary" onclick="prosGanhoExportar()" style="background:#16a34a;border-color:#16a34a;">⬇ Exportar Cadastro SAP</button>
+      </div>
+      <div id="pg-status" style="margin-top:8px;font-size:12px;text-align:right;"></div>
+    </div>
+  </div>
+
   <!-- MODAL PROSPEÇÃO -->
   <div id="pros-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;overflow-y:auto;">
     <div style="background:var(--surface);border-radius:12px;max-width:640px;margin:40px auto;padding:28px;position:relative;">
@@ -1695,7 +1932,7 @@ var _unused_placeholder = 1;
         </div>
         <div>
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Estado</label>
-          <select id="pros-f-estado" class="form-input" style="width:100%;">
+          <select id="pros-f-estado" class="form-input" style="width:100%;" onchange="const b=document.getElementById('pros-btn-cadastro');if(b)b.style.display=this.value==='ganho'?'inline-flex':'none';">
             <option value="identificado">Identificado</option>
             <option value="contactado">Contactado</option>
             <option value="visita">Visita feita</option>
@@ -1737,8 +1974,9 @@ var _unused_placeholder = 1;
         <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;">HISTÓRICO</div>
         <div id="pros-modal-hist-list" style="max-height:200px;overflow-y:auto;"></div>
       </div>
-      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap;">
         <button class="btn btn-secondary" onclick="prosCloseModal()">Cancelar</button>
+        <button id="pros-btn-cadastro" class="btn" onclick="prosModalAbrirCadastro()" style="display:none;background:#16a34a;color:#fff;border-color:#16a34a;">📋 Exportar Cadastro SAP</button>
         <button class="btn btn-primary" onclick="prosSave()">Guardar</button>
       </div>
       <div id="pros-modal-status" style="margin-top:10px;font-size:12px;text-align:right;"></div>
@@ -6322,7 +6560,8 @@ function renderProsList(cont, dados) {
       <td style="${TD}text-align:right;">${p.potencial_kg?parseFloat(p.potencial_kg).toFixed(1):''}</td>
       <td style="${TD}">${p.proxima_acao?escHtml(p.proxima_acao):''}</td>
       <td style="${TD}">${acaoStr}</td>
-      <td style="${TD}text-align:center;" onclick="event.stopPropagation()">
+      <td style="${TD}text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">
+        ${p.estado==='ganho'?`<button onclick="prosGanhoAbrir(prosData.find(x=>x.id===${p.id}))" style="background:none;border:1px solid #86efac;border-radius:4px;color:#16a34a;cursor:pointer;font-size:11px;padding:2px 7px;margin-right:3px;" title="Exportar Cadastro SAP">📋</button>`:''}
         <button onclick="prosEliminar(${p.id})" style="background:none;border:1px solid #fca5a5;border-radius:4px;color:#dc2626;cursor:pointer;font-size:11px;padding:2px 7px;" title="Eliminar">🗑</button>
       </td>
     </tr>`;
@@ -6379,6 +6618,8 @@ async function prosOpenEdit(id) {
   document.getElementById('pros-f-celular').value   = p.celular || '';
   document.getElementById('pros-f-email').value     = p.email || '';
   document.getElementById('pros-f-estado').value    = p.estado || 'identificado';
+  const btnCad = document.getElementById('pros-btn-cadastro');
+  if (btnCad) btnCad.style.display = (p.estado === 'ganho') ? 'inline-flex' : 'none';
   document.getElementById('pros-f-marca').value     = p.marca_atual || '';
   document.getElementById('pros-f-preco').value     = p.preco_atual || '';
   document.getElementById('pros-f-caps').value      = p.potencial_caps || '';
@@ -6492,6 +6733,252 @@ async function prosSave() {
   } catch(e) {
     st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
   }
+}
+
+// ─── CLIENTE GANHO / CADASTRO SAP ────────────────────
+
+const PG_VENDEDORES = {
+  'GN52_00': [],
+  'GN52_01': ['99520009 - GORGA Varejo MARCIO','99520018 - DIOGO OLIVEIRA'],
+  'GN52_03': ['99520005 - OFFICE Marcio','99520015 - HELCIO GRECIO - OFFICE','99520016 - DANIELA SANTOS - OFFICE','99520017 - FONTES PAULO - OFFICE','99520019 - Neves Office Filipe'],
+  'GN52_04': ['99520002 - GREGIO HELCIO','99520006 - DANIELA SANTOS','99520007 - Fontes Paulo','99520010 - Neves Filipe'],
+  'GN52_09': ['99520001 - GORGA Ecommerce MÁRCIO'],
+  'GN52_12': ['99520011 - Institucional Balcão','99520012 - Gorga Inst Marcio'],
+  'GN52_13': ['99520003 - BOTTELLO MASSIMO','99520004 - OLIVEIRA Distribuidores DIOGO','99520008 - GORGA Sellers MÁRCIO'],
+  'GN53_01': ['99530001 - OLIVEIRA Var QB DIOGO'],
+  'GN53_13': ['99530002 - BOTTELLO QBRASIL MASSIMO','99530003 - Cafetaria Marcio','99530005 - Distr Varejo QB Diogo'],
+};
+
+const PG_EQUIPE_CANAL = {
+  '01': 'RT1 - Equipa 1-retalho',
+  '03': 'GRP - Vendedor GRUPO',
+  '04': 'HR1 - Equipa 1-restauração',
+  '09': 'VIT - Vendas Internet',
+  '12': 'VCB - Balcão Geral',
+  '13': 'HBN - Revendedor Nacional',
+};
+
+// Mapa vendedor DFB → código SAP canal 04
+const PG_VENDEDOR_SAP = {
+  'Hélcio Grégio':  '99520002 - GREGIO HELCIO',
+  'Paulo Fontes':   '99520007 - Fontes Paulo',
+  'Daniela Santos': '99520006 - DANIELA SANTOS',
+  'Filipe Neves':   '99520010 - Neves Filipe',
+};
+
+function prosGanhoEmpresaChange() {
+  const empresa = document.getElementById('pg-empresa').value;
+  const gn = empresa.startsWith('GN52') ? 'GN52' : 'GN53';
+  document.getElementById('pg-dept').textContent   = gn === 'GN52' ? 'DFSP - Delta Foods (São Paulo)' : 'QBSP - Q-Brasil (São Paulo)';
+  document.getElementById('pg-org').textContent    = gn === 'GN52' ? 'DF01' : 'QB01';
+  document.getElementById('pg-escrit').textContent = gn === 'GN52' ? 'DFSP' : 'QBSP';
+  document.getElementById('pg-centro').textContent = gn === 'GN52' ? 'DFSP' : 'QBES';
+  prosGanhoCanalChange();
+}
+
+function prosGanhoCanalChange() {
+  const empresa = document.getElementById('pg-empresa').value;
+  const canal   = document.getElementById('pg-canal').value;
+  const gn      = empresa.startsWith('GN52') ? 'GN52' : 'GN53';
+  const canalCod = canal.substring(0,2);
+  const key = `${gn}_${canalCod}`;
+  const vendedores = PG_VENDEDORES[key] || [];
+  const sel = document.getElementById('pg-vendedor');
+  sel.innerHTML = vendedores.map(v => `<option value="${v}">${v}</option>`).join('') || '<option value="">— Sem vendedores para este canal —</option>';
+  document.getElementById('pg-equipe').textContent = PG_EQUIPE_CANAL[canalCod] || '';
+}
+
+function prosGanhoRegiaoChange() {
+  const regiao = document.getElementById('pg-regiao').value;
+  const isZF = regiao.startsWith('ZF');
+  document.getElementById('pg-fiscal').textContent = isZF ? '2 - Zona Franca - ICMS' : '1 - Sujeito a imposto';
+}
+
+function prosGanhoAbrir(p) {
+  // Preencher com dados da prospeção
+  document.getElementById('pros-ganho-nome-label').textContent = p.nome || '';
+  document.getElementById('pg-nome').value    = p.nome || '';
+  document.getElementById('pg-cnpj').value    = p.cnpj || '';
+  document.getElementById('pg-fantasia').value = p.nome || '';
+  document.getElementById('pg-email').value   = p.email || '';
+  document.getElementById('pg-tel1').value    = p.celular || '';
+  document.getElementById('pg-tel2').value    = '';
+  document.getElementById('pg-ie').value      = '';
+  document.getElementById('pg-rua').value     = '';
+  document.getElementById('pg-nro').value     = '';
+  document.getElementById('pg-supl').value    = '';
+  document.getElementById('pg-bairro').value  = '';
+  document.getElementById('pg-cep').value     = '';
+  document.getElementById('pg-cidade').value  = 'SÃO PAULO';
+  document.getElementById('pg-status').textContent = '';
+
+  // Pré-selecionar vendedor se for um dos 4
+  const sapVend = PG_VENDEDOR_SAP[p.vendedor] || '';
+
+  // Trigger automáticos
+  prosGanhoEmpresaChange(); // popula dept/org/escrit/centro e vendedores canal 04
+  prosGanhoRegiaoChange();  // fiscal
+
+  // Tentar pré-selecionar vendedor correto
+  if (sapVend) {
+    const sel = document.getElementById('pg-vendedor');
+    for (const opt of sel.options) {
+      if (opt.value === sapVend) { sel.value = sapVend; break; }
+    }
+  }
+
+  document.getElementById('pros-ganho-overlay').style.display = 'block';
+}
+
+function prosModalAbrirCadastro() {
+  const p = prosData.find(x => x.id === prosEditId);
+  if (!p) return;
+  prosCloseModal();
+  setTimeout(() => prosGanhoAbrir(p), 100);
+}
+
+function prosGanhoFechar() {
+  document.getElementById('pros-ganho-overlay').style.display = 'none';
+}
+
+async function prosGanhoExportar() {
+  const st = document.getElementById('pg-status');
+  st.innerHTML = '<span style="color:var(--muted)">A gerar...</span>';
+
+  const empresa  = document.getElementById('pg-empresa').value;
+  const gn       = empresa.startsWith('GN52') ? 'GN52' : 'GN53';
+  const regiao   = document.getElementById('pg-regiao').value;
+  const isZF     = regiao.startsWith('ZF');
+
+  const dados = {
+    // Cabeçalho
+    motivo:    document.getElementById('pg-motivo').value,
+    empresa,
+    grupo:     document.getElementById('pg-grupo').value,
+    dept:      gn === 'GN52' ? 'DFSP - Delta Foods (São Paulo)' : 'QBSP - Q-Brasil (São Paulo)',
+    orgVendas: gn === 'GN52' ? 'DF01' : 'QB01',
+    escritVendas: gn === 'GN52' ? 'DFSP' : 'QBSP',
+    centro:    gn === 'GN52' ? 'DFSP' : 'QBES',
+    fusoHor:   'BRZLEA',
+    // Dados gerais
+    nome:      document.getElementById('pg-nome').value,
+    cnpj:      document.getElementById('pg-cnpj').value,
+    fantasia:  document.getElementById('pg-fantasia').value,
+    ie:        document.getElementById('pg-ie').value,
+    email:     document.getElementById('pg-email').value,
+    tel1:      document.getElementById('pg-tel1').value,
+    tel2:      document.getElementById('pg-tel2').value,
+    termoPesq: 'DFSP',
+    // Endereço
+    rua:       document.getElementById('pg-rua').value,
+    nro:       document.getElementById('pg-nro').value,
+    supl:      document.getElementById('pg-supl').value,
+    bairro:    document.getElementById('pg-bairro').value,
+    cep:       document.getElementById('pg-cep').value,
+    cidade:    document.getElementById('pg-cidade').value,
+    // Vendas
+    canal:     document.getElementById('pg-canal').value,
+    regiao,
+    icms:      document.getElementById('pg-icms').value,
+    pagto:     document.getElementById('pg-pagto').value,
+    rota:      document.getElementById('pg-rota').value,
+    equipe:    document.getElementById('pg-equipe').textContent,
+    vendedor:  document.getElementById('pg-vendedor').value,
+    sector:    document.getElementById('pg-sector').value,
+    fiscal:    isZF ? '2 - Zona Franca - ICMS' : '1 - Sujeito a imposto',
+    incoterms: 'CIF - Custo, seguro & frete',
+    esquemaCalc: '3 - Esq. de Cálc.',
+  };
+
+  try {
+    // Gerar via API
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'ok' }]
+      })
+    });
+    // Se chegou aqui, usa SheetJS para gerar o Excel
+    prosGanhoGerarExcel(dados);
+    st.innerHTML = '';
+  } catch(e) {
+    prosGanhoGerarExcel(dados);
+    st.innerHTML = '';
+  }
+}
+
+async function prosGanhoGerarExcel(d) {
+  if (!window.XLSX) {
+    await new Promise((res,rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+
+  const wb = window.XLSX.utils.book_new();
+  const ws = {};
+
+  // Helper para definir células
+  const c = (ref, v, t) => { ws[ref] = { v, t: t||'s' }; };
+  const bold = (ref, v) => { ws[ref] = { v, t:'s', s:{ font:{bold:true} } }; };
+
+  // Título
+  c('N1', 'CADASTRO DE CLIENTES - DELTA FOODS / Q-BRASIL');
+
+  // Motivo
+  c('O5', 'Motivo: '); c('U5', d.motivo);
+
+  // Empresa / Grupo / Dept
+  c('D7', 'Grupo de Contas:'); c('L7', d.grupo);
+  c('U7', 'Empresa:'); c('AA7', d.empresa);
+  c('D9', 'Departamento Comercial:'); c('O9', d.dept);
+  c('D11', 'Org. de Vendas:'); c('K11', d.orgVendas);
+  c('AC11', 'Canal Distrib.:'); c('AD11', d.canal);
+  c('AT11', 'Setor de Ativ.');
+
+  // Dados Gerais
+  c('D13', 'Dados Gerais');
+  c('D15', 'Nome:'); c('H15', d.nome); c('AV15', 'CNPJ ou CPF:'); c('BB15', d.cnpj);
+  c('D17', 'Nome Fantasia:'); c('H17', d.fantasia); c('AV17', 'Inscrição Estadual:'); c('BB17', d.ie);
+  c('D19', 'Termo Pesquisa:'); c('H19', d.termoPesq); c('P19', 'Sector Industrial:');
+  c('D21', 'Rua:'); c('H21', d.rua); c('AV21', 'Nro.:'); c('AW21', d.nro); c('BH21', 'Supl.:'); c('BI21', d.supl);
+  c('D23', 'Bairro:'); c('H23', d.bairro); c('AV23', 'CEP:'); c('AW23', d.cep); c('BH23', 'Região:'); c('BI23', d.regiao);
+  c('D25', 'Fuso horário:'); c('H25', d.fusoHor); c('P25', 'Cidade:'); c('T25', d.cidade);
+  c('D27', 'E-mail:'); c('H27', d.email); c('AV27', 'Tel.1:'); c('AW27', d.tel1); c('BL27', 'Tel.2:'); c('BM27', d.tel2);
+
+  // Dados Área Vendas
+  c('D29', 'Dados Área Vendas');
+  c('D31', 'Cond. Pagto.:'); c('H31', d.pagto); c('AV31', 'Rota:'); c('AW31', d.rota);
+  c('D33', 'Incoterms:'); c('H33', d.incoterms); c('AV33', 'Equipe vendas:'); c('AW33', d.equipe);
+  c('D35', 'Escrit.vendas:'); c('H35', d.escritVendas); c('AV35', 'Vendedor:'); c('AW35', d.vendedor);
+
+  // Fiscal
+  c('D37', 'Classif. Fiscal:'); c('H37', d.fiscal);
+  c('D39', 'Contrib.ICMS:'); c('H39', d.icms);
+  c('D41', 'Sector Industrial:'); c('H41', d.sector);
+  c('D43', 'Vendedor:'); c('H43', d.vendedor);
+  c('AV43', 'Centro Fornecedor:'); c('AW43', d.centro);
+
+  // Legenda
+  c('J45', 'Área Comercial'); c('T45', 'Área Financeira'); c('AD45', 'Equipe Portugal');
+
+  // Range
+  ws['!ref'] = 'A1:BU50';
+  ws['!cols'] = Array(73).fill({ wch: 3 });
+  ws['!cols'][3] = { wch: 18 }; // D
+  ws['!cols'][7] = { wch: 25 }; // H
+
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Cliente');
+
+  const nome = (d.nome || 'cadastro').replace(/[^a-zA-Z0-9]/g, '_').substring(0,20);
+  window.XLSX.writeFile(wb, `Cadastro_${nome}.xlsx`);
+  toast('✅ Excel exportado!');
+  prosGanhoFechar();
 }
 
 async function prosEliminar(id) {
