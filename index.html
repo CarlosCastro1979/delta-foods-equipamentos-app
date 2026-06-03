@@ -1656,6 +1656,27 @@ var _unused_placeholder = 1;
         <button class="btn btn-primary btn-sm" onclick="document.getElementById('dados-dividas-input').click()">📂 Selecionar ficheiro</button>
       </div>
 
+      <!-- CÓDIGOS RELACIONADOS -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px;margin-top:0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <span style="font-size:20px;">🔗</span>
+          <div>
+            <div style="font-weight:600;font-size:15px;">Códigos Relacionados (Pai → Filho)</div>
+            <div style="font-size:12px;color:var(--muted);">Associa um código SAP pai a um filho — as vendas de ambos são somadas para contratos e Sem Compras.</div>
+          </div>
+        </div>
+        <div id="cod-rel-list" style="margin-bottom:12px;"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input type="text" id="cod-rel-pai" placeholder="Cód. Pai" maxlength="20"
+            style="flex:1;min-width:100px;max-width:150px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface);">
+          <span style="color:var(--muted);font-size:13px;">→</span>
+          <input type="text" id="cod-rel-filho" placeholder="Cód. Filho" maxlength="20"
+            style="flex:1;min-width:100px;max-width:150px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface);">
+          <button class="btn btn-primary btn-sm" onclick="addCodRelacionado()">+ Adicionar</button>
+        </div>
+        <div id="cod-rel-status" style="margin-top:8px;font-size:12px;"></div>
+      </div>
+
     </div>
   </div>
 
@@ -2095,6 +2116,7 @@ function verificarDadosPin() {
     document.getElementById('dados-content').style.display = 'block';
     renderUltimaCargaSAP();
     renderUltimaVendasCarga();
+    loadCodRelacionados();
     if (errEl) errEl.style.display = 'none';
   } else {
     if (errEl) { errEl.style.display = 'block'; }
@@ -2408,6 +2430,7 @@ async function initSemCompras() {
   const promises = [];
   if (!scLoaded) promises.push(scLoadFromSupabase().then(ok => { if (ok) scDataRef = new Date(); }));
   if (!scDividasLoaded) promises.push(scLoadDividasFromSupabase());
+  if (!codRelacionados.length) promises.push(loadCodRelacionados());
   if (promises.length) await Promise.all(promises);
 
   renderSemCompras();
@@ -2491,6 +2514,102 @@ async function handleSCFileImport(event) {
 
 // Dívidas carregadas: { codCliente: { vencido, aging: {0-15, 15-30, 30-60, 60-90, 90-120, +120} } }
 let scDividasData = {};
+// ─── CÓDIGOS RELACIONADOS (PAI → FILHO) ──────────────
+let codRelacionados = []; // [{cod_pai, cod_filho}]
+
+async function loadCodRelacionados() {
+  try {
+    const res = await fetch(
+      'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/cod_relacionados?select=*&order=cod_pai.asc',
+      { headers: HEADERS }
+    );
+    const data = await res.json();
+    codRelacionados = Array.isArray(data) ? data : [];
+    renderCodRelacionados();
+  } catch(e) {
+    console.warn('loadCodRelacionados:', e.message);
+  }
+}
+
+function renderCodRelacionados() {
+  const el = document.getElementById('cod-rel-list');
+  if (!el) return;
+  if (!codRelacionados.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:4px 0;">Nenhum par registado.</div>';
+    return;
+  }
+  el.innerHTML = codRelacionados.map(r => `
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;">
+      <span style="font-weight:600;min-width:80px;">${r.cod_pai}</span>
+      <span style="color:var(--muted);">→</span>
+      <span style="min-width:80px;">${r.cod_filho}</span>
+      <button onclick="removeCodRelacionado(${r.id})" style="margin-left:auto;background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;padding:0 4px;">✕</button>
+    </div>`).join('');
+}
+
+async function addCodRelacionado() {
+  const pai   = document.getElementById('cod-rel-pai')?.value.trim();
+  const filho = document.getElementById('cod-rel-filho')?.value.trim();
+  const st    = document.getElementById('cod-rel-status');
+  if (!pai || !filho) { if(st) st.innerHTML = '<span style="color:var(--danger)">Preenche os dois códigos.</span>'; return; }
+  if (pai === filho)  { if(st) st.innerHTML = '<span style="color:var(--danger)">Pai e filho têm de ser diferentes.</span>'; return; }
+  try {
+    const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/cod_relacionados', {
+      method: 'POST',
+      headers: { ...HEADERS, 'Prefer': 'return=representation' },
+      body: JSON.stringify({ cod_pai: pai, cod_filho: filho })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({}));
+      throw new Error(err.message || err.details || res.status);
+    }
+    document.getElementById('cod-rel-pai').value = '';
+    document.getElementById('cod-rel-filho').value = '';
+    if(st) st.innerHTML = '<span style="color:#2e7d32">✅ Par adicionado.</span>';
+    await loadCodRelacionados();
+    setTimeout(() => { if(st) st.innerHTML = ''; }, 3000);
+  } catch(e) {
+    if(st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
+  }
+}
+
+async function removeCodRelacionado(id) {
+  if (!confirm('Remover este par?')) return;
+  try {
+    await fetch(`https://qnscwppgljobelplgbkp.supabase.co/rest/v1/cod_relacionados?id=eq.${id}`, {
+      method: 'DELETE', headers: HEADERS
+    });
+    await loadCodRelacionados();
+  } catch(e) { toast('Erro ao remover: ' + e.message, 'error'); }
+}
+
+// Dado um cod, devolve o conjunto de cods a considerar (pai + filho ou só ele mesmo)
+function getCodsFamilia(cod) {
+  const c = String(cod).trim();
+  const codsNorm = String(normalizaCodSC(c));
+  const conjunto = new Set([c, codsNorm]);
+  for (const r of codRelacionados) {
+    const p = String(r.cod_pai).trim();
+    const f = String(r.cod_filho).trim();
+    if (p === c || p === codsNorm || f === c || f === codsNorm) {
+      conjunto.add(p); conjunto.add(f);
+      conjunto.add(normalizaCodSC(p)); conjunto.add(normalizaCodSC(f));
+    }
+  }
+  return conjunto;
+}
+
+// Última compra considerando todos os códigos da família
+function getUltimaCompraFamilia(cod) {
+  const familia = getCodsFamilia(cod);
+  let melhor = null;
+  for (const c of familia) {
+    const dt = scVendasData[c];
+    if (dt && (!melhor || dt > melhor)) melhor = dt;
+  }
+  return melhor;
+}
+
 let scDividasLoaded = false;
 
 // Dívidas: carregadas do ficheiro mensal, guardadas no Supabase, substituídas a cada upload
@@ -2683,7 +2802,7 @@ function renderSemCompras() {
   for (const cli of getListaClientesActiva()) {
     if (vendFilt && cli.vendedor !== vendFilt) continue;
     const codNorm = normalizaCodSC(cli.cod);
-    const ultimaCompra = scVendasData[codNorm] || scVendasData[cli.cod] || null;
+    const ultimaCompra = getUltimaCompraFamilia(cli.cod);
 
     // Só considera clientes com pelo menos uma venda no histórico
     if (!ultimaCompra) continue;
@@ -2892,7 +3011,7 @@ async function exportSCExcel() {
   for (const cli of getListaClientesActiva()) {
     if (vendFilt && cli.vendedor !== vendFilt) continue;
     const codNorm = normalizaCodSC(cli.cod);
-    const ultimaCompra = scVendasData[codNorm] || scVendasData[cli.cod] || null;
+    const ultimaCompra = getUltimaCompraFamilia(cli.cod);
     const meses = ultimaCompra ? Math.floor((hoje - ultimaCompra) / (1000*60*60*24*30.44)) : 999;
     if (meses < periodoMin) continue;
     const faixa = meses >= 12 ? '+12 meses' : meses >= 9 ? '9-12 meses' : '6-9 meses';
@@ -4978,7 +5097,10 @@ async function loadContratosTab(forceRefresh = false) {
 
         const consumoEsperado = consumoMes * mesesDecorridos;
         // Only count sales from contract start date onwards, matching tipo
-        const consumoReal = (vendasPorCod[r.cod] || [])
+        // Somar vendas de todos os códigos da família (pai + filho)
+        const familia = getCodsFamilia(r.cod);
+        const consumoReal = [...familia]
+          .flatMap(c => vendasPorCod[c] || [])
           .filter(v => {
             // Parse date format DD.MM.YYYY
             const parts = v.data.split('.');
