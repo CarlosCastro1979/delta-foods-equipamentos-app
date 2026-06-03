@@ -897,6 +897,29 @@ var _unused_placeholder = 1;
   </div>
 
   <div class="tabs">
+    <!-- BARRA DE UTILIZADOR -->
+    <div id="user-bar" style="display:none;background:#fff;border-bottom:1px solid var(--border);padding:6px 16px;display:flex;align-items:center;justify-content:space-between;font-size:12px;">
+      <span>👤 A trabalhar como: <strong id="user-bar-name" style="color:var(--accent)"></strong></span>
+      <button onclick="logoutUtilizador()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;text-decoration:underline;">Mudar</button>
+    </div>
+    <!-- MODAL LOGIN -->
+    <div id="login-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:12px;padding:32px;width:320px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2);">
+        <div style="font-size:36px;margin-bottom:12px;">👤</div>
+        <h2 style="font-size:17px;font-weight:600;margin-bottom:6px;">Quem és tu?</h2>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Seleciona o teu nome para continuar.</p>
+        <select id="login-select" class="form-input" style="width:100%;margin-bottom:16px;">
+          <option value="">— Selecionar —</option>
+          <option value="Hélcio Grégio">Hélcio Grégio</option>
+          <option value="Paulo Fontes">Paulo Fontes</option>
+          <option value="Daniela Santos">Daniela Santos</option>
+          <option value="Filipe Neves">Filipe Neves</option>
+          <option value="Carlos Castro">Carlos Castro</option>
+        </select>
+        <button class="btn btn-primary" style="width:100%;" onclick="confirmarLogin()">Entrar</button>
+        <div id="login-erro" style="color:var(--danger);font-size:12px;margin-top:8px;display:none;">Seleciona um nome para continuar.</div>
+      </div>
+    </div>
     <button class="tab active" onclick="switchTab('registos')">📋 Registo Clientes</button>
     <button class="tab" onclick="switchTab('resumo')">📊 Resumo</button>
     <button class="tab" onclick="switchTab('at')">🔧 Pedido AT</button>
@@ -2035,6 +2058,8 @@ async function salvarRegisto() {
   if (!vendedor || !cod || !nome || !cep) {
     toast('Preenche todos os campos obrigatórios.', 'error'); return;
   }
+  const erroContrato = validarContratos(contratos);
+  if (erroContrato) { toast(erroContrato, 'error'); return; }
   // Equipamentos opcionais — aceitar sem equipamentos se botão "Sem equipamentos" activo
   const semEquip = document.getElementById('btn-sem-equip')?.classList.contains('active');
   if (!equipamentos.length && !semEquip) {
@@ -2295,6 +2320,42 @@ function renderTable() {
     badgeEl.style.display = totalInvalidos > 0 ? 'inline-flex' : 'none';
   }
 
+  // Detetar códigos duplicados
+  const codCount = {};
+  (allData||[]).forEach(r => {
+    const c = String(r.cod||'').trim();
+    if (c) codCount[c] = (codCount[c]||0) + 1;
+  });
+  const codsDuplicados = new Set(Object.keys(codCount).filter(c => codCount[c] > 1));
+  const totalDuplicados = codsDuplicados.size;
+  let dupBadge = document.getElementById('duplicados-badge');
+  if (!dupBadge) {
+    dupBadge = document.createElement('span');
+    dupBadge.id = 'duplicados-badge';
+    dupBadge.style.cssText = 'background:#ff6b35;color:#fff;border-radius:6px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer;';
+    dupBadge.onclick = () => {
+      document.getElementById('filtro-cod').value = '';
+      document.getElementById('filtro-nome').value = '';
+      // filtrar só duplicados
+      window._filtroDuplicados = !window._filtroDuplicados;
+      renderTable();
+    };
+    const badgeParent = badgeEl?.parentNode;
+    if (badgeParent) badgeParent.appendChild(dupBadge);
+  }
+  if (totalDuplicados > 0) {
+    dupBadge.textContent = `⚠ ${totalDuplicados} código${totalDuplicados>1?'s':''} duplicado${totalDuplicados>1?'s':''}${window._filtroDuplicados?' (a mostrar)':''}`;
+    dupBadge.style.display = 'inline-flex';
+  } else {
+    dupBadge.style.display = 'none';
+    window._filtroDuplicados = false;
+  }
+
+  // Aplicar filtro de duplicados se activo
+  if (window._filtroDuplicados) {
+    filtered = filtered.filter(r => codsDuplicados.has(String(r.cod||'').trim()));
+  }
+
   const countEl = document.getElementById('record-count');
   if (countEl) countEl.textContent = `${filtered.length} de ${(allData||[]).length} registos`;
 
@@ -2310,10 +2371,13 @@ function renderTable() {
     ).join('');
     const dataFmt = r.data ? (()=>{ try { const d=new Date(r.data.includes('T')?r.data:r.data+'T12:00:00'); return isNaN(d)?r.data:d.toLocaleDateString('pt-BR'); } catch(e){ return r.data; } })() : '—';
     const isInvalid = codsValidos.size > 0 && !codsValidos.has(String(r.cod||'').trim());
-    const rowStyle = isInvalid ? ' class="row-invalid"' : '';
+    const isDuplicated = codsDuplicados.has(String(r.cod||'').trim());
+    const rowStyle = isInvalid ? ' class="row-invalid"' : isDuplicated ? ' style="background:#fff8f0;"' : '';
     const codCell = isInvalid
       ? `<td><span class="cod-invalid" title="Código não encontrado na lista de clientes SAP">${r.cod || '—'} ⚠</span></td>`
-      : `<td>${r.cod || '—'}</td>`;
+      : isDuplicated
+        ? `<td><span style="color:#ff6b35;font-weight:600;" title="Código duplicado — existe mais de um registo com este código">${r.cod || '—'} 🔴</span></td>`
+        : `<td>${r.cod || '—'}</td>`;
     return `<tr${rowStyle}>
       ${codCell}
       <td>${r.nome || '—'}</td>
@@ -3592,12 +3656,14 @@ async function salvarEdicao() {
   if (!vendedor || !cod || !nome || !cep) {
     toast('Preenche todos os campos obrigatórios.', 'error'); return;
   }
+  const erroContratoEdit = validarContratos(contratos);
+  if (erroContratoEdit) { toast(erroContratoEdit, 'error'); return; }
 
   try {
     const res = await fetch(SUPA_URL + '?id=eq.' + editingId, {
       method: 'PATCH',
       headers: HEADERS,
-      body: JSON.stringify({ vendedor, cod, nome, cep, contrato, contratos, equipamentos })
+      body: JSON.stringify({ vendedor, cod, nome, cep, contrato, contratos, equipamentos, atualizado_por: getUtilizadorAtual(), atualizado_em: new Date().toISOString() })
     });
     if (!res.ok) throw new Error(await res.text());
     toast('✅ Registo atualizado!');
@@ -4394,6 +4460,8 @@ function switchTab(tab) {
     // sempre reset para 'novo' ao entrar no menu principal
     window._registosSubTab = 'novo';
     switchSubTab('registos', 'novo');
+    // Pré-selecionar vendedor pelo utilizador logado
+    setTimeout(() => aplicarUtilizador(getUtilizadorAtual()), 50);
   }
   if (tab === 'contratos') {
     switchSubTab('contratos', window._contratosSubTab || 'registados');
@@ -5146,6 +5214,16 @@ function addContratoRow(prefix, data = {}) {
   list.appendChild(div);
 }
 
+function validarDataContrato(valor) {
+  // input[type=month] devolve "YYYY-MM" — ano pode ter mais de 4 dígitos se o utilizador errar
+  if (!valor) return { ok: true, valor: '' };
+  const m = valor.match(/^(\d+)-(\d{2})$/);
+  if (!m) return { ok: false, erro: 'Formato inválido' };
+  const ano = parseInt(m[1]);
+  if (ano < 2000 || ano > 2099) return { ok: false, erro: `Ano inválido: ${ano}. Deve ser entre 2000 e 2099.` };
+  return { ok: true, valor };
+}
+
 function getContratos(prefix) {
   const rows = document.querySelectorAll(`#${prefix}-contratos-list .contrato-row`);
   return [...rows].map(row => ({
@@ -5154,6 +5232,17 @@ function getContratos(prefix) {
     consumo: row.querySelector('[data-field="consumo"]').value,
     unidade: row.querySelector('[data-field="unidade"]').value,
   })).filter(c => c.inicio || c.consumo || c.duracao);
+}
+
+function validarContratos(contratos) {
+  for (let i = 0; i < contratos.length; i++) {
+    const c = contratos[i];
+    if (c.inicio) {
+      const v = validarDataContrato(c.inicio);
+      if (!v.ok) return `Contrato ${i+1}: ${v.erro}`;
+    }
+  }
+  return null; // sem erros
 }
 
 function loadContratos(prefix, contratos = []) {
@@ -5968,6 +6057,61 @@ function exportContratosExcel() {
   const a = document.createElement('a'); a.href=url; a.download='contratos_cumprimento.csv'; a.click();
 }
 
+// ─── UTILIZADOR / LOGIN ──────────────────────────────
+function initLogin() {
+  const nome = localStorage.getItem('dfb_utilizador');
+  if (nome) {
+    aplicarUtilizador(nome);
+  } else {
+    mostrarLoginModal();
+  }
+}
+
+function mostrarLoginModal() {
+  document.getElementById('login-overlay').style.display = 'flex';
+}
+
+function confirmarLogin() {
+  const sel = document.getElementById('login-select');
+  const nome = sel.value.trim();
+  if (!nome) {
+    document.getElementById('login-erro').style.display = 'block';
+    return;
+  }
+  localStorage.setItem('dfb_utilizador', nome);
+  aplicarUtilizador(nome);
+  document.getElementById('login-overlay').style.display = 'none';
+}
+
+function aplicarUtilizador(nome) {
+  // Barra de utilizador
+  const bar = document.getElementById('user-bar');
+  if (bar) { bar.style.display = 'flex'; document.getElementById('user-bar-name').textContent = nome; }
+  // Pré-selecionar vendedor nos formulários se for um dos 4
+  const vendedores = ['Hélcio Grégio','Paulo Fontes','Daniela Santos','Filipe Neves'];
+  // Normalizar para comparar (o select usa maiúsculas parciais)
+  const nomeUpper = nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  ['f-vendedor','e-vendedor','at-vendedor'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    for (const opt of el.options) {
+      const optUpper = opt.value.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if (optUpper === nomeUpper) { el.value = opt.value; break; }
+    }
+  });
+}
+
+function logoutUtilizador() {
+  localStorage.removeItem('dfb_utilizador');
+  mostrarLoginModal();
+  document.getElementById('login-select').value = '';
+  document.getElementById('login-erro').style.display = 'none';
+}
+
+function getUtilizadorAtual() {
+  return localStorage.getItem('dfb_utilizador') || '';
+}
+
 // ─── PROSPEÇÃO ──────────────────────────────────────
 const PROS_URL  = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/prospeccao';
 const PROS_HIST_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/prospeccao_historico';
@@ -6551,6 +6695,8 @@ function exportATHistoricoExcel() {
 
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
+  // Login de utilizador
+  initLogin();
   // Sincronizar lista de clientes do Supabase (para todos os dispositivos ficarem actualizados)
   sincronizarListaClientes().then(actualizado => {
     if (actualizado) toast('✅ Lista de clientes actualizada.', 'success');
