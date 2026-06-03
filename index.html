@@ -5439,20 +5439,20 @@ async function loadContratosTab(forceRefresh = false) {
     const TH2 = 'padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;background:#f5f5f5;';
     html += `<div style="overflow-x:auto;width:100%"><table style="border-collapse:collapse;font-size:12px;width:max-content;min-width:100%">
       <thead><tr>
-        <th style="${TH2}">CÓD</th>
-        <th style="${TH2}min-width:180px">CLIENTE</th>
-        <th style="${TH2}">CONTRATO</th>
-        <th style="${TH2}">INÍCIO</th>
-        <th style="${TH2}text-align:center">DUR.</th>
-        <th style="${TH2}">FIM</th>
-        <th style="${TH2}text-align:right">CONS./MÊS</th>
-        <th style="${TH2}text-align:right">TOTAL</th>
-        <th style="${TH2}text-align:right">ESPERADO</th>
-        <th style="${TH2}text-align:right">REAL</th>
-        <th style="${TH2}text-align:center">% TOTAL 🔺</th>
-        <th style="${TH2}text-align:center">% YTD</th>
-        <th style="${TH2}text-align:center;min-width:160px">ALERTA</th>
-        <th style="${TH2}text-align:center;min-width:100px">📄 DOCS</th>
+        <th style="${TH2}min-width:70px">CÓD</th>
+        <th style="${TH2}min-width:200px">CLIENTE</th>
+        <th style="${TH2}min-width:90px">CONTRATO</th>
+        <th style="${TH2}min-width:90px">INÍCIO</th>
+        <th style="${TH2}text-align:center;min-width:50px">DUR.</th>
+        <th style="${TH2}min-width:80px">FIM</th>
+        <th style="${TH2}text-align:right;min-width:100px">CONS./MÊS</th>
+        <th style="${TH2}text-align:right;min-width:100px">TOTAL</th>
+        <th style="${TH2}text-align:right;min-width:110px">ESPERADO</th>
+        <th style="${TH2}text-align:right;min-width:100px">REAL</th>
+        <th style="${TH2}text-align:center;min-width:80px">% TOTAL 🔺</th>
+        <th style="${TH2}text-align:center;min-width:80px">% YTD</th>
+        <th style="${TH2}text-align:center;min-width:200px">ALERTA</th>
+        <th style="${TH2}text-align:center;min-width:80px">📄 DOCS</th>
       </tr></thead><tbody>`;
 
     const fmtNum2 = (n, u) => u === 'Kg'
@@ -5475,13 +5475,13 @@ async function loadContratosTab(forceRefresh = false) {
         <td style="${td}color:var(--muted)">${r.cod}</td>
         <td style="${td}font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${r.nome}">${r.nome}</td>
         <td style="${td}">${r.contrato}</td>
-        <td style="${td}white-space:nowrap">${r.inicio}</td>
-        <td style="${td}text-align:center">${r.duracao}</td>
-        <td style="${td}white-space:nowrap">${r.fimFmt}</td>
-        <td style="${td}text-align:right">${fmtNum2(r.consumoMes,r.unidade)}</td>
-        <td style="${td}text-align:right">${fmtNum2(r.totalContratado,r.unidade)}</td>
-        <td style="${td}text-align:right">${r.consumoEsperado!==null?fmtNum2(r.consumoEsperado,r.unidade):'—'}</td>
-        <td style="${td}text-align:right;font-weight:600">${r.consumoReal!==null?fmtNum2(r.consumoReal,r.unidade):'—'}</td>
+        <td style="${td}white-space:nowrap" title="${r.inicioFmt}">${r.inicioFmt}</td>
+        <td style="${td}text-align:center">${r.duracao}m</td>
+        <td style="${td}white-space:nowrap" title="${r.fimFmt}">${r.fimFmt}</td>
+        <td style="${td}text-align:right" title="${fmtNum2(r.consumoMes,r.unidade)}">${fmtNum2(r.consumoMes,r.unidade)}</td>
+        <td style="${td}text-align:right" title="${fmtNum2(r.totalContratado,r.unidade)}">${fmtNum2(r.totalContratado,r.unidade)}</td>
+        <td style="${td}text-align:right" title="${r.consumoEsperado!==null?fmtNum2(r.consumoEsperado,r.unidade):'—'}">${r.consumoEsperado!==null?fmtNum2(r.consumoEsperado,r.unidade):'—'}</td>
+        <td style="${td}text-align:right;font-weight:600" title="${r.consumoReal!==null?fmtNum2(r.consumoReal,r.unidade):'—'}">${r.consumoReal!==null?fmtNum2(r.consumoReal,r.unidade):'—'}</td>
         <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal!==null?`<span style="background:${pctBg2(r.pctTotal)};color:${pctColor2(r.pctTotal)};padding:2px 8px;border-radius:10px;font-weight:700">${r.pctTotal}%</span>`:'—'}</td>
         <td style="${td}text-align:center;background:#F8FFF9">${r.pct!==null&&r.mesesDecorridos>0?`<span style="background:${pBg};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700">${r.pct}%</span>`:'—'}</td>
         <td style="${td}text-align:center;overflow:hidden;">${alertaHtml}</td>
@@ -5680,7 +5680,7 @@ function filtrarContratosVendedor() {
       <td style="${td}font-size:11px;color:var(--muted)">${r.cod}</td>
       <td style="${td}font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${r.nome}">${r.nome}</td>
       <td style="${td}">${r.contrato}</td>
-      <td style="${td}">${r.inicio}</td>
+      <td style="${td}white-space:nowrap" title="${r.inicioFmt}">${r.inicioFmt}</td>
       <td style="${td}text-align:center">${r.duracao}</td>
       <td style="${td}">${r.fimFmt}</td>
       <td style="${td}text-align:right">${fmtNum(r.consumoMes, r.unidade)}</td>
