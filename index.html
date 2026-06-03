@@ -904,6 +904,7 @@ var _unused_placeholder = 1;
     <button class="tab" onclick="switchTab('historico-at')">🔧 Histórico AT</button>
     <button class="tab" onclick="switchTab('sem-compras')">⚠️ Sem Compras</button>
     <button class="tab" onclick="switchTab('fora-sp')">📍 Fora SP</button>
+    <button class="tab" onclick="switchTab('prospeccao')">🎯 Prospeção</button>
     <button class="tab" onclick="switchTab('dados')">⚙ Dados</button>
   </div>
 
@@ -1584,6 +1585,136 @@ var _unused_placeholder = 1;
     </div>
     <div id="fsp-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
     <div id="fsp-content"></div>
+  </div>
+
+  <!-- PANEL PROSPEÇÃO -->
+  <div class="panel" id="panel-prospeccao">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+      <div style="font-size:15px;font-weight:600;">🎯 Prospeção de Clientes</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="pros-filtro-vendedor" class="form-input" style="min-width:170px;height:36px;font-size:13px;" onchange="renderPros()">
+          <option value="">Todos os vendedores</option>
+        </select>
+        <select id="pros-filtro-estado" class="form-input" style="min-width:150px;height:36px;font-size:13px;" onchange="renderPros()">
+          <option value="">Todos os estados</option>
+          <option value="identificado">Identificado</option>
+          <option value="contactado">Contactado</option>
+          <option value="visita">Visita feita</option>
+          <option value="proposta">Proposta enviada</option>
+          <option value="ganho">✅ Ganho</option>
+          <option value="perdido">❌ Perdido</option>
+        </select>
+        <select id="pros-filtro-segmento" class="form-input" style="min-width:140px;height:36px;font-size:13px;" onchange="renderPros()">
+          <option value="">Todos os segmentos</option>
+          <option value="Restaurante">Restaurante</option>
+          <option value="Bar">Bar</option>
+          <option value="Hotel">Hotel</option>
+          <option value="Café">Café</option>
+          <option value="Padaria">Padaria</option>
+          <option value="Escritório">Escritório</option>
+          <option value="Outro">Outro</option>
+        </select>
+        <select id="pros-vista" class="form-input" style="min-width:120px;height:36px;font-size:13px;" onchange="renderPros()">
+          <option value="kanban">🗂 Kanban</option>
+          <option value="lista">📋 Lista</option>
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="prosOpenModal()" style="min-height:36px;">+ Novo Lead</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportProsExcel()" style="min-height:36px;">⬇ Excel</button>
+      </div>
+    </div>
+    <div id="pros-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+    <div id="pros-content"></div>
+  </div>
+
+  <!-- MODAL PROSPEÇÃO -->
+  <div id="pros-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;overflow-y:auto;">
+    <div style="background:var(--surface);border-radius:12px;max-width:640px;margin:40px auto;padding:28px;position:relative;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <h2 id="pros-modal-title" style="font-size:17px;font-weight:600;">Novo Lead</h2>
+        <button onclick="prosCloseModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div style="grid-column:1/-1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Nome do cliente *</label>
+          <input type="text" id="pros-f-nome" class="form-input" style="width:100%;" placeholder="Nome do estabelecimento">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Vendedor *</label>
+          <select id="pros-f-vendedor" class="form-input" style="width:100%;">
+            <option value="">Selecionar...</option>
+            <option>Hélcio Grégio</option>
+            <option>Paulo Fontes</option>
+            <option>Daniela Santos</option>
+            <option>Filipe Neves</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Segmento</label>
+          <select id="pros-f-segmento" class="form-input" style="width:100%;">
+            <option value="">Selecionar...</option>
+            <option>Restaurante</option>
+            <option>Bar</option>
+            <option>Hotel</option>
+            <option>Café</option>
+            <option>Padaria</option>
+            <option>Escritório</option>
+            <option>Outro</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Contacto</label>
+          <input type="text" id="pros-f-contacto" class="form-input" style="width:100%;" placeholder="Tel / email">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Estado</label>
+          <select id="pros-f-estado" class="form-input" style="width:100%;">
+            <option value="identificado">Identificado</option>
+            <option value="contactado">Contactado</option>
+            <option value="visita">Visita feita</option>
+            <option value="proposta">Proposta enviada</option>
+            <option value="ganho">✅ Ganho</option>
+            <option value="perdido">❌ Perdido</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Marca atual</label>
+          <input type="text" id="pros-f-marca" class="form-input" style="width:100%;" placeholder="Ex: Nespresso, Illy...">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Preço atual (R$)</label>
+          <input type="number" id="pros-f-preco" class="form-input" style="width:100%;" placeholder="0.00" step="0.01" min="0">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Potencial cápsulas/mês</label>
+          <input type="number" id="pros-f-caps" class="form-input" style="width:100%;" placeholder="0" min="0">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Potencial grão/mês (Kg)</label>
+          <input type="number" id="pros-f-kg" class="form-input" style="width:100%;" placeholder="0.0" step="0.1" min="0">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Próxima ação</label>
+          <input type="text" id="pros-f-acao" class="form-input" style="width:100%;" placeholder="Ex: Ligar, enviar proposta...">
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Data próxima ação</label>
+          <input type="date" id="pros-f-data-acao" class="form-input" style="width:100%;">
+        </div>
+        <div style="grid-column:1/-1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Nota (esta entrada)</label>
+          <textarea id="pros-f-nota" class="form-input" style="width:100%;min-height:80px;resize:vertical;" placeholder="Regista o que aconteceu, o que foi discutido..."></textarea>
+        </div>
+      </div>
+      <div id="pros-modal-hist" style="margin-top:18px;display:none;">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;">HISTÓRICO</div>
+        <div id="pros-modal-hist-list" style="max-height:200px;overflow-y:auto;"></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="prosCloseModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="prosSave()">Guardar</button>
+      </div>
+      <div id="pros-modal-status" style="margin-top:10px;font-size:12px;text-align:right;"></div>
+    </div>
   </div>
 
   <div class="panel" id="panel-dados">
@@ -4270,6 +4401,7 @@ function switchTab(tab) {
   if (tab === 'historico-at') loadATHistorico();
   if (tab === 'sem-compras') initSemCompras();
   if (tab === 'fora-sp') initForaSP();
+  if (tab === 'prospeccao') initProsTab();
 }
 
 // ─── PEDIDO AT ──────────────────────────────────────
@@ -5823,6 +5955,344 @@ function exportContratosExcel() {
   const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download='contratos_cumprimento.csv'; a.click();
+}
+
+// ─── PROSPEÇÃO ──────────────────────────────────────
+const PROS_URL  = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/prospeccao';
+const PROS_HIST_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/prospeccao_historico';
+
+let prosData = [];
+let prosEditId = null;
+
+const PROS_ESTADOS = {
+  identificado: { label: 'Identificado',      cor: '#6366f1', bg: '#eef2ff' },
+  contactado:   { label: 'Contactado',         cor: '#0ea5e9', bg: '#e0f2fe' },
+  visita:       { label: 'Visita feita',       cor: '#f59e0b', bg: '#fffbeb' },
+  proposta:     { label: 'Proposta enviada',   cor: '#8b5cf6', bg: '#f5f3ff' },
+  ganho:        { label: '✅ Ganho',            cor: '#16a34a', bg: '#f0fdf4' },
+  perdido:      { label: '❌ Perdido',          cor: '#dc2626', bg: '#fef2f2' },
+};
+const PROS_PIPELINE = ['identificado','contactado','visita','proposta','ganho','perdido'];
+
+async function initProsTab() {
+  await loadProsData();
+  // popular filtro vendedor
+  const sel = document.getElementById('pros-filtro-vendedor');
+  if (sel && sel.options.length <= 1) {
+    ['Hélcio Grégio','Paulo Fontes','Daniela Santos','Filipe Neves'].forEach(v => {
+      const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o);
+    });
+  }
+  renderPros();
+}
+
+async function loadProsData() {
+  try {
+    const res = await fetch(PROS_URL + '?select=*&order=atualizado_em.desc', { headers: HEADERS });
+    prosData = await res.json();
+    if (!Array.isArray(prosData)) prosData = [];
+  } catch(e) { prosData = []; }
+}
+
+function renderPros() {
+  const vista    = document.getElementById('pros-vista')?.value || 'kanban';
+  const vendedor = document.getElementById('pros-filtro-vendedor')?.value || '';
+  const estado   = document.getElementById('pros-filtro-estado')?.value || '';
+  const segmento = document.getElementById('pros-filtro-segmento')?.value || '';
+
+  let dados = prosData.filter(p => {
+    if (vendedor && p.vendedor !== vendedor) return false;
+    if (estado   && p.estado   !== estado)   return false;
+    if (segmento && p.segmento !== segmento) return false;
+    return true;
+  });
+
+  // info
+  const ativos   = prosData.filter(p => p.estado !== 'ganho' && p.estado !== 'perdido').length;
+  const ganhos   = prosData.filter(p => p.estado === 'ganho').length;
+  const perdidos = prosData.filter(p => p.estado === 'perdido').length;
+  const totalCaps = prosData.filter(p=>p.estado!=='perdido').reduce((s,p)=>s+(p.potencial_caps||0),0);
+  const totalKg   = prosData.filter(p=>p.estado!=='perdido').reduce((s,p)=>s+(parseFloat(p.potencial_kg)||0),0);
+  document.getElementById('pros-info').innerHTML =
+    `<span style="font-weight:600">${prosData.length}</span> leads no total &nbsp;·&nbsp;
+     <span style="color:#16a34a;font-weight:600">${ganhos} ganhos</span> &nbsp;·&nbsp;
+     <span style="color:#dc2626;">${perdidos} perdidos</span> &nbsp;·&nbsp;
+     <span style="font-weight:600">${ativos} ativos</span> &nbsp;·&nbsp;
+     Potencial: ${totalCaps.toLocaleString('pt-BR')} caps/mês${totalKg>0?' + '+totalKg.toFixed(1)+' Kg/mês':''}`;
+
+  const cont = document.getElementById('pros-content');
+  if (vista === 'kanban') {
+    renderProsKanban(cont, dados);
+  } else {
+    renderProsList(cont, dados);
+  }
+}
+
+function renderProsKanban(cont, dados) {
+  const colunas = PROS_PIPELINE.map(estado => {
+    const cfg = PROS_ESTADOS[estado];
+    const cards = dados.filter(p => p.estado === estado);
+    return `
+      <div style="min-width:220px;flex:1;background:#f8f9fa;border-radius:10px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <span style="font-size:12px;font-weight:700;color:${cfg.cor};text-transform:uppercase;letter-spacing:.5px">${cfg.label}</span>
+          <span style="background:${cfg.bg};color:${cfg.cor};border-radius:12px;padding:1px 8px;font-size:11px;font-weight:600;">${cards.length}</span>
+        </div>
+        ${cards.length === 0
+          ? '<div style="color:#bbb;font-size:12px;text-align:center;padding:20px 0;">—</div>'
+          : cards.map(p => prosCard(p)).join('')}
+      </div>`;
+  }).join('');
+
+  cont.innerHTML = `<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;">${colunas}</div>`;
+}
+
+function prosCard(p) {
+  const cfg = PROS_ESTADOS[p.estado] || PROS_ESTADOS.identificado;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  let acaoHtml = '';
+  if (p.data_proxima_acao) {
+    const d = new Date(p.data_proxima_acao + 'T00:00:00');
+    const atrasado = d < hoje;
+    const dStr = d.toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit'});
+    acaoHtml = `<div style="font-size:11px;margin-top:4px;color:${atrasado?'#dc2626':'#6b7280'};">
+      ${atrasado?'⚠️':'📅'} ${dStr}${p.proxima_acao?' — '+p.proxima_acao.substring(0,30):''}
+    </div>`;
+  }
+  let potHtml = '';
+  if (p.potencial_caps || p.potencial_kg) {
+    potHtml = `<div style="font-size:11px;color:#6b7280;margin-top:3px;">`;
+    if (p.potencial_caps) potHtml += `💊 ${p.potencial_caps.toLocaleString('pt-BR')} caps `;
+    if (p.potencial_kg)   potHtml += `☕ ${parseFloat(p.potencial_kg).toFixed(1)} Kg`;
+    potHtml += `</div>`;
+  }
+  return `
+    <div onclick="prosOpenEdit(${p.id})" style="background:#fff;border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;border:1px solid #e5e7eb;transition:box-shadow .15s;" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,.1)'" onmouseout="this.style.boxShadow='none'">
+      <div style="font-weight:600;font-size:13px;margin-bottom:2px;">${escHtml(p.nome)}</div>
+      <div style="font-size:11px;color:#6b7280;">${p.vendedor||''} ${p.segmento?'· '+p.segmento:''}</div>
+      ${p.marca_atual?`<div style="font-size:11px;color:#6b7280;">🏷 ${escHtml(p.marca_atual)}${p.preco_atual?' · R$ '+parseFloat(p.preco_atual).toFixed(2):''}</div>`:''}
+      ${potHtml}${acaoHtml}
+    </div>`;
+}
+
+function renderProsList(cont, dados) {
+  if (!dados.length) {
+    cont.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px;">Nenhum lead encontrado.</div>';
+    return;
+  }
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const rows = dados.map(p => {
+    const cfg = PROS_ESTADOS[p.estado] || PROS_ESTADOS.identificado;
+    let acaoStr = '';
+    if (p.data_proxima_acao) {
+      const d = new Date(p.data_proxima_acao + 'T00:00:00');
+      const atrasado = d < hoje;
+      acaoStr = `<span style="color:${atrasado?'#dc2626':'inherit'}">${atrasado?'⚠️ ':''}${d.toLocaleDateString('pt-BR')}</span>`;
+    }
+    return `<tr onclick="prosOpenEdit(${p.id})" style="cursor:pointer;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''">
+      <td style="padding:8px 10px;font-weight:600;font-size:13px;">${escHtml(p.nome)}</td>
+      <td style="padding:8px 10px;font-size:12px;">${p.vendedor||''}</td>
+      <td style="padding:8px 10px;font-size:12px;">${p.segmento||''}</td>
+      <td style="padding:8px 10px;"><span style="background:${cfg.bg};color:${cfg.cor};border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600;white-space:nowrap;">${cfg.label}</span></td>
+      <td style="padding:8px 10px;font-size:12px;">${p.marca_atual?escHtml(p.marca_atual):''}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;">${p.preco_atual?'R$ '+parseFloat(p.preco_atual).toFixed(2):''}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;">${p.potencial_caps?p.potencial_caps.toLocaleString('pt-BR'):''}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;">${p.potencial_kg?parseFloat(p.potencial_kg).toFixed(1):''}</td>
+      <td style="padding:8px 10px;font-size:12px;">${p.proxima_acao?escHtml(p.proxima_acao.substring(0,30)):''}</td>
+      <td style="padding:8px 10px;font-size:12px;">${acaoStr}</td>
+    </tr>`;
+  }).join('');
+
+  cont.innerHTML = `<div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border);">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr style="background:#f5f5f5;border-bottom:1px solid var(--border);">
+        <th style="padding:8px 10px;text-align:left;font-size:12px;color:var(--muted);">Nome</th>
+        <th style="padding:8px 10px;text-align:left;font-size:12px;color:var(--muted);">Vendedor</th>
+        <th style="padding:8px 10px;text-align:left;font-size:12px;color:var(--muted);">Segmento</th>
+        <th style="padding:8px 10px;text-align:left;font-size:12px;color:var(--muted);">Estado</th>
+        <th style="padding:8px 10px;text-align:left;font-size:12px;color:var(--muted);">Marca atual</th>
+        <th style="padding:8px 10px;text-align:right;font-size:12px;color:var(--muted);">Preço</th>
+        <th style="padding:8px 10px;text-align:right;font-size:12px;color:var(--muted);">Caps/mês</th>
+        <th style="padding:8px 10px;text-align:right;font-size:12px;color:var(--muted);">Kg/mês</th>
+        <th style="padding:8px 10px;text-align:left;font-size:12px;color:var(--muted);">Próxima ação</th>
+        <th style="padding:8px 10px;text-align:left;font-size:12px;color:var(--muted);">Data ação</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function prosOpenModal() {
+  prosEditId = null;
+  document.getElementById('pros-modal-title').textContent = 'Novo Lead';
+  ['nome','contacto','marca','acao'].forEach(f => document.getElementById('pros-f-'+f).value = '');
+  ['preco','caps','kg'].forEach(f => document.getElementById('pros-f-'+f).value = '');
+  document.getElementById('pros-f-data-acao').value = '';
+  document.getElementById('pros-f-nota').value = '';
+  document.getElementById('pros-f-vendedor').value = '';
+  document.getElementById('pros-f-segmento').value = '';
+  document.getElementById('pros-f-estado').value = 'identificado';
+  document.getElementById('pros-modal-hist').style.display = 'none';
+  document.getElementById('pros-modal-status').textContent = '';
+  document.getElementById('pros-modal-overlay').style.display = 'block';
+  setTimeout(()=>document.getElementById('pros-f-nome').focus(), 100);
+}
+
+async function prosOpenEdit(id) {
+  const p = prosData.find(x => x.id === id);
+  if (!p) return;
+  prosEditId = id;
+  document.getElementById('pros-modal-title').textContent = 'Editar Lead';
+  document.getElementById('pros-f-nome').value      = p.nome || '';
+  document.getElementById('pros-f-vendedor').value  = p.vendedor || '';
+  document.getElementById('pros-f-segmento').value  = p.segmento || '';
+  document.getElementById('pros-f-contacto').value  = p.contacto || '';
+  document.getElementById('pros-f-estado').value    = p.estado || 'identificado';
+  document.getElementById('pros-f-marca').value     = p.marca_atual || '';
+  document.getElementById('pros-f-preco').value     = p.preco_atual || '';
+  document.getElementById('pros-f-caps').value      = p.potencial_caps || '';
+  document.getElementById('pros-f-kg').value        = p.potencial_kg || '';
+  document.getElementById('pros-f-acao').value      = p.proxima_acao || '';
+  document.getElementById('pros-f-data-acao').value = p.data_proxima_acao || '';
+  document.getElementById('pros-f-nota').value      = '';
+  document.getElementById('pros-modal-status').textContent = '';
+
+  // Carregar histórico
+  try {
+    const res = await fetch(PROS_HIST_URL + `?prospeccao_id=eq.${id}&order=criado_em.desc`, { headers: HEADERS });
+    const hist = await res.json();
+    const hEl = document.getElementById('pros-modal-hist');
+    const hList = document.getElementById('pros-modal-hist-list');
+    if (Array.isArray(hist) && hist.length) {
+      hEl.style.display = 'block';
+      hList.innerHTML = hist.map(h => {
+        const d = new Date(h.criado_em).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+        const est = h.estado_novo ? `<span style="background:${(PROS_ESTADOS[h.estado_novo]||{}).bg||'#f3f4f6'};color:${(PROS_ESTADOS[h.estado_novo]||{}).cor||'#666'};border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px;">${(PROS_ESTADOS[h.estado_novo]||{}).label||h.estado_novo}</span>` : '';
+        return `<div style="padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">
+          <span style="color:var(--muted);">${d}</span>${est}
+          ${h.nota ? `<div style="color:var(--text);margin-top:2px;">${escHtml(h.nota)}</div>` : ''}
+        </div>`;
+      }).join('');
+    } else {
+      hEl.style.display = 'none';
+    }
+  } catch(e) {}
+
+  document.getElementById('pros-modal-overlay').style.display = 'block';
+}
+
+function prosCloseModal() {
+  document.getElementById('pros-modal-overlay').style.display = 'none';
+}
+
+async function prosSave() {
+  const nome     = document.getElementById('pros-f-nome').value.trim();
+  const vendedor = document.getElementById('pros-f-vendedor').value;
+  const estado   = document.getElementById('pros-f-estado').value;
+  const nota     = document.getElementById('pros-f-nota').value.trim();
+  const st       = document.getElementById('pros-modal-status');
+
+  if (!nome)     { st.innerHTML = '<span style="color:var(--danger)">Nome obrigatório.</span>'; return; }
+  if (!vendedor) { st.innerHTML = '<span style="color:var(--danger)">Seleciona um vendedor.</span>'; return; }
+
+  const payload = {
+    nome,
+    vendedor,
+    estado,
+    contacto:          document.getElementById('pros-f-contacto').value.trim() || null,
+    segmento:          document.getElementById('pros-f-segmento').value || null,
+    marca_atual:       document.getElementById('pros-f-marca').value.trim() || null,
+    preco_atual:       parseFloat(document.getElementById('pros-f-preco').value) || null,
+    potencial_caps:    parseInt(document.getElementById('pros-f-caps').value) || null,
+    potencial_kg:      parseFloat(document.getElementById('pros-f-kg').value) || null,
+    proxima_acao:      document.getElementById('pros-f-acao').value.trim() || null,
+    data_proxima_acao: document.getElementById('pros-f-data-acao').value || null,
+    atualizado_em:     new Date().toISOString(),
+  };
+
+  st.innerHTML = '<span style="color:var(--muted)">A guardar...</span>';
+
+  try {
+    let estadoAnterior = null;
+
+    if (prosEditId) {
+      // Buscar estado anterior
+      const old = prosData.find(x => x.id === prosEditId);
+      estadoAnterior = old?.estado || null;
+
+      const res = await fetch(PROS_URL + `?id=eq.${prosEditId}`, {
+        method: 'PATCH',
+        headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+    } else {
+      const res = await fetch(PROS_URL, {
+        method: 'POST',
+        headers: { ...HEADERS, 'Prefer': 'return=representation' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const criado = await res.json();
+      prosEditId = criado[0]?.id;
+    }
+
+    // Gravar no histórico se há nota ou mudança de estado
+    const mudouEstado = estadoAnterior !== null && estadoAnterior !== estado;
+    if (nota || mudouEstado || !estadoAnterior) {
+      await fetch(PROS_HIST_URL, {
+        method: 'POST',
+        headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({
+          prospeccao_id: prosEditId,
+          estado_anterior: estadoAnterior,
+          estado_novo: estado,
+          nota: nota || null,
+        })
+      });
+    }
+
+    st.innerHTML = '<span style="color:#16a34a">✅ Guardado!</span>';
+    await loadProsData();
+    renderPros();
+    setTimeout(() => prosCloseModal(), 800);
+  } catch(e) {
+    st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
+  }
+}
+
+async function exportProsExcel() {
+  if (!window.XLSX) {
+    await new Promise((res,rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  const rows = prosData.map(p => ({
+    'Nome':           p.nome,
+    'Vendedor':       p.vendedor,
+    'Segmento':       p.segmento,
+    'Estado':         (PROS_ESTADOS[p.estado]||{}).label || p.estado,
+    'Contacto':       p.contacto,
+    'Marca Atual':    p.marca_atual,
+    'Preço Atual':    p.preco_atual,
+    'Caps/mês':       p.potencial_caps,
+    'Kg/mês':         p.potencial_kg,
+    'Próxima Ação':   p.proxima_acao,
+    'Data Ação':      p.data_proxima_acao,
+    'Criado em':      p.criado_em ? new Date(p.criado_em).toLocaleDateString('pt-BR') : '',
+    'Atualizado em':  p.atualizado_em ? new Date(p.atualizado_em).toLocaleDateString('pt-BR') : '',
+  }));
+  const ws = window.XLSX.utils.json_to_sheet(rows);
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Prospeção');
+  window.XLSX.writeFile(wb, 'prospeccao_delta.xlsx');
+}
+
+function escHtml(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ─── AT HISTÓRICO ────────────────────────────────────
