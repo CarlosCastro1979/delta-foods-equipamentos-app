@@ -6926,7 +6926,7 @@ async function prosGanhoGerarExcel(d) {
   const raw = atob(CADASTRO_TEMPLATE_B64);
   const arr = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  const wb = window.XLSX.read(arr, { type: 'array', cellStyles: true, cellNF: true });
+  const wb = window.XLSX.read(arr, { type: 'array', cellStyles: true, cellNF: true, cellDates: true, sheetStubs: true });
   const ws = wb.Sheets['Cliente'];
 
   // Helper: escrever valor preservando estilo existente
@@ -6976,20 +6976,26 @@ async function prosGanhoGerarExcel(d) {
 
   // Área de Vendas
   set('AD15', d.canal);
-  set('J36', d.pagto);
-  set('AC36', d.rota);
-  set('AC38', d.equipe);
-  set('V40', d.vendedor);
+  set('J36', d.pagto);   // Cond.Pagto - merged J36:X36
+  set('AC36', d.rota);   // Rota
+  set('AC38', d.equipe); // Equipe vendas
+  set('V40', d.vendedor); // Vendedor - merged V40:AP40
+  // Incoterms (substitui fórmula DN4)
+  set('J38', 'CIF - Custo, seguro & frete');
+  // Escrit.vendas e centro (substituir fórmulas)
+  set('J40', d.escritVendas);
+  set('BA40', d.escritVendas);
 
-  // Sector Industrial e ICMS
+  // Sector Industrial
   if (d.sector) set('AA23', d.sector);
-  set('AM23', d.icms);
+  // Contrib ICMS - merged AX23:BK23
+  set('AX23', d.icms);
 
-  // Termo pesquisa
-  set('K23', d.termoPesq === 'DFSP' ? d.escritVendas : d.termoPesq);
+  // Termo pesquisa - K23 merged K23:Q23
+  set('K23', d.escritVendas);
 
   const nome = (d.nome || 'cadastro').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
-  window.XLSX.writeFile(wb, `Cadastro_${nome}.xlsx`);
+  window.XLSX.writeFile(wb, `Cadastro_${nome}.xlsx`, { bookType: 'xlsx', cellStyles: true, type: 'binary' });
   toast('✅ Excel exportado!');
   prosGanhoFechar();
 }
