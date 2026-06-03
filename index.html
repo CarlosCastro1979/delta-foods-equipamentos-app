@@ -4741,8 +4741,8 @@ async function processVendasFile(event) {
     for (const v of todasVendas) {
       const cod = String(v.cod || '').trim();
       if (!cod) continue;
-      const dt = new Date(v.data);
-      if (isNaN(dt)) continue;
+      const dt = parseDateSC(v.data);
+      if (!dt) continue;
       if (!historico[cod] || dt > historico[cod]) historico[cod] = dt;
     }
     if (Object.keys(historico).length > 0) {
