@@ -4917,8 +4917,9 @@ async function processVendasFile(event) {
     const peso = parseFloat(pesoRaw);
     // tipo e qty só para GRÃO/CÁPSULAS (contratos) — para Sem Compras basta a data
     const hierarq = String(row[iHierarq] || '');
-    const isGraoCaps = hierarq.includes('GRÃO') || hierarq.includes('CÁPSULAS');
-    const tipo = isGraoCaps ? (hierarq.includes('GRÃO') ? 'GRÃO' : 'CAPSULAS') : 'OUTRO';
+    const hierarqUp = hierarq.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    const isGraoCaps = hierarqUp.includes('GRAO') || hierarqUp.includes('CAPSULAS') || hierarqUp.includes('CAPSULA');
+    const tipo = isGraoCaps ? (hierarqUp.includes('GRAO') ? 'GRÃO' : 'CAPSULAS') : 'OUTRO';
     const qty = isGraoCaps && !isNaN(peso) ? (tipo === 'GRÃO' ? peso : Math.round(peso / 0.0055)) : 0;
     const key = cod + '|' + dataStr + '|' + tipo;
     newKeys.add(cod + '|' + dataStr); // para dedup por cliente+data
@@ -5199,11 +5200,16 @@ async function loadContratosTab(forceRefresh = false) {
     const vendas = await getVendas();
     const today = new Date();
 
-    // vendas indexed by cod for per-contract filtering
+    // vendas indexed by cod (tanto original como normalizado) para evitar mismatches
     const vendasPorCod = {};
     vendas.forEach(v => {
-      if (!vendasPorCod[v.cod]) vendasPorCod[v.cod] = [];
-      vendasPorCod[v.cod].push(v);
+      const codOrig = String(v.cod || '').trim();
+      const codNorm = normalizaCodSC(codOrig);
+      [codOrig, codNorm].forEach(k => {
+        if (!k) return;
+        if (!vendasPorCod[k]) vendasPorCod[k] = [];
+        vendasPorCod[k].push(v);
+      });
     });
 
     // Compute table rows
@@ -5230,17 +5236,22 @@ async function loadContratosTab(forceRefresh = false) {
         const consumoEsperado = consumoMes * mesesDecorridos;
         // Only count sales from contract start date onwards, matching tipo
         // Somar vendas de todos os códigos da família (pai + filho)
+        // NOTA: usar 'codFam' para não colidir com 'c' do forEach do contrato
         const familia = getCodsFamilia(r.cod);
-        const consumoReal = [...familia]
-          .flatMap(c => vendasPorCod[c] || [])
+        const vendasFamilia = [...familia].flatMap(codFam => vendasPorCod[codFam] || []);
+        // Deduplica por id para evitar contar a mesma venda duas vezes (cod original + normalizado)
+        const vendasUnicas = Object.values(
+          Object.fromEntries(vendasFamilia.map(v => [v.cod + '|' + v.data + '|' + v.tipo + '|' + v.qty, v]))
+        );
+        const consumoReal = vendasUnicas
           .filter(v => {
             // Parse date format DD.MM.YYYY
-            const parts = v.data.split('.');
+            const parts = String(v.data).split('.');
             if (parts.length !== 3) return false;
             const vData = new Date(+parts[2], +parts[1]-1, +parts[0]);
             return v.tipo === tipo && vData >= dataInicio;
           })
-          .reduce((sum, v) => sum + v.qty, 0);
+          .reduce((sum, v) => sum + (parseFloat(v.qty) || 0), 0);
         const pct = consumoEsperado > 0 ? Math.round((consumoReal / consumoEsperado) * 100) : null;
         const pctTotal = totalContratado > 0 ? Math.round((consumoReal / totalContratado) * 100) : null;
 
