@@ -3625,15 +3625,11 @@ function openEdit(id) {
   const registo = allData.find(r => r.id === id);
   if (!registo) return;
   editingId = id;
-  window._editingRegisto = registo; // stored for goToStep2
-  // Populate step1 with vendor name for confirmation
-  document.getElementById('confirm-vendedor-name').textContent = registo.vendedor || 'desconhecido';
-  document.getElementById('confirm-name-input').value = '';
-  document.getElementById('confirm-error').style.display = 'none';
-  document.getElementById('btn-confirm-name').disabled = true;
-  // Show step1, hide step2
-  document.getElementById('modal-step1').style.display = 'block';
-  document.getElementById('modal-step2').style.display = 'none';
+  window._editingRegisto = registo;
+  // Saltar diretamente para o step2 — utilizador já está identificado pelo login
+  document.getElementById('modal-step1').style.display = 'none';
+  document.getElementById('modal-step2').style.display = 'block';
+  goToStep2();
   document.getElementById('modal-overlay').classList.add('open');
 }
 
