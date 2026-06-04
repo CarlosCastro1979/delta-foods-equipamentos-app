@@ -916,7 +916,7 @@ var _unused_placeholder = 1;
           <option value="Filipe Neves">Filipe Neves</option>
           <option value="Carlos Castro">Carlos Castro</option>
         </select>
-        <button class="btn btn-primary" style="width:100%;" onclick="confirmarLogin()">Entrar</button>
+        <button class="btn btn-primary" style="width:100%;" onclick="if(typeof confirmarLogin==='function')confirmarLogin()">Entrar</button>
         <div id="login-erro" style="color:var(--danger);font-size:12px;margin-top:8px;display:none;">Seleciona um nome para continuar.</div>
       </div>
     </div>
@@ -6577,7 +6577,7 @@ function encerramentoMotivoChange() {
   document.getElementById('encerramento-outro-wrap').style.display = val === 'Outro' ? 'block' : 'none';
 }
 
-function enviarEncerramento() {
+async function enviarEncerramento() {
   const r = _encerramentoRegisto;
   if (!r) return;
 
