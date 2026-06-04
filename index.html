@@ -1167,6 +1167,17 @@ var _unused_placeholder = 1;
 <div class="panel" id="panel-resumo">
     <div id="resumo-content"></div>
 
+    <!-- Histórico de Encerrados -->
+    <div style="margin-top:28px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:15px;font-weight:600;">🔴 Clientes com Pedido de Encerramento</div>
+        <button class="btn btn-secondary btn-sm" onclick="loadEncerrados()">↺ Actualizar</button>
+      </div>
+      <div id="encerrados-content">
+        <div style="color:var(--muted);font-size:13px;padding:20px 0;">A carregar...</div>
+      </div>
+    </div>
+
   </div>
 
   <div class="panel" id="panel-at">
@@ -2688,9 +2699,14 @@ function renderTable() {
     const dataFmt = r.data ? (()=>{ try { const d=new Date(r.data.includes('T')?r.data:r.data+'T12:00:00'); return isNaN(d)?r.data:d.toLocaleDateString('pt-BR'); } catch(e){ return r.data; } })() : '—';
     const isInvalid = codsValidos.size > 0 && !codsValidos.has(String(r.cod||'').trim());
     const isDuplicated = codsDuplicados.has(String(r.cod||'').trim());
-    const rowStyle = isInvalid ? ' class="row-invalid"' : isDuplicated ? ' style="background:#fff8f0;"' : '';
+    const isPendente = r.encerramento_pendente === true;
+    const rowStyle = isInvalid ? ' class="row-invalid"'
+      : isPendente ? ' style="background:#fff7ed;"'
+      : isDuplicated ? ' style="background:#fff8f0;"' : '';
     const codCell = isInvalid
       ? `<td><span class="cod-invalid" title="Código não encontrado na lista de clientes SAP">${r.cod || '—'} ⚠</span></td>`
+      : isPendente
+        ? `<td><span style="color:#f59e0b;font-weight:600;" title="Encerramento pendente: ${r.encerramento_motivo||''}">${r.cod || '—'} 🟠</span></td>`
       : isDuplicated
         ? `<td><span style="color:#ff6b35;font-weight:600;" title="Código duplicado — existe mais de um registo com este código">${r.cod || '—'} 🔴</span></td>`
         : `<td>${r.cod || '—'}</td>`;
@@ -4770,7 +4786,7 @@ function switchTab(tab) {
   });
 
   // lista and pendentes now handled via switchSubTab
-  if (tab === 'resumo') loadResumo();
+  if (tab === 'resumo') { loadResumo(); loadEncerrados(); }
   if (tab === 'at') loadAtTab();
   if (tab === 'registos') {
     // sempre reset para 'novo' ao entrar no menu principal
@@ -6442,6 +6458,72 @@ function getUtilizadorAtual() {
 }
 
 // ─── ENCERRAMENTO DE CLIENTE ─────────────────────────
+async function loadEncerrados() {
+  const el = document.getElementById('encerrados-content');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--muted);font-size:13px;">A carregar...</div>';
+  try {
+    const res = await fetch(
+      'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/clientes_encerrados?select=*&order=criado_em.desc',
+      { headers: HEADERS }
+    );
+    const dados = await res.json();
+    if (!Array.isArray(dados) || !dados.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Nenhum pedido de encerramento registado.</div>';
+      return;
+    }
+
+    // Agrupar por vendedor
+    const porVendedor = {};
+    dados.forEach(d => {
+      const v = d.vendedor || '—';
+      if (!porVendedor[v]) porVendedor[v] = [];
+      porVendedor[v].push(d);
+    });
+
+    const TH = 'padding:7px 10px;font-size:11px;color:var(--muted);font-weight:600;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;';
+    const TD = 'padding:7px 10px;font-size:12px;border-bottom:1px solid #f3f4f6;vertical-align:middle;';
+
+    let html = '';
+    for (const [vendedor, lista] of Object.entries(porVendedor)) {
+      const rows = lista.map(d => {
+        const dt = d.criado_em ? new Date(d.criado_em).toLocaleDateString('pt-BR') : '—';
+        return `<tr>
+          <td style="${TD}font-weight:600;">${d.nome || '—'}</td>
+          <td style="${TD}">${d.cod || '—'}</td>
+          <td style="${TD}">${d.cep || '—'}</td>
+          <td style="${TD}">${d.motivo || '—'}</td>
+          <td style="${TD}">${d.solicitado_por || '—'}</td>
+          <td style="${TD}color:var(--muted);">${dt}</td>
+        </tr>`;
+      }).join('');
+
+      html += `<div style="margin-bottom:20px;">
+        <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:8px;padding:6px 10px;background:#f8f8f8;border-radius:6px;">
+          ${vendedor} — ${lista.length} pedido${lista.length>1?'s':''}
+        </div>
+        <div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border);">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead><tr style="background:#f5f5f5;">
+              <th style="${TH}">Nome</th>
+              <th style="${TH}">Cód. SAP</th>
+              <th style="${TH}">CEP</th>
+              <th style="${TH}">Motivo</th>
+              <th style="${TH}">Solicitado por</th>
+              <th style="${TH}">Data</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro: ${e.message}</div>`;
+  }
+}
+
+// ─── ENCERRAMENTO DE CLIENTE ─────────────────────────
 let _encerramentoRegisto = null;
 
 function abrirEncerramentoCliente() {
@@ -6504,6 +6586,33 @@ ${getUtilizadorAtual()}`
 
   const mailto = `mailto:carlos.castro@deltafoodsbrasil.com.br?cc=Filipe.Neves@deltafoodsbrasil.com.br;dadosmestres.entidades2@gruponabeiro.com&subject=${assunto}&body=${corpo}`;
   window.location.href = mailto;
+
+  // Marcar registo como encerramento pendente no Supabase
+  try {
+    await fetch(`${SUPA_URL}?id=eq.${r.id}`, {
+      method: 'PATCH',
+      headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ encerramento_pendente: true, encerramento_motivo: motivoFinal })
+    });
+    // Guardar na tabela de encerrados
+    await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/clientes_encerrados', {
+      method: 'POST',
+      headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({
+        cod: r.cod, nome: r.nome, cep: r.cep,
+        vendedor: r.vendedor, motivo: motivoFinal,
+        solicitado_por: getUtilizadorAtual()
+      })
+    });
+    // Actualizar lista local
+    const idx = allData.findIndex(x => x.id === r.id);
+    if (idx >= 0) { allData[idx].encerramento_pendente = true; allData[idx].encerramento_motivo = motivoFinal; }
+    renderTable();
+    toast('✅ Pedido de encerramento enviado.');
+  } catch(e) {
+    console.warn('Erro ao marcar encerramento:', e.message);
+  }
+
   fecharEncerramento();
 }
 
