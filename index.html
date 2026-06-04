@@ -3431,15 +3431,27 @@ function renderSemCompras() {
             <th style="padding:7px 10px;text-align:left;color:var(--muted);">Nome</th>
             <th style="padding:7px 10px;text-align:left;color:var(--muted);white-space:nowrap">Última compra</th>
             <th style="padding:7px 10px;text-align:center;color:var(--muted);">Meses</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--muted);">Ação</th>
           </tr></thead>
           <tbody>
-            ${grupo.clientes.map((c, i) => `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
-              <td style="padding:7px 10px;font-size:11px;color:var(--muted);white-space:nowrap">${c.vendedor||'—'}</td>
-              <td style="padding:7px 10px;color:var(--muted);font-size:11px;">${c.cod}</td>
-              <td style="padding:7px 10px;font-weight:500;">${c.nome}</td>
-              <td style="padding:7px 10px;font-size:11px;white-space:nowrap">${c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('pt-BR') : '—'}</td>
-              <td style="padding:7px 10px;text-align:center;"><span style="background:${grupo.bg};color:${grupo.cor};border-radius:12px;padding:2px 8px;font-weight:700;font-size:11px;">${c.mesesSemComprar+'m'}</span></td>
-            </tr>`).join('')}
+            ${grupo.clientes.map((c, i) => {
+              const registo = allData.find(r => normalizaCodSC(r.cod) === normalizaCodSC(c.cod));
+              const pendente = registo?.encerramento_pendente;
+              const btnEnc = registo
+                ? (pendente
+                    ? `<span style="font-size:10px;color:#f59e0b;font-weight:600;">🟠 Pendente</span>`
+                    : `<button onclick="scAbrirEncerramentoDirecto('${registo.id}','${(c.nome||'').replace(/'/g,"\'")}','${c.cod}','${c.cep||''}','${c.vendedor||''}')"
+                        style="background:#f59e0b;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:10px;padding:2px 7px;white-space:nowrap;">⚠ Encerrar</button>`)
+                : '';
+              return `<tr style="border-bottom:1px solid #f0f0f0;background:${pendente?'#fff7ed':i%2===0?'#fff':'#fafafa'}">
+                <td style="padding:7px 10px;font-size:11px;color:var(--muted);white-space:nowrap">${c.vendedor||'—'}</td>
+                <td style="padding:7px 10px;color:var(--muted);font-size:11px;">${c.cod}</td>
+                <td style="padding:7px 10px;font-weight:500;">${c.nome}</td>
+                <td style="padding:7px 10px;font-size:11px;white-space:nowrap">${c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('pt-BR') : '—'}</td>
+                <td style="padding:7px 10px;text-align:center;"><span style="background:${grupo.bg};color:${grupo.cor};border-radius:12px;padding:2px 8px;font-weight:700;font-size:11px;">${c.mesesSemComprar+'m'}</span></td>
+                <td style="padding:7px 10px;text-align:center;">${btnEnc}</td>
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>
@@ -6525,6 +6537,19 @@ async function loadEncerrados() {
 
 // ─── ENCERRAMENTO DE CLIENTE ─────────────────────────
 let _encerramentoRegisto = null;
+
+function scAbrirEncerramentoDirecto(id, nome, cod, cep, vendedor) {
+  // Simular o registo para reutilizar o mesmo modal
+  _encerramentoRegisto = { id, nome, cod, cep, vendedor };
+  document.getElementById('encerramento-info').innerHTML =
+    `<strong>${nome}</strong><br>
+     <span style="color:var(--muted);">Cód. SAP: ${cod} &nbsp;|&nbsp; CEP: ${cep}</span>`;
+  document.getElementById('encerramento-motivo').value = '';
+  document.getElementById('encerramento-outro').value = '';
+  document.getElementById('encerramento-outro-wrap').style.display = 'none';
+  document.getElementById('encerramento-status').textContent = '';
+  document.getElementById('encerramento-overlay').style.display = 'flex';
+}
 
 function abrirEncerramentoCliente() {
   const r = allData.find(x => x.id === editingId);
