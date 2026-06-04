@@ -1875,6 +1875,31 @@ var _unused_placeholder = 1;
         </div>
       </div>
 
+      <!-- SECÇÃO: Proposta Delta -->
+      <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:10px;letter-spacing:.5px;">PROPOSTA DELTA — INCLUÍDA NO EMAIL</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Lote / Equipamento</label>
+            <input type="text" id="pg-prop-lote" class="form-input" style="width:100%;font-size:13px;" placeholder="Ex: Delta Q XL40 CAP">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Qtd. contratada</label>
+            <div style="display:flex;gap:6px;">
+              <input type="number" id="pg-prop-qty" class="form-input" style="width:100%;font-size:13px;" placeholder="0" min="0" step="0.1">
+              <select id="pg-prop-unidade" class="form-input" style="font-size:13px;min-width:70px;">
+                <option value="Cáps">Cáps</option>
+                <option value="Kg">Kg</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Preço acordado (R$)</label>
+            <input type="number" id="pg-prop-preco" class="form-input" style="width:100%;font-size:13px;" placeholder="0.00" step="0.01" min="0">
+          </div>
+        </div>
+      </div>
+
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
         <button class="btn btn-secondary" onclick="prosGanhoFechar()">Cancelar</button>
         <button class="btn btn-primary" onclick="prosGanhoExportar()" style="background:#16a34a;border-color:#16a34a;">⬇ Exportar Cadastro SAP</button>
@@ -6815,6 +6840,10 @@ function prosGanhoAbrir(p) {
   document.getElementById('pg-cep').value     = '';
   document.getElementById('pg-cidade').value  = 'SÃO PAULO';
   document.getElementById('pg-status').textContent = '';
+  document.getElementById('pg-prop-lote').value = '';
+  document.getElementById('pg-prop-qty').value = '';
+  document.getElementById('pg-prop-preco').value = '';
+  document.getElementById('pg-prop-unidade').value = 'Cáps';
 
   // Pré-selecionar vendedor se for um dos 4
   const sapVend = PG_VENDEDOR_SAP[p.vendedor] || '';
@@ -6912,17 +6941,25 @@ async function prosGanhoExportar() {
     const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
     const motivo = dados.motivo || 'Abertura de Cliente';
     const assunto = encodeURIComponent(`${motivo} - ${dados.nome}`);
+    const propLote  = document.getElementById('pg-prop-lote')?.value.trim() || '';
+    const propQty   = document.getElementById('pg-prop-qty')?.value || '';
+    const propUnid  = document.getElementById('pg-prop-unidade')?.value || 'Cáps';
+    const propPreco = document.getElementById('pg-prop-preco')?.value || '';
+    const propTexto = (propLote || propQty || propPreco)
+      ? `\n\nProposta apresentada:\n  • Equipamento/Lote: ${propLote || '—'}\n  • Quantidade contratada: ${propQty ? propQty + ' ' + propUnid : '—'}\n  • Preço acordado: ${propPreco ? 'R$ ' + parseFloat(propPreco).toFixed(2) : '—'}`
+      : '';
+
     const corpo = encodeURIComponent(
 `${saudacao},
 
-Segue em anexo o formulário de ${motivo.toLowerCase()} do cliente ${dados.nome} para aprovação.
+Segue em anexo o formulário de ${motivo.toLowerCase()} do cliente ${dados.nome} para aprovação.${propTexto}
 
 Aguardo aprovação.
 
 Cumprimentos,
 ${getUtilizadorAtual()}`
     );
-    const mailto = `mailto:carlos.castro@deltafoodsbrasil.com.br?cc=Filipe.neves@deltafoodsbrasil.com.br,daniela.kucinsky@deltafoodsbrasil.com.br&subject=${assunto}&body=${corpo}`;
+    const mailto = `mailto:carlos.castro@deltafoodsbrasil.com.br?cc=filipe.neves@deltafoodsbrasil.com.br;daniela.kucinski@deltafoodsbrasil.com.br&subject=${assunto}&body=${corpo}`;
     setTimeout(() => { window.location.href = mailto; }, 800);
 
   } catch(e) {
