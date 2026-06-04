@@ -1878,11 +1878,20 @@ var _unused_placeholder = 1;
       <!-- SECÇÃO: Proposta Delta -->
       <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px;margin-bottom:14px;">
         <div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:10px;letter-spacing:.5px;">PROPOSTA DELTA — INCLUÍDA NO EMAIL</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
           <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Lote / Equipamento</label>
-            <input type="text" id="pg-prop-lote" class="form-input" style="width:100%;font-size:13px;" placeholder="Ex: Delta Q XL40 CAP">
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Lote (Nº contrato)</label>
+            <input type="text" id="pg-prop-lote" class="form-input" style="width:100%;font-size:13px;" placeholder="Ex: B0902/26">
           </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Equipamento</label>
+            <select id="pg-prop-equip" class="form-input" style="width:100%;font-size:13px;">
+              <option value="">— Selecionar —</option>
+              ${EQUIPAMENTOS.map(e => `<option value="${e}">${e}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
           <div>
             <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Qtd. contratada</label>
             <div style="display:flex;gap:6px;">
@@ -6856,6 +6865,7 @@ function prosGanhoAbrir(p) {
   document.getElementById('pg-cidade').value  = 'SÃO PAULO';
   document.getElementById('pg-status').textContent = '';
   document.getElementById('pg-prop-lote').value = '';
+  document.getElementById('pg-prop-equip').value = '';
   document.getElementById('pg-prop-qty').value = '';
   document.getElementById('pg-prop-preco').value = '';
   document.getElementById('pg-prop-unidade').value = 'Cáps';
@@ -6957,11 +6967,12 @@ async function prosGanhoExportar() {
     const motivo = dados.motivo || 'Abertura de Cliente';
     const assunto = encodeURIComponent(`${motivo} - ${dados.nome}`);
     const propLote  = document.getElementById('pg-prop-lote')?.value.trim() || '';
+    const propEquip = document.getElementById('pg-prop-equip')?.value.trim() || '';
     const propQty   = document.getElementById('pg-prop-qty')?.value || '';
     const propUnid  = document.getElementById('pg-prop-unidade')?.value || 'Cáps';
     const propPreco = document.getElementById('pg-prop-preco')?.value || '';
-    const propTexto = (propLote || propQty || propPreco)
-      ? `\n\nProposta apresentada:\n  • Equipamento/Lote: ${propLote || '—'}\n  • Quantidade contratada: ${propQty ? propQty + ' ' + propUnid : '—'}\n  • Preço acordado: ${propPreco ? 'R$ ' + parseFloat(propPreco).toFixed(2) : '—'}`
+    const propTexto = (propLote || propEquip || propQty || propPreco)
+      ? `\n\nProposta apresentada:\n  • Lote/Contrato: ${propLote || '—'}\n  • Equipamento: ${propEquip || '—'}\n  • Quantidade contratada: ${propQty ? propQty + ' ' + propUnid : '—'}\n  • Preço acordado: ${propPreco ? 'R$ ' + parseFloat(propPreco).toFixed(2) : '—'}`
       : '';
 
     const corpo = encodeURIComponent(
