@@ -2135,7 +2135,36 @@ var _unused_placeholder = 1;
   </div>
 
 <!-- MODAL EDIÇÃO -->
-<div class="modal-overlay" id="modal-overlay" onclick="closeModalOnBg(event)">
+<!-- MODAL ENCERRAMENTO CLIENTE -->
+  <div id="encerramento-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1200;align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border-radius:12px;width:460px;padding:28px;position:relative;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+        <h2 style="font-size:16px;font-weight:600;color:#f59e0b;">⚠ Pedido de Encerramento de Cliente</h2>
+        <button onclick="fecharEncerramento()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+      </div>
+      <div id="encerramento-info" style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px;"></div>
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;">Motivo *</label>
+        <select id="encerramento-motivo" class="form-input" style="width:100%;" onchange="encerramentoMotivoChange()">
+          <option value="">— Selecionar motivo —</option>
+          <option value="Cliente sem compras">Cliente sem compras</option>
+          <option value="Cliente passou Concorrência">Cliente passou Concorrência</option>
+          <option value="Outro">Outro</option>
+        </select>
+      </div>
+      <div id="encerramento-outro-wrap" style="display:none;margin-bottom:14px;">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;">Descreve o motivo *</label>
+        <textarea id="encerramento-outro" class="form-input" style="width:100%;min-height:80px;resize:vertical;" placeholder="Descreve o motivo do encerramento..."></textarea>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
+        <button class="btn btn-secondary" onclick="fecharEncerramento()">Cancelar</button>
+        <button class="btn btn-sm" onclick="enviarEncerramento()" style="background:#f59e0b;border-color:#f59e0b;color:#fff;padding:8px 16px;">✉ Enviar Pedido</button>
+      </div>
+      <div id="encerramento-status" style="margin-top:8px;font-size:12px;text-align:right;"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-overlay" onclick="closeModalOnBg(event)">
   <div class="modal" id="modal-edit">
     <div class="modal-header">
       <span class="modal-title" id="modal-title">Editar Registo</span>
@@ -2208,8 +2237,9 @@ var _unused_placeholder = 1;
         <button class="btn-add-equip" onclick="addEditEquipRow()" style="margin-top:6px;">+ Adicionar equipamento</button>
       </div>
       <div class="form-actions">
-        <button class="btn btn-primary" id="btn-save-edit" onclick="salvarEdicao()">💾 Guardar Alterações</button>
+        <button class="btn btn-primary" id="btn-save-edit" onclick="salvarEdicao()" style="background:#16a34a;border-color:#16a34a;">💾 Guardar Alterações</button>
         <button class="btn btn-danger btn-sm" onclick="confirmarExclusao()">🗑 Excluir Registo</button>
+        <button class="btn btn-sm" onclick="abrirEncerramentoCliente()" style="background:#f59e0b;border-color:#f59e0b;color:#fff;">⚠ Pedido de Encerramento</button>
         <button class="btn btn-secondary" onclick="closeModal()" style="margin-left:auto">Cancelar</button>
       </div>
     </div>
@@ -6409,6 +6439,72 @@ function logoutUtilizador() {
 
 function getUtilizadorAtual() {
   return localStorage.getItem('dfb_utilizador') || '';
+}
+
+// ─── ENCERRAMENTO DE CLIENTE ─────────────────────────
+let _encerramentoRegisto = null;
+
+function abrirEncerramentoCliente() {
+  const r = allData.find(x => x.id === editingId);
+  if (!r) return;
+  _encerramentoRegisto = r;
+
+  // Info do cliente
+  document.getElementById('encerramento-info').innerHTML =
+    `<strong>${r.nome || '—'}</strong><br>
+     <span style="color:var(--muted);">Cód. SAP: ${r.cod || '—'} &nbsp;|&nbsp; CEP: ${r.cep || '—'}</span>`;
+
+  document.getElementById('encerramento-motivo').value = '';
+  document.getElementById('encerramento-outro').value = '';
+  document.getElementById('encerramento-outro-wrap').style.display = 'none';
+  document.getElementById('encerramento-status').textContent = '';
+  document.getElementById('encerramento-overlay').style.display = 'flex';
+}
+
+function fecharEncerramento() {
+  document.getElementById('encerramento-overlay').style.display = 'none';
+}
+
+function encerramentoMotivoChange() {
+  const val = document.getElementById('encerramento-motivo').value;
+  document.getElementById('encerramento-outro-wrap').style.display = val === 'Outro' ? 'block' : 'none';
+}
+
+function enviarEncerramento() {
+  const r = _encerramentoRegisto;
+  if (!r) return;
+
+  const motivo = document.getElementById('encerramento-motivo').value;
+  const outro  = document.getElementById('encerramento-outro').value.trim();
+  const st     = document.getElementById('encerramento-status');
+
+  if (!motivo) { st.innerHTML = '<span style="color:var(--danger)">Seleciona um motivo.</span>'; return; }
+  if (motivo === 'Outro' && !outro) { st.innerHTML = '<span style="color:var(--danger)">Descreve o motivo.</span>'; return; }
+
+  const motivoFinal = motivo === 'Outro' ? outro : motivo;
+  const hora = new Date().getHours();
+  const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
+
+  const assunto = encodeURIComponent(`Cancelamento de Cliente - ${r.nome}`);
+  const corpo = encodeURIComponent(
+`${saudacao},
+
+Segue o pedido de encerramento do cliente abaixo para aprovação:
+
+  • Nome: ${r.nome || '—'}
+  • Código SAP: ${r.cod || '—'}
+  • CEP: ${r.cep || '—'}
+  • Motivo: ${motivoFinal}
+
+Aguardo aprovação.
+
+Cumprimentos,
+${getUtilizadorAtual()}`
+  );
+
+  const mailto = `mailto:carlos.castro@deltafoodsbrasil.com.br?cc=Filipe.Neves@deltafoodsbrasil.com.br;dadosmestres.entidades2@gruponabeiro.com&subject=${assunto}&body=${corpo}`;
+  window.location.href = mailto;
+  fecharEncerramento();
 }
 
 // ─── PROSPEÇÃO ──────────────────────────────────────
