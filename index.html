@@ -1880,14 +1880,23 @@ var _unused_placeholder = 1;
         <div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:10px;letter-spacing:.5px;">PROPOSTA DELTA — INCLUÍDA NO EMAIL</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
           <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Lote (Nº contrato)</label>
-            <input type="text" id="pg-prop-lote" class="form-input" style="width:100%;font-size:13px;" placeholder="Ex: B0902/26">
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Lote de café</label>
+            <input type="text" id="pg-prop-lote" class="form-input" style="width:100%;font-size:13px;" placeholder="Ex: GOLD BLEND 250G">
           </div>
           <div>
             <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Equipamento</label>
             <select id="pg-prop-equip" class="form-input" style="width:100%;font-size:13px;">
               <option value="">— Selecionar —</option>
-              ${EQUIPAMENTOS.map(e => `<option value="${e}">${e}</option>`).join('')}
+              <option>AUTOMATICA DELONGHI</option>
+              <option>MAQ. MAYOR DIG. 1GR. PRETA</option>
+              <option>MAQ. MAYOR DIG. 2GR. PRETA</option>
+              <option>MAQ. MAYOR DIG. 3GR. PRETA</option>
+              <option>MOINHO RANCILIO KYRO 65 OD</option>
+              <option>MOINHO MAYOR IBERYA</option>
+              <option>MAYOR Q</option>
+              <option>QUORUM</option>
+              <option>MAQ DOMESTICA DELTA Q</option>
+              <option>EQUIPAMENTO PROPRIO</option>
             </select>
           </div>
         </div>
