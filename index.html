@@ -6906,6 +6906,25 @@ async function prosGanhoExportar() {
     toast('✅ Excel exportado!');
     st.innerHTML = '';
     prosGanhoFechar();
+
+    // Abrir email pré-preenchido
+    const hora = new Date().getHours();
+    const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
+    const motivo = dados.motivo || 'Abertura de Cliente';
+    const assunto = encodeURIComponent(`${motivo} - ${dados.nome}`);
+    const corpo = encodeURIComponent(
+`${saudacao},
+
+Segue em anexo o formulário de ${motivo.toLowerCase()} do cliente ${dados.nome} para aprovação.
+
+Aguardo aprovação.
+
+Cumprimentos,
+${getUtilizadorAtual()}`
+    );
+    const mailto = `mailto:carlos.castro@deltafoodsbrasil.com.br?cc=Filipe.neves@deltafoodsbrasil.com.br,daniela.kucinsky@deltafoodsbrasil.com.br&subject=${assunto}&body=${corpo}`;
+    setTimeout(() => { window.location.href = mailto; }, 800);
+
   } catch(e) {
     st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
   }
