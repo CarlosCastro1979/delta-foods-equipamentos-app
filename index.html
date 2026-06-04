@@ -5552,7 +5552,9 @@ async function loadContratosTab(forceRefresh = false) {
         const totalContratado = consumoMes * duracao;
 
         // Parse start date (YYYY-MM format from input[type=month])
+        if (!c.inicio || !c.inicio.includes('-')) return;
         const [ano, mes] = c.inicio.split('-').map(Number);
+        if (!ano || !mes || ano < 2000 || ano > 2099) return;
         const dataInicio = new Date(ano, mes - 1, 1);
 
         // Months elapsed since start (inclusive of start month)
@@ -5608,7 +5610,7 @@ async function loadContratosTab(forceRefresh = false) {
 
         rows.push({
           cod: r.cod, nome: r.nome, vendedor: r.vendedor || '—', contrato: r.contrato || '—',
-          inicio: inicioFmt, duracao, fimFmt, unidade,
+          inicioFmt, duracao, fimFmt, unidade,
           totalContratado, consumoMes, mesesDecorridos,
           consumoEsperado, consumoReal,
           pct, pctTotal, tipo, alerta, mesesParaFim, pctConsumo
@@ -6853,62 +6855,59 @@ async function prosGanhoExportar() {
   const isZF     = regiao.startsWith('ZF');
 
   const dados = {
-    // Cabeçalho
-    motivo:    document.getElementById('pg-motivo').value,
+    motivo:      document.getElementById('pg-motivo').value,
     empresa,
-    grupo:     document.getElementById('pg-grupo').value,
-    dept:      gn === 'GN52' ? 'DFSP - Delta Foods (São Paulo)' : 'QBSP - Q-Brasil (São Paulo)',
-    orgVendas: gn === 'GN52' ? 'DF01' : 'QB01',
+    grupo:       document.getElementById('pg-grupo').value,
+    dept:        gn === 'GN52' ? 'DFSP - Delta Foods (São Paulo)' : 'QBSP - Q-Brasil (São Paulo)',
+    orgVendas:   gn === 'GN52' ? 'DF01' : 'QB01',
     escritVendas: gn === 'GN52' ? 'DFSP' : 'QBSP',
-    centro:    gn === 'GN52' ? 'DFSP' : 'QBES',
-    fusoHor:   'BRZLEA',
-    // Dados gerais
-    nome:      document.getElementById('pg-nome').value,
-    cnpj:      document.getElementById('pg-cnpj').value,
-    fantasia:  document.getElementById('pg-fantasia').value,
-    ie:        document.getElementById('pg-ie').value,
-    email:     document.getElementById('pg-email').value,
-    tel1:      document.getElementById('pg-tel1').value,
-    tel2:      document.getElementById('pg-tel2').value,
-    termoPesq: 'DFSP',
-    // Endereço
-    rua:       document.getElementById('pg-rua').value,
-    nro:       document.getElementById('pg-nro').value,
-    supl:      document.getElementById('pg-supl').value,
-    bairro:    document.getElementById('pg-bairro').value,
-    cep:       document.getElementById('pg-cep').value,
-    cidade:    document.getElementById('pg-cidade').value,
-    // Vendas
-    canal:     document.getElementById('pg-canal').value,
+    centro:      gn === 'GN52' ? 'DFSP' : 'QBES',
+    nome:        document.getElementById('pg-nome').value,
+    cnpj:        document.getElementById('pg-cnpj').value,
+    fantasia:    document.getElementById('pg-fantasia').value,
+    ie:          document.getElementById('pg-ie').value,
+    email:       document.getElementById('pg-email').value,
+    tel1:        document.getElementById('pg-tel1').value,
+    tel2:        document.getElementById('pg-tel2').value,
+    rua:         document.getElementById('pg-rua').value,
+    nro:         document.getElementById('pg-nro').value,
+    supl:        document.getElementById('pg-supl').value,
+    bairro:      document.getElementById('pg-bairro').value,
+    cep:         document.getElementById('pg-cep').value,
+    cidade:      document.getElementById('pg-cidade').value,
+    canal:       document.getElementById('pg-canal').value,
     regiao,
-    icms:      document.getElementById('pg-icms').value,
-    pagto:     document.getElementById('pg-pagto').value,
-    rota:      document.getElementById('pg-rota').value,
-    equipe:    document.getElementById('pg-equipe').textContent,
-    vendedor:  document.getElementById('pg-vendedor').value,
-    sector:    document.getElementById('pg-sector').value,
-    fiscal:    isZF ? '2 - Zona Franca - ICMS' : '1 - Sujeito a imposto',
-    incoterms: 'CIF - Custo, seguro & frete',
-    esquemaCalc: '3 - Esq. de Cálc.',
+    icms:        document.getElementById('pg-icms').value,
+    pagto:       document.getElementById('pg-pagto').value,
+    rota:        document.getElementById('pg-rota').value,
+    equipe:      document.getElementById('pg-equipe').textContent,
+    vendedor:    document.getElementById('pg-vendedor').value,
+    sector:      document.getElementById('pg-sector').value,
+    fiscal:      isZF ? '2 - Zona Franca - ICMS' : '1 - Sujeito a imposto',
   };
 
   try {
-    // Gerar via API
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 100,
-        messages: [{ role: 'user', content: 'ok' }]
-      })
-    });
-    // Se chegou aqui, usa SheetJS para gerar o Excel
-    prosGanhoGerarExcel(dados);
+    const res = await fetch(
+      'https://qnscwppgljobelplgbkp.supabase.co/functions/v1/gerar-cadastro',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY },
+        body: JSON.stringify(dados)
+      }
+    );
+    if (!res.ok) throw new Error('Erro ' + res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Cadastro_${(dados.nome||'cliente').replace(/[^a-zA-Z0-9]/g,'_').substring(0,20)}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('✅ Excel exportado!');
     st.innerHTML = '';
+    prosGanhoFechar();
   } catch(e) {
-    prosGanhoGerarExcel(dados);
-    st.innerHTML = '';
+    st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
   }
 }
 
