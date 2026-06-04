@@ -6981,7 +6981,7 @@ async function prosGanhoExportar() {
     const propUnid  = document.getElementById('pg-prop-unidade')?.value || 'Cáps';
     const propPreco = document.getElementById('pg-prop-preco')?.value || '';
     const propTexto = (propLote || propEquip || propQty || propPreco)
-      ? `\n\nProposta apresentada:\n  • Lote/Contrato: ${propLote || '—'}\n  • Equipamento: ${propEquip || '—'}\n  • Quantidade contratada: ${propQty ? propQty + ' ' + propUnid : '—'}\n  • Preço acordado: ${propPreco ? 'R$ ' + parseFloat(propPreco).toFixed(2) : '—'}`
+      ? `\n\nProposta apresentada:\n  • Lote: ${propLote || '—'}\n  • Equipamento: ${propEquip || '—'}\n  • Quantidade contratada: ${propQty ? propQty + ' ' + propUnid : '—'}\n  • Preço acordado: ${propPreco ? 'R$ ' + parseFloat(propPreco).toFixed(2) : '—'}`
       : '';
 
     const corpo = encodeURIComponent(
