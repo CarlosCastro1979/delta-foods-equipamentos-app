@@ -3435,14 +3435,14 @@ function renderSemCompras() {
           </tr></thead>
           <tbody>
             ${grupo.clientes.map((c, i) => {
-              const registo = allData.find(r => normalizaCodSC(r.cod) === normalizaCodSC(c.cod));
+              const registo = (allData||[]).find(r => normalizaCodSC(r.cod) === normalizaCodSC(c.cod));
               const pendente = registo?.encerramento_pendente;
-              const btnEnc = registo
-                ? (pendente
-                    ? `<span style="font-size:10px;color:#f59e0b;font-weight:600;">🟠 Pendente</span>`
-                    : `<button onclick="scAbrirEncerramentoDirecto('${registo.id}','${(c.nome||'').replace(/'/g,"\'")}','${c.cod}','${c.cep||''}','${c.vendedor||''}')"
-                        style="background:#f59e0b;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:10px;padding:2px 7px;white-space:nowrap;">⚠ Encerrar</button>`)
-                : '';
+              // Mostrar botão sempre — se não encontrar registo usa dados do cliente da lista SAP
+              const nomeEsc = (c.nome||'').replace(/'/g,"\'").replace(/"/g,'&quot;');
+              const btnEnc = pendente
+                ? `<span style="font-size:10px;color:#f59e0b;font-weight:600;">🟠 Pendente</span>`
+                : `<button onclick="scAbrirEncerramentoDirecto('${registo?.id||''}','${nomeEsc}','${c.cod}','${c.cep||''}','${c.vendedor||''}')"
+                    style="background:#f59e0b;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:10px;padding:2px 7px;white-space:nowrap;">⚠ Encerrar</button>`;
               return `<tr style="border-bottom:1px solid #f0f0f0;background:${pendente?'#fff7ed':i%2===0?'#fff':'#fafafa'}">
                 <td style="padding:7px 10px;font-size:11px;color:var(--muted);white-space:nowrap">${c.vendedor||'—'}</td>
                 <td style="padding:7px 10px;color:var(--muted);font-size:11px;">${c.cod}</td>
@@ -6612,13 +6612,17 @@ ${getUtilizadorAtual()}`
   const mailto = `mailto:carlos.castro@deltafoodsbrasil.com.br?cc=Filipe.Neves@deltafoodsbrasil.com.br;dadosmestres.entidades2@gruponabeiro.com&subject=${assunto}&body=${corpo}`;
   window.location.href = mailto;
 
-  // Marcar registo como encerramento pendente no Supabase
+  // Marcar registo como encerramento pendente no Supabase (se tiver id)
   try {
-    await fetch(`${SUPA_URL}?id=eq.${r.id}`, {
-      method: 'PATCH',
-      headers: { ...HEADERS, 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ encerramento_pendente: true, encerramento_motivo: motivoFinal })
-    });
+    if (r.id) {
+      await fetch(`${SUPA_URL}?id=eq.${r.id}`, {
+        method: 'PATCH',
+        headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ encerramento_pendente: true, encerramento_motivo: motivoFinal })
+      });
+      const idx = allData.findIndex(x => x.id === r.id);
+      if (idx >= 0) { allData[idx].encerramento_pendente = true; allData[idx].encerramento_motivo = motivoFinal; }
+    }
     // Guardar na tabela de encerrados
     await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/clientes_encerrados', {
       method: 'POST',
@@ -6629,9 +6633,6 @@ ${getUtilizadorAtual()}`
         solicitado_por: getUtilizadorAtual()
       })
     });
-    // Actualizar lista local
-    const idx = allData.findIndex(x => x.id === r.id);
-    if (idx >= 0) { allData[idx].encerramento_pendente = true; allData[idx].encerramento_motivo = motivoFinal; }
     renderTable();
     toast('✅ Pedido de encerramento enviado.');
   } catch(e) {
