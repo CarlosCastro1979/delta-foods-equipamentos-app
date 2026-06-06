@@ -677,42 +677,6 @@
     background: linear-gradient(180deg, var(--bg) 0%, #eef2f7 100%);
   }
 
-  .page-intro {
-    background: linear-gradient(135deg, #ffffff 0%, #fff8f9 100%);
-    border: 1px solid rgba(200,16,46,0.1);
-    border-radius: var(--radius-lg);
-    padding: 20px 24px;
-    margin-bottom: 24px;
-    box-shadow: var(--shadow-sm);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
-  .page-intro h2 {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text);
-    letter-spacing: -0.02em;
-    margin: 0;
-  }
-  .page-intro p {
-    font-size: 13px;
-    color: var(--muted);
-    margin: 4px 0 0;
-  }
-  .page-intro-badge {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent);
-    background: var(--accent-soft);
-    border: 1px solid rgba(200,16,46,0.12);
-    padding: 6px 12px;
-    border-radius: 20px;
-    white-space: nowrap;
-  }
-
   .login-icon { display: none; }
   .login-card::before {
     content: '';
@@ -1135,13 +1099,6 @@ var _unused_placeholder = 1;
 </nav>
 
 <div class="app-content">
-  <div class="page-intro" id="page-intro">
-    <div>
-      <h2>Plataforma de Equipamentos</h2>
-      <p>Registo, contratos e assistência técnica — Delta Foods Brasil</p>
-    </div>
-    <span class="page-intro-badge">Operações Comerciais</span>
-  </div>
 
   <!-- NOVO REGISTO -->
   <!-- PANEL: REGISTO CLIENTES (com sub-abas) -->
@@ -1167,7 +1124,7 @@ var _unused_placeholder = 1;
 
     </div>
     <!-- Sub-panels -->
-    <div id="sub-panel-novo" style="display:none;">
+    <div id="sub-panel-novo">
 <div id="panel-novo">
     <div class="form-card">
       <div class="form-row">
@@ -2582,11 +2539,16 @@ function addEditEquipRow(tipo='', tag='') {
 
 // ─── STATUS ───────────────────────────────────────────
 function setStatus(ok, count) {
-  const el = document.getElementById('status-dot');
-  const ct = document.getElementById('status-count');
-  if (!el) return;
-  el.className = 'status-dot ' + (ok ? 'ok' : 'err');
-  if (ct && count !== undefined) ct.textContent = count + ' registos';
+  const dot = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  const countEl = document.querySelector('#status-bar #record-count');
+  if (dot) dot.className = 'dot' + (ok === null ? '' : ok ? ' online' : ' offline');
+  if (text) {
+    if (ok === null) text.textContent = 'A ligar...';
+    else if (ok) text.textContent = 'Online';
+    else text.textContent = 'Offline';
+  }
+  if (countEl && count !== undefined) countEl.textContent = count + ' registos';
 }
 
 // ─── SAVE NEW ─────────────────────────────────────────
@@ -4003,7 +3965,6 @@ function switchSubTab(group, sub) {
       const abe = document.querySelector('.btn-add-equip');
       if (abe) abe.style.display = '';
       addEquipRow();
-      setStatus(null);
     }
     if (sub === 'lista') loadData(true);
     if (sub === 'pendentes') loadPendentes();
@@ -4994,28 +4955,7 @@ function toast(msg, type = 'success') {
 }
 
 // ─── TABS ────────────────────────────────────────────
-const PAGE_INTRO = {
-  registos: { title: 'Registo de Clientes', desc: 'Equipamentos, tags e contratos por cliente', badge: 'Comercial' },
-  resumo: { title: 'Resumo Operacional', desc: 'Indicadores de registo por vendedor', badge: 'Dashboard' },
-  at: { title: 'Pedido de Assistência Técnica', desc: 'Abertura e acompanhamento de pedidos AT', badge: 'Suporte' },
-  contratos: { title: 'Gestão de Contratos', desc: 'Cumprimento, alertas e documentação', badge: 'Contratos' },
-  'historico-at': { title: 'Histórico AT', desc: 'Consulta de pedidos anteriores', badge: 'Suporte' },
-  'sem-compras': { title: 'Clientes Sem Compras', desc: 'Identificação e ação comercial', badge: 'Comercial' },
-  'fora-sp': { title: 'Clientes Fora de SP', desc: 'Cobertura geográfica', badge: 'Território' },
-  prospeccao: { title: 'Prospeção', desc: 'Pipeline comercial', badge: 'Comercial' },
-  dados: { title: 'Dados e Configuração', desc: 'Importações SAP e parametrização', badge: 'Admin' }
-};
-function updatePageIntro(tab) {
-  const el = document.getElementById('page-intro');
-  const meta = PAGE_INTRO[tab];
-  if (!el || !meta) return;
-  el.querySelector('h2').textContent = meta.title;
-  el.querySelector('p').textContent = meta.desc;
-  el.querySelector('.page-intro-badge').textContent = meta.badge;
-}
-
 function switchTab(tab) {
-  updatePageIntro(tab);
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   const panel = document.getElementById('panel-' + tab);
@@ -7860,8 +7800,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   sincronizarListaClientes().then(actualizado => {
     if (actualizado) toast('✅ Lista de clientes actualizada.', 'success');
   });
-  // Inicializa sub-abas com pequeno delay para garantir DOM pronto
-  setTimeout(() => switchSubTab('registos', 'novo'), 10);
+  switchTab('registos');
   // Verificar ligação silenciosamente
   try {
     const res = await fetch(SUPA_URL + '?select=id&limit=1', { headers: HEADERS });
