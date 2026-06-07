@@ -41,7 +41,7 @@
     --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.1);
     --header-h: 60px;
     --transition: 0.18s ease;
-    --gutter: clamp(20px, 4vw, 48px);
+    --gutter: clamp(24px, 5vw, 56px);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -54,6 +54,8 @@
     font-size: 14px;
     line-height: 1.5;
     min-height: 100vh;
+    padding-left: max(var(--gutter), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--gutter), env(safe-area-inset-right, 0px));
   }
 
   /* HEADER */
@@ -547,7 +549,7 @@
   .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
   .app-header {
     height: var(--header-h); background: var(--surface); border-bottom: 1px solid var(--border);
-    padding: 0 var(--gutter); display: flex; align-items: center; justify-content: space-between;
+    padding: 0; display: flex; align-items: center; justify-content: space-between;
     position: sticky; top: 0; z-index: 200; box-shadow: var(--shadow-xs);
   }
   .app-header-left, .app-header-right { display: flex; align-items: center; gap: 16px; }
@@ -597,12 +599,12 @@
     position: sticky; top: var(--header-h); z-index: 150; box-shadow: var(--shadow-xs);
   }
   .main-nav-inner {
-    display: flex; gap: 2px; padding: 0 var(--gutter); overflow-x: auto; scrollbar-width: none;
+    display: flex; gap: 2px; padding: 0; overflow-x: auto; scrollbar-width: none;
   }
   .main-nav-inner::-webkit-scrollbar { display: none; }
   .app-content {
     flex: 1;
-    padding: 24px var(--gutter) 80px;
+    padding: 24px 0 80px;
     max-width: 1440px;
     width: 100%;
     margin: 0 auto;
@@ -901,7 +903,7 @@
   }
 
   @media (max-width: 600px) {
-    :root { --gutter: 20px; }
+    :root { --gutter: 24px; }
     .top-bar { padding: 10px var(--gutter); }
     .container { padding: 16px var(--gutter); }
     .app-content { padding-top: 20px; padding-bottom: 72px; }
@@ -5936,9 +5938,9 @@ async function loadContratosTab(forceRefresh = false) {
       else if (p >= 100) resumoVendContr[v].acima100++;
     });
 
-    let html = `<div style="margin-bottom:20px;display:inline-block;min-width:480px;max-width:100%;">
+    let html = `<div style="margin-bottom:20px;max-width:100%;">
       <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por vendedor — % YTD</div>
-      <table style="border-collapse:collapse;font-size:13px;width:100%;">
+      <div class="table-wrap"><table style="border-collapse:collapse;font-size:13px;width:100%;">
         <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
           <th style="padding:7px 14px;text-align:left;font-weight:600;">Vendedor</th>
           <th style="padding:7px 14px;text-align:center;font-weight:600;">Contratos</th>
@@ -5965,13 +5967,13 @@ async function loadContratosTab(forceRefresh = false) {
             <td style="padding:7px 14px;text-align:center;font-weight:700;color:#2e7d32;cursor:pointer;" class="contr-resumo-row" data-vend="todos" data-nivel="acima100">${Object.values(resumoVendContr).reduce((s,d)=>s+d.acima100,0)||'—'}</td>
           </tr>
         </tbody>
-      </table>
+      </table></div>
     </div>
     <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
 
     // Main contracts table — cabeçalho com coluna DOCS
-    const TH2 = 'padding:8px 10px;font-weight:700;font-size:11px;border:1px solid #ddd;background:#f5f5f5;';
-    html += `<div style="overflow-x:auto;width:100%"><table style="border-collapse:collapse;font-size:12px;width:max-content;min-width:100%">
+    const TH2 = 'padding:8px 12px;font-weight:700;font-size:11px;border:1px solid #ddd;background:#f5f5f5;';
+    html += `<div class="table-wrap"><table style="border-collapse:collapse;font-size:12px;width:max-content;min-width:100%">
       <thead><tr>
         <th style="${TH2}min-width:70px">CÓD</th>
         <th style="${TH2}min-width:200px">CLIENTE</th>
@@ -5996,7 +5998,7 @@ async function loadContratosTab(forceRefresh = false) {
     const pctBg2    = p => p===null?'#f5f5f5':p>=90?'#e8f5e9':p>=60?'#fff3e0':'#ffebee';
 
     rows.forEach((r, idx) => {
-      const td = `padding:8px 10px;border:1px solid #eee;font-size:11px;${idx%2===0?'background:#fff;':'background:#fafafa;'}`;
+      const td = `padding:8px 12px;border:1px solid #eee;font-size:11px;${idx%2===0?'background:#fff;':'background:#fafafa;'}`;
       const pBg = pctBg2(r.pct); const pCol = pctColor2(r.pct);
       const alertaHtml = r.alerta === 'finalizado'
         ? `<span style="background:#e8f5e9;color:#1b5e20;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">✅ Contrato Finalizado — Negociar</span>`
