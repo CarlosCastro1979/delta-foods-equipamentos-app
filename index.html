@@ -41,6 +41,7 @@
     --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.1);
     --header-h: 60px;
     --transition: 0.18s ease;
+    --gutter: clamp(20px, 4vw, 48px);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -120,7 +121,7 @@
   .dot.offline { background: var(--danger); }
 
   /* LAYOUT */
-  .container { max-width: 100%; margin: 0 auto; padding: 16px 48px; }
+  .container { max-width: 100%; margin: 0 auto; padding: 16px var(--gutter); }
 
   /* TABS */
   .tabs { display: contents; }
@@ -135,7 +136,7 @@
   .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
   .tab:hover:not(.active) { color: var(--text-secondary); background: var(--surface-hover); }
 
-  .panel { display: none !important; padding: 0; }
+  .panel { display: none !important; }
   .panel.active { display: block !important; }
 
 
@@ -546,7 +547,7 @@
   .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
   .app-header {
     height: var(--header-h); background: var(--surface); border-bottom: 1px solid var(--border);
-    padding: 0 24px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 var(--gutter); display: flex; align-items: center; justify-content: space-between;
     position: sticky; top: 0; z-index: 200; box-shadow: var(--shadow-xs);
   }
   .app-header-left, .app-header-right { display: flex; align-items: center; gap: 16px; }
@@ -596,10 +597,16 @@
     position: sticky; top: var(--header-h); z-index: 150; box-shadow: var(--shadow-xs);
   }
   .main-nav-inner {
-    display: flex; gap: 2px; padding: 0 16px; overflow-x: auto; scrollbar-width: none;
+    display: flex; gap: 2px; padding: 0 var(--gutter); overflow-x: auto; scrollbar-width: none;
   }
   .main-nav-inner::-webkit-scrollbar { display: none; }
-  .app-content { flex: 1; padding: 24px 24px 80px; max-width: 1440px; width: 100%; margin: 0 auto; }
+  .app-content {
+    flex: 1;
+    padding: 24px var(--gutter) 80px;
+    max-width: 1440px;
+    width: 100%;
+    margin: 0 auto;
+  }
   .sub-nav { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
   .sub-tab {
     padding: 8px 16px; font-size: 13px; font-weight: 500; border: 1px solid var(--border);
@@ -673,7 +680,8 @@
   .tab.active { border-bottom-color: transparent; }
 
   .app-content {
-    padding: 28px 32px 88px;
+    padding-top: 28px;
+    padding-bottom: 88px;
     background: linear-gradient(180deg, var(--bg) 0%, #eef2f7 100%);
   }
 
@@ -893,10 +901,10 @@
   }
 
   @media (max-width: 600px) {
-    .top-bar { padding: 10px 16px; }
-    .container { padding: 16px 16px; }
-    .panel { padding: 0 16px; }
-    #sub-panel-vendedores, #sub-panel-carga-sap { padding: 0 16px !important; }
+    :root { --gutter: 20px; }
+    .top-bar { padding: 10px var(--gutter); }
+    .container { padding: 16px var(--gutter); }
+    .app-content { padding-top: 20px; padding-bottom: 72px; }
     .form-row { grid-template-columns: 1fr; }
     .table-toolbar { flex-direction: column; align-items: stretch; }
     .table-toolbar input { width: 100%; }
@@ -1266,7 +1274,7 @@ var _unused_placeholder = 1;
 </div>
 
   <!-- SUB-PANEL: VENDEDORES -->
-  <div id="sub-panel-vendedores" style="display:none;padding:0 48px;">
+  <div id="sub-panel-vendedores" style="display:none;">
     <div style="max-width:560px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
         <div>
@@ -1311,7 +1319,7 @@ var _unused_placeholder = 1;
   </div>
 
   <!-- SUB-PANEL: CARREGAR LISTA SAP -->
-  <div id="sub-panel-carga-sap" style="display:none;padding:0 48px;">
+  <div id="sub-panel-carga-sap" style="display:none;">
     <div style="max-width:600px;">
       <div style="margin-bottom:16px;">
         <h2 style="font-size:15px;font-weight:600;color:var(--text);margin:0 0 4px 0">📥 Carregar Lista de Clientes SAP</h2>
@@ -1351,6 +1359,7 @@ var _unused_placeholder = 1;
 
   <div class="panel" id="panel-at">
     <!-- Sub-abas AT -->
+    <div class="form-card" style="max-width:720px;">
     <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:24px;">
       <button id="at-sub-chamado" onclick="atSwitchSub('chamado')"
         style="padding:9px 20px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid var(--accent);margin-bottom:-2px;color:var(--accent);">
@@ -1511,6 +1520,7 @@ var _unused_placeholder = 1;
       <button class="btn btn-primary" onclick="enviarPedidoInstalacao()" style="width:100%;padding:12px;font-size:15px;">
         📧 Registar Pedido de Instalação
       </button>
+    </div>
     </div>
   </div>
 
