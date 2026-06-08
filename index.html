@@ -7202,15 +7202,16 @@ function prosCloseModal() {
   document.getElementById('pros-modal-overlay').style.display = 'none';
 }
 
-async function prosSave() {
+async function prosSave(opts = {}) {
+  const { keepOpen = false } = opts;
   const nome     = document.getElementById('pros-f-nome').value.trim();
   const vendedor = document.getElementById('pros-f-vendedor').value;
   const estado   = document.getElementById('pros-f-estado').value;
   const nota     = document.getElementById('pros-f-nota').value.trim();
   const st       = document.getElementById('pros-modal-status');
 
-  if (!nome)     { st.innerHTML = '<span style="color:var(--danger)">Nome obrigatório.</span>'; return; }
-  if (!vendedor) { st.innerHTML = '<span style="color:var(--danger)">Seleciona um vendedor.</span>'; return; }
+  if (!nome)     { st.innerHTML = '<span style="color:var(--danger)">Nome obrigatório.</span>'; return false; }
+  if (!vendedor) { st.innerHTML = '<span style="color:var(--danger)">Seleciona um vendedor.</span>'; return false; }
 
   const payload = {
     nome,
@@ -7274,9 +7275,11 @@ async function prosSave() {
     st.innerHTML = '<span style="color:#16a34a">✅ Guardado!</span>';
     await loadProsData();
     renderPros();
-    setTimeout(() => prosCloseModal(), 800);
+    if (!keepOpen) setTimeout(() => prosCloseModal(), 800);
+    return true;
   } catch(e) {
     st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
+    return false;
   }
 }
 
@@ -7342,6 +7345,10 @@ function prosGanhoRegiaoChange() {
 }
 
 function prosGanhoAbrir(p) {
+  if (!p || p.estado !== 'ganho') {
+    toast('Só é possível exportar cadastro SAP com estado "Ganho" guardado.', 'error');
+    return;
+  }
   // Preencher com dados da prospeção
   document.getElementById('pros-ganho-nome-label').textContent = p.nome || '';
   document.getElementById('pg-nome').value    = p.nome || '';
@@ -7382,9 +7389,25 @@ function prosGanhoAbrir(p) {
   document.getElementById('pros-ganho-overlay').style.display = 'block';
 }
 
-function prosModalAbrirCadastro() {
+async function prosModalAbrirCadastro() {
+  const estadoForm = document.getElementById('pros-f-estado').value;
+  const st = document.getElementById('pros-modal-status');
+  if (estadoForm !== 'ganho') {
+    st.innerHTML = '<span style="color:var(--danger)">Marca o estado como Ganho antes de exportar.</span>';
+    return;
+  }
+  const saved = prosData.find(x => x.id === prosEditId);
+  const precisaGuardar = !saved || saved.estado !== 'ganho';
+  if (precisaGuardar) {
+    st.innerHTML = '<span style="color:var(--muted)">A guardar estado Ganho...</span>';
+    const ok = await prosSave({ keepOpen: true });
+    if (!ok) return;
+  }
   const p = prosData.find(x => x.id === prosEditId);
-  if (!p) return;
+  if (!p || p.estado !== 'ganho') {
+    st.innerHTML = '<span style="color:var(--danger)">Não foi possível confirmar o estado Ganho. Clica Guardar e tenta de novo.</span>';
+    return;
+  }
   prosCloseModal();
   setTimeout(() => prosGanhoAbrir(p), 100);
 }
