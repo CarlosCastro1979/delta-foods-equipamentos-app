@@ -6689,7 +6689,9 @@ function confirmarLogin() {
   }
   localStorage.setItem('dfb_utilizador', nome);
   aplicarUtilizador(nome);
-  document.getElementById('login-overlay').style.display = 'none';
+  const lo = document.getElementById('login-overlay');
+  lo.classList.remove('open');
+  lo.style.display = 'none';
 }
 
 function aplicarUtilizador(nome) {
