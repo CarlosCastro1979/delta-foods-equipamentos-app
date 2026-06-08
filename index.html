@@ -2172,7 +2172,10 @@ var _unused_placeholder = 1;
   <div id="pros-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;overflow-y:auto;">
     <div style="background:var(--surface);border-radius:12px;max-width:640px;margin:40px auto;padding:28px;position:relative;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-        <h2 id="pros-modal-title" style="font-size:17px;font-weight:600;">Novo Lead</h2>
+        <div>
+          <h2 id="pros-modal-title" style="font-size:17px;font-weight:600;">Novo Lead</h2>
+          <div id="pros-autosave-hint" style="font-size:11px;color:var(--muted);margin-top:2px;">Alterações guardadas automaticamente</div>
+        </div>
         <button onclick="prosCloseModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);">✕</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
@@ -2217,7 +2220,7 @@ var _unused_placeholder = 1;
         </div>
         <div>
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Estado</label>
-          <select id="pros-f-estado" class="form-input" style="width:100%;" onchange="const b=document.getElementById('pros-btn-cadastro');if(b)b.style.display=this.value==='ganho'?'inline-flex':'none';">
+          <select id="pros-f-estado" class="form-input" style="width:100%;" onchange="prosOnEstadoChange(this.value)">
             <option value="identificado">Identificado</option>
             <option value="contactado">Contactado</option>
             <option value="visita">Visita feita</option>
@@ -6902,6 +6905,10 @@ const PROS_HIST_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/prospecc
 
 let prosData = [];
 let prosEditId = null;
+let prosAutoSaveTimer = null;
+let prosAutoSaveStatusTimer = null;
+let prosLastSavedSnapshot = '';
+const PROS_AUTOSAVE_FIELDS = ['nome','vendedor','segmento','cnpj','celular','email','estado','marca','preco','caps','kg','acao','data-acao'];
 
 const PROS_ESTADOS = {
   identificado: { label: 'Identificado',      cor: '#6366f1', bg: '#eef2ff' },
@@ -7135,6 +7142,77 @@ function renderProsList(cont, dados) {
   </div>`;
 }
 
+function prosOnEstadoChange(val) {
+  const b = document.getElementById('pros-btn-cadastro');
+  if (b) b.style.display = val === 'ganho' ? 'inline-flex' : 'none';
+  scheduleProsAutoSave(300);
+}
+
+function prosFormSnapshot() {
+  const snap = {};
+  PROS_AUTOSAVE_FIELDS.forEach(f => {
+    const el = document.getElementById('pros-f-' + f);
+    snap[f] = el ? el.value : '';
+  });
+  return JSON.stringify(snap);
+}
+
+function prosCanAutoSave() {
+  const nome = document.getElementById('pros-f-nome')?.value.trim();
+  const vendedor = document.getElementById('pros-f-vendedor')?.value;
+  return !!(nome && vendedor);
+}
+
+function prosSetAutoSaveStatus(text, color) {
+  const el = document.getElementById('pros-modal-status');
+  if (!el) return;
+  el.innerHTML = text ? `<span style="color:${color || 'var(--muted)'}">${text}</span>` : '';
+  clearTimeout(prosAutoSaveStatusTimer);
+  if (text && color === '#16a34a') {
+    prosAutoSaveStatusTimer = setTimeout(() => { if (el) el.innerHTML = ''; }, 2500);
+  }
+}
+
+function scheduleProsAutoSave(delay = 800) {
+  clearTimeout(prosAutoSaveTimer);
+  if (!prosCanAutoSave()) return;
+  if (prosFormSnapshot() === prosLastSavedSnapshot) return;
+  prosSetAutoSaveStatus('A guardar...', 'var(--muted)');
+  prosAutoSaveTimer = setTimeout(() => prosAutoSave(), delay);
+}
+
+async function prosAutoSave() {
+  if (!prosCanAutoSave()) return;
+  if (prosFormSnapshot() === prosLastSavedSnapshot) return;
+  const ok = await prosSave({ keepOpen: true, autosave: true });
+  if (ok) prosLastSavedSnapshot = prosFormSnapshot();
+}
+
+function initProsAutoSave() {
+  teardownProsAutoSave();
+  prosLastSavedSnapshot = prosFormSnapshot();
+  PROS_AUTOSAVE_FIELDS.forEach(f => {
+    const el = document.getElementById('pros-f-' + f);
+    if (!el) return;
+    el.addEventListener('input', () => scheduleProsAutoSave());
+    el.addEventListener('change', () => scheduleProsAutoSave(300));
+  });
+  const nota = document.getElementById('pros-f-nota');
+  if (nota) nota.addEventListener('blur', () => { if (nota.value.trim()) scheduleProsAutoSave(100); });
+}
+
+function teardownProsAutoSave() {
+  clearTimeout(prosAutoSaveTimer);
+  clearTimeout(prosAutoSaveStatusTimer);
+  PROS_AUTOSAVE_FIELDS.forEach(f => {
+    const el = document.getElementById('pros-f-' + f);
+    if (!el) return;
+    el.replaceWith(el.cloneNode(true));
+  });
+  const nota = document.getElementById('pros-f-nota');
+  if (nota) nota.replaceWith(nota.cloneNode(true));
+}
+
 function prosOpenModal() {
   prosEditId = null;
   document.getElementById('pros-modal-title').textContent = 'Novo Lead';
@@ -7148,6 +7226,7 @@ function prosOpenModal() {
   document.getElementById('pros-modal-hist').style.display = 'none';
   document.getElementById('pros-modal-status').textContent = '';
   document.getElementById('pros-modal-overlay').style.display = 'block';
+  initProsAutoSave();
   setTimeout(()=>document.getElementById('pros-f-nome').focus(), 100);
 }
 
@@ -7196,22 +7275,24 @@ async function prosOpenEdit(id) {
   } catch(e) {}
 
   document.getElementById('pros-modal-overlay').style.display = 'block';
+  initProsAutoSave();
 }
 
 function prosCloseModal() {
+  teardownProsAutoSave();
   document.getElementById('pros-modal-overlay').style.display = 'none';
 }
 
 async function prosSave(opts = {}) {
-  const { keepOpen = false } = opts;
+  const { keepOpen = false, autosave = false } = opts;
   const nome     = document.getElementById('pros-f-nome').value.trim();
   const vendedor = document.getElementById('pros-f-vendedor').value;
   const estado   = document.getElementById('pros-f-estado').value;
   const nota     = document.getElementById('pros-f-nota').value.trim();
   const st       = document.getElementById('pros-modal-status');
 
-  if (!nome)     { st.innerHTML = '<span style="color:var(--danger)">Nome obrigatório.</span>'; return false; }
-  if (!vendedor) { st.innerHTML = '<span style="color:var(--danger)">Seleciona um vendedor.</span>'; return false; }
+  if (!nome)     { if (!autosave) st.innerHTML = '<span style="color:var(--danger)">Nome obrigatório.</span>'; return false; }
+  if (!vendedor) { if (!autosave) st.innerHTML = '<span style="color:var(--danger)">Seleciona um vendedor.</span>'; return false; }
 
   const payload = {
     nome,
@@ -7230,7 +7311,7 @@ async function prosSave(opts = {}) {
     atualizado_em:     new Date().toISOString(),
   };
 
-  st.innerHTML = '<span style="color:var(--muted)">A guardar...</span>';
+  if (!autosave) st.innerHTML = '<span style="color:var(--muted)">A guardar...</span>';
 
   try {
     let estadoAnterior = null;
@@ -7272,13 +7353,16 @@ async function prosSave(opts = {}) {
       });
     }
 
-    st.innerHTML = '<span style="color:#16a34a">✅ Guardado!</span>';
+    if (autosave) prosSetAutoSaveStatus('✅ Guardado automaticamente', '#16a34a');
+    else st.innerHTML = '<span style="color:#16a34a">✅ Guardado!</span>';
+    prosLastSavedSnapshot = prosFormSnapshot();
     await loadProsData();
     renderPros();
     if (!keepOpen) setTimeout(() => prosCloseModal(), 800);
     return true;
   } catch(e) {
-    st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
+    if (autosave) prosSetAutoSaveStatus('Erro ao guardar: ' + e.message, 'var(--danger)');
+    else st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
     return false;
   }
 }
@@ -7396,16 +7480,14 @@ async function prosModalAbrirCadastro() {
     st.innerHTML = '<span style="color:var(--danger)">Marca o estado como Ganho antes de exportar.</span>';
     return;
   }
-  const saved = prosData.find(x => x.id === prosEditId);
-  const precisaGuardar = !saved || saved.estado !== 'ganho';
-  if (precisaGuardar) {
-    st.innerHTML = '<span style="color:var(--muted)">A guardar estado Ganho...</span>';
-    const ok = await prosSave({ keepOpen: true });
+  clearTimeout(prosAutoSaveTimer);
+  if (prosFormSnapshot() !== prosLastSavedSnapshot) {
+    const ok = await prosSave({ keepOpen: true, autosave: true });
     if (!ok) return;
   }
   const p = prosData.find(x => x.id === prosEditId);
   if (!p || p.estado !== 'ganho') {
-    st.innerHTML = '<span style="color:var(--danger)">Não foi possível confirmar o estado Ganho. Clica Guardar e tenta de novo.</span>';
+    st.innerHTML = '<span style="color:var(--danger)">Não foi possível confirmar o estado Ganho. Aguarda o guardar automático e tenta de novo.</span>';
     return;
   }
   prosCloseModal();
