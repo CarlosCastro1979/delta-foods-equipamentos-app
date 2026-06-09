@@ -1098,6 +1098,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 /* Docxtemplater removido - geração DOCX agora é feita via XML puro */
 var _unused_placeholder = 1;
 </script>
+<script src="simulador-template.js"></script>
 </head>
 <body>
 
@@ -2117,47 +2118,59 @@ var _unused_placeholder = 1;
         </div>
       </div>
 
-      <!-- SECÇÃO: Proposta Delta -->
+      <!-- SECÇÃO: Proposta de Negócio -->
       <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:10px;letter-spacing:.5px;">PROPOSTA DELTA — INCLUÍDA NO EMAIL</div>
+        <div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:10px;letter-spacing:.5px;">PROPOSTA DE NEGÓCIO — SIMULADOR EM ANEXO NO EMAIL</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
           <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Lote de café</label>
-            <input type="text" id="pg-prop-lote" class="form-input" style="width:100%;font-size:13px;" placeholder="Ex: GOLD BLEND 250G">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Equipamento</label>
-            <select id="pg-prop-equip" class="form-input" style="width:100%;font-size:13px;">
-              <option value="">— Selecionar —</option>
-              <option>AUTOMATICA DELONGHI</option>
-              <option>MAQ. MAYOR DIG. 1GR. PRETA</option>
-              <option>MAQ. MAYOR DIG. 2GR. PRETA</option>
-              <option>MAQ. MAYOR DIG. 3GR. PRETA</option>
-              <option>MOINHO RANCILIO KYRO 65 OD</option>
-              <option>MOINHO MAYOR IBERYA</option>
-              <option>MAYOR Q</option>
-              <option>QUORUM</option>
-              <option>MAQ DOMESTICA DELTA Q</option>
-              <option>EQUIPAMENTO PROPRIO</option>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Tipo de negócio</label>
+            <select id="pg-prop-tipo" class="form-input" style="width:100%;font-size:13px;" onchange="propTipoChange()" oninput="propCalcular()">
+              <option value="Q">Delta Q (cápsulas)</option>
+              <option value="GRAO">Grão (kg)</option>
             </select>
           </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
           <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Qtd. contratada</label>
-            <div style="display:flex;gap:6px;">
-              <input type="number" id="pg-prop-qty" class="form-input" style="width:100%;font-size:13px;" placeholder="0" min="0" step="0.1">
-              <select id="pg-prop-unidade" class="form-input" style="font-size:13px;min-width:70px;">
-                <option value="Cáps">Cáps</option>
-                <option value="Kg">Kg</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Preço acordado (R$)</label>
-            <input type="number" id="pg-prop-preco" class="form-input" style="width:100%;font-size:13px;" placeholder="0.00" step="0.01" min="0">
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Produto / Lote</label>
+            <select id="pg-prop-produto" class="form-input" style="width:100%;font-size:13px;" oninput="propCalcular()"></select>
           </div>
         </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Prazo contrato (meses)</label>
+            <input type="number" id="pg-prop-prazo" class="form-input" style="width:100%;font-size:13px;" value="36" min="0" oninput="propCalcular()">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;"><span id="pg-prop-qtd-label">Cápsulas</span> contratadas/mês</label>
+            <input type="number" id="pg-prop-qtdmes" class="form-input" style="width:100%;font-size:13px;" placeholder="0" min="0" oninput="propCalcular()">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Desconto NF (%)</label>
+            <input type="number" id="pg-prop-desconto" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" step="0.1" oninput="propCalcular()">
+          </div>
+        </div>
+        <div style="margin-bottom:10px;">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Equipamentos (quantidade)</label>
+          <div id="pg-prop-equip-list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Xícaras Expresso</label>
+            <input type="number" id="pg-prop-xic-ex" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" oninput="propCalcular()">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Xícaras Cappuccino</label>
+            <input type="number" id="pg-prop-xic-cap" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" oninput="propCalcular()">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Outros invest. (R$/mês)</label>
+            <input type="number" id="pg-prop-outros" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" step="0.01" oninput="propCalcular()">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Rappel (%)</label>
+            <input type="number" id="pg-prop-rappel" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" step="0.1" oninput="propCalcular()">
+          </div>
+        </div>
+        <div id="pg-prop-preview" style="margin-top:12px;font-size:12px;color:var(--muted);"></div>
       </div>
 
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
@@ -7611,11 +7624,15 @@ function prosGanhoAbrir(p) {
   document.getElementById('pg-cep').value     = '';
   document.getElementById('pg-cidade').value  = 'SÃO PAULO';
   document.getElementById('pg-status').textContent = '';
-  document.getElementById('pg-prop-lote').value = '';
-  document.getElementById('pg-prop-equip').value = '';
-  document.getElementById('pg-prop-qty').value = '';
-  document.getElementById('pg-prop-preco').value = '';
-  document.getElementById('pg-prop-unidade').value = 'Cáps';
+  document.getElementById('pg-prop-tipo').value = 'Q';
+  document.getElementById('pg-prop-prazo').value = 36;
+  document.getElementById('pg-prop-qtdmes').value = '';
+  document.getElementById('pg-prop-desconto').value = 0;
+  document.getElementById('pg-prop-xic-ex').value = 0;
+  document.getElementById('pg-prop-xic-cap').value = 0;
+  document.getElementById('pg-prop-outros').value = 0;
+  document.getElementById('pg-prop-rappel').value = 0;
+  propTipoChange();
 
   // Pré-selecionar vendedor se for um dos 4
   const sapVend = PG_VENDEDOR_SAP[p.vendedor] || '';
@@ -7660,8 +7677,271 @@ function prosGanhoFechar() {
   document.getElementById('pros-ganho-overlay').style.display = 'none';
 }
 
+// ===== Proposta de Negócio (Simulador Delta Q / Grão) =====
+// Tabelas de preço (cópia interna da folha PRESSUPOSTOS do simulador)
+const PROP_PRODUTOS = {
+  'P': { nome: 'PLATINUM',        tabela: 145.464, custoCDist: 33.3 },
+  'G': { nome: 'GOLD',            tabela: 124.38,  custoCDist: 31.968 },
+  'B': { nome: 'Base Blends',     tabela: 2.4398,  custoCDist: 0.333 },
+  'K': { nome: 'Kit Caps Horeca', tabela: 2.15534, custoCDist: 0.2775 },
+};
+const PROP_EQUIP_PRECO = {
+  'OD': 6706, '1GR': 11130, '2GR': 13475, '3GR': 19475, 'Del': 8000,
+  'KIT': 576, 'Q2GR': 13475, 'QU': 6000,
+};
+const PROP_XIC_PRECO = { 'EX': 13, 'CAP': 18 };
+
+const PROP_SIM = {
+  Q: {
+    sheet: 'SIMULADOR DELTA Q',
+    activeTab: 1,
+    unidade: 'Cápsulas',
+    margemBom: 0.7,
+    produtos: ['K', 'B'],
+    equipamentos: [
+      { cod: 'Q2GR', nome: 'MAYOR Q',       cell: 'G28', resCell: 'H28' },
+      { cod: 'QU',   nome: 'QUORUM CONECT', cell: 'G29', resCell: 'H29' },
+    ],
+    cells: { nome: 'E11', prazo: 'G14', qtdmes: 'G15', produto: 'D22', desconto: 'H24', xicEx: 'G30', xicCap: 'G31', outros: 'G32', rappel: 'G33' },
+    results: { totalQtd: 'G16', fatContrato: 'H17', investContrato: 'H18', fatLiq: 'H19', rentabContrato: 'H20', prodNome: 'F22', prodCod: 'D23', precoTabela: 'H23', precoNF: 'H25', investUnit: 'H27', xicExUnit: 'H30', xicCapUnit: 'H31', outrosUnit: 'H32', rappelUnit: 'H33', impostos: 'H34', precoLiq: 'H35', rentabUnit: 'H37', ratio: 'I37', veredito: 'E39' },
+  },
+  GRAO: {
+    sheet: 'SIMULADOR GRÃO',
+    activeTab: 2,
+    unidade: 'Kg',
+    margemBom: 0.5,
+    produtos: ['G', 'P', 'B'],
+    equipamentos: [
+      { cod: 'OD',  nome: 'MOINHO',    cell: 'G28', resCell: 'H28' },
+      { cod: '1GR', nome: 'MAYOR 1GR', cell: 'G29', resCell: 'H29' },
+      { cod: '2GR', nome: 'MAYOR 2GR', cell: 'G30', resCell: 'H30' },
+      { cod: '3GR', nome: 'MAYOR 3GR', cell: 'G31', resCell: 'H31' },
+      { cod: 'KIT', nome: 'KIT APOIO', cell: 'G32', resCell: 'H32' },
+      { cod: 'Del', nome: 'Delonghi',  cell: 'G33', resCell: 'H33' },
+    ],
+    cells: { nome: 'E11', prazo: 'G14', qtdmes: 'G15', produto: 'D22', desconto: 'H24', xicEx: 'G34', xicCap: 'G35', outros: 'G36', rappel: 'G37' },
+    results: { totalQtd: 'G16', kgDia: 'H15', fatContrato: 'H17', investContrato: 'H18', fatLiq: 'H19', rentabContrato: 'H20', prodNome: 'F22', prodCod: 'D23', precoTabela: 'H23', precoNF: 'H25', investUnit: 'H27', xicExUnit: 'H34', xicCapUnit: 'H35', outrosUnit: 'H36', rappelUnit: 'H37', impostos: 'H39', precoLiq: 'H40', rentabUnit: 'H42', ratio: 'I42', veredito: 'E44' },
+  },
+};
+
+function propTipoChange() {
+  const tipo = document.getElementById('pg-prop-tipo').value;
+  const cfg = PROP_SIM[tipo] || PROP_SIM.Q;
+  document.getElementById('pg-prop-qtd-label').textContent = cfg.unidade;
+  // Produtos
+  const selP = document.getElementById('pg-prop-produto');
+  selP.innerHTML = cfg.produtos.map(c => `<option value="${c}">${PROP_PRODUTOS[c].nome}</option>`).join('');
+  // Equipamentos (quantidade)
+  const list = document.getElementById('pg-prop-equip-list');
+  list.innerHTML = cfg.equipamentos.map(e => `
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:12px;flex:1;color:var(--text);">${e.nome}</span>
+      <input type="number" id="pg-prop-eq-${e.cod}" class="form-input" style="width:64px;font-size:13px;" value="0" min="0" oninput="propCalcular()">
+    </div>`).join('');
+  propCalcular();
+}
+
+function propNum(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
+
+// Replica as fórmulas do simulador para preview e para preencher o Excel
+function propComputeModel(tipo) {
+  const cfg = PROP_SIM[tipo] || PROP_SIM.Q;
+  const prazo = propNum('pg-prop-prazo');
+  const qtdMes = propNum('pg-prop-qtdmes');
+  const prodCod = document.getElementById('pg-prop-produto').value;
+  const prod = PROP_PRODUTOS[prodCod] || { nome: '', tabela: 0, custoCDist: 0 };
+  const desconto = propNum('pg-prop-desconto') / 100;
+  const rappel = propNum('pg-prop-rappel') / 100;
+  const totalQtd = prazo * qtdMes;
+  const precoTabela = prod.tabela;
+  const precoNF = precoTabela * (1 - desconto);
+  const impostos = precoNF * 7 / 107;
+
+  const equipUnit = {};
+  let investUnit = 0;
+  cfg.equipamentos.forEach(e => {
+    const q = propNum('pg-prop-eq-' + e.cod);
+    const u = (q > 0 && totalQtd > 0) ? (PROP_EQUIP_PRECO[e.cod] || 0) * q / totalQtd : 0;
+    equipUnit[e.cod] = u; investUnit += u;
+  });
+  const xicEx = propNum('pg-prop-xic-ex');
+  const xicCap = propNum('pg-prop-xic-cap');
+  const outros = propNum('pg-prop-outros');
+  const xicExUnit = totalQtd > 0 ? xicEx * PROP_XIC_PRECO.EX / totalQtd : 0;
+  const xicCapUnit = totalQtd > 0 ? xicCap * PROP_XIC_PRECO.CAP / totalQtd : 0;
+  const outrosUnit = totalQtd > 0 ? outros / totalQtd : 0;
+  const rappelUnit = rappel * (precoNF - impostos);
+  investUnit += xicExUnit + xicCapUnit + outrosUnit + rappelUnit;
+
+  const precoLiq = precoNF - investUnit - impostos;
+  const rentabUnit = precoLiq - prod.custoCDist;
+  const ratio = (precoLiq < 0 && rentabUnit < 0) ? -(rentabUnit / precoLiq) : (precoLiq !== 0 ? rentabUnit / precoLiq : 0);
+  let veredito;
+  if (ratio > cfg.margemBom) veredito = 'BOM NEGÓCIO';
+  else if (ratio > 0.25 && ratio < cfg.margemBom) veredito = 'REQUER AVALIAÇÃO';
+  else veredito = 'REJEITAR';
+
+  return {
+    cfg, prazo, qtdMes, prodCod, prod, desconto, rappel, totalQtd, precoTabela, precoNF, impostos,
+    equipUnit, xicEx, xicCap, outros, xicExUnit, xicCapUnit, outrosUnit, rappelUnit, investUnit,
+    precoLiq, rentabUnit, ratio, veredito,
+    fatContrato: totalQtd * precoNF, investContrato: investUnit * totalQtd,
+    fatLiq: precoLiq * totalQtd, rentabContrato: rentabUnit * totalQtd, kgDia: totalQtd / 5,
+  };
+}
+
+function propCalcular() {
+  const el = document.getElementById('pg-prop-preview');
+  if (!el) return;
+  const tipo = document.getElementById('pg-prop-tipo').value;
+  const m = propComputeModel(tipo);
+  const fmt = n => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtP = n => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+
+  const cor = m.veredito === 'BOM NEGÓCIO' ? '#16a34a' : (m.veredito === 'REQUER AVALIAÇÃO' ? '#d97706' : 'var(--danger)');
+  const precos = `
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Preço de tabela (${m.cfg.unidade})</span><strong>${m.precoTabela ? fmtP(m.precoTabela) : '—'}</strong></div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span>Preço final após desconto</span><strong>${m.precoTabela ? fmtP(m.precoNF) : '—'}</strong></div>`;
+
+  if (!m.prod.tabela || m.totalQtd <= 0) {
+    el.innerHTML = `<div style="background:#fff;border:1px solid #d1fae5;border-radius:8px;padding:10px;">${precos}<div style="font-size:11px;color:var(--muted);">Preenche produto, prazo e quantidade para ver a rentabilidade.</div></div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div style="background:#fff;border:1px solid #d1fae5;border-radius:8px;padding:10px;">
+      ${precos}
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Faturamento do contrato</span><strong>${fmt(m.fatContrato)}</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Investimentos do contrato</span><strong>${fmt(m.investContrato)}</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Faturamento líquido</span><strong>${fmt(m.fatLiq)}</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span>Rentabilidade do negócio</span><strong>${fmt(m.rentabContrato)} (${(m.ratio * 100).toFixed(1)}%)</strong></div>
+      <div style="text-align:center;background:${cor};color:#fff;border-radius:6px;padding:5px;font-weight:700;">${m.veredito}</div>
+    </div>`;
+}
+
+async function propGerarSimulador(nomeCliente) {
+  if (!window.SIMULADOR_TEMPLATE_B64) { toast('Template do simulador não carregou.', 'error'); return; }
+  // ExcelJS preserva formatação, imagens e estilos (ao contrário do SheetJS)
+  if (!window.ExcelJS) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  const raw = atob(window.SIMULADOR_TEMPLATE_B64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+
+  const tipo = document.getElementById('pg-prop-tipo').value;
+  const m = propComputeModel(tipo);
+  const cfg = m.cfg;
+
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(arr.buffer);
+  const ws = wb.getWorksheet(cfg.sheet);
+  if (!ws) { toast('Folha do simulador não encontrada.', 'error'); return; }
+
+  // Substituir referências externas [1]PRESSUPOSTOS pela folha interna (link externo não é exportado)
+  ws.eachRow({ includeEmpty: false }, row => {
+    row.eachCell({ includeEmpty: false }, cell => {
+      if (cell.formula && cell.formula.indexOf('[1]') >= 0) {
+        cell.value = { formula: cell.formula.replace(/\[1\]/g, ''), result: (cell.result != null ? cell.result : 0) };
+      }
+    });
+  });
+
+  const setInput = (ref, v) => { ws.getCell(ref).value = v; };
+  const setRes = (ref, v) => {
+    if (!ref) return;
+    const c = ws.getCell(ref);
+    const f = c.formula || (c.value && c.value.formula);
+    if (f) c.value = { formula: f, result: v };
+    else c.value = v;
+  };
+
+  // Entradas
+  setInput(cfg.cells.nome, nomeCliente || '');
+  setInput(cfg.cells.prazo, m.prazo);
+  setInput(cfg.cells.qtdmes, m.qtdMes);
+  setInput(cfg.cells.produto, m.prodCod);
+  setInput(cfg.cells.desconto, m.desconto);
+  setInput(cfg.cells.xicEx, m.xicEx);
+  setInput(cfg.cells.xicCap, m.xicCap);
+  setInput(cfg.cells.outros, m.outros);
+  setInput(cfg.cells.rappel, m.rappel);
+  cfg.equipamentos.forEach(e => setInput(e.cell, propNum('pg-prop-eq-' + e.cod)));
+
+  // Resultados calculados (mostram já corretos mesmo sem recalcular)
+  const r = cfg.results;
+  setRes(r.totalQtd, m.totalQtd);
+  if (r.kgDia) ws.getCell(r.kgDia).value = null; // H15 vazio (estava preenchido por engano)
+  setRes(r.fatContrato, m.fatContrato);
+  setRes(r.investContrato, m.investContrato);
+  setRes(r.fatLiq, m.fatLiq);
+  setRes(r.rentabContrato, m.rentabContrato);
+  setRes(r.prodNome, m.prod.nome);
+  setRes(r.prodCod, m.prodCod);
+  setRes(r.precoTabela, m.precoTabela);
+  setRes(r.precoNF, m.precoNF);
+  setRes(r.investUnit, m.investUnit);
+  setRes(r.xicExUnit, m.xicExUnit);
+  setRes(r.xicCapUnit, m.xicCapUnit);
+  setRes(r.outrosUnit, m.outrosUnit);
+  setRes(r.rappelUnit, m.rappelUnit);
+  setRes(r.impostos, m.impostos);
+  setRes(r.precoLiq, m.precoLiq);
+  setRes(r.rentabUnit, m.rentabUnit);
+  setRes(r.ratio, m.ratio);
+  setRes(r.veredito, m.veredito);
+  cfg.equipamentos.forEach(e => setRes(e.resCell, m.equipUnit[e.cod] || 0));
+
+  // Recalcular ao abrir + abrir na folha do simulador escolhido
+  wb.calcProperties = wb.calcProperties || {};
+  wb.calcProperties.fullCalcOnLoad = true;
+  wb.views = [{ activeTab: cfg.activeTab }];
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Proposta_${tipo === 'Q' ? 'DeltaQ' : 'Grao'}_${(nomeCliente || 'cliente').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 async function prosGanhoExportar() {
   const st = document.getElementById('pg-status');
+
+  // Validação: todos obrigatórios exceto Inscrição Estadual, Tel. 2, Complemento e Sector Industrial
+  const obrigatorios = [
+    ['pg-nome', 'Nome / Razão Social'],
+    ['pg-cnpj', 'CNPJ / CPF'],
+    ['pg-fantasia', 'Nome Fantasia'],
+    ['pg-email', 'Email'],
+    ['pg-tel1', 'Tel. 1'],
+    ['pg-rua', 'Rua'],
+    ['pg-nro', 'Nro.'],
+    ['pg-bairro', 'Bairro'],
+    ['pg-cep', 'CEP'],
+    ['pg-cidade', 'Cidade'],
+    ['pg-canal', 'Canal Distribuição'],
+    ['pg-regiao', 'Região (Estado)'],
+    ['pg-icms', 'Contrib. ICMS'],
+    ['pg-pagto', 'Cond. Pagamento'],
+    ['pg-rota', 'Rota'],
+    ['pg-vendedor', 'Vendedor'],
+  ];
+  const emFalta = obrigatorios.filter(([id]) => !(document.getElementById(id)?.value || '').trim());
+  if (emFalta.length) {
+    const primeiro = document.getElementById(emFalta[0][0]);
+    if (primeiro) { primeiro.focus(); primeiro.style.borderColor = 'var(--danger)'; }
+    st.innerHTML = `<span style="color:var(--danger)">Preenche os campos obrigatórios: ${emFalta.map(([,l]) => l).join(', ')}.</span>`;
+    return;
+  }
+  obrigatorios.forEach(([id]) => { const el = document.getElementById(id); if (el) el.style.borderColor = ''; });
+
   st.innerHTML = '<span style="color:var(--muted)">A gerar...</span>';
 
   const empresa  = document.getElementById('pg-empresa').value;
@@ -7718,7 +7998,26 @@ async function prosGanhoExportar() {
     a.download = `Cadastro_${(dados.nome||'cliente').replace(/[^a-zA-Z0-9]/g,'_').substring(0,20)}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
-    toast('✅ Excel exportado!');
+    toast('✅ Cadastro exportado!');
+
+    // Gerar e descarregar a Proposta de Negócio (simulador) junto com o cadastro
+    const tipoSel = document.getElementById('pg-prop-tipo')?.value || 'Q';
+    const cfgP = PROP_SIM[tipoSel] || PROP_SIM.Q;
+    const prodSel = document.getElementById('pg-prop-produto');
+    const prodTxt = prodSel ? (prodSel.options[prodSel.selectedIndex]?.text || '') : '';
+    const propPrazo = document.getElementById('pg-prop-prazo')?.value || '';
+    const propQtdMes = document.getElementById('pg-prop-qtdmes')?.value || '';
+    const propEquipTxt = cfgP.equipamentos
+      .filter(e => propNum('pg-prop-eq-' + e.cod) > 0)
+      .map(e => `${e.nome} x${document.getElementById('pg-prop-eq-' + e.cod).value}`)
+      .join(', ');
+    try {
+      await propGerarSimulador(dados.nome);
+      toast('✅ Proposta exportada!');
+    } catch (e) {
+      toast('Erro na proposta: ' + e.message, 'error');
+    }
+
     st.innerHTML = '';
     prosGanhoFechar();
 
@@ -7727,19 +8026,14 @@ async function prosGanhoExportar() {
     const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
     const motivo = dados.motivo || 'Abertura de Cliente';
     const assunto = encodeURIComponent(`${motivo} - ${dados.nome}`);
-    const propLote  = document.getElementById('pg-prop-lote')?.value.trim() || '';
-    const propEquip = document.getElementById('pg-prop-equip')?.value.trim() || '';
-    const propQty   = document.getElementById('pg-prop-qty')?.value || '';
-    const propUnid  = document.getElementById('pg-prop-unidade')?.value || 'Cáps';
-    const propPreco = document.getElementById('pg-prop-preco')?.value || '';
-    const propTexto = (propLote || propEquip || propQty || propPreco)
-      ? `\n\nProposta apresentada:\n  • Lote: ${propLote || '—'}\n  • Equipamento: ${propEquip || '—'}\n  • Quantidade contratada: ${propQty ? propQty + ' ' + propUnid : '—'}\n  • Preço acordado: ${propPreco ? 'R$ ' + parseFloat(propPreco).toFixed(2) : '—'}`
+    const propTexto = propQtdMes
+      ? `\n\nProposta de negócio (${tipoSel === 'Q' ? 'Delta Q' : 'Grão'}) — simulador em anexo:\n  • Produto: ${prodTxt || '—'}\n  • Prazo: ${propPrazo || '—'} meses\n  • ${cfgP.unidade}/mês: ${propQtdMes || '—'}\n  • Equipamentos: ${propEquipTxt || '—'}`
       : '';
 
     const corpo = encodeURIComponent(
 `${saudacao},
 
-Segue em anexo o formulário de ${motivo.toLowerCase()} do cliente ${dados.nome} para aprovação.${propTexto}
+Segue em anexo o formulário de ${motivo.toLowerCase()} do cliente ${dados.nome}${propTexto ? ' e a proposta de negócio' : ''} para aprovação.${propTexto}
 
 Aguardo aprovação.
 
