@@ -2231,7 +2231,8 @@ var _unused_placeholder = 1;
         </div>
         <div>
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Marca atual</label>
-          <input type="text" id="pros-f-marca" class="form-input" style="width:100%;" placeholder="Ex: Nespresso, Illy...">
+          <select id="pros-f-marca" class="form-input" style="width:100%;" onchange="prosMarcaChange()"></select>
+          <input type="text" id="pros-f-marca-outro" class="form-input" style="width:100%;margin-top:6px;display:none;" placeholder="Escreve a marca...">
         </div>
         <div>
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Preço atual (R$)</label>
@@ -6910,7 +6911,119 @@ let prosAutoSaveStatusTimer = null;
 let prosLastSavedSnapshot = '';
 let prosAutoSaveAbort = null;
 let prosAutoSaveReady = false;
-const PROS_AUTOSAVE_FIELDS = ['nome','vendedor','segmento','cnpj','celular','email','estado','marca','preco','caps','kg','acao','data-acao'];
+const PROS_AUTOSAVE_FIELDS = ['nome','vendedor','segmento','cnpj','celular','email','estado','marca','marca-outro','preco','caps','kg','acao','data-acao'];
+
+// ─── MARCAS: lista canónica + normalização ───────────
+const MARCA_CANONICAS = [
+  'Cliente novo',
+  '3 Corações',
+  'Nespresso',
+  'Nescafé',
+  'Dolce Gusto',
+  'Illy',
+  'Lavazza',
+  'Pilão',
+  'Melitta',
+  'Santa Mónica',
+  'Orfeu',
+  'Fazenda Pessegueiro',
+];
+
+function marcaKey(s) {
+  return (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+const MARCA_CANON_MAP = MARCA_CANONICAS.reduce((m, v) => { m[marcaKey(v)] = v; return m; }, {});
+
+// Variantes que significam "cliente sem café atual" → Cliente novo
+const MARCA_ALIASES = {
+  'novo ainda nao tem cafe': 'Cliente novo',
+  'ainda nao tem cafe': 'Cliente novo',
+  'nao tem cafe': 'Cliente novo',
+  'nao tem': 'Cliente novo',
+  'sem cafe': 'Cliente novo',
+  'sem marca': 'Cliente novo',
+  'novo': 'Cliente novo',
+  'cliente': 'Cliente novo',
+};
+
+function normalizarMarca(raw) {
+  const cleaned = (raw || '').toString().replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  const key = marcaKey(cleaned);
+  return MARCA_CANON_MAP[key] || MARCA_ALIASES[key] || cleaned;
+}
+
+function prosMarcasDisponiveis() {
+  const mapa = new Map();
+  MARCA_CANONICAS.forEach(m => mapa.set(marcaKey(m), m));
+  prosData.forEach(p => {
+    const n = normalizarMarca(p.marca_atual);
+    if (n) mapa.set(marcaKey(n), n);
+  });
+  return Array.from(mapa.values()).sort((a, b) => {
+    if (marcaKey(a) === 'cliente novo') return -1;
+    if (marcaKey(b) === 'cliente novo') return 1;
+    return a.localeCompare(b, 'pt');
+  });
+}
+
+function prosPopularMarcas() {
+  const sel = document.getElementById('pros-f-marca');
+  if (!sel) return;
+  const atual = sel.value;
+  const marcas = prosMarcasDisponiveis();
+  sel.innerHTML = '<option value="">— Seleciona —</option>' +
+    marcas.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('') +
+    '<option value="__outro__">Outro (escrever)…</option>';
+  if (atual && Array.from(sel.options).some(o => o.value === atual)) sel.value = atual;
+}
+
+function prosSetMarca(val) {
+  prosPopularMarcas();
+  const sel = document.getElementById('pros-f-marca');
+  const outro = document.getElementById('pros-f-marca-outro');
+  if (!sel || !outro) return;
+  const norm = normalizarMarca(val);
+  if (!norm) { sel.value = ''; outro.value = ''; outro.style.display = 'none'; return; }
+  if (Array.from(sel.options).some(o => o.value === norm)) {
+    sel.value = norm; outro.value = ''; outro.style.display = 'none';
+  } else {
+    sel.value = '__outro__'; outro.value = norm; outro.style.display = 'block';
+  }
+}
+
+function prosMarcaChange() {
+  const sel = document.getElementById('pros-f-marca');
+  const outro = document.getElementById('pros-f-marca-outro');
+  if (sel.value === '__outro__') { outro.style.display = 'block'; outro.focus(); }
+  else { outro.style.display = 'none'; outro.value = ''; }
+  scheduleProsAutoSave(300);
+}
+
+function prosMarcaFinal() {
+  const sel = document.getElementById('pros-f-marca');
+  let v = sel ? sel.value : '';
+  if (v === '__outro__') v = document.getElementById('pros-f-marca-outro').value || '';
+  return normalizarMarca(v);
+}
+
+async function prosNormalizarMarcasExistentes() {
+  const updates = [];
+  prosData.forEach(p => {
+    if (!p.marca_atual) return;
+    const norm = normalizarMarca(p.marca_atual);
+    if (norm && norm !== p.marca_atual) {
+      p.marca_atual = norm;
+      updates.push(fetch(PROS_URL + `?id=eq.${p.id}`, {
+        method: 'PATCH',
+        headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ marca_atual: norm })
+      }).catch(() => {}));
+    }
+  });
+  if (updates.length) { try { await Promise.all(updates); } catch (e) {} }
+}
 
 const PROS_ESTADOS = {
   identificado: { label: 'Identificado',      cor: '#6366f1', bg: '#eef2ff' },
@@ -6940,6 +7053,7 @@ async function loadProsData() {
     prosData = await res.json();
     if (!Array.isArray(prosData)) prosData = [];
   } catch(e) { prosData = []; }
+  await prosNormalizarMarcasExistentes();
 }
 
 function renderPros() {
@@ -7223,8 +7337,9 @@ function teardownProsAutoSave() {
 function prosOpenModal() {
   prosEditId = null;
   document.getElementById('pros-modal-title').textContent = 'Novo Lead';
-  ['nome','cnpj','celular','email','marca','acao'].forEach(f => document.getElementById('pros-f-'+f).value = '');
+  ['nome','cnpj','celular','email','acao'].forEach(f => document.getElementById('pros-f-'+f).value = '');
   ['preco','caps','kg'].forEach(f => document.getElementById('pros-f-'+f).value = '');
+  prosSetMarca('');
   document.getElementById('pros-f-data-acao').value = '';
   document.getElementById('pros-f-nota').value = '';
   document.getElementById('pros-f-vendedor').value = '';
@@ -7249,7 +7364,7 @@ async function prosOpenEdit(id) {
   document.getElementById('pros-f-celular').value   = p.celular || '';
   document.getElementById('pros-f-email').value     = p.email || '';
   let estadoAtual = p.estado || 'identificado';
-  document.getElementById('pros-f-marca').value     = p.marca_atual || '';
+  prosSetMarca(p.marca_atual || '');
   document.getElementById('pros-f-preco').value     = p.preco_atual || '';
   document.getElementById('pros-f-caps').value      = p.potencial_caps || '';
   document.getElementById('pros-f-kg').value        = p.potencial_kg || '';
@@ -7322,7 +7437,7 @@ async function prosSave(opts = {}) {
     celular:           document.getElementById('pros-f-celular').value.trim() || null,
     email:             document.getElementById('pros-f-email').value.trim() || null,
     segmento:          document.getElementById('pros-f-segmento').value || null,
-    marca_atual:       document.getElementById('pros-f-marca').value.trim() || null,
+    marca_atual:       prosMarcaFinal() || null,
     preco_atual:       parseFloat(document.getElementById('pros-f-preco').value) || null,
     potencial_caps:    parseInt(document.getElementById('pros-f-caps').value) || null,
     potencial_kg:      parseFloat(document.getElementById('pros-f-kg').value) || null,
