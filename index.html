@@ -2238,23 +2238,7 @@ var _unused_placeholder = 1;
         </div>
         <div>
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Região</label>
-          <select id="pros-f-regiao" class="form-input" style="width:100%;">
-            <option value="">Selecionar...</option>
-            <option value="AC - Acre">AC - Acre</option><option value="AL - Alagoas">AL - Alagoas</option>
-            <option value="AM - Amazonas">AM - Amazonas</option><option value="AP - Amapá">AP - Amapá</option>
-            <option value="BA - Bahia">BA - Bahia</option><option value="CE - Ceará">CE - Ceará</option>
-            <option value="DF - Brasília">DF - Brasília</option><option value="ES - Espírito Santo">ES - Espírito Santo</option>
-            <option value="GO - Goiás">GO - Goiás</option><option value="MA - Maranhão">MA - Maranhão</option>
-            <option value="MG - Minas Gerais">MG - Minas Gerais</option><option value="MS - Mato Grosso do Sul">MS - Mato Grosso do Sul</option>
-            <option value="MT - Mato Grosso">MT - Mato Grosso</option><option value="PA - Pará">PA - Pará</option>
-            <option value="PB - Paraíba">PB - Paraíba</option><option value="PE - Pernambuco">PE - Pernambuco</option>
-            <option value="PI - Piauí">PI - Piauí</option><option value="PR - Paraná">PR - Paraná</option>
-            <option value="RJ - Rio de Janeiro">RJ - Rio de Janeiro</option><option value="RN - Rio Grande do Norte">RN - Rio Grande do Norte</option>
-            <option value="RO - Rondônia">RO - Rondônia</option><option value="RR - Roraima">RR - Roraima</option>
-            <option value="RS - Rio Grande do Sul">RS - Rio Grande do Sul</option><option value="SC - Santa Catarina">SC - Santa Catarina</option>
-            <option value="SE - Sergipe">SE - Sergipe</option><option value="SP - São Paulo">SP - São Paulo</option>
-            <option value="TO - Tocantins">TO - Tocantins</option><option value="ZF - Zona Franca Manaus">ZF - Zona Franca Manaus</option>
-          </select>
+          <input type="text" id="pros-f-regiao" class="form-input" style="width:100%;" placeholder="Ex.: Campinas, Interior SP, Zona Sul…">
         </div>
         <div>
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">CNPJ</label>
@@ -7626,7 +7610,7 @@ async function prosSave(opts = {}) {
     return false;
   }
 
-  const regiaoVal = document.getElementById('pros-f-regiao').value || null;
+  const regiaoVal = document.getElementById('pros-f-regiao').value.trim() || null;
   const payload = {
     nome,
     contacto:          document.getElementById('pros-f-contato').value.trim() || null,
