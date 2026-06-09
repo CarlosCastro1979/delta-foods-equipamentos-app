@@ -2180,8 +2180,12 @@ var _unused_placeholder = 1;
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
         <div style="grid-column:1/-1;">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Nome do cliente *</label>
-          <input type="text" id="pros-f-nome" class="form-input" style="width:100%;" placeholder="Nome do estabelecimento">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Razão Social *</label>
+          <input type="text" id="pros-f-nome" class="form-input" style="width:100%;" placeholder="Razão social do estabelecimento">
+        </div>
+        <div style="grid-column:1/-1;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Nome do Contato do Cliente</label>
+          <input type="text" id="pros-f-contato" class="form-input" style="width:100%;" placeholder="Ex: Alexandre, responsável de compras...">
         </div>
         <div>
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Vendedor *</label>
@@ -2208,7 +2212,7 @@ var _unused_placeholder = 1;
         </div>
         <div>
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">CNPJ</label>
-          <input type="text" id="pros-f-cnpj" class="form-input" style="width:100%;" placeholder="00.000.000/0000-00">
+          <input type="text" id="pros-f-cnpj" class="form-input" style="width:100%;" placeholder="00.000.000/0000-00" maxlength="18" inputmode="numeric" oninput="prosCnpjMask(this)">
         </div>
         <div>
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Celular</label>
@@ -6911,7 +6915,17 @@ let prosAutoSaveStatusTimer = null;
 let prosLastSavedSnapshot = '';
 let prosAutoSaveAbort = null;
 let prosAutoSaveReady = false;
-const PROS_AUTOSAVE_FIELDS = ['nome','vendedor','segmento','cnpj','celular','email','estado','marca','marca-outro','preco','caps','kg','acao','data-acao'];
+const PROS_AUTOSAVE_FIELDS = ['nome','contato','vendedor','segmento','cnpj','celular','email','estado','marca','marca-outro','preco','caps','kg','acao','data-acao'];
+
+function prosCnpjMask(el) {
+  const v = el.value.replace(/\D/g, '').slice(0, 14);
+  let out = v;
+  if (v.length > 12)      out = v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{0,2}).*/, '$1.$2.$3/$4-$5');
+  else if (v.length > 8)  out = v.replace(/^(\d{2})(\d{3})(\d{3})(\d{0,4}).*/, '$1.$2.$3/$4');
+  else if (v.length > 5)  out = v.replace(/^(\d{2})(\d{3})(\d{0,3}).*/, '$1.$2.$3');
+  else if (v.length > 2)  out = v.replace(/^(\d{2})(\d{0,3}).*/, '$1.$2');
+  el.value = out;
+}
 
 // ─── MARCAS: lista canónica + normalização ───────────
 const MARCA_CANONICAS = [
@@ -7337,7 +7351,7 @@ function teardownProsAutoSave() {
 function prosOpenModal() {
   prosEditId = null;
   document.getElementById('pros-modal-title').textContent = 'Novo Lead';
-  ['nome','cnpj','celular','email','acao'].forEach(f => document.getElementById('pros-f-'+f).value = '');
+  ['nome','contato','cnpj','celular','email','acao'].forEach(f => document.getElementById('pros-f-'+f).value = '');
   ['preco','caps','kg'].forEach(f => document.getElementById('pros-f-'+f).value = '');
   prosSetMarca('');
   document.getElementById('pros-f-data-acao').value = '';
@@ -7358,9 +7372,11 @@ async function prosOpenEdit(id) {
   prosEditId = p.id;
   document.getElementById('pros-modal-title').textContent = 'Editar Lead';
   document.getElementById('pros-f-nome').value      = p.nome || '';
+  document.getElementById('pros-f-contato').value   = p.contacto || '';
   document.getElementById('pros-f-vendedor').value  = p.vendedor || '';
   document.getElementById('pros-f-segmento').value  = p.segmento || '';
   document.getElementById('pros-f-cnpj').value      = p.cnpj || '';
+  prosCnpjMask(document.getElementById('pros-f-cnpj'));
   document.getElementById('pros-f-celular').value   = p.celular || '';
   document.getElementById('pros-f-email').value     = p.email || '';
   let estadoAtual = p.estado || 'identificado';
@@ -7426,14 +7442,22 @@ async function prosSave(opts = {}) {
   const nota     = document.getElementById('pros-f-nota').value.trim();
   const st       = document.getElementById('pros-modal-status');
 
-  if (!nome)     { if (!autosave) st.innerHTML = '<span style="color:var(--danger)">Nome obrigatório.</span>'; return false; }
+  if (!nome)     { if (!autosave) st.innerHTML = '<span style="color:var(--danger)">Razão Social obrigatória.</span>'; return false; }
   if (!vendedor) { if (!autosave) st.innerHTML = '<span style="color:var(--danger)">Seleciona um vendedor.</span>'; return false; }
+
+  const cnpjVal    = document.getElementById('pros-f-cnpj').value.trim();
+  const cnpjDigits = cnpjVal.replace(/\D/g, '');
+  if (cnpjVal && cnpjDigits.length !== 14) {
+    if (!autosave) st.innerHTML = '<span style="color:var(--danger)">CNPJ incompleto — tem de ter 14 dígitos (00.000.000/0000-00).</span>';
+    return false;
+  }
 
   const payload = {
     nome,
+    contacto:          document.getElementById('pros-f-contato').value.trim() || null,
     vendedor,
     estado,
-    cnpj:              document.getElementById('pros-f-cnpj').value.trim() || null,
+    cnpj:              cnpjVal || null,
     celular:           document.getElementById('pros-f-celular').value.trim() || null,
     email:             document.getElementById('pros-f-email').value.trim() || null,
     segmento:          document.getElementById('pros-f-segmento').value || null,
