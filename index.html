@@ -6908,6 +6908,8 @@ let prosEditId = null;
 let prosAutoSaveTimer = null;
 let prosAutoSaveStatusTimer = null;
 let prosLastSavedSnapshot = '';
+let prosAutoSaveAbort = null;
+let prosAutoSaveReady = false;
 const PROS_AUTOSAVE_FIELDS = ['nome','vendedor','segmento','cnpj','celular','email','estado','marca','preco','caps','kg','acao','data-acao'];
 
 const PROS_ESTADOS = {
@@ -7103,9 +7105,6 @@ function renderProsList(cont, dados) {
       <td class="col-vend td-clip" style="${TD}">${p.vendedor||''}</td>
       <td style="${TD}">${p.segmento||''}</td>
       <td style="${TD}"><span style="background:${cfg.bg};color:${cfg.cor};border-radius:10px;padding:2px 10px;font-size:11px;font-weight:600;white-space:nowrap;">${cfg.label}</span></td>
-      <td style="${TD}">${p.cnpj?escHtml(p.cnpj):''}</td>
-      <td style="${TD}">${p.celular?escHtml(p.celular):''}</td>
-      <td style="${TD}">${p.email?escHtml(p.email):''}</td>
       <td style="${TD}">${p.marca_atual?escHtml(p.marca_atual):''}</td>
       <td style="${TD}text-align:right;">${p.preco_atual?'R$ '+parseFloat(p.preco_atual).toFixed(2):''}</td>
       <td style="${TD}text-align:right;">${p.potencial_caps?p.potencial_caps.toLocaleString('pt-BR'):''}</td>
@@ -7126,9 +7125,6 @@ function renderProsList(cont, dados) {
         <th class="col-vend td-clip" style="${TH}">Vendedor</th>
         <th class="td-clip" style="${TH}width:8%;">Segmento</th>
         <th class="td-clip" style="${TH}width:9%;">Estado</th>
-        <th class="td-clip" style="${TH}width:9%;">CNPJ</th>
-        <th class="td-clip" style="${TH}width:8%;">Celular</th>
-        <th class="td-clip" style="${TH}width:10%;">Email</th>
         <th class="td-clip" style="${TH}width:8%;">Marca atual</th>
         <th class="td-clip" style="${THR}width:6%;">Preço</th>
         <th class="td-clip" style="${THR}width:6%;">Caps/mês</th>
@@ -7173,8 +7169,13 @@ function prosSetAutoSaveStatus(text, color) {
   }
 }
 
+function prosFindById(id) {
+  return prosData.find(x => String(x.id) === String(id));
+}
+
 function scheduleProsAutoSave(delay = 800) {
   clearTimeout(prosAutoSaveTimer);
+  if (!prosAutoSaveReady) return;
   if (!prosCanAutoSave()) return;
   if (prosFormSnapshot() === prosLastSavedSnapshot) return;
   prosSetAutoSaveStatus('A guardar...', 'var(--muted)');
@@ -7182,6 +7183,7 @@ function scheduleProsAutoSave(delay = 800) {
 }
 
 async function prosAutoSave() {
+  if (!prosAutoSaveReady) return;
   if (!prosCanAutoSave()) return;
   if (prosFormSnapshot() === prosLastSavedSnapshot) return;
   const ok = await prosSave({ keepOpen: true, autosave: true });
@@ -7190,27 +7192,32 @@ async function prosAutoSave() {
 
 function initProsAutoSave() {
   teardownProsAutoSave();
+  prosAutoSaveReady = false;
   prosLastSavedSnapshot = prosFormSnapshot();
+  prosAutoSaveAbort = new AbortController();
+  const { signal } = prosAutoSaveAbort;
   PROS_AUTOSAVE_FIELDS.forEach(f => {
     const el = document.getElementById('pros-f-' + f);
     if (!el) return;
-    el.addEventListener('input', () => scheduleProsAutoSave());
-    el.addEventListener('change', () => scheduleProsAutoSave(300));
+    el.addEventListener('input', () => scheduleProsAutoSave(), { signal });
+    el.addEventListener('change', () => scheduleProsAutoSave(300), { signal });
   });
   const nota = document.getElementById('pros-f-nota');
-  if (nota) nota.addEventListener('blur', () => { if (nota.value.trim()) scheduleProsAutoSave(100); });
+  if (nota) nota.addEventListener('blur', () => { if (nota.value.trim()) scheduleProsAutoSave(100); }, { signal });
+  setTimeout(() => {
+    prosLastSavedSnapshot = prosFormSnapshot();
+    prosAutoSaveReady = true;
+  }, 300);
 }
 
 function teardownProsAutoSave() {
   clearTimeout(prosAutoSaveTimer);
   clearTimeout(prosAutoSaveStatusTimer);
-  PROS_AUTOSAVE_FIELDS.forEach(f => {
-    const el = document.getElementById('pros-f-' + f);
-    if (!el) return;
-    el.replaceWith(el.cloneNode(true));
-  });
-  const nota = document.getElementById('pros-f-nota');
-  if (nota) nota.replaceWith(nota.cloneNode(true));
+  prosAutoSaveReady = false;
+  if (prosAutoSaveAbort) {
+    prosAutoSaveAbort.abort();
+    prosAutoSaveAbort = null;
+  }
 }
 
 function prosOpenModal() {
@@ -7231,9 +7238,9 @@ function prosOpenModal() {
 }
 
 async function prosOpenEdit(id) {
-  const p = prosData.find(x => x.id === id);
+  const p = prosFindById(id);
   if (!p) return;
-  prosEditId = id;
+  prosEditId = p.id;
   document.getElementById('pros-modal-title').textContent = 'Editar Lead';
   document.getElementById('pros-f-nome').value      = p.nome || '';
   document.getElementById('pros-f-vendedor').value  = p.vendedor || '';
@@ -7241,9 +7248,7 @@ async function prosOpenEdit(id) {
   document.getElementById('pros-f-cnpj').value      = p.cnpj || '';
   document.getElementById('pros-f-celular').value   = p.celular || '';
   document.getElementById('pros-f-email').value     = p.email || '';
-  document.getElementById('pros-f-estado').value    = p.estado || 'identificado';
-  const btnCad = document.getElementById('pros-btn-cadastro');
-  if (btnCad) btnCad.style.display = (p.estado === 'ganho') ? 'inline-flex' : 'none';
+  let estadoAtual = p.estado || 'identificado';
   document.getElementById('pros-f-marca').value     = p.marca_atual || '';
   document.getElementById('pros-f-preco').value     = p.preco_atual || '';
   document.getElementById('pros-f-caps').value      = p.potencial_caps || '';
@@ -7255,11 +7260,22 @@ async function prosOpenEdit(id) {
 
   // Carregar histórico
   try {
-    const res = await fetch(PROS_HIST_URL + `?prospeccao_id=eq.${id}&order=criado_em.desc`, { headers: HEADERS });
+    const res = await fetch(PROS_HIST_URL + `?prospeccao_id=eq.${p.id}&order=criado_em.desc`, { headers: HEADERS });
     const hist = await res.json();
     const hEl = document.getElementById('pros-modal-hist');
     const hList = document.getElementById('pros-modal-hist-list');
     if (Array.isArray(hist) && hist.length) {
+      const ultimoEstado = hist.find(h => h.estado_novo)?.estado_novo;
+      if (ultimoEstado && ultimoEstado !== estadoAtual) {
+        estadoAtual = ultimoEstado;
+        await fetch(PROS_URL + `?id=eq.${p.id}`, {
+          method: 'PATCH',
+          headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ estado: ultimoEstado, atualizado_em: new Date().toISOString() })
+        });
+        p.estado = ultimoEstado;
+        renderPros();
+      }
       hEl.style.display = 'block';
       hList.innerHTML = hist.map(h => {
         const d = new Date(h.criado_em).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -7273,6 +7289,10 @@ async function prosOpenEdit(id) {
       hEl.style.display = 'none';
     }
   } catch(e) {}
+
+  document.getElementById('pros-f-estado').value = estadoAtual;
+  const btnCad = document.getElementById('pros-btn-cadastro');
+  if (btnCad) btnCad.style.display = (estadoAtual === 'ganho') ? 'inline-flex' : 'none';
 
   document.getElementById('pros-modal-overlay').style.display = 'block';
   initProsAutoSave();
@@ -7317,16 +7337,20 @@ async function prosSave(opts = {}) {
     let estadoAnterior = null;
 
     if (prosEditId) {
-      // Buscar estado anterior
-      const old = prosData.find(x => x.id === prosEditId);
+      const old = prosFindById(prosEditId);
       estadoAnterior = old?.estado || null;
 
       const res = await fetch(PROS_URL + `?id=eq.${prosEditId}`, {
         method: 'PATCH',
-        headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+        headers: { ...HEADERS, 'Prefer': 'return=representation' },
         body: JSON.stringify(payload)
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
+      const atualizado = await res.json();
+      if (atualizado[0]) {
+        const idx = prosData.findIndex(x => String(x.id) === String(prosEditId));
+        if (idx >= 0) prosData[idx] = { ...prosData[idx], ...atualizado[0] };
+      }
     } else {
       const res = await fetch(PROS_URL, {
         method: 'POST',
@@ -7338,9 +7362,8 @@ async function prosSave(opts = {}) {
       prosEditId = criado[0]?.id;
     }
 
-    // Gravar no histórico se há nota ou mudança de estado
     const mudouEstado = estadoAnterior !== null && estadoAnterior !== estado;
-    if (nota || mudouEstado || !estadoAnterior) {
+    if (nota || mudouEstado || (!estadoAnterior && !autosave)) {
       await fetch(PROS_HIST_URL, {
         method: 'POST',
         headers: { ...HEADERS, 'Prefer': 'return=minimal' },
@@ -7485,7 +7508,7 @@ async function prosModalAbrirCadastro() {
     const ok = await prosSave({ keepOpen: true, autosave: true });
     if (!ok) return;
   }
-  const p = prosData.find(x => x.id === prosEditId);
+  const p = prosFindById(prosEditId);
   if (!p || p.estado !== 'ganho') {
     st.innerHTML = '<span style="color:var(--danger)">Não foi possível confirmar o estado Ganho. Aguarda o guardar automático e tenta de novo.</span>';
     return;
@@ -7681,7 +7704,7 @@ async function prosGanhoGerarExcel(d) {
 }
 
 async function prosEliminar(id) {
-  const p = prosData.find(x => x.id === id);
+  const p = prosFindById(id);
   if (!p) return;
   if (!confirm(`Eliminar "${p.nome}"? Esta acção não pode ser desfeita.`)) return;
   try {
