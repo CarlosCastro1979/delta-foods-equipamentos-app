@@ -7892,7 +7892,7 @@ async function propGerarSimulador(nomeCliente) {
   setRes(r.impostos, m.impostos);
   setRes(r.precoLiq, m.precoLiq);
   setRes(r.rentabUnit, m.rentabUnit);
-  setRes(r.ratio, m.ratio);
+  // r.ratio (MG %) fica oculta de propósito no Excel — não preencher
   setRes(r.veredito, m.veredito);
   cfg.equipamentos.forEach(e => setRes(e.resCell, m.equipUnit[e.cod] || 0));
 
