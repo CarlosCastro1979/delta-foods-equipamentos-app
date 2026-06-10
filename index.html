@@ -2672,6 +2672,13 @@ async function salvarRegisto() {
   btn.disabled = true; btn.textContent = 'A guardar...';
 
   try {
+    const existente = await findRegistoByCod(cod);
+    if (existente) {
+      toast(`Cliente ${existente.cod} já está registado — a abrir edição com os dados guardados.`, 'info');
+      openEdit(existente.id);
+      return;
+    }
+
     const res = await fetch(SUPA_URL, {
       method: 'POST',
       headers: HEADERS,
@@ -2687,6 +2694,7 @@ async function salvarRegisto() {
     toast('✅ Registo guardado!');
     clearRegistosCache();
     limparForm();
+    loadPendentes();
     // Update count
     const res2 = await fetch(SUPA_URL + '?select=id', { headers: HEADERS });
     const all = await res2.json();
@@ -2732,6 +2740,41 @@ function setRegistosCache(data) {
 function clearRegistosCache() {
   localStorage.removeItem(REGISTOS_CACHE_KEY);
   localStorage.removeItem(REGISTOS_CACHE_TS);
+}
+
+// Normalizar código SAP (001234 vs 1234)
+function normCod(v) {
+  return String(v || '').trim().replace(/^0+/, '') || '0';
+}
+
+// Supabase devolve max 1000 linhas por pedido — paginar para não perder registos
+async function fetchRegistosPaginado(select = '*', order = 'criado_em.desc') {
+  const pageSize = 1000;
+  let all = [], offset = 0;
+  while (true) {
+    const url = `${SUPA_URL}?select=${encodeURIComponent(select)}&order=${encodeURIComponent(order)}&limit=${pageSize}&offset=${offset}`;
+    const res = await fetch(url, { headers: HEADERS });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const batch = await res.json();
+    if (!Array.isArray(batch) || !batch.length) break;
+    all = all.concat(batch);
+    if (batch.length < pageSize) break;
+    offset += pageSize;
+  }
+  return all;
+}
+
+async function findRegistoByCod(cod) {
+  const alvo = normCod(cod);
+  if (!alvo) return null;
+  const cache = getRegistosCache();
+  if (cache?.length) {
+    const hit = cache.find(r => normCod(r.cod) === alvo);
+    if (hit?.id) return hit;
+  }
+  const regs = await fetchRegistosPaginado('id,cod,nome,vendedor,equipamentos,contratos,cep,contrato', 'cod.asc');
+  setRegistosCache(regs);
+  return regs.find(r => normCod(r.cod) === alvo) || null;
 }
 
 // ─── CADASTRO DE VENDEDORES ───────────────────────────
@@ -2835,16 +2878,18 @@ function removerVendedor(idx) {
 async function apagarAnuladosSupabase(codsAnulados) {
   if (!codsAnulados.length) return { apagados: 0, erros: 0 };
   let apagados = 0, erros = 0;
-  for (const cod of codsAnulados) {
+  const LOTE = 200;
+  for (let i = 0; i < codsAnulados.length; i += LOTE) {
+    const lote = codsAnulados.slice(i, i + LOTE);
     try {
-      // Apagar da tabela registos (o campo contratos está embutido no registo)
-      const res = await fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}`, {
+      const inList = lote.map(c => `"${String(c).replace(/"/g, '')}"`).join(',');
+      const res = await fetch(`${SUPA_URL}?cod=in.(${inList})`, {
         method: 'DELETE',
         headers: { ...HEADERS, 'Prefer': 'return=minimal' }
       });
-      if (res.ok) apagados++;
-      else erros++;
-    } catch(e) { erros++; }
+      if (res.ok) apagados += lote.length;
+      else erros += lote.length;
+    } catch(e) { erros += lote.length; }
   }
   clearRegistosCache();
   return { apagados, erros };
@@ -3023,9 +3068,7 @@ async function loadData(forceRefresh = false) {
     '<tr class="loading-row"><td colspan="8"><span class="spinner"></span>A carregar dados...</td></tr>';
 
   try {
-    const res = await fetch(SUPA_URL + '?select=*&order=criado_em.desc', { headers: HEADERS });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    allData = await res.json();
+    allData = await fetchRegistosPaginado('*', 'criado_em.desc');
     setRegistosCache(allData);
 
     // Update vendedor filter
@@ -4300,6 +4343,7 @@ async function salvarEdicao() {
     clearRegistosCache();
     closeEdit();
     loadData(true);
+    loadPendentes();
   } catch(e) {
     toast('Erro: ' + e.message, 'error');
   }
@@ -4312,28 +4356,29 @@ let pendentesData = [];
 
 async function loadPendentes() {
   const listaAtiva = getListaClientesActiva();
-  const codsListaAtiva = new Set(listaAtiva.map(c => String(c.cod).trim()));
 
   try {
-    // Ir sempre ao Supabase para ter dados frescos (registos actuais)
-    let data = getRegistosCache();
-    if (!data) {
-      const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,manual', { headers: HEADERS });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      data = await res.json();
-      setRegistosCache(data);
-    }
-    const normCod = v => String(v || '').trim().replace(/^0+/, '') || '0';
+    // Sempre ir ao Supabase com paginação — cache antigo ou limite 1000 fazia
+    // clientes já registados voltarem a aparecer em "Por Registar"
+    const data = await fetchRegistosPaginado('cod,nome,vendedor,manual', 'cod.asc');
+    setRegistosCache(data);
+
     const codsListaActivaNorm = new Set(listaAtiva.map(c => normCod(c.cod)));
     const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
 
     // 1. Clientes da lista activa sem registo → por registar normais
     const porRegistar = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
 
+    // Códigos anulados (999) com registo apagado — não mostrar em revisão
+    let anuladosSet = new Set();
+    try {
+      const an = JSON.parse(localStorage.getItem('delta_sap_anulados') || '[]');
+      anuladosSet = new Set(an.map(normCod));
+    } catch(e) {}
+
     // 2. Registos no Supabase cujo código NÃO existe na lista SAP activa → revisão
-    // Excluir os criados manualmente pelos vendedores (manual:true) — esses estão ok
     const paraRevisao = (data || [])
-      .filter(r => !codsListaActivaNorm.has(normCod(r.cod)) && !r.manual)
+      .filter(r => !codsListaActivaNorm.has(normCod(r.cod)) && !r.manual && !anuladosSet.has(normCod(r.cod)))
       .map(r => ({
         cod: r.cod, nome: r.nome || '—', cep: '', vendedor: r.vendedor || '—', _revisao: true
       }));
@@ -4582,10 +4627,33 @@ async function carregarListaSAP(event) {
   let statusHtml = `<strong>${novaLista.length}</strong> clientes activos`;
   if (adicionados) statusHtml += ` &nbsp;·&nbsp; <span style="color:#2e7d32">+${adicionados} novos</span>`;
   if (removidos)   statusHtml += ` &nbsp;·&nbsp; <span style="color:#f57c00">-${removidos} removidos</span>`;
-  if (codsAnulados.length) statusHtml += `<br><span style="color:#c62828">⚠ ${codsAnulados.length} anulado(s) serão apagados do Supabase</span>`;
+  if (codsAnulados.length) {
+    statusHtml += `<br><span style="color:var(--muted)">${codsAnulados.length} anulado(s) no ficheiro SAP (vendedor 999)</span>`;
+    statusHtml += `<br><span id="sap-anulados-registo" style="color:#c62828">A verificar quantos têm registo na app...</span>`;
+  }
 
   document.getElementById('sap-status-text').innerHTML = statusHtml;
   document.getElementById('sap-load-status').style.display = 'block';
+
+  // Só apagar anulados que existem na app — não correr a lista toda do SAP
+  if (codsAnulados.length) {
+    fetchRegistosPaginado('cod', 'cod.asc').then(regs => {
+      const registadosSet = new Set(regs.map(r => normCod(r.cod)));
+      const comRegisto = codsAnulados.filter(c => registadosSet.has(normCod(c)));
+      _sapImportBuffer.codsParaApagar = comRegisto;
+      const el = document.getElementById('sap-anulados-registo');
+      if (!el) return;
+      if (comRegisto.length) {
+        el.innerHTML = `⚠ <strong>${comRegisto.length}</strong> anulado(s) com registo na app serão apagados`;
+      } else {
+        el.innerHTML = `✓ Nenhum anulado tem registo na app — nada a apagar`;
+        el.style.color = '#16a34a';
+      }
+    }).catch(() => {
+      const el = document.getElementById('sap-anulados-registo');
+      if (el) el.textContent = 'Não foi possível verificar registos — confirma com cuidado.';
+    });
+  }
 }
 
 async function confirmarCargaSAP() {
@@ -4595,6 +4663,8 @@ async function confirmarCargaSAP() {
   document.getElementById('sap-confirm-btn').disabled = true;
   document.getElementById('sap-confirm-btn').textContent = 'A processar...';
 
+  try {
+
   // 1. Guardar nova lista activa
   localStorage.setItem('delta_clientes_sistema', JSON.stringify(novaLista));
   localStorage.setItem('delta_sap_ultima_carga', JSON.stringify({
@@ -4603,13 +4673,21 @@ async function confirmarCargaSAP() {
     adicionados: _sapImportBuffer._adicionados || 0,
     removidos: _sapImportBuffer._removidos || 0
   }));
+  // Guardar códigos anulados com registo (lista curta) para o Por Registar os excluir da revisão
+  const codsParaApagar = _sapImportBuffer.codsParaApagar
+    || (codsAnulados.length ? await (async () => {
+      const regs = await fetchRegistosPaginado('cod', 'cod.asc');
+      const set = new Set(regs.map(r => normCod(r.cod)));
+      return codsAnulados.filter(c => set.has(normCod(c)));
+    })() : []);
+  try { localStorage.setItem('delta_sap_anulados', JSON.stringify(codsParaApagar.map(normCod))); } catch(e) {}
   foraSPCache = null;
   clearRegistosCache();
 
-  // 2. Apagar anulados do Supabase
+  // 2. Apagar só anulados que existem na app (passaram para vendedor 999)
   let apagados = 0, erros = 0;
-  if (codsAnulados.length) {
-    const r = await apagarAnuladosSupabase(codsAnulados);
+  if (codsParaApagar.length) {
+    const r = await apagarAnuladosSupabase(codsParaApagar);
     apagados = r.apagados; erros = r.erros;
   }
 
@@ -4669,10 +4747,15 @@ async function confirmarCargaSAP() {
   renderUltimaCargaSAP();
 
   _sapImportBuffer = null;
-  document.getElementById('sap-confirm-btn').disabled = false;
-  document.getElementById('sap-confirm-btn').textContent = '✅ Confirmar importação';
-
   toast(msg);
+  loadPendentes();
+
+  } catch(e) {
+    toast('Erro na carga SAP: ' + e.message, 'error');
+  } finally {
+    document.getElementById('sap-confirm-btn').disabled = false;
+    document.getElementById('sap-confirm-btn').textContent = '✅ Confirmar importação';
+  }
 }
 
 function cancelarCargaSAP() {
@@ -6716,7 +6799,10 @@ function isAdmin() {
 
 function podeEditarRegisto(vendedor) {
   if (isAdmin()) return true;
-  return getUtilizadorAtual() === vendedor;
+  // Comparação insensível a maiúsculas/acentos: login guarda "Daniela Santos",
+  // mas os registos têm "DANIELA SANTOS"
+  const norm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  return norm(getUtilizadorAtual()) === norm(vendedor);
 }
 
 function initLogin() {
