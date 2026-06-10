@@ -1983,7 +1983,7 @@ var _unused_placeholder = 1;
           </div>
           <div>
             <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Email</label>
-            <input type="text" id="pg-email" class="form-input" style="width:100%;font-size:13px;">
+            <input type="email" id="pg-email" class="form-input" style="width:100%;font-size:13px;" autocapitalize="none" autocorrect="off" spellcheck="false" oninput="prosNormalizeEmail(this)">
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div>
@@ -2237,6 +2237,10 @@ var _unused_placeholder = 1;
           </select>
         </div>
         <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Região</label>
+          <input type="text" id="pros-f-regiao" class="form-input" style="width:100%;" placeholder="Ex.: Campinas, Interior SP, Zona Sul…">
+        </div>
+        <div>
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">CNPJ</label>
           <input type="text" id="pros-f-cnpj" class="form-input" style="width:100%;" placeholder="00.000.000/0000-00" maxlength="18" inputmode="numeric" oninput="prosCnpjMask(this)">
         </div>
@@ -2246,7 +2250,7 @@ var _unused_placeholder = 1;
         </div>
         <div style="grid-column:1/-1;">
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Email</label>
-          <input type="text" id="pros-f-email" class="form-input" style="width:100%;" placeholder="email@empresa.com">
+          <input type="email" id="pros-f-email" class="form-input" style="width:100%;" placeholder="email@empresa.com" autocapitalize="none" autocorrect="off" spellcheck="false" oninput="prosNormalizeEmail(this)">
         </div>
         <div>
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Estado</label>
@@ -7045,7 +7049,9 @@ let prosAutoSaveStatusTimer = null;
 let prosLastSavedSnapshot = '';
 let prosAutoSaveAbort = null;
 let prosAutoSaveReady = false;
-const PROS_AUTOSAVE_FIELDS = ['nome','contato','vendedor','segmento','cnpj','celular','email','estado','marca','marca-outro','preco','caps','kg','acao','data-acao'];
+let prosHistTodayId = null;
+let prosSavedNota = '';
+const PROS_AUTOSAVE_FIELDS = ['nome','contato','vendedor','segmento','regiao','cnpj','celular','email','estado','marca','marca-outro','preco','caps','kg','acao','data-acao'];
 
 function prosCnpjMask(el) {
   const v = el.value.replace(/\D/g, '').slice(0, 14);
@@ -7362,6 +7368,7 @@ function renderProsList(cont, dados) {
       <td class="col-nome" style="${TD}font-weight:600;">${escHtml(p.nome)}</td>
       <td class="col-vend td-clip" style="${TD}">${p.vendedor||''}</td>
       <td style="${TD}">${p.segmento||''}</td>
+      <td style="${TD}">${p.regiao?escHtml(p.regiao):''}</td>
       <td style="${TD}"><span style="background:${cfg.bg};color:${cfg.cor};border-radius:10px;padding:2px 10px;font-size:11px;font-weight:600;white-space:nowrap;">${cfg.label}</span></td>
       <td style="${TD}">${p.marca_atual?escHtml(p.marca_atual):''}</td>
       <td style="${TD}text-align:right;">${p.preco_atual?'R$ '+parseFloat(p.preco_atual).toFixed(2):''}</td>
@@ -7382,6 +7389,7 @@ function renderProsList(cont, dados) {
         <th class="col-nome" style="${TH}">Nome</th>
         <th class="col-vend td-clip" style="${TH}">Vendedor</th>
         <th class="td-clip" style="${TH}width:8%;">Segmento</th>
+        <th class="td-clip" style="${TH}width:8%;">Região</th>
         <th class="td-clip" style="${TH}width:9%;">Estado</th>
         <th class="td-clip" style="${TH}width:8%;">Marca atual</th>
         <th class="td-clip" style="${THR}width:6%;">Preço</th>
@@ -7400,6 +7408,105 @@ function prosOnEstadoChange(val) {
   const b = document.getElementById('pros-btn-cadastro');
   if (b) b.style.display = val === 'ganho' ? 'inline-flex' : 'none';
   scheduleProsAutoSave(300);
+}
+
+function prosNormalizeEmail(el) {
+  if (!el) return;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  const lower = el.value.toLowerCase();
+  if (el.value !== lower) {
+    el.value = lower;
+    if (start != null) el.setSelectionRange(start, end);
+  }
+}
+
+function prosTodayStr(isoOrDate) {
+  const d = isoOrDate ? new Date(isoOrDate) : new Date();
+  return d.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+}
+
+function prosFindTodayHistEntry(hist) {
+  if (!Array.isArray(hist)) return null;
+  const today = prosTodayStr();
+  const todayEntries = hist.filter(h => prosTodayStr(h.criado_em) === today);
+  if (!todayEntries.length) return null;
+  const withNota = todayEntries.filter(h => h.nota);
+  if (withNota.length) return withNota[withNota.length - 1];
+  return todayEntries[todayEntries.length - 1];
+}
+
+function prosRenderHistList(hist) {
+  const hEl = document.getElementById('pros-modal-hist');
+  const hList = document.getElementById('pros-modal-hist-list');
+  if (!hEl || !hList) return;
+  if (!Array.isArray(hist) || !hist.length) {
+    hEl.style.display = 'none';
+    hList.innerHTML = '';
+    return;
+  }
+  hEl.style.display = 'block';
+  hList.innerHTML = hist.map(h => {
+    const d = new Date(h.criado_em).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const est = h.estado_novo ? `<span style="background:${(PROS_ESTADOS[h.estado_novo]||{}).bg||'#f3f4f6'};color:${(PROS_ESTADOS[h.estado_novo]||{}).cor||'#666'};border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px;">${(PROS_ESTADOS[h.estado_novo]||{}).label||h.estado_novo}</span>` : '';
+    return `<div style="padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">
+      <span style="color:var(--muted);">${d}</span>${est}
+      ${h.nota ? `<div style="color:var(--text);margin-top:2px;">${escHtml(h.nota)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function prosRefreshHistList(id) {
+  try {
+    const res = await fetch(PROS_HIST_URL + `?prospeccao_id=eq.${id}&order=criado_em.desc`, { headers: HEADERS });
+    const hist = await res.json();
+    prosRenderHistList(hist);
+  } catch(e) {}
+}
+
+async function prosUpsertHistorico(prospeccaoId, { estadoAnterior, estado, nota, mudouEstado }) {
+  const notaTrim = (nota || '').trim();
+  const notaChanged = notaTrim !== prosSavedNota;
+  if (!mudouEstado && !notaChanged) return;
+
+  let todayId = prosHistTodayId;
+  if (!todayId) {
+    const res = await fetch(PROS_HIST_URL + `?prospeccao_id=eq.${prospeccaoId}&order=criado_em.desc`, { headers: HEADERS });
+    const hist = await res.json();
+    const todayEntry = prosFindTodayHistEntry(hist);
+    todayId = todayEntry?.id || null;
+  }
+
+  if (todayId) {
+    const patch = { estado_novo: estado };
+    if (mudouEstado) patch.estado_anterior = estadoAnterior;
+    if (notaChanged) patch.nota = notaTrim || null;
+    await fetch(PROS_HIST_URL + `?id=eq.${todayId}`, {
+      method: 'PATCH',
+      headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+      body: JSON.stringify(patch)
+    });
+    prosHistTodayId = todayId;
+    if (notaChanged) prosSavedNota = notaTrim;
+  } else {
+    if (!mudouEstado && !notaTrim) return;
+    const res = await fetch(PROS_HIST_URL, {
+      method: 'POST',
+      headers: { ...HEADERS, 'Prefer': 'return=representation' },
+      body: JSON.stringify({
+        prospeccao_id: prospeccaoId,
+        estado_anterior: mudouEstado ? estadoAnterior : null,
+        estado_novo: estado,
+        nota: notaTrim || null,
+      })
+    });
+    if (!res.ok) return;
+    const created = await res.json();
+    prosHistTodayId = created[0]?.id || null;
+    if (notaTrim) prosSavedNota = notaTrim;
+  }
+
+  await prosRefreshHistList(prospeccaoId);
 }
 
 function prosFormSnapshot() {
@@ -7480,6 +7587,8 @@ function teardownProsAutoSave() {
 
 function prosOpenModal() {
   prosEditId = null;
+  prosHistTodayId = null;
+  prosSavedNota = '';
   document.getElementById('pros-modal-title').textContent = 'Novo Lead';
   ['nome','contato','cnpj','celular','email','acao'].forEach(f => document.getElementById('pros-f-'+f).value = '');
   ['preco','caps','kg'].forEach(f => document.getElementById('pros-f-'+f).value = '');
@@ -7488,6 +7597,7 @@ function prosOpenModal() {
   document.getElementById('pros-f-nota').value = '';
   document.getElementById('pros-f-vendedor').value = '';
   document.getElementById('pros-f-segmento').value = '';
+  document.getElementById('pros-f-regiao').value = '';
   document.getElementById('pros-f-estado').value = 'identificado';
   document.getElementById('pros-modal-hist').style.display = 'none';
   document.getElementById('pros-modal-status').textContent = '';
@@ -7505,10 +7615,11 @@ async function prosOpenEdit(id) {
   document.getElementById('pros-f-contato').value   = p.contacto || '';
   document.getElementById('pros-f-vendedor').value  = p.vendedor || '';
   document.getElementById('pros-f-segmento').value  = p.segmento || '';
+  document.getElementById('pros-f-regiao').value    = p.regiao || '';
   document.getElementById('pros-f-cnpj').value      = p.cnpj || '';
   prosCnpjMask(document.getElementById('pros-f-cnpj'));
   document.getElementById('pros-f-celular').value   = p.celular || '';
-  document.getElementById('pros-f-email').value     = p.email || '';
+  document.getElementById('pros-f-email').value     = (p.email || '').toLowerCase();
   let estadoAtual = p.estado || 'identificado';
   prosSetMarca(p.marca_atual || '');
   document.getElementById('pros-f-preco').value     = p.preco_atual || '';
@@ -7516,15 +7627,15 @@ async function prosOpenEdit(id) {
   document.getElementById('pros-f-kg').value        = p.potencial_kg || '';
   document.getElementById('pros-f-acao').value      = p.proxima_acao || '';
   document.getElementById('pros-f-data-acao').value = p.data_proxima_acao || '';
-  document.getElementById('pros-f-nota').value      = '';
   document.getElementById('pros-modal-status').textContent = '';
+  prosHistTodayId = null;
+  prosSavedNota = '';
 
   // Carregar histórico
   try {
     const res = await fetch(PROS_HIST_URL + `?prospeccao_id=eq.${p.id}&order=criado_em.desc`, { headers: HEADERS });
     const hist = await res.json();
-    const hEl = document.getElementById('pros-modal-hist');
-    const hList = document.getElementById('pros-modal-hist-list');
+    prosRenderHistList(hist);
     if (Array.isArray(hist) && hist.length) {
       const ultimoEstado = hist.find(h => h.estado_novo)?.estado_novo;
       if (ultimoEstado && ultimoEstado !== estadoAtual) {
@@ -7537,19 +7648,22 @@ async function prosOpenEdit(id) {
         p.estado = ultimoEstado;
         renderPros();
       }
-      hEl.style.display = 'block';
-      hList.innerHTML = hist.map(h => {
-        const d = new Date(h.criado_em).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
-        const est = h.estado_novo ? `<span style="background:${(PROS_ESTADOS[h.estado_novo]||{}).bg||'#f3f4f6'};color:${(PROS_ESTADOS[h.estado_novo]||{}).cor||'#666'};border-radius:8px;padding:1px 7px;font-size:11px;margin-left:4px;">${(PROS_ESTADOS[h.estado_novo]||{}).label||h.estado_novo}</span>` : '';
-        return `<div style="padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">
-          <span style="color:var(--muted);">${d}</span>${est}
-          ${h.nota ? `<div style="color:var(--text);margin-top:2px;">${escHtml(h.nota)}</div>` : ''}
-        </div>`;
-      }).join('');
-    } else {
-      hEl.style.display = 'none';
     }
-  } catch(e) {}
+    const todayEntry = prosFindTodayHistEntry(hist);
+    if (todayEntry) {
+      prosHistTodayId = todayEntry.id;
+      if (todayEntry.nota) {
+        document.getElementById('pros-f-nota').value = todayEntry.nota;
+        prosSavedNota = todayEntry.nota;
+      } else {
+        document.getElementById('pros-f-nota').value = '';
+      }
+    } else {
+      document.getElementById('pros-f-nota').value = '';
+    }
+  } catch(e) {
+    document.getElementById('pros-f-nota').value = '';
+  }
 
   document.getElementById('pros-f-estado').value = estadoAtual;
   const btnCad = document.getElementById('pros-btn-cadastro');
@@ -7582,6 +7696,7 @@ async function prosSave(opts = {}) {
     return false;
   }
 
+  const regiaoVal = document.getElementById('pros-f-regiao').value.trim() || null;
   const payload = {
     nome,
     contacto:          document.getElementById('pros-f-contato').value.trim() || null,
@@ -7589,8 +7704,9 @@ async function prosSave(opts = {}) {
     estado,
     cnpj:              cnpjVal || null,
     celular:           document.getElementById('pros-f-celular').value.trim() || null,
-    email:             document.getElementById('pros-f-email').value.trim() || null,
+    email:             document.getElementById('pros-f-email').value.trim().toLowerCase() || null,
     segmento:          document.getElementById('pros-f-segmento').value || null,
+    regiao:            regiaoVal,
     marca_atual:       prosMarcaFinal() || null,
     preco_atual:       parseFloat(document.getElementById('pros-f-preco').value) || null,
     potencial_caps:    parseInt(document.getElementById('pros-f-caps').value) || null,
@@ -7604,16 +7720,33 @@ async function prosSave(opts = {}) {
 
   try {
     let estadoAnterior = null;
+    let savePayload = { ...payload };
+
+    const doSave = async (body, isPatch) => {
+      if (isPatch) {
+        return fetch(PROS_URL + `?id=eq.${prosEditId}`, {
+          method: 'PATCH',
+          headers: { ...HEADERS, 'Prefer': 'return=representation' },
+          body: JSON.stringify(body)
+        });
+      }
+      return fetch(PROS_URL, {
+        method: 'POST',
+        headers: { ...HEADERS, 'Prefer': 'return=representation' },
+        body: JSON.stringify(body)
+      });
+    };
 
     if (prosEditId) {
       const old = prosFindById(prosEditId);
       estadoAnterior = old?.estado || null;
 
-      const res = await fetch(PROS_URL + `?id=eq.${prosEditId}`, {
-        method: 'PATCH',
-        headers: { ...HEADERS, 'Prefer': 'return=representation' },
-        body: JSON.stringify(payload)
-      });
+      let res = await doSave(savePayload, true);
+      if (!res.ok && savePayload.regiao) {
+        const { regiao, ...rest } = savePayload;
+        savePayload = rest;
+        res = await doSave(savePayload, true);
+      }
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const atualizado = await res.json();
       if (atualizado[0]) {
@@ -7621,28 +7754,20 @@ async function prosSave(opts = {}) {
         if (idx >= 0) prosData[idx] = { ...prosData[idx], ...atualizado[0] };
       }
     } else {
-      const res = await fetch(PROS_URL, {
-        method: 'POST',
-        headers: { ...HEADERS, 'Prefer': 'return=representation' },
-        body: JSON.stringify(payload)
-      });
+      let res = await doSave(savePayload, false);
+      if (!res.ok && savePayload.regiao) {
+        const { regiao, ...rest } = savePayload;
+        savePayload = rest;
+        res = await doSave(savePayload, false);
+      }
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const criado = await res.json();
       prosEditId = criado[0]?.id;
     }
 
     const mudouEstado = estadoAnterior !== null && estadoAnterior !== estado;
-    if (nota || mudouEstado || (!estadoAnterior && !autosave)) {
-      await fetch(PROS_HIST_URL, {
-        method: 'POST',
-        headers: { ...HEADERS, 'Prefer': 'return=minimal' },
-        body: JSON.stringify({
-          prospeccao_id: prosEditId,
-          estado_anterior: estadoAnterior,
-          estado_novo: estado,
-          nota: nota || null,
-        })
-      });
+    if (prosEditId) {
+      await prosUpsertHistorico(prosEditId, { estadoAnterior, estado, nota, mudouEstado });
     }
 
     if (autosave) prosSetAutoSaveStatus('✅ Guardado automaticamente', '#16a34a');
@@ -7730,7 +7855,7 @@ function prosGanhoAbrir(p) {
   document.getElementById('pg-nome').value    = p.nome || '';
   document.getElementById('pg-cnpj').value    = p.cnpj || '';
   document.getElementById('pg-fantasia').value = p.nome || '';
-  document.getElementById('pg-email').value   = p.email || '';
+  document.getElementById('pg-email').value   = (p.email || '').toLowerCase();
   document.getElementById('pg-tel1').value    = p.celular || '';
   document.getElementById('pg-tel2').value    = '';
   document.getElementById('pg-ie').value      = '';
@@ -7740,6 +7865,7 @@ function prosGanhoAbrir(p) {
   document.getElementById('pg-bairro').value  = '';
   document.getElementById('pg-cep').value     = '';
   document.getElementById('pg-cidade').value  = 'SÃO PAULO';
+  if (p.regiao) document.getElementById('pg-regiao').value = p.regiao;
   document.getElementById('pg-status').textContent = '';
   document.getElementById('pg-prop-tipo').value = 'Q';
   document.getElementById('pg-prop-prazo').value = 36;
@@ -8078,7 +8204,7 @@ async function prosGanhoExportar() {
     cnpj:        document.getElementById('pg-cnpj').value,
     fantasia:    document.getElementById('pg-fantasia').value,
     ie:          document.getElementById('pg-ie').value,
-    email:       document.getElementById('pg-email').value,
+    email:       document.getElementById('pg-email').value.trim().toLowerCase(),
     tel1:        document.getElementById('pg-tel1').value,
     tel2:        document.getElementById('pg-tel2').value,
     rua:         document.getElementById('pg-rua').value,
@@ -8284,6 +8410,7 @@ async function exportProsExcel() {
     'Nome':           p.nome,
     'Vendedor':       p.vendedor,
     'Segmento':       p.segmento,
+    'Região':         p.regiao,
     'Estado':         (PROS_ESTADOS[p.estado]||{}).label || p.estado,
     'CNPJ':           p.cnpj,
     'Celular':        p.celular,
