@@ -3518,6 +3518,22 @@ async function scLoadDividasFromSupabase() {
   } catch(e) { console.error('scLoadDividas error:', e); return false; }
 }
 
+function clienteTemDivida(cod) {
+  if (!cod) return false;
+  const codStr = String(cod).trim();
+  const div = scDividasData[codStr] || scDividasData[normalizaCodSC(codStr)];
+  return div && (div.vencido || 0) > 0;
+}
+
+function bloquearEncerramentoSeDivida(cod) {
+  if (!scDividasLoaded) return false;
+  if (clienteTemDivida(cod)) {
+    alert('Antes de Encerrar vais ter de Cobrar!!');
+    return true;
+  }
+  return false;
+}
+
 async function handleSCDividasImport(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -6982,6 +6998,7 @@ async function loadEncerrados() {
 let _encerramentoRegisto = null;
 
 function scAbrirEncerramentoDirecto(id, nome, cod, cep, vendedor) {
+  if (bloquearEncerramentoSeDivida(cod)) return;
   // Simular o registo para reutilizar o mesmo modal
   _encerramentoRegisto = { id, nome, cod, cep, vendedor };
   document.getElementById('encerramento-info').innerHTML =
@@ -6997,6 +7014,7 @@ function scAbrirEncerramentoDirecto(id, nome, cod, cep, vendedor) {
 function abrirEncerramentoCliente() {
   const r = allData.find(x => x.id === editingId);
   if (!r) return;
+  if (bloquearEncerramentoSeDivida(r.cod)) return;
   _encerramentoRegisto = r;
 
   // Info do cliente
@@ -7023,6 +7041,7 @@ function encerramentoMotivoChange() {
 async function enviarEncerramento() {
   const r = _encerramentoRegisto;
   if (!r) return;
+  if (bloquearEncerramentoSeDivida(r.cod)) return;
 
   const motivo = document.getElementById('encerramento-motivo').value;
   const outro  = document.getElementById('encerramento-outro').value.trim();
@@ -7454,6 +7473,24 @@ function renderProsList(cont, dados) {
 function prosOnEstadoChange(val) {
   const b = document.getElementById('pros-btn-cadastro');
   if (b) b.style.display = val === 'ganho' ? 'inline-flex' : 'none';
+  if (val === 'ganho') {
+    const pRef = prosEditId ? prosFindById(prosEditId) : {};
+    const merged = prosCadastroMergedFromLead({
+      ...pRef,
+      nome: document.getElementById('pros-f-nome')?.value.trim(),
+      cnpj: document.getElementById('pros-f-cnpj')?.value.trim(),
+      celular: document.getElementById('pros-f-celular')?.value.trim(),
+      email: document.getElementById('pros-f-email')?.value.trim().toLowerCase(),
+      vendedor: document.getElementById('pros-f-vendedor')?.value,
+    }, false);
+    const missing = prosValidarCadastroObrigatorio(merged);
+    if (missing.length) {
+      const st = document.getElementById('pros-modal-status');
+      if (st) {
+        st.innerHTML = `<span style="color:var(--muted)">Preenche o cadastro SAP (botão abaixo). Faltam: ${missing.join(', ')}.</span>`;
+      }
+    }
+  }
   scheduleProsAutoSave(300);
 }
 
@@ -7743,12 +7780,32 @@ async function prosSave(opts = {}) {
     return false;
   }
 
+  const oldRef = prosEditId ? prosFindById(prosEditId) : null;
+  let estadoFinal = estado;
+  if (estado === 'ganho') {
+    const merged = prosCadastroMergedFromLead({
+      ...(oldRef || {}),
+      nome,
+      cnpj: cnpjVal,
+      celular: document.getElementById('pros-f-celular').value.trim(),
+      email: document.getElementById('pros-f-email').value.trim().toLowerCase(),
+      vendedor,
+    }, true);
+    const missingCad = prosValidarCadastroObrigatorio(merged);
+    if (missingCad.length) {
+      estadoFinal = (oldRef?.estado && oldRef.estado !== 'ganho') ? oldRef.estado : 'proposta';
+      const msg = `Cadastro SAP incompleto — usa "Exportar Cadastro SAP": ${missingCad.join(', ')}.`;
+      if (autosave) prosSetAutoSaveStatus('⚠ Ganho pendente (cadastro incompleto)', 'var(--danger)');
+      else st.innerHTML = `<span style="color:var(--danger)">${msg}</span>`;
+    }
+  }
+
   const regiaoVal = document.getElementById('pros-f-regiao').value.trim() || null;
   const payload = {
     nome,
     contacto:          document.getElementById('pros-f-contato').value.trim() || null,
     vendedor,
-    estado,
+    estado:            estadoFinal,
     cnpj:              cnpjVal || null,
     celular:           document.getElementById('pros-f-celular').value.trim() || null,
     email:             document.getElementById('pros-f-email').value.trim().toLowerCase() || null,
@@ -7817,8 +7874,11 @@ async function prosSave(opts = {}) {
       await prosUpsertHistorico(prosEditId, { estadoAnterior, estado, nota, mudouEstado });
     }
 
-    if (autosave) prosSetAutoSaveStatus('✅ Guardado automaticamente', '#16a34a');
-    else st.innerHTML = '<span style="color:#16a34a">✅ Guardado!</span>';
+    if (autosave) {
+      if (!(estado === 'ganho' && estadoFinal !== 'ganho')) {
+        prosSetAutoSaveStatus('✅ Guardado automaticamente', '#16a34a');
+      }
+    } else st.innerHTML = '<span style="color:#16a34a">✅ Guardado!</span>';
     prosLastSavedSnapshot = prosFormSnapshot();
     await loadProsData();
     renderPros();
