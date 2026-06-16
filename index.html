@@ -2208,7 +2208,8 @@ var _unused_placeholder = 1;
         <button class="btn btn-secondary" onclick="prosGanhoFechar()">Cancelar</button>
         <button class="btn btn-primary" onclick="prosGanhoExportar()" style="background:#16a34a;border-color:#16a34a;">⬇ Exportar Cadastro SAP</button>
       </div>
-      <div id="pg-status" style="margin-top:8px;font-size:12px;text-align:right;"></div>
+      <div id="pg-autosave-hint" style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right;">Alterações guardadas automaticamente</div>
+      <div id="pg-status" style="margin-top:4px;font-size:12px;text-align:right;"></div>
     </div>
   </div>
 
@@ -7117,7 +7118,24 @@ let prosAutoSaveAbort = null;
 let prosAutoSaveReady = false;
 let prosHistTodayId = null;
 let prosSavedNota = '';
+let prosGanhoLeadId = null;
+let prosGanhoAutoSaveTimer = null;
+let prosGanhoAutoSaveAbort = null;
+let prosGanhoAutoSaveReady = false;
+let prosGanhoLastSnapshot = '';
 const PROS_AUTOSAVE_FIELDS = ['nome','contato','vendedor','segmento','regiao','cnpj','celular','email','estado','marca','marca-outro','preco','caps','kg','acao','data-acao'];
+const PROS_CADASTRO_OBRIGATORIOS = [
+  ['nome', 'Nome / Razão Social'], ['cnpj', 'CNPJ / CPF'], ['fantasia', 'Nome Fantasia'],
+  ['email', 'Email'], ['tel1', 'Tel. 1'], ['rua', 'Rua'], ['nro', 'Nro.'], ['bairro', 'Bairro'],
+  ['cep', 'CEP'], ['cidade', 'Cidade'], ['canal', 'Canal Distribuição'], ['regiao', 'Região (Estado)'],
+  ['icms', 'Contrib. ICMS'], ['pagto', 'Cond. Pagamento'], ['rota', 'Rota'], ['vendedor', 'Vendedor'],
+];
+const PROS_CADASTRO_AUTOSAVE_IDS = [
+  'pg-motivo','pg-empresa','pg-grupo','pg-nome','pg-cnpj','pg-fantasia','pg-ie','pg-email','pg-tel1','pg-tel2',
+  'pg-rua','pg-nro','pg-supl','pg-bairro','pg-cep','pg-cidade','pg-canal','pg-regiao','pg-icms','pg-pagto','pg-rota',
+  'pg-vendedor','pg-sector','pg-prop-tipo','pg-prop-produto','pg-prop-prazo','pg-prop-qtdmes','pg-prop-desconto',
+  'pg-prop-xic-ex','pg-prop-xic-cap','pg-prop-outros','pg-prop-rappel',
+];
 
 function prosCnpjMask(el) {
   const v = el.value.replace(/\D/g, '').slice(0, 14);
@@ -7652,7 +7670,7 @@ function initProsAutoSave() {
     el.addEventListener('change', () => scheduleProsAutoSave(300), { signal });
   });
   const nota = document.getElementById('pros-f-nota');
-  if (nota) nota.addEventListener('blur', () => { if (nota.value.trim()) scheduleProsAutoSave(100); }, { signal });
+  if (nota) nota.addEventListener('blur', () => scheduleProsAutoSave(100), { signal });
   setTimeout(() => {
     prosLastSavedSnapshot = prosFormSnapshot();
     prosAutoSaveReady = true;
@@ -7869,9 +7887,9 @@ async function prosSave(opts = {}) {
       prosEditId = criado[0]?.id;
     }
 
-    const mudouEstado = estadoAnterior !== null && estadoAnterior !== estado;
+    const mudouEstado = estadoAnterior !== null && estadoAnterior !== estadoFinal;
     if (prosEditId) {
-      await prosUpsertHistorico(prosEditId, { estadoAnterior, estado, nota, mudouEstado });
+      await prosUpsertHistorico(prosEditId, { estadoAnterior, estado: estadoFinal, nota, mudouEstado });
     }
 
     if (autosave) {
@@ -7924,6 +7942,185 @@ const PG_VENDEDOR_SAP = {
   'Filipe Neves':   '99520010 - Neves Filipe',
 };
 
+function prosCadastroFieldVal(id) {
+  const el = document.getElementById(id);
+  return el ? (el.value || '').trim() : '';
+}
+
+function prosCadastroCollectFromForm() {
+  const tipo = document.getElementById('pg-prop-tipo')?.value || 'Q';
+  const cfg = (typeof PROP_SIM !== 'undefined' && PROP_SIM[tipo]) ? PROP_SIM[tipo] : { equipamentos: [] };
+  const equip = {};
+  cfg.equipamentos.forEach(e => { equip[e.cod] = propNum('pg-prop-eq-' + e.cod); });
+  return {
+    motivo: document.getElementById('pg-motivo')?.value || '',
+    empresa: document.getElementById('pg-empresa')?.value || '',
+    grupo: document.getElementById('pg-grupo')?.value || '',
+    nome: prosCadastroFieldVal('pg-nome'), cnpj: prosCadastroFieldVal('pg-cnpj'),
+    fantasia: prosCadastroFieldVal('pg-fantasia'), ie: prosCadastroFieldVal('pg-ie'),
+    email: prosCadastroFieldVal('pg-email').toLowerCase(),
+    tel1: prosCadastroFieldVal('pg-tel1'), tel2: prosCadastroFieldVal('pg-tel2'),
+    rua: prosCadastroFieldVal('pg-rua'), nro: prosCadastroFieldVal('pg-nro'),
+    supl: prosCadastroFieldVal('pg-supl'), bairro: prosCadastroFieldVal('pg-bairro'),
+    cep: prosCadastroFieldVal('pg-cep'), cidade: prosCadastroFieldVal('pg-cidade'),
+    canal: document.getElementById('pg-canal')?.value || '',
+    regiao: document.getElementById('pg-regiao')?.value || '',
+    icms: document.getElementById('pg-icms')?.value || '',
+    pagto: document.getElementById('pg-pagto')?.value || '',
+    rota: document.getElementById('pg-rota')?.value || '',
+    vendedor: document.getElementById('pg-vendedor')?.value || '',
+    sector: document.getElementById('pg-sector')?.value || '',
+    prop_tipo: tipo, prop_produto: document.getElementById('pg-prop-produto')?.value || '',
+    prop_prazo: document.getElementById('pg-prop-prazo')?.value || '',
+    prop_qtdmes: document.getElementById('pg-prop-qtdmes')?.value || '',
+    prop_desconto: document.getElementById('pg-prop-desconto')?.value || '',
+    prop_xic_ex: document.getElementById('pg-prop-xic-ex')?.value || '',
+    prop_xic_cap: document.getElementById('pg-prop-xic-cap')?.value || '',
+    prop_outros: document.getElementById('pg-prop-outros')?.value || '',
+    prop_rappel: document.getElementById('pg-prop-rappel')?.value || '',
+    prop_equip: equip,
+  };
+}
+
+function prosCadastroMergedFromLead(p, useForm) {
+  const cad = (p?.cadastro_json && typeof p.cadastro_json === 'object') ? p.cadastro_json : {};
+  const nome = cad.nome || (useForm ? document.getElementById('pros-f-nome')?.value.trim() : '') || p?.nome || '';
+  const cnpj = cad.cnpj || (useForm ? document.getElementById('pros-f-cnpj')?.value.trim() : '') || p?.cnpj || '';
+  const email = cad.email || (useForm ? document.getElementById('pros-f-email')?.value.trim().toLowerCase() : '') || (p?.email || '').toLowerCase();
+  const tel1 = cad.tel1 || (useForm ? document.getElementById('pros-f-celular')?.value.trim() : '') || p?.celular || '';
+  const vend = p?.vendedor || (useForm ? document.getElementById('pros-f-vendedor')?.value : '');
+  return {
+    nome, cnpj, fantasia: cad.fantasia || nome, email, tel1,
+    rua: cad.rua || '', nro: cad.nro || '', bairro: cad.bairro || '', cep: cad.cep || '',
+    cidade: cad.cidade || 'SÃO PAULO', canal: cad.canal || '04 - Restauração',
+    regiao: cad.regiao || 'SP - São Paulo', icms: cad.icms || 'Z9 - Não Contribuinte de ICMS',
+    pagto: cad.pagto || 'BR30 - 30 dias sem desconto', rota: cad.rota || '3 - Rota 3',
+    vendedor: cad.vendedor || PG_VENDEDOR_SAP[vend] || '',
+  };
+}
+
+function prosValidarCadastroObrigatorio(data) {
+  const missing = [];
+  PROS_CADASTRO_OBRIGATORIOS.forEach(([key, label]) => {
+    if (key !== 'cnpj' && !(data[key] || '').trim()) missing.push(label);
+  });
+  if ((data.cnpj || '').replace(/\D/g, '').length !== 14) missing.push('CNPJ / CPF (14 dígitos)');
+  return missing;
+}
+
+function prosFormSnapshotGanho() { return JSON.stringify(prosCadastroCollectFromForm()); }
+
+function prosSetGanhoAutoSaveStatus(text, color) {
+  const el = document.getElementById('pg-autosave-hint');
+  if (!el) return;
+  el.textContent = text || 'Alterações guardadas automaticamente';
+  el.style.color = color || 'var(--muted)';
+}
+
+function scheduleProsGanhoAutoSave(delay = 800) {
+  clearTimeout(prosGanhoAutoSaveTimer);
+  if (!prosGanhoAutoSaveReady || !prosGanhoLeadId) return;
+  if (prosFormSnapshotGanho() === prosGanhoLastSnapshot) return;
+  prosSetGanhoAutoSaveStatus('A guardar...', 'var(--muted)');
+  prosGanhoAutoSaveTimer = setTimeout(() => prosGanhoAutoSave(), delay);
+}
+
+async function prosGanhoAutoSave() {
+  if (!prosGanhoAutoSaveReady || !prosGanhoLeadId) return;
+  if (prosFormSnapshotGanho() === prosGanhoLastSnapshot) return;
+  await prosSaveCadastroJson({ silent: true });
+}
+
+function initProsGanhoAutoSave() {
+  teardownProsGanhoAutoSave();
+  prosGanhoAutoSaveReady = false;
+  prosGanhoLastSnapshot = prosFormSnapshotGanho();
+  prosGanhoAutoSaveAbort = new AbortController();
+  const { signal } = prosGanhoAutoSaveAbort;
+  const handler = () => scheduleProsGanhoAutoSave();
+  PROS_CADASTRO_AUTOSAVE_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.addEventListener('input', handler, { signal }); el.addEventListener('change', () => scheduleProsGanhoAutoSave(300), { signal }); }
+  });
+  document.querySelectorAll('[id^="pg-prop-eq-"]').forEach(el => el.addEventListener('input', handler, { signal }));
+  setTimeout(() => { prosGanhoLastSnapshot = prosFormSnapshotGanho(); prosGanhoAutoSaveReady = true; }, 300);
+}
+
+function teardownProsGanhoAutoSave() {
+  clearTimeout(prosGanhoAutoSaveTimer);
+  prosGanhoAutoSaveReady = false;
+  if (prosGanhoAutoSaveAbort) { prosGanhoAutoSaveAbort.abort(); prosGanhoAutoSaveAbort = null; }
+}
+
+async function prosSaveCadastroJson(opts = {}) {
+  const { silent = false } = opts;
+  if (!prosGanhoLeadId) return false;
+  const data = prosCadastroCollectFromForm();
+  const missing = prosValidarCadastroObrigatorio(data);
+  const st = document.getElementById('pg-status');
+  const payload = { cadastro_json: data, atualizado_em: new Date().toISOString() };
+  if (!missing.length) payload.estado = 'ganho';
+  try {
+    const res = await fetch(PROS_URL + `?id=eq.${prosGanhoLeadId}`, {
+      method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=representation' }, body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const updated = await res.json();
+    if (updated[0]) {
+      const idx = prosData.findIndex(x => String(x.id) === String(prosGanhoLeadId));
+      if (idx >= 0) prosData[idx] = { ...prosData[idx], ...updated[0] };
+    }
+    prosGanhoLastSnapshot = prosFormSnapshotGanho();
+    if (!missing.length) {
+      const estEl = document.getElementById('pros-f-estado');
+      if (estEl) estEl.value = 'ganho';
+      prosSetGanhoAutoSaveStatus('Guardado — cliente Ganho', '#16a34a');
+      if (!silent && st) st.innerHTML = '<span style="color:#16a34a">Cadastro completo — cliente Ganho.</span>';
+    } else {
+      prosSetGanhoAutoSaveStatus('Guardado (cadastro incompleto)', 'var(--muted)');
+      if (!silent && st) st.innerHTML = `<span style="color:var(--danger)">Faltam: ${missing.join(', ')}.</span>`;
+    }
+    renderPros();
+    return !missing.length;
+  } catch (e) {
+    prosSetGanhoAutoSaveStatus('Erro: ' + e.message, 'var(--danger)');
+    if (!silent && st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
+    return false;
+  }
+}
+
+function prosCadastroApplyToForm(cad, p) {
+  const c = cad || {};
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== '') el.value = v; };
+  setVal('pg-motivo', c.motivo); setVal('pg-empresa', c.empresa); setVal('pg-grupo', c.grupo);
+  document.getElementById('pg-nome').value = c.nome || p?.nome || '';
+  document.getElementById('pg-cnpj').value = c.cnpj || p?.cnpj || '';
+  document.getElementById('pg-fantasia').value = c.fantasia || c.nome || p?.nome || '';
+  document.getElementById('pg-email').value = (c.email || p?.email || '').toLowerCase();
+  document.getElementById('pg-tel1').value = c.tel1 || p?.celular || '';
+  setVal('pg-tel2', c.tel2); setVal('pg-ie', c.ie); setVal('pg-rua', c.rua); setVal('pg-nro', c.nro);
+  setVal('pg-supl', c.supl); setVal('pg-bairro', c.bairro); setVal('pg-cep', c.cep);
+  document.getElementById('pg-cidade').value = c.cidade || 'SÃO PAULO';
+  setVal('pg-canal', c.canal); setVal('pg-regiao', c.regiao); setVal('pg-icms', c.icms);
+  setVal('pg-pagto', c.pagto); setVal('pg-rota', c.rota); setVal('pg-sector', c.sector);
+  document.getElementById('pg-prop-tipo').value = c.prop_tipo || 'Q';
+  document.getElementById('pg-prop-prazo').value = c.prop_prazo != null ? c.prop_prazo : 36;
+  document.getElementById('pg-prop-qtdmes').value = c.prop_qtdmes || '';
+  document.getElementById('pg-prop-desconto').value = c.prop_desconto != null ? c.prop_desconto : 0;
+  document.getElementById('pg-prop-xic-ex').value = c.prop_xic_ex != null ? c.prop_xic_ex : 0;
+  document.getElementById('pg-prop-xic-cap').value = c.prop_xic_cap != null ? c.prop_xic_cap : 0;
+  document.getElementById('pg-prop-outros').value = c.prop_outros != null ? c.prop_outros : 0;
+  document.getElementById('pg-prop-rappel').value = c.prop_rappel != null ? c.prop_rappel : 0;
+  propTipoChange();
+  if (c.prop_produto) { const selP = document.getElementById('pg-prop-produto'); if (selP) selP.value = c.prop_produto; }
+  if (c.prop_equip) Object.entries(c.prop_equip).forEach(([cod, qtd]) => {
+    const el = document.getElementById('pg-prop-eq-' + cod); if (el) el.value = qtd;
+  });
+  prosGanhoEmpresaChange(); prosGanhoRegiaoChange();
+  const vend = c.vendedor || PG_VENDEDOR_SAP[p?.vendedor] || '';
+  if (vend) { const sel = document.getElementById('pg-vendedor'); for (const opt of sel.options) { if (opt.value === vend) { sel.value = vend; break; } } }
+}
+
 function prosGanhoEmpresaChange() {
   const empresa = document.getElementById('pg-empresa').value;
   const gn = empresa.startsWith('GN52') ? 'GN52' : 'GN53';
@@ -7953,59 +8150,53 @@ function prosGanhoRegiaoChange() {
 }
 
 function prosGanhoAbrir(p) {
-  if (!p || p.estado !== 'ganho') {
-    toast('Só é possível exportar cadastro SAP com estado "Ganho" guardado.', 'error');
-    return;
-  }
-  // Preencher com dados da prospeção
+  if (!p || !p.id) { toast('Lead inválido — guarda o registo antes de abrir o cadastro.', 'error'); return; }
+  prosGanhoLeadId = p.id;
   document.getElementById('pros-ganho-nome-label').textContent = p.nome || '';
-  document.getElementById('pg-nome').value    = p.nome || '';
-  document.getElementById('pg-cnpj').value    = p.cnpj || '';
-  document.getElementById('pg-fantasia').value = p.nome || '';
-  document.getElementById('pg-email').value   = (p.email || '').toLowerCase();
-  document.getElementById('pg-tel1').value    = p.celular || '';
-  document.getElementById('pg-tel2').value    = '';
-  document.getElementById('pg-ie').value      = '';
-  document.getElementById('pg-rua').value     = '';
-  document.getElementById('pg-nro').value     = '';
-  document.getElementById('pg-supl').value    = '';
-  document.getElementById('pg-bairro').value  = '';
-  document.getElementById('pg-cep').value     = '';
-  document.getElementById('pg-cidade').value  = 'SÃO PAULO';
-  if (p.regiao) document.getElementById('pg-regiao').value = p.regiao;
   document.getElementById('pg-status').textContent = '';
-  document.getElementById('pg-prop-tipo').value = 'Q';
-  document.getElementById('pg-prop-prazo').value = 36;
-  document.getElementById('pg-prop-qtdmes').value = '';
-  document.getElementById('pg-prop-desconto').value = 0;
-  document.getElementById('pg-prop-xic-ex').value = 0;
-  document.getElementById('pg-prop-xic-cap').value = 0;
-  document.getElementById('pg-prop-outros').value = 0;
-  document.getElementById('pg-prop-rappel').value = 0;
-  propTipoChange();
-
-  // Pré-selecionar vendedor se for um dos 4
-  const sapVend = PG_VENDEDOR_SAP[p.vendedor] || '';
-
-  // Trigger automáticos
-  prosGanhoEmpresaChange(); // popula dept/org/escrit/centro e vendedores canal 04
-  prosGanhoRegiaoChange();  // fiscal
-
-  // Tentar pré-selecionar vendedor correto
-  if (sapVend) {
-    const sel = document.getElementById('pg-vendedor');
-    for (const opt of sel.options) {
-      if (opt.value === sapVend) { sel.value = sapVend; break; }
-    }
+  prosSetGanhoAutoSaveStatus('', 'var(--muted)');
+  const cad = (p.cadastro_json && typeof p.cadastro_json === 'object') ? p.cadastro_json : null;
+  if (cad && Object.keys(cad).length) {
+    prosCadastroApplyToForm(cad, p);
+  } else {
+    document.getElementById('pg-nome').value = p.nome || '';
+    document.getElementById('pg-cnpj').value = p.cnpj || '';
+    document.getElementById('pg-fantasia').value = p.nome || '';
+    document.getElementById('pg-email').value = (p.email || '').toLowerCase();
+    document.getElementById('pg-tel1').value = p.celular || '';
+    document.getElementById('pg-tel2').value = '';
+    document.getElementById('pg-ie').value = '';
+    document.getElementById('pg-rua').value = '';
+    document.getElementById('pg-nro').value = '';
+    document.getElementById('pg-supl').value = '';
+    document.getElementById('pg-bairro').value = '';
+    document.getElementById('pg-cep').value = '';
+    document.getElementById('pg-cidade').value = 'SÃO PAULO';
+    document.getElementById('pg-prop-tipo').value = 'Q';
+    document.getElementById('pg-prop-prazo').value = 36;
+    document.getElementById('pg-prop-qtdmes').value = '';
+    document.getElementById('pg-prop-desconto').value = 0;
+    document.getElementById('pg-prop-xic-ex').value = 0;
+    document.getElementById('pg-prop-xic-cap').value = 0;
+    document.getElementById('pg-prop-outros').value = 0;
+    document.getElementById('pg-prop-rappel').value = 0;
+    propTipoChange();
+    prosGanhoEmpresaChange();
+    prosGanhoRegiaoChange();
+    const sapVend = PG_VENDEDOR_SAP[p.vendedor] || '';
+    if (sapVend) { const sel = document.getElementById('pg-vendedor'); for (const opt of sel.options) { if (opt.value === sapVend) { sel.value = sapVend; break; } } }
   }
-
+  const missing = prosValidarCadastroObrigatorio(prosCadastroMergedFromLead(prosFindById(p.id) || p));
+  if (p.estado === 'ganho' && missing.length) {
+    document.getElementById('pg-status').innerHTML = `<span style="color:var(--danger)">Cadastro incompleto: ${missing.join(', ')}.</span>`;
+  }
   document.getElementById('pros-ganho-overlay').style.display = 'block';
+  initProsGanhoAutoSave();
 }
 
 async function prosModalAbrirCadastro() {
-  const estadoForm = document.getElementById('pros-f-estado').value;
   const st = document.getElementById('pros-modal-status');
-  if (estadoForm !== 'ganho') {
+  if (document.getElementById('pros-f-estado').value !== 'ganho') {
     st.innerHTML = '<span style="color:var(--danger)">Marca o estado como Ganho antes de exportar.</span>';
     return;
   }
@@ -8014,16 +8205,26 @@ async function prosModalAbrirCadastro() {
     const ok = await prosSave({ keepOpen: true, autosave: true });
     if (!ok) return;
   }
-  const p = prosFindById(prosEditId);
-  if (!p || p.estado !== 'ganho') {
-    st.innerHTML = '<span style="color:var(--danger)">Não foi possível confirmar o estado Ganho. Aguarda o guardar automático e tenta de novo.</span>';
-    return;
-  }
+  if (!prosEditId) { st.innerHTML = '<span style="color:var(--danger)">Guarda o lead antes de abrir o cadastro SAP.</span>'; return; }
+  const p = prosFindById(prosEditId) || {
+    id: prosEditId, nome: document.getElementById('pros-f-nome').value.trim(),
+    vendedor: document.getElementById('pros-f-vendedor').value,
+    cnpj: document.getElementById('pros-f-cnpj').value.trim(),
+    celular: document.getElementById('pros-f-celular').value.trim(),
+    email: document.getElementById('pros-f-email').value.trim().toLowerCase(),
+    estado: document.getElementById('pros-f-estado').value,
+  };
   prosCloseModal();
   setTimeout(() => prosGanhoAbrir(p), 100);
 }
 
-function prosGanhoFechar() {
+async function prosGanhoFechar() {
+  clearTimeout(prosGanhoAutoSaveTimer);
+  if (prosGanhoLeadId && prosFormSnapshotGanho() !== prosGanhoLastSnapshot) {
+    await prosSaveCadastroJson({ silent: true });
+  }
+  teardownProsGanhoAutoSave();
+  prosGanhoLeadId = null;
   document.getElementById('pros-ganho-overlay').style.display = 'none';
 }
 
@@ -8263,35 +8464,24 @@ async function propGerarSimulador(nomeCliente) {
 
 async function prosGanhoExportar() {
   const st = document.getElementById('pg-status');
-
-  // Validação: todos obrigatórios exceto Inscrição Estadual, Tel. 2, Complemento e Sector Industrial
-  const obrigatorios = [
-    ['pg-nome', 'Nome / Razão Social'],
-    ['pg-cnpj', 'CNPJ / CPF'],
-    ['pg-fantasia', 'Nome Fantasia'],
-    ['pg-email', 'Email'],
-    ['pg-tel1', 'Tel. 1'],
-    ['pg-rua', 'Rua'],
-    ['pg-nro', 'Nro.'],
-    ['pg-bairro', 'Bairro'],
-    ['pg-cep', 'CEP'],
-    ['pg-cidade', 'Cidade'],
-    ['pg-canal', 'Canal Distribuição'],
-    ['pg-regiao', 'Região (Estado)'],
-    ['pg-icms', 'Contrib. ICMS'],
-    ['pg-pagto', 'Cond. Pagamento'],
-    ['pg-rota', 'Rota'],
-    ['pg-vendedor', 'Vendedor'],
-  ];
-  const emFalta = obrigatorios.filter(([id]) => !(document.getElementById(id)?.value || '').trim());
+  clearTimeout(prosGanhoAutoSaveTimer);
+  await prosSaveCadastroJson({ silent: true });
+  const data = prosCadastroCollectFromForm();
+  const emFalta = prosValidarCadastroObrigatorio(data);
   if (emFalta.length) {
-    const primeiro = document.getElementById(emFalta[0][0]);
+    const idMap = {
+      'Nome / Razão Social': 'pg-nome', 'CNPJ / CPF': 'pg-cnpj', 'CNPJ / CPF (14 dígitos)': 'pg-cnpj',
+      'Nome Fantasia': 'pg-fantasia', 'Email': 'pg-email', 'Tel. 1': 'pg-tel1', 'Rua': 'pg-rua',
+      'Nro.': 'pg-nro', 'Bairro': 'pg-bairro', 'CEP': 'pg-cep', 'Cidade': 'pg-cidade',
+      'Canal Distribuição': 'pg-canal', 'Região (Estado)': 'pg-regiao', 'Contrib. ICMS': 'pg-icms',
+      'Cond. Pagamento': 'pg-pagto', 'Rota': 'pg-rota', 'Vendedor': 'pg-vendedor',
+    };
+    const primeiro = document.getElementById(idMap[emFalta[0]] || 'pg-nome');
     if (primeiro) { primeiro.focus(); primeiro.style.borderColor = 'var(--danger)'; }
-    st.innerHTML = `<span style="color:var(--danger)">Preenche os campos obrigatórios: ${emFalta.map(([,l]) => l).join(', ')}.</span>`;
+    st.innerHTML = `<span style="color:var(--danger)">Preenche os campos obrigatórios: ${emFalta.join(', ')}.</span>`;
     return;
   }
-  obrigatorios.forEach(([id]) => { const el = document.getElementById(id); if (el) el.style.borderColor = ''; });
-
+  PROS_CADASTRO_AUTOSAVE_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.style.borderColor = ''; });
   st.innerHTML = '<span style="color:var(--muted)">A gerar...</span>';
 
   const empresa  = document.getElementById('pg-empresa').value;
