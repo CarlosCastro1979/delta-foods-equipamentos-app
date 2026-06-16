@@ -3518,6 +3518,22 @@ async function scLoadDividasFromSupabase() {
   } catch(e) { console.error('scLoadDividas error:', e); return false; }
 }
 
+function clienteTemDivida(cod) {
+  if (!cod) return false;
+  const codStr = String(cod).trim();
+  const div = scDividasData[codStr] || scDividasData[normalizaCodSC(codStr)];
+  return div && (div.vencido || 0) > 0;
+}
+
+function bloquearEncerramentoSeDivida(cod) {
+  if (!scDividasLoaded) return false;
+  if (clienteTemDivida(cod)) {
+    alert('Antes de Encerrar vais ter de Cobrar!!');
+    return true;
+  }
+  return false;
+}
+
 async function handleSCDividasImport(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -6982,6 +6998,7 @@ async function loadEncerrados() {
 let _encerramentoRegisto = null;
 
 function scAbrirEncerramentoDirecto(id, nome, cod, cep, vendedor) {
+  if (bloquearEncerramentoSeDivida(cod)) return;
   // Simular o registo para reutilizar o mesmo modal
   _encerramentoRegisto = { id, nome, cod, cep, vendedor };
   document.getElementById('encerramento-info').innerHTML =
@@ -6997,6 +7014,7 @@ function scAbrirEncerramentoDirecto(id, nome, cod, cep, vendedor) {
 function abrirEncerramentoCliente() {
   const r = allData.find(x => x.id === editingId);
   if (!r) return;
+  if (bloquearEncerramentoSeDivida(r.cod)) return;
   _encerramentoRegisto = r;
 
   // Info do cliente
@@ -7023,6 +7041,7 @@ function encerramentoMotivoChange() {
 async function enviarEncerramento() {
   const r = _encerramentoRegisto;
   if (!r) return;
+  if (bloquearEncerramentoSeDivida(r.cod)) return;
 
   const motivo = document.getElementById('encerramento-motivo').value;
   const outro  = document.getElementById('encerramento-outro').value.trim();
