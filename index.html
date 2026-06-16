@@ -3105,33 +3105,45 @@ async function loadData(forceRefresh = false) {
   }
 }
 
+const XLSX_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+async function ensureXLSX() {
+  if (window.XLSX) return;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = XLSX_CDN;
+    s.onload = res;
+    s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+function writeXlsxDownload(rows, sheetName, filename, colWidths) {
+  const ws = window.XLSX.utils.aoa_to_sheet(rows);
+  if (colWidths) ws['!cols'] = colWidths;
+  if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  window.XLSX.writeFile(wb, filename);
+}
+function writeXlsxJsonDownload(items, sheetName, filename) {
+  const ws = window.XLSX.utils.json_to_sheet(items);
+  if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  window.XLSX.writeFile(wb, filename);
+}
+
 async function exportExcel() {
-  if (!window.XLSX) {
-    await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
-  }
+  await ensureXLSX();
   const rows = [['Vendedor','Cód. Cliente','Nome','CEP','N Contrato','Equipamento','Tag','Data']];
   allData.forEach(r => {
     const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [{}];
     equips.forEach(e => rows.push([r.vendedor||'',r.cod||'',r.nome||'',r.cep||'',r.contrato||'',e.tipo||'',e.tag||'',r.data||'']));
   });
-  const ws = window.XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:20},{wch:14},{wch:40},{wch:12},{wch:14},{wch:30},{wch:12},{wch:12}];
-  const wb = window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(wb, ws, 'Registos');
-  window.XLSX.writeFile(wb, 'registos_equipamentos.xlsx');
+  writeXlsxDownload(rows, 'Registos', 'registos_equipamentos.xlsx',
+    [{wch:20},{wch:14},{wch:40},{wch:12},{wch:14},{wch:30},{wch:12},{wch:12}]);
 }
 
-function exportCSV() {
-  const rows = [['Vendedor','Cod','Nome','CEP','Contrato','Equipamento','Tag','Data']];
-  allData.forEach(r => {
-    const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [{}];
-    equips.forEach(e => rows.push([r.vendedor||'',r.cod||'',r.nome||'',r.cep||'',r.contrato||'',e.tipo||'',e.tag||'',r.data||'']));
-  });
-  const csv = rows.map(r => r.map(v => `"${(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='registos_equipamentos.csv'; a.click();
-}
+function exportCSV() { exportExcel(); }
 
 // ─── MODAL HELPERS ────────────────────────────────────
 function closeModal() {
@@ -3892,9 +3904,7 @@ function renderSemCompras() {
 
 async function exportSCExcel() {
   if (!scLoaded) { toast('Carrega primeiro um ficheiro de vendas.', 'error'); return; }
-  if (!window.XLSX) {
-    await new Promise((res,rej) => { const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s); });
-  }
+  await ensureXLSX();
   const vendFilt   = document.getElementById('sc-vendedor')?.value || '';
   const periodoMin = parseInt(document.getElementById('sc-periodo')?.value || '6');
   const hoje = scDataRef || new Date();
@@ -3914,11 +3924,8 @@ async function exportSCExcel() {
   }
   rows.sort((a,b) => (b[5]||0) - (a[5]||0));
 
-  const ws = window.XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:20},{wch:10},{wch:40},{wch:12},{wch:14},{wch:18},{wch:12},{wch:14},{wch:18}];
-  const wb = window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(wb, ws, 'Sem Compras');
-  window.XLSX.writeFile(wb, 'clientes_sem_compras.xlsx');
+  writeXlsxDownload(rows, 'Sem Compras', 'clientes_sem_compras.xlsx',
+    [{wch:20},{wch:10},{wch:40},{wch:12},{wch:14},{wch:18},{wch:12},{wch:14},{wch:18}]);
 }
 
 // ─── FORA DE SP ───────────────────────────────────────
@@ -4096,9 +4103,7 @@ function renderForaSP() {
 }
 
 async function exportForaSPExcel() {
-  if (!window.XLSX) {
-    await new Promise((res,rej) => { const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s); });
-  }
+  await ensureXLSX();
   const vendFilt   = document.getElementById('fsp-vendedor')?.value || '';
   const estadoFilt = document.getElementById('fsp-estado')?.value || '';
   let lista = foraSPCache || [];
@@ -4108,11 +4113,8 @@ async function exportForaSPExcel() {
   const rows = [['Estado','Nome Estado','Cód.','Nome','Vendedor','CEP','Vendas 2025 (R$)']];
   lista.forEach(c => rows.push([c.estado, ESTADO_NOME[c.estado]||c.estado, c.cod, c.nome, c.vendedor||'', c.cep||'', c.vendas2025 || 0]));
 
-  const ws = window.XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:8},{wch:20},{wch:10},{wch:45},{wch:20},{wch:12},{wch:16}];
-  const wb = window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(wb, ws, 'Fora SP');
-  window.XLSX.writeFile(wb, 'clientes_fora_sp.xlsx');
+  writeXlsxDownload(rows, 'Fora SP', 'clientes_fora_sp.xlsx',
+    [{wch:8},{wch:20},{wch:10},{wch:45},{wch:20},{wch:12},{wch:16}]);
 }
 
 // ─── SUB-TABS ──────────────────────────────────────────
@@ -4292,9 +4294,7 @@ function renderContratosPorRegistar() {
 
 async function exportContratosPorRegistarExcel() {
   if (!window._contratosPorRegistar) return;
-  if (!window.XLSX) {
-    await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
-  }
+  await ensureXLSX();
   const vendFilt = document.getElementById('contratos-pr-vendedor')?.value || '';
   let lista = window._contratosPorRegistar;
   if (vendFilt) lista = lista.filter(r => r.vendedor === vendFilt);
@@ -4305,11 +4305,8 @@ async function exportContratosPorRegistarExcel() {
     r.equipamentos.map(e => e.tipo + (e.tag ? ' #'+e.tag : '')).join(', ')
   ]));
 
-  const ws = window.XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:20},{wch:10},{wch:40},{wch:40}];
-  const wb = window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(wb, ws, 'Contratos por Registar');
-  window.XLSX.writeFile(wb, 'contratos_por_registar.xlsx');
+  writeXlsxDownload(rows, 'Contratos por Registar', 'contratos_por_registar.xlsx',
+    [{wch:20},{wch:10},{wch:40},{wch:40}]);
 }
 
 // ─── EDIT ─────────────────────────────────────────────
@@ -5902,15 +5899,17 @@ async function loadATResumo() {
   cont.innerHTML = html;
 }
 
-function exportATExcel() {
+async function exportATExcel() {
   const chamados = getATChamados();
   if (!chamados.length) { toast('Nenhum chamado para exportar.', 'error'); return; }
-  const rows = [['Data','Hora','Vendedor','Cód. Cliente','Cliente','Equipamento','Tag','Tipo Avaria','Descrição','Urgência']];
-  chamados.forEach(c => rows.push([c.data||'',c.hora||'',c.vendedor||'',c.clienteCod||'',c.clienteNome||'',c.equipTipo||'',c.equipTag||'',c.avaria||'',c.descricao||'',c.urgencia||'']));
-  const csv = rows.map(r=>r.map(v=>`"${(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='chamados_AT.csv'; a.click();
+  await ensureXLSX();
+  const rows = [['Data','Hora','Vendedor','Cód. Cliente','Cliente','Equipamento','Tag','Tipo Avaria','Descrição','Urgência','Tipo Equip']];
+  chamados.forEach(c => rows.push([
+    c.data||'', c.hora||'', c.vendedor||'', c.clienteCod||'', c.clienteNome||'',
+    c.equipTipo||'', c.equipTag||'', c.avaria||'', c.descricao||'', c.urgencia||'', c.tipoEquip||''
+  ]));
+  writeXlsxDownload(rows, 'Pedido AT', 'chamados_at.xlsx',
+    [{wch:12},{wch:8},{wch:20},{wch:12},{wch:40},{wch:25},{wch:12},{wch:20},{wch:40},{wch:12},{wch:14}]);
 }
 
 // ─── CONTRATOS ───────────────────────────────────────
@@ -6796,17 +6795,50 @@ function renderContratosFromCache(html) {
 // Invalida cache dos contratos quando há novos registos
 function clearContratosCache() { contratosCache = null; }
 
-function exportContratosExcel() {
-  // Collect visible table rows and export as CSV
-  const table = document.querySelector('#contratos-content table');
-  if (!table) { toast('Nenhum dado para exportar.', 'error'); return; }
-  const rows = [...table.querySelectorAll('tr')].map(tr =>
-    [...tr.querySelectorAll('th,td')].map(td => `"${td.innerText.replace(/"/g,'""').replace(/\n/g,' ')}"`)
-  );
-  const csv = rows.map(r => r.join(',')).join('\n');
-  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='contratos_cumprimento.csv'; a.click();
+function contratoAlertaLabel(a) {
+  if (a === 'finalizado') return 'Contrato Finalizado — Negociar';
+  if (a === 'perto_fim') return 'Perto do Final — Negociar';
+  if (a === 'sem_consumo') return 'Sem Consumo — Analisar';
+  return '';
+}
+
+async function exportContratosExcel() {
+  let allRows = window._contratosAllRows;
+  if (!allRows?.length) {
+    await loadContratosTab();
+    allRows = window._contratosAllRows;
+  }
+  if (!allRows?.length) { toast('Nenhum dado para exportar.', 'error'); return; }
+  await ensureXLSX();
+
+  const vendFilt = document.getElementById('contratos-vendedor')?.value || '';
+  const codFilt  = (document.getElementById('contratos-search-cod')?.value||'').trim().toLowerCase();
+  const nomeFilt = (document.getElementById('contratos-search-nome')?.value||'').trim().toLowerCase();
+  const numFilt  = (document.getElementById('contratos-search-num')?.value||'').trim().toLowerCase();
+
+  let rows = vendFilt ? allRows.filter(r => r.vendedor === vendFilt) : [...allRows];
+  if (codFilt)  rows = rows.filter(r => String(r.cod||'').toLowerCase().includes(codFilt));
+  if (nomeFilt) rows = rows.filter(r => String(r.nome||'').toLowerCase().includes(nomeFilt));
+  if (numFilt)  rows = rows.filter(r => String(r.contrato||'').toLowerCase().includes(numFilt));
+  if (!rows.length) { toast('Nenhum dado para exportar.', 'error'); return; }
+
+  const header = ['Vendedor','Cód.','Cliente','Nº Contrato','Início','Duração (meses)','Fim','Unidade','Tipo produto','Cons./Mês','Total Contratado','Esperado YTD','Consumo Real','% Total','% YTD','Meses decorridos','Alerta'];
+  const aoa = [header];
+  rows.forEach(r => {
+    aoa.push([
+      r.vendedor, r.cod, r.nome, r.contrato,
+      r.inicioFmt, r.duracao, r.fimFmt,
+      r.unidade === 'Kg' ? 'Kg' : 'Cápsulas',
+      r.tipo,
+      r.consumoMes, r.totalContratado, r.consumoEsperado, r.consumoReal,
+      r.pctTotal != null ? r.pctTotal + '%' : '',
+      r.pct != null ? r.pct + '%' : '',
+      r.mesesDecorridos,
+      contratoAlertaLabel(r.alerta)
+    ]);
+  });
+  writeXlsxDownload(aoa, 'Contratos Cumprimento', 'contratos_cumprimento.xlsx',
+    [{wch:20},{wch:10},{wch:35},{wch:14},{wch:10},{wch:8},{wch:10},{wch:10},{wch:12},{wch:12},{wch:14},{wch:14},{wch:14},{wch:10},{wch:10},{wch:10},{wch:28}]);
 }
 
 // ─── UTILIZADOR / LOGIN ──────────────────────────────
@@ -8307,14 +8339,7 @@ ${getUtilizadorAtual()}`
 }
 
 async function prosGanhoGerarExcel(d) {
-  if (!window.XLSX) {
-    await new Promise((res,rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
-    });
-  }
+  await ensureXLSX();
 
   // Carregar template original (preserva formatação, dropdowns, fórmulas)
   const raw = atob(CADASTRO_TEMPLATE_B64);
@@ -8413,14 +8438,7 @@ async function prosEliminar(id) {
 }
 
 async function exportProsExcel() {
-  if (!window.XLSX) {
-    await new Promise((res,rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
-    });
-  }
+  await ensureXLSX();
   const rows = prosData.map(p => ({
     'Nome':           p.nome,
     'Vendedor':       p.vendedor,
@@ -8439,10 +8457,7 @@ async function exportProsExcel() {
     'Criado em':      p.criado_em ? new Date(p.criado_em).toLocaleDateString('pt-BR') : '',
     'Atualizado em':  p.atualizado_em ? new Date(p.atualizado_em).toLocaleDateString('pt-BR') : '',
   }));
-  const ws = window.XLSX.utils.json_to_sheet(rows);
-  const wb = window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(wb, ws, 'Prospeção');
-  window.XLSX.writeFile(wb, 'prospeccao_delta.xlsx');
+  writeXlsxJsonDownload(rows, 'Prospeção', 'prospeccao_delta.xlsx');
 }
 
 function escHtml(str) {
@@ -8680,14 +8695,17 @@ function renderATHistorico() {
   cont.innerHTML = resumoHtml + accordionHtml;
 }
 
-function exportATHistoricoExcel() {
+async function exportATHistoricoExcel() {
   if (!atHistData || !atHistData.length) { toast('Nenhum dado para exportar.', 'error'); return; }
-  const rows = [['Data','Hora','Vendedor','Cód. Cliente','Cliente','Equipamento','Tag','Tipo Avaria','Urgência','Tipo Equip']];
-  atHistData.forEach(c => rows.push([c.data||'',c.hora||'',c.vendedor||'',c.cliente_cod||'',c.cliente_nome||'',c.equip_tipo||'',c.equip_tag||'',c.avaria||'',c.urgencia||'',c.tipo_equip||'']));
-  const csv = rows.map(r=>r.map(v=>`"${(v||'').replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='historico_AT.csv'; a.click();
+  await ensureXLSX();
+  const rows = [['Data','Hora','Vendedor','Cód. Cliente','Cliente','Equipamento','Tag','Tipo Avaria','Descrição','Urgência','Tipo Equip','Modelo Dom']];
+  atHistData.forEach(c => rows.push([
+    c.data||'', c.hora||'', c.vendedor||'', c.cliente_cod||'', c.cliente_nome||'',
+    c.equip_tipo||'', c.equip_tag||'', c.avaria||'', c.descricao||'', c.urgencia||'',
+    c.tipo_equip||'', c.modelo_dom||''
+  ]));
+  writeXlsxDownload(rows, 'Histórico AT', 'historico_at.xlsx',
+    [{wch:12},{wch:8},{wch:20},{wch:12},{wch:40},{wch:25},{wch:12},{wch:20},{wch:40},{wch:12},{wch:14},{wch:16}]);
 }
 
 // Col resize removido — auto-ajuste por CSS
