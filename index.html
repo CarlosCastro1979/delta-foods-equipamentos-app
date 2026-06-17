@@ -4704,7 +4704,8 @@ async function carregarListaSAP(event) {
 
 async function confirmarCargaSAP() {
   if (!_sapImportBuffer) return;
-  const { novaLista, codsAnulados, fileName } = _sapImportBuffer;
+  const { codsAnulados, fileName } = _sapImportBuffer;
+  const novaLista = deduplicarListaSAPPorCod(_sapImportBuffer.novaLista);
 
   document.getElementById('sap-confirm-btn').disabled = true;
   document.getElementById('sap-confirm-btn').textContent = 'A processar...';
@@ -4712,7 +4713,6 @@ async function confirmarCargaSAP() {
   try {
 
   // 1. Guardar nova lista activa
-  novaLista = deduplicarListaSAPPorCod(novaLista);
   const listaTs = Date.now();
   localStorage.setItem('delta_clientes_sistema', JSON.stringify(novaLista));
   localStorage.setItem('delta_clientes_ts', listaTs.toString());
@@ -5587,12 +5587,7 @@ Enviado via Delta Foods App`;
   const equipTipoStr = selectedEquips.map(e => e.tipo).join(', ');
   const equipTagStr  = selectedEquips.map(e => e.tag).filter(Boolean).join(', ');
 
-  // Build CC
-  const ccBase = atTipoEquip === 'domestico'
-    ? 'filipe.neves@deltafoodsbrasil.com.br'
-    : 'carlos.castro@deltafoodsbrasil.com.br;filipe.neves@deltafoodsbrasil.com.br;ricardo.vicentesilva@deltafoodsbrasil.com.br';
   const vendedorEmail = VENDEDOR_EMAILS[vendedor] || '';
-  // Separar emails por vírgula (standard RFC para mailto)
   const ccList = atTipoEquip === 'domestico'
     ? ['filipe.neves@deltafoodsbrasil.com.br']
     : ['carlos.castro@deltafoodsbrasil.com.br', 'filipe.neves@deltafoodsbrasil.com.br', 'ricardo.vicentesilva@deltafoodsbrasil.com.br'];
@@ -7077,7 +7072,9 @@ Cumprimentos,
 ${getUtilizadorAtual()}`
   );
 
-  const mailto = `mailto:carlos.castro@deltafoodsbrasil.com.br?cc=Filipe.Neves@deltafoodsbrasil.com.br;dadosmestres.entidades2@gruponabeiro.com&subject=${assunto}&body=${corpo}`;
+  const ccParams = ['Filipe.Neves@deltafoodsbrasil.com.br', 'dadosmestres.entidades2@gruponabeiro.com']
+    .map(e => `cc=${encodeURIComponent(e)}`).join('&');
+  const mailto = `mailto:${encodeURIComponent('carlos.castro@deltafoodsbrasil.com.br')}?${ccParams}&subject=${assunto}&body=${corpo}`;
   window.location.href = mailto;
 
   // Marcar registo como encerramento pendente no Supabase (se tiver id)
@@ -7804,7 +7801,8 @@ async function prosSave(opts = {}) {
   }
 
   const oldRef = prosEditId ? prosFindById(prosEditId) : null;
-  let estadoFinal = estado;
+  const estadoFinal = estado;
+  let ganhoCadastroIncompleto = false;
   if (estado === 'ganho') {
     const merged = prosCadastroMergedFromLead({
       ...(oldRef || {}),
@@ -7816,9 +7814,9 @@ async function prosSave(opts = {}) {
     }, true);
     const missingCad = prosValidarCadastroObrigatorio(merged);
     if (missingCad.length) {
-      estadoFinal = (oldRef?.estado && oldRef.estado !== 'ganho') ? oldRef.estado : 'proposta';
+      ganhoCadastroIncompleto = true;
       const msg = `Cadastro SAP incompleto — usa "Exportar Cadastro SAP": ${missingCad.join(', ')}.`;
-      if (autosave) prosSetAutoSaveStatus('⚠ Ganho pendente (cadastro incompleto)', 'var(--danger)');
+      if (autosave) prosSetAutoSaveStatus('✅ Ganho guardado — completa cadastro SAP', 'var(--muted)');
       else st.innerHTML = `<span style="color:var(--danger)">${msg}</span>`;
     }
   }
@@ -7898,10 +7896,8 @@ async function prosSave(opts = {}) {
     }
 
     if (autosave) {
-      if (!(estado === 'ganho' && estadoFinal !== 'ganho')) {
-        prosSetAutoSaveStatus('✅ Guardado automaticamente', '#16a34a');
-      }
-    } else st.innerHTML = '<span style="color:#16a34a">✅ Guardado!</span>';
+      if (!ganhoCadastroIncompleto) prosSetAutoSaveStatus('✅ Guardado automaticamente', '#16a34a');
+    } else if (!ganhoCadastroIncompleto) st.innerHTML = '<span style="color:#16a34a">✅ Guardado!</span>';
     prosLastSavedSnapshot = prosFormSnapshot();
     await loadProsData();
     renderPros();
@@ -8077,8 +8073,14 @@ async function prosSaveCadastroJson(opts = {}) {
     }
     prosGanhoLastSnapshot = prosFormSnapshotGanho();
     if (!missing.length) {
+      const old = prosFindById(prosGanhoLeadId);
+      const estadoAnterior = old?.estado || null;
+      if (estadoAnterior !== 'ganho') {
+        await prosUpsertHistorico(prosGanhoLeadId, { estadoAnterior, estado: 'ganho', nota: '', mudouEstado: true });
+      }
       const estEl = document.getElementById('pros-f-estado');
       if (estEl) estEl.value = 'ganho';
+      prosLastSavedSnapshot = prosFormSnapshot();
       prosSetGanhoAutoSaveStatus('Guardado — cliente Ganho', '#16a34a');
       if (!silent && st) st.innerHTML = '<span style="color:#16a34a">Cadastro completo — cliente Ganho.</span>';
     } else {
@@ -8585,7 +8587,9 @@ Aguardo aprovação.
 Cumprimentos,
 ${getUtilizadorAtual()}`
     );
-    const mailto = `mailto:carlos.castro@deltafoodsbrasil.com.br?cc=filipe.neves@deltafoodsbrasil.com.br;daniela.kucinski@deltafoodsbrasil.com.br&subject=${assunto}&body=${corpo}`;
+    const ccParams = ['filipe.neves@deltafoodsbrasil.com.br', 'daniela.kucinski@deltafoodsbrasil.com.br']
+      .map(e => `cc=${encodeURIComponent(e)}`).join('&');
+    const mailto = `mailto:${encodeURIComponent('carlos.castro@deltafoodsbrasil.com.br')}?${ccParams}&subject=${assunto}&body=${corpo}`;
     setTimeout(() => { window.location.href = mailto; }, 800);
 
   } catch(e) {
