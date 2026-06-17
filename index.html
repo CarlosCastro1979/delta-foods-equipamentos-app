@@ -7740,19 +7740,6 @@ async function prosOpenEdit(id) {
     const res = await fetch(PROS_HIST_URL + `?prospeccao_id=eq.${p.id}&order=criado_em.desc`, { headers: HEADERS });
     const hist = await res.json();
     prosRenderHistList(hist);
-    if (Array.isArray(hist) && hist.length) {
-      const ultimoEstado = hist.find(h => h.estado_novo)?.estado_novo;
-      if (ultimoEstado && ultimoEstado !== estadoAtual) {
-        estadoAtual = ultimoEstado;
-        await fetch(PROS_URL + `?id=eq.${p.id}`, {
-          method: 'PATCH',
-          headers: { ...HEADERS, 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ estado: ultimoEstado, atualizado_em: new Date().toISOString() })
-        });
-        p.estado = ultimoEstado;
-        renderPros();
-      }
-    }
     const todayEntry = prosFindTodayHistEntry(hist);
     if (todayEntry) {
       prosHistTodayId = todayEntry.id;
@@ -8059,6 +8046,7 @@ async function prosSaveCadastroJson(opts = {}) {
   const data = prosCadastroCollectFromForm();
   const missing = prosValidarCadastroObrigatorio(data);
   const st = document.getElementById('pg-status');
+  const estadoAnteriorCad = prosFindById(prosGanhoLeadId)?.estado || null;
   const payload = { cadastro_json: data, atualizado_em: new Date().toISOString() };
   if (!missing.length) payload.estado = 'ganho';
   try {
@@ -8073,10 +8061,8 @@ async function prosSaveCadastroJson(opts = {}) {
     }
     prosGanhoLastSnapshot = prosFormSnapshotGanho();
     if (!missing.length) {
-      const old = prosFindById(prosGanhoLeadId);
-      const estadoAnterior = old?.estado || null;
-      if (estadoAnterior !== 'ganho') {
-        await prosUpsertHistorico(prosGanhoLeadId, { estadoAnterior, estado: 'ganho', nota: '', mudouEstado: true });
+      if (estadoAnteriorCad !== 'ganho') {
+        await prosUpsertHistorico(prosGanhoLeadId, { estadoAnterior: estadoAnteriorCad, estado: 'ganho', nota: '', mudouEstado: true });
       }
       const estEl = document.getElementById('pros-f-estado');
       if (estEl) estEl.value = 'ganho';
