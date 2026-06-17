@@ -2719,9 +2719,8 @@ async function salvarRegisto() {
     limparForm();
     loadPendentes();
     // Update count
-    const res2 = await fetch(SUPA_URL + '?select=id', { headers: HEADERS });
-    const all = await res2.json();
-    if (Array.isArray(all)) setStatus(true, all.length);
+    const all = await fetchRegistosPaginado('id', 'criado_em.desc');
+    setStatus(true, all.length);
   } catch(e) {
     toast('Erro ao guardar: ' + e.message, 'error');
   } finally {
@@ -2768,6 +2767,17 @@ function clearRegistosCache() {
 // Normalizar código SAP (001234 vs 1234)
 function normCod(v) {
   return String(v || '').trim().replace(/^0+/, '') || '0';
+}
+
+function normNome(v) {
+  return String(v || '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+function formatSapCod(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  if (/^\d+\.0+$/.test(s)) return s.replace(/\.0+$/, '');
+  return s;
 }
 
 // Supabase devolve max 1000 linhas por pedido — paginar para não perder registos
@@ -2900,13 +2910,17 @@ function removerVendedor(idx) {
 // ─── APAGAR ANULADOS DO SUPABASE ─────────────────────
 async function apagarAnuladosSupabase(codsAnulados) {
   if (!codsAnulados.length) return { apagados: 0, erros: 0 };
+  const alvoSet = new Set(codsAnulados.map(normCod));
+  const regs = await fetchRegistosPaginado('id,cod', 'cod.asc');
+  const ids = regs.filter(r => alvoSet.has(normCod(r.cod))).map(r => r.id).filter(Boolean);
+  if (!ids.length) return { apagados: 0, erros: 0 };
   let apagados = 0, erros = 0;
   const LOTE = 200;
-  for (let i = 0; i < codsAnulados.length; i += LOTE) {
-    const lote = codsAnulados.slice(i, i + LOTE);
+  for (let i = 0; i < ids.length; i += LOTE) {
+    const lote = ids.slice(i, i + LOTE);
     try {
-      const inList = lote.map(c => `"${String(c).replace(/"/g, '')}"`).join(',');
-      const res = await fetch(`${SUPA_URL}?cod=in.(${inList})`, {
+      const inList = lote.map(id => `"${String(id).replace(/"/g, '')}"`).join(',');
+      const res = await fetch(`${SUPA_URL}?id=in.(${inList})`, {
         method: 'DELETE',
         headers: { ...HEADERS, 'Prefer': 'return=minimal' }
       });
@@ -4198,27 +4212,16 @@ async function loadContratosPorRegistar() {
   cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A calcular...</div>';
 
   try {
-    // 1. Busca todos os registos com equipamentos
-    const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,equipamentos', {
-      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
-    });
-    const registos = await res.json();
-
-    // 2. Busca contratos já registados (cod dos clientes que já têm contrato)
-    const resC = await fetch(SUPA_URL + '?select=cod,contratos', {
-      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
-    });
-    const todosRegistos = await resC.json();
+    const registos = await fetchRegistosPaginado('cod,nome,vendedor,equipamentos,contratos', 'cod.asc');
     const codsComContrato = new Set(
-      todosRegistos
+      registos
         .filter(r => Array.isArray(r.contratos) && r.contratos.length > 0)
-        .map(r => String(r.cod))
+        .map(r => normCod(r.cod))
     );
 
-    // 3. Filtra: tem equipamento profissional nosso MAS não tem contrato
     const porRegistar = [];
     for (const r of registos) {
-      if (codsComContrato.has(String(r.cod))) continue; // já tem contrato
+      if (codsComContrato.has(normCod(r.cod))) continue;
       const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
       const equipsProfissionais = equips.filter(e => isEquipamentoProfissionalNosso(e.tipo));
       if (equipsProfissionais.length > 0) {
@@ -4388,19 +4391,21 @@ async function salvarEdicao() {
 let pendentesData = [];
 
 async function loadPendentes() {
+  await sincronizarListaClientes();
   const listaAtiva = getListaClientesActiva();
 
   try {
     // Sempre ir ao Supabase com paginação — cache antigo ou limite 1000 fazia
     // clientes já registados voltarem a aparecer em "Por Registar"
     const data = await fetchRegistosPaginado('cod,nome,vendedor,manual', 'cod.asc');
-    setRegistosCache(data);
 
     const codsListaActivaNorm = new Set(listaAtiva.map(c => normCod(c.cod)));
     const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
-
-    // 1. Clientes da lista activa sem registo → por registar normais
-    const porRegistar = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
+    const regByNome = new Map();
+    for (const r of data || []) {
+      const nome = normNome(r.nome);
+      if (nome && !regByNome.has(nome)) regByNome.set(nome, r);
+    }
 
     // Códigos anulados (999) com registo apagado — não mostrar em revisão
     let anuladosSet = new Set();
@@ -4409,17 +4414,45 @@ async function loadPendentes() {
       anuladosSet = new Set(an.map(normCod));
     } catch(e) {}
 
+    const paraRevisao = [];
+    const revisaoCods = new Set();
+
+    // 1. Clientes da lista activa sem registo → por registar
+    //    Se o SAP mudou o código mas o nome coincide com registo existente → revisão
+    const porRegistar = [];
+    for (const c of listaAtiva) {
+      const nc = normCod(c.cod);
+      if (codRegistados.has(nc)) continue;
+      const regNome = regByNome.get(normNome(c.nome));
+      if (regNome && normCod(regNome.cod) !== nc) {
+        const codOrig = regNome.cod;
+        if (!revisaoCods.has(normCod(codOrig))) {
+          revisaoCods.add(normCod(codOrig));
+          paraRevisao.push({
+            cod: codOrig, nome: regNome.nome || c.nome, cep: '', vendedor: regNome.vendedor || c.vendedor || '—',
+            _revisao: true, _novoCod: c.cod
+          });
+        }
+        continue;
+      }
+      porRegistar.push(c);
+    }
+
     // 2. Registos no Supabase cujo código NÃO existe na lista SAP activa → revisão
-    const paraRevisao = (data || [])
-      .filter(r => !codsListaActivaNorm.has(normCod(r.cod)) && !r.manual && !anuladosSet.has(normCod(r.cod)))
-      .map(r => ({
+    for (const r of data || []) {
+      const nc = normCod(r.cod);
+      if (codsListaActivaNorm.has(nc) || r.manual || anuladosSet.has(nc) || revisaoCods.has(nc)) continue;
+      revisaoCods.add(nc);
+      paraRevisao.push({
         cod: r.cod, nome: r.nome || '—', cep: '', vendedor: r.vendedor || '—', _revisao: true
-      }));
+      });
+    }
 
     pendentesData = [...paraRevisao, ...porRegistar];
   } catch(e) {
     console.error('loadPendentes error:', e);
-    pendentesData = listaAtiva;
+    toast('Erro ao carregar pendentes — tenta novamente.', 'error');
+    pendentesData = [];
   }
 
   const vendedores = [...new Set(pendentesData.map(c => c.vendedor))].sort();
@@ -4455,8 +4488,9 @@ function renderPendentes() {
     ? `<tr class="row-invalid" data-cod-orig="${c.cod}">
         <td>
           <span class="cod-invalid" title="Código registado mas não encontrado na lista SAP actual">${c.cod} ⚠</span>
+          ${c._novoCod ? `<div style="font-size:11px;color:var(--muted);margin-top:2px;">Novo código SAP: <strong>${c._novoCod}</strong></div>` : ''}
           <div class="edit-cod-inline" id="edit-inline-${c.cod}" style="display:none;margin-top:4px;display:none;align-items:center;gap:6px;">
-            <input type="text" class="form-input" id="input-cod-${c.cod}" placeholder="Novo código SAP"
+            <input type="text" class="form-input" id="input-cod-${c.cod}" placeholder="Novo código SAP" value="${c._novoCod || ''}"
               style="width:120px;padding:4px 8px;font-size:12px;"
               onkeydown="if(event.key==='Enter')corrigirCodRevisao('${c.cod}')">
             <button class="btn btn-primary btn-sm" style="padding:3px 10px;font-size:11px;" onclick="corrigirCodRevisao('${c.cod}')">✓</button>
@@ -4623,7 +4657,7 @@ async function carregarListaSAP(event) {
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || !row[iCliente]) continue;
-    const cod   = String(row[iCliente]||'').trim();
+    const cod   = formatSapCod(row[iCliente]);
     const nome  = String(row[iNome]||'').trim().toUpperCase();
     const cep   = iCEP  >= 0 ? String(row[iCEP] ||'').trim() : '';
     const npess = iNPess >= 0 ? parseInt(row[iNPess]) : 0;
@@ -4699,7 +4733,9 @@ async function confirmarCargaSAP() {
   try {
 
   // 1. Guardar nova lista activa
+  const listaTs = Date.now();
   localStorage.setItem('delta_clientes_sistema', JSON.stringify(novaLista));
+  localStorage.setItem('delta_clientes_ts', listaTs.toString());
   localStorage.setItem('delta_sap_ultima_carga', JSON.stringify({
     data: new Date().toISOString(), ficheiro: fileName, total: novaLista.length,
     anulados: codsAnulados.length,
@@ -4725,42 +4761,30 @@ async function confirmarCargaSAP() {
   }
 
   // 3. Actualizar registos manuais que aparecem na nova lista SAP
-  // → remover flag manual, corrigir nome/cep/vendedor com dados do SAP
   let atualizados = 0;
   try {
-    const resM = await fetch(SUPA_URL + '?manual=eq.true&select=id,cod,nome', { headers: HEADERS });
-    if (resM.ok) {
-      const manuais = await resM.json();
-      const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
-      const sapMap = {};
-      novaLista.forEach(c => { sapMap[normCod(c.cod)] = c; });
-      for (const reg of manuais) {
-        const sapCliente = sapMap[normCod(reg.cod)];
-        if (sapCliente) {
-          // Existe no SAP — actualizar nome/cep/vendedor e remover flag manual
-          const patch = await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
-            method: 'PATCH',
-            headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ nome: sapCliente.nome, cep: sapCliente.cep || '', vendedor: sapCliente.vendedor, manual: false })
-          });
-          if (patch.ok) atualizados++;
-        }
-        // Se não existe no SAP, fica com manual:true e aparece em "Por Registar" como revisão na próxima carga
-        // (loadPendentes já trata isto quando manual:false e código não existe)
+    const manuais = await fetchRegistosPaginado('id,cod,nome,manual', 'cod.asc');
+    const manuaisOnly = manuais.filter(r => r.manual);
+    const sapMap = {};
+    novaLista.forEach(c => { sapMap[normCod(c.cod)] = c; });
+    for (const reg of manuaisOnly) {
+      const sapCliente = sapMap[normCod(reg.cod)];
+      if (sapCliente) {
+        const patch = await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
+          method: 'PATCH',
+          headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ nome: sapCliente.nome, cep: sapCliente.cep || '', vendedor: sapCliente.vendedor, manual: false })
+        });
+        if (patch.ok) atualizados++;
+      } else {
+        await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
+          method: 'PATCH',
+          headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ manual: false })
+        });
       }
-      // Marcar manuais que NÃO estão na lista SAP como manual:false para aparecerem em revisão
-      for (const reg of manuais) {
-        const sapCliente = sapMap[normCod(reg.cod)];
-        if (!sapCliente) {
-          await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
-            method: 'PATCH',
-            headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ manual: false })
-          });
-        }
-      }
-      clearRegistosCache();
     }
+    clearRegistosCache();
   } catch(e) { console.warn('Erro ao actualizar manuais:', e); }
 
   // 4. Publicar no Supabase para outros dispositivos
@@ -4828,17 +4852,23 @@ async function sincronizarListaClientes() {
     const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/lista_clientes?id=eq.v1&select=data,atualizado_em', {
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
     });
-    if (!res.ok) return;
+    if (!res.ok) return false;
     const rows = await res.json();
-    if (!rows.length || !rows[0].data) return;
-    // Verificar se é mais recente que o que temos
+    if (!rows.length || !rows[0].data) return false;
+    const remote = rows[0].data;
     const remoteTs = new Date(rows[0].atualizado_em).getTime();
+    const localRaw = localStorage.getItem('delta_clientes_sistema');
     const localTs = parseInt(localStorage.getItem('delta_clientes_ts') || '0');
-    if (remoteTs > localTs) {
-      localStorage.setItem('delta_clientes_sistema', JSON.stringify(rows[0].data));
+    const localJson = localRaw || '';
+    const remoteJson = JSON.stringify(remote);
+    // Sem lista local → evitar fallback hardcoded desactualizado (498 vs ~489 clientes)
+    // Com lista local → actualizar se o Supabase for mais recente ou o conteúdo divergir
+    const changed = !localRaw || remoteTs > localTs || localJson !== remoteJson;
+    if (changed) {
+      localStorage.setItem('delta_clientes_sistema', remoteJson);
       localStorage.setItem('delta_clientes_ts', remoteTs.toString());
-      console.log('Lista de clientes sincronizada do Supabase:', rows[0].data.length, 'clientes');
-      return true; // actualizado
+      console.log('Lista de clientes sincronizada do Supabase:', remote.length, 'clientes');
+      return true;
     }
     return false;
   } catch(e) { console.warn('sincronizarListaClientes:', e); return false; }
@@ -4861,6 +4891,7 @@ async function publicarListaClientesSupabase(lista) {
 function confirmarImport() {
   if (!pendingImportBuffer.length) return;
   localStorage.setItem('delta_clientes_sistema', JSON.stringify(pendingImportBuffer));
+  localStorage.setItem('delta_clientes_ts', Date.now().toString());
   foraSPCache = null;
   clearRegistosCache();
   const count = pendingImportBuffer.length;
@@ -4986,27 +5017,21 @@ async function enviarPedidoInstalacao() {
 // ─── RESUMO ──────────────────────────────────────────
 async function loadResumo() {
   try {
-    // Vai sempre ao Supabase para ter dados frescos
-    const res = await fetch(SUPA_URL + '?select=vendedor,cod', { headers: {
-      'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY
-    }});
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const registados = await res.json();
+    const registados = await fetchRegistosPaginado('vendedor,cod', 'cod.asc');
 
     const vendedores = {};
-    const normCodR = v => String(v || '').trim().replace(/^0+/, '') || '0';
-    const codRegistados = new Set(registados.map(r => normCodR(r.cod)));
+    const codRegistados = new Set(registados.map(r => normCod(r.cod)));
 
-    const _listaStats = getListaClientesActiva(); // usa sempre a lista activa (localStorage ou hardcoded)
+    const _listaStats = getListaClientesActiva();
     _listaStats.forEach(c => {
       const v = c.vendedor;
       if (!vendedores[v]) vendedores[v] = { total: 0, registados: 0 };
       vendedores[v].total++;
-      if (codRegistados.has(normCodR(c.cod))) vendedores[v].registados++;
+      if (codRegistados.has(normCod(c.cod))) vendedores[v].registados++;
     });
 
     const totalSistema    = _listaStats.length;
-    const totalRegistados = _listaStats.filter(c => codRegistados.has(normCodR(c.cod))).length;
+    const totalRegistados = _listaStats.filter(c => codRegistados.has(normCod(c.cod))).length;
     const totalPendentes  = totalSistema - totalRegistados;
     const pctGlobal = totalSistema > 0 ? Math.round(totalRegistados/totalSistema*100) : 0;
 
@@ -8962,23 +8987,16 @@ async function exportATHistoricoExcel() {
 
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
-  // Login de utilizador
   initLogin();
-  // Sincronizar lista de clientes do Supabase (para todos os dispositivos ficarem actualizados)
-  sincronizarListaClientes().then(actualizado => {
-    if (actualizado) toast('✅ Lista de clientes actualizada.', 'success');
-  });
+  await sincronizarListaClientes();
   switchTab('registos');
-  // Verificar ligação silenciosamente
   try {
     const res = await fetch(SUPA_URL + '?select=id&limit=1', { headers: HEADERS });
     const data = await res.json();
     setStatus(Array.isArray(data), undefined);
     if (Array.isArray(data)) {
-      // Carregar contagem total
-      const res2 = await fetch(SUPA_URL + '?select=id', { headers: HEADERS });
-      const all = await res2.json();
-      if (Array.isArray(all)) setStatus(true, all.length);
+      const all = await fetchRegistosPaginado('id', 'criado_em.desc');
+      setStatus(true, all.length);
     }
   } catch { setStatus(false); }
 });
