@@ -2769,10 +2769,6 @@ function normCod(v) {
   return String(v || '').trim().replace(/^0+/, '') || '0';
 }
 
-function normNome(v) {
-  return String(v || '').trim().toUpperCase().replace(/\s+/g, ' ');
-}
-
 function formatSapCod(v) {
   const s = String(v ?? '').trim();
   if (!s) return '';
@@ -2780,54 +2776,16 @@ function formatSapCod(v) {
   return s;
 }
 
-// Remover duplicados por nome (SAP às vezes mantém código antigo + novo)
-function deduplicarListaSAP(lista, codRegistadosSet) {
-  const byNome = new Map();
-  for (const c of lista) {
-    const n = normNome(c.nome);
-    if (!n) continue;
-    if (!byNome.has(n)) byNome.set(n, []);
-    byNome.get(n).push(c);
-  }
-  const result = [];
-  const seenNome = new Set();
-  for (const c of lista) {
-    const n = normNome(c.nome);
-    if (!n) { result.push(c); continue; }
-    if (seenNome.has(n)) continue;
-    seenNome.add(n);
-    const group = byNome.get(n);
-    if (group.length === 1) {
-      result.push(group[0]);
-    } else {
-      const withReg = codRegistadosSet ? group.find(x => codRegistadosSet.has(normCod(x.cod))) : null;
-      result.push(withReg || group[group.length - 1]);
-    }
-  }
-  return result;
+// Chave única do cliente na lista SAP: código SAP (nunca muda; CNPJ pode repetir em códigos diferentes)
+function listaClienteKey(c) {
+  return normCod(c?.cod);
 }
 
-// Actualizar código SAP quando o nome coincide mas o código mudou
-async function recuperarRegistosCodigoSAP(listaAtiva, registos) {
-  const sapByNome = new Map();
-  for (const c of listaAtiva) {
-    const n = normNome(c.nome);
-    if (n) sapByNome.set(n, c);
-  }
-  let recovered = 0;
-  for (const r of registos) {
-    if (!r?.id) continue;
-    const sap = sapByNome.get(normNome(r.nome));
-    if (!sap || normCod(r.cod) === normCod(sap.cod)) continue;
-    const res = await fetch(`${SUPA_URL}?id=eq.${r.id}`, {
-      method: 'PATCH',
-      headers: HEADERS,
-      body: JSON.stringify({ cod: sap.cod, nome: sap.nome, cep: sap.cep || '', vendedor: sap.vendedor, manual: false })
-    });
-    if (res.ok) recovered++;
-  }
-  if (recovered) clearRegistosCache();
-  return recovered;
+// Remover linhas repetidas do mesmo ficheiro SAP (mesmo código → fica a última ocorrência)
+function deduplicarListaSAPPorCod(lista) {
+  const map = new Map();
+  for (const c of lista) map.set(listaClienteKey(c), c);
+  return Array.from(map.values());
 }
 
 // Supabase devolve max 1000 linhas por pedido — paginar para não perder registos
@@ -4440,72 +4398,30 @@ async function salvarEdicao() {
 // ─── PENDENTES ───────────────────────────────────────
 let pendentesData = [];
 
-async function loadPendentes(skipRecovery = false) {
+async function loadPendentes() {
   await sincronizarListaClientes();
   const listaAtiva = getListaClientesActiva();
 
   try {
-    // Sempre ir ao Supabase com paginação — cache antigo ou limite 1000 fazia
-    // clientes já registados voltarem a aparecer em "Por Registar"
-    const data = await fetchRegistosPaginado('id,cod,nome,vendedor,manual', 'cod.asc');
-
-    if (!skipRecovery) {
-      const recovered = await recuperarRegistosCodigoSAP(listaAtiva, data);
-      if (recovered) {
-        toast(`✅ ${recovered} registo(s) recuperado(s) — código SAP actualizado.`, 'success');
-        return loadPendentes(true);
-      }
-    }
-
-    const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
-    const regByNome = new Map();
-    for (const r of data || []) {
-      const nome = normNome(r.nome);
-      if (nome && !regByNome.has(nome)) regByNome.set(nome, r);
-    }
+    // Validação exclusivamente por código SAP — CNPJ/nome podem repetir em códigos diferentes
+    const data = await fetchRegistosPaginado('cod,nome,vendedor,manual', 'cod.asc');
 
     const codsListaActivaNorm = new Set(listaAtiva.map(c => normCod(c.cod)));
+    const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
 
-    // Códigos anulados (999) com registo apagado — não mostrar em revisão
+    const porRegistar = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
+
     let anuladosSet = new Set();
     try {
       const an = JSON.parse(localStorage.getItem('delta_sap_anulados') || '[]');
       anuladosSet = new Set(an.map(normCod));
     } catch(e) {}
 
-    const paraRevisao = [];
-    const revisaoCods = new Set();
-
-    // 1. Clientes da lista activa sem registo → por registar
-    //    Se o SAP mudou o código mas o nome coincide com registo existente → revisão
-    const porRegistar = [];
-    for (const c of listaAtiva) {
-      const nc = normCod(c.cod);
-      if (codRegistados.has(nc)) continue;
-      const regNome = regByNome.get(normNome(c.nome));
-      if (regNome && normCod(regNome.cod) !== nc) {
-        const codOrig = regNome.cod;
-        if (!revisaoCods.has(normCod(codOrig))) {
-          revisaoCods.add(normCod(codOrig));
-          paraRevisao.push({
-            cod: codOrig, nome: regNome.nome || c.nome, cep: '', vendedor: regNome.vendedor || c.vendedor || '—',
-            _revisao: true, _novoCod: c.cod
-          });
-        }
-        continue;
-      }
-      porRegistar.push(c);
-    }
-
-    // 2. Registos no Supabase cujo código NÃO existe na lista SAP activa → revisão
-    for (const r of data || []) {
-      const nc = normCod(r.cod);
-      if (codsListaActivaNorm.has(nc) || r.manual || anuladosSet.has(nc) || revisaoCods.has(nc)) continue;
-      revisaoCods.add(nc);
-      paraRevisao.push({
+    const paraRevisao = (data || [])
+      .filter(r => !codsListaActivaNorm.has(normCod(r.cod)) && !r.manual && !anuladosSet.has(normCod(r.cod)))
+      .map(r => ({
         cod: r.cod, nome: r.nome || '—', cep: '', vendedor: r.vendedor || '—', _revisao: true
-      });
-    }
+      }));
 
     pendentesData = [...paraRevisao, ...porRegistar];
   } catch(e) {
@@ -4547,9 +4463,8 @@ function renderPendentes() {
     ? `<tr class="row-invalid" data-cod-orig="${c.cod}">
         <td>
           <span class="cod-invalid" title="Código registado mas não encontrado na lista SAP actual">${c.cod} ⚠</span>
-          ${c._novoCod ? `<div style="font-size:11px;color:var(--muted);margin-top:2px;">Novo código SAP: <strong>${c._novoCod}</strong></div>` : ''}
           <div class="edit-cod-inline" id="edit-inline-${c.cod}" style="display:none;margin-top:4px;display:none;align-items:center;gap:6px;">
-            <input type="text" class="form-input" id="input-cod-${c.cod}" placeholder="Novo código SAP" value="${c._novoCod || ''}"
+            <input type="text" class="form-input" id="input-cod-${c.cod}" placeholder="Novo código SAP"
               style="width:120px;padding:4px 8px;font-size:12px;"
               onkeydown="if(event.key==='Enter')corrigirCodRevisao('${c.cod}')">
             <button class="btn btn-primary btn-sm" style="padding:3px 10px;font-size:11px;" onclick="corrigirCodRevisao('${c.cod}')">✓</button>
@@ -4737,12 +4652,8 @@ async function carregarListaSAP(event) {
     return;
   }
 
-  // Deduplicar por nome — evita códigos antigos + novos do mesmo cliente na lista
-  const regsPreview = await fetchRegistosPaginado('cod', 'cod.asc').catch(() => []);
-  const codRegSet = new Set(regsPreview.map(r => normCod(r.cod)));
-  const novaListaDedup = deduplicarListaSAP(novaLista, codRegSet);
-  const removidosDup = novaLista.length - novaListaDedup.length;
-  if (removidosDup) novaLista = novaListaDedup;
+  // Remover linhas duplicadas do mesmo código no ficheiro (mantém a última)
+  novaLista = deduplicarListaSAPPorCod(novaLista);
 
   // Calcular diferenças em relação à lista actual
   const listaAtual = getListaClientesActiva();
@@ -4798,10 +4709,8 @@ async function confirmarCargaSAP() {
 
   try {
 
-  // 1. Guardar nova lista activa (deduplicada)
-  const regsForDedup = await fetchRegistosPaginado('cod', 'cod.asc').catch(() => []);
-  novaLista = deduplicarListaSAP(novaLista, new Set(regsForDedup.map(r => normCod(r.cod))));
-  const recoveredOnImport = await recuperarRegistosCodigoSAP(novaLista, await fetchRegistosPaginado('id,cod,nome', 'cod.asc').catch(() => []));
+  // 1. Guardar nova lista activa
+  novaLista = deduplicarListaSAPPorCod(novaLista);
   const listaTs = Date.now();
   localStorage.setItem('delta_clientes_sistema', JSON.stringify(novaLista));
   localStorage.setItem('delta_clientes_ts', listaTs.toString());
@@ -4862,7 +4771,6 @@ async function confirmarCargaSAP() {
 
   // 5. Resultado
   let msg = `✅ Lista actualizada com ${novaLista.length} clientes.`;
-  if (recoveredOnImport) msg += ` ${recoveredOnImport} registo(s) recuperado(s).`;
   if (apagados) msg += ` ${apagados} registo(s) anulado(s) apagado(s).`;
   if (atualizados) msg += ` ${atualizados} registo(s) manual(ais) validado(s) pelo SAP.`;
   if (erros)    msg += ` ⚠ ${erros} erro(s) ao apagar.`;
@@ -4925,7 +4833,7 @@ async function sincronizarListaClientes() {
     if (!res.ok) return false;
     const rows = await res.json();
     if (!rows.length || !rows[0].data) return false;
-    const remote = deduplicarListaSAP(rows[0].data, null);
+    const remote = rows[0].data;
     const remoteTs = new Date(rows[0].atualizado_em).getTime();
     const localRaw = localStorage.getItem('delta_clientes_sistema');
     const localTs = parseInt(localStorage.getItem('delta_clientes_ts') || '0');
