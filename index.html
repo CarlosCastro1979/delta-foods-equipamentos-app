@@ -5587,12 +5587,7 @@ Enviado via Delta Foods App`;
   const equipTipoStr = selectedEquips.map(e => e.tipo).join(', ');
   const equipTagStr  = selectedEquips.map(e => e.tag).filter(Boolean).join(', ');
 
-  // Build CC
-  const ccBase = atTipoEquip === 'domestico'
-    ? 'filipe.neves@deltafoodsbrasil.com.br'
-    : 'carlos.castro@deltafoodsbrasil.com.br;filipe.neves@deltafoodsbrasil.com.br;ricardo.vicentesilva@deltafoodsbrasil.com.br';
   const vendedorEmail = VENDEDOR_EMAILS[vendedor] || '';
-  // Separar emails por vírgula (standard RFC para mailto)
   const ccList = atTipoEquip === 'domestico'
     ? ['filipe.neves@deltafoodsbrasil.com.br']
     : ['carlos.castro@deltafoodsbrasil.com.br', 'filipe.neves@deltafoodsbrasil.com.br', 'ricardo.vicentesilva@deltafoodsbrasil.com.br'];
@@ -7077,7 +7072,9 @@ Cumprimentos,
 ${getUtilizadorAtual()}`
   );
 
-  const mailto = `mailto:carlos.castro@deltafoodsbrasil.com.br?cc=Filipe.Neves@deltafoodsbrasil.com.br;dadosmestres.entidades2@gruponabeiro.com&subject=${assunto}&body=${corpo}`;
+  const ccParams = ['Filipe.Neves@deltafoodsbrasil.com.br', 'dadosmestres.entidades2@gruponabeiro.com']
+    .map(e => `cc=${encodeURIComponent(e)}`).join('&');
+  const mailto = `mailto:${encodeURIComponent('carlos.castro@deltafoodsbrasil.com.br')}?${ccParams}&subject=${assunto}&body=${corpo}`;
   window.location.href = mailto;
 
   // Marcar registo como encerramento pendente no Supabase (se tiver id)
@@ -8585,7 +8582,9 @@ Aguardo aprovação.
 Cumprimentos,
 ${getUtilizadorAtual()}`
     );
-    const mailto = `mailto:carlos.castro@deltafoodsbrasil.com.br?cc=filipe.neves@deltafoodsbrasil.com.br;daniela.kucinski@deltafoodsbrasil.com.br&subject=${assunto}&body=${corpo}`;
+    const ccParams = ['filipe.neves@deltafoodsbrasil.com.br', 'daniela.kucinski@deltafoodsbrasil.com.br']
+      .map(e => `cc=${encodeURIComponent(e)}`).join('&');
+    const mailto = `mailto:${encodeURIComponent('carlos.castro@deltafoodsbrasil.com.br')}?${ccParams}&subject=${assunto}&body=${corpo}`;
     setTimeout(() => { window.location.href = mailto; }, 800);
 
   } catch(e) {
