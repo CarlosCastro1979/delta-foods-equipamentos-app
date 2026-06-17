@@ -4618,6 +4618,7 @@ async function carregarListaSAP(event) {
   const iCEP     = headers.indexOf('CEP');
   const iNPess   = headers.findIndex(h => h.toLowerCase().includes('pess'));
   const iCNPJ    = headers.findIndex(h => h.includes('ID fiscal') || h.includes('fiscal'));
+  const iCanal   = headers.findIndex(h => /^canal$/i.test(String(h || '').trim()));
 
   if (iCliente === -1 || iNome === -1) {
     toast('Colunas "Cliente" e "Nome" não encontradas. Verifica o ficheiro.', 'error');
@@ -4644,7 +4645,8 @@ async function carregarListaSAP(event) {
     const vendedor = NPESS_VENDEDOR[npess] || '';
     if (!vendedor) continue; // código desconhecido — ignora
     const cnpj = iCNPJ >= 0 ? String(row[iCNPJ]||'').trim() : '';
-    novaLista.push({cod, nome, cep, vendedor, cnpj});
+    const canal = iCanal >= 0 ? String(row[iCanal]||'').trim() : '';
+    novaLista.push({cod, nome, cep, vendedor, cnpj, canal});
   }
 
   if (!novaLista.length && !codsAnulados.length) {
