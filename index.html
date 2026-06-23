@@ -2162,7 +2162,7 @@ var _unused_placeholder = 1;
           </div>
           <div>
             <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Produto / Lote</label>
-            <select id="pg-prop-produto" class="form-input" style="width:100%;font-size:13px;" oninput="propCalcular()"></select>
+            <select id="pg-prop-produto" class="form-input" style="width:100%;font-size:13px;" onchange="propCalcular()" oninput="propCalcular()"></select>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
@@ -8019,18 +8019,26 @@ async function prosGanhoAutoSave() {
   await prosSaveCadastroJson({ silent: true });
 }
 
+function prosIsGanhoAutosaveField(el) {
+  if (!el || !el.id) return false;
+  return el.id.startsWith('pg-') && el.id !== 'pg-status' && el.id !== 'pg-autosave-hint' && el.id !== 'pg-prop-preview';
+}
+
 function initProsGanhoAutoSave() {
   teardownProsGanhoAutoSave();
   prosGanhoAutoSaveReady = false;
   prosGanhoLastSnapshot = prosFormSnapshotGanho();
   prosGanhoAutoSaveAbort = new AbortController();
   const { signal } = prosGanhoAutoSaveAbort;
-  const handler = () => scheduleProsGanhoAutoSave();
-  PROS_CADASTRO_AUTOSAVE_IDS.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) { el.addEventListener('input', handler, { signal }); el.addEventListener('change', () => scheduleProsGanhoAutoSave(300), { signal }); }
-  });
-  document.querySelectorAll('[id^="pg-prop-eq-"]').forEach(el => el.addEventListener('input', handler, { signal }));
+  const overlay = document.getElementById('pros-ganho-overlay');
+  if (overlay) {
+    overlay.addEventListener('input', (e) => {
+      if (prosIsGanhoAutosaveField(e.target)) scheduleProsGanhoAutoSave();
+    }, { signal });
+    overlay.addEventListener('change', (e) => {
+      if (prosIsGanhoAutosaveField(e.target)) scheduleProsGanhoAutoSave(300);
+    }, { signal });
+  }
   setTimeout(() => { prosGanhoLastSnapshot = prosFormSnapshotGanho(); prosGanhoAutoSaveReady = true; }, 300);
 }
 
@@ -8053,7 +8061,14 @@ async function prosSaveCadastroJson(opts = {}) {
     const res = await fetch(PROS_URL + `?id=eq.${prosGanhoLeadId}`, {
       method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=representation' }, body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!res.ok) {
+      let errDetail = 'HTTP ' + res.status;
+      try {
+        const errBody = await res.json();
+        if (errBody?.message) errDetail = errBody.message;
+      } catch (e) {}
+      throw new Error(errDetail);
+    }
     const updated = await res.json();
     if (updated[0]) {
       const idx = prosData.findIndex(x => String(x.id) === String(prosGanhoLeadId));
@@ -8074,7 +8089,7 @@ async function prosSaveCadastroJson(opts = {}) {
       if (!silent && st) st.innerHTML = `<span style="color:var(--danger)">Faltam: ${missing.join(', ')}.</span>`;
     }
     renderPros();
-    return !missing.length;
+    return true;
   } catch (e) {
     prosSetGanhoAutoSaveStatus('Erro: ' + e.message, 'var(--danger)');
     if (!silent && st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
@@ -8142,21 +8157,33 @@ function prosGanhoRegiaoChange() {
   document.getElementById('pg-fiscal').textContent = isZF ? '2 - Zona Franca - ICMS' : '1 - Sujeito a imposto';
 }
 
-function prosGanhoAbrir(p) {
+async function prosGanhoAbrir(p) {
   if (!p || !p.id) { toast('Lead inválido — guarda o registo antes de abrir o cadastro.', 'error'); return; }
   prosGanhoLeadId = p.id;
-  document.getElementById('pros-ganho-nome-label').textContent = p.nome || '';
+  let lead = prosFindById(p.id) || p;
+  try {
+    const res = await fetch(PROS_URL + `?id=eq.${p.id}&select=*`, { headers: HEADERS });
+    if (res.ok) {
+      const rows = await res.json();
+      if (rows[0]) {
+        lead = rows[0];
+        const idx = prosData.findIndex(x => String(x.id) === String(p.id));
+        if (idx >= 0) prosData[idx] = { ...prosData[idx], ...lead };
+      }
+    }
+  } catch (e) {}
+  document.getElementById('pros-ganho-nome-label').textContent = lead.nome || '';
   document.getElementById('pg-status').textContent = '';
   prosSetGanhoAutoSaveStatus('', 'var(--muted)');
-  const cad = (p.cadastro_json && typeof p.cadastro_json === 'object') ? p.cadastro_json : null;
+  const cad = (lead.cadastro_json && typeof lead.cadastro_json === 'object') ? lead.cadastro_json : null;
   if (cad && Object.keys(cad).length) {
-    prosCadastroApplyToForm(cad, p);
+    prosCadastroApplyToForm(cad, lead);
   } else {
-    document.getElementById('pg-nome').value = p.nome || '';
-    document.getElementById('pg-cnpj').value = p.cnpj || '';
-    document.getElementById('pg-fantasia').value = p.nome || '';
-    document.getElementById('pg-email').value = (p.email || '').toLowerCase();
-    document.getElementById('pg-tel1').value = p.celular || '';
+    document.getElementById('pg-nome').value = lead.nome || '';
+    document.getElementById('pg-cnpj').value = lead.cnpj || '';
+    document.getElementById('pg-fantasia').value = lead.nome || '';
+    document.getElementById('pg-email').value = (lead.email || '').toLowerCase();
+    document.getElementById('pg-tel1').value = lead.celular || '';
     document.getElementById('pg-tel2').value = '';
     document.getElementById('pg-ie').value = '';
     document.getElementById('pg-rua').value = '';
@@ -8176,11 +8203,11 @@ function prosGanhoAbrir(p) {
     propTipoChange();
     prosGanhoEmpresaChange();
     prosGanhoRegiaoChange();
-    const sapVend = PG_VENDEDOR_SAP[p.vendedor] || '';
+    const sapVend = PG_VENDEDOR_SAP[lead.vendedor] || '';
     if (sapVend) { const sel = document.getElementById('pg-vendedor'); for (const opt of sel.options) { if (opt.value === sapVend) { sel.value = sapVend; break; } } }
   }
-  const missing = prosValidarCadastroObrigatorio(prosCadastroMergedFromLead(prosFindById(p.id) || p));
-  if (p.estado === 'ganho' && missing.length) {
+  const missing = prosValidarCadastroObrigatorio(prosCadastroMergedFromLead(lead));
+  if (lead.estado === 'ganho' && missing.length) {
     document.getElementById('pg-status').innerHTML = `<span style="color:var(--danger)">Cadastro incompleto: ${missing.join(', ')}.</span>`;
   }
   document.getElementById('pros-ganho-overlay').style.display = 'block';
@@ -8272,10 +8299,10 @@ function propTipoChange() {
   const tipo = document.getElementById('pg-prop-tipo').value;
   const cfg = PROP_SIM[tipo] || PROP_SIM.Q;
   document.getElementById('pg-prop-qtd-label').textContent = cfg.unidade;
-  // Produtos
   const selP = document.getElementById('pg-prop-produto');
+  const prevProd = selP.value;
   selP.innerHTML = cfg.produtos.map(c => `<option value="${c}">${PROP_PRODUTOS[c].nome}</option>`).join('');
-  // Equipamentos (quantidade)
+  if (prevProd && cfg.produtos.includes(prevProd)) selP.value = prevProd;
   const list = document.getElementById('pg-prop-equip-list');
   list.innerHTML = cfg.equipamentos.map(e => `
     <div style="display:flex;align-items:center;gap:6px;">
@@ -8283,6 +8310,7 @@ function propTipoChange() {
       <input type="number" id="pg-prop-eq-${e.cod}" class="form-input" style="width:64px;font-size:13px;" value="0" min="0" oninput="propCalcular()">
     </div>`).join('');
   propCalcular();
+  if (prosGanhoLeadId && prosGanhoAutoSaveReady) scheduleProsGanhoAutoSave(300);
 }
 
 function propNum(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
