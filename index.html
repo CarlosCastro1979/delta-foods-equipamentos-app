@@ -1925,11 +1925,26 @@ var _unused_placeholder = 1;
     <div style="background:var(--surface);border-radius:12px;max-width:780px;margin:30px auto;padding:28px;position:relative;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
         <div>
-          <h2 style="font-size:17px;font-weight:600;color:#16a34a;">✅ Cliente Ganho — Cadastro SAP</h2>
+          <h2 style="font-size:17px;font-weight:600;color:#16a34a;">✅ Cliente Ganho</h2>
           <div id="pros-ganho-nome-label" style="font-size:13px;color:var(--muted);margin-top:2px;"></div>
         </div>
         <button onclick="prosGanhoFechar()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);">✕</button>
       </div>
+
+      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <span style="font-size:13px;font-weight:600;color:var(--text);">É cliente de café?</span>
+        <div style="display:flex;gap:16px;">
+          <label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;">
+            <input type="radio" name="pg-cliente-cafe" id="pg-cliente-cafe-sim" value="sim" onchange="prosGanhoClienteCafeChange()"> Sim
+          </label>
+          <label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;">
+            <input type="radio" name="pg-cliente-cafe" id="pg-cliente-cafe-nao" value="nao" checked onchange="prosGanhoClienteCafeChange()"> Não
+          </label>
+        </div>
+      </div>
+
+      <div id="pg-cadastro-section" style="border:2px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #e5e7eb;">Ficha de Cadastro</div>
 
       <!-- SECÇÃO: Cabeçalho -->
       <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
@@ -2148,10 +2163,11 @@ var _unused_placeholder = 1;
           </select>
         </div>
       </div>
+      </div><!-- /pg-cadastro-section -->
 
-      <!-- SECÇÃO: Proposta de Negócio -->
-      <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:11px;font-weight:700;color:#16a34a;margin-bottom:10px;letter-spacing:.5px;">PROPOSTA DE NEGÓCIO — SIMULADOR EM ANEXO NO EMAIL</div>
+      <div id="pg-proposta-section" style="display:none;border:2px solid #86efac;border-radius:10px;padding:16px;margin-bottom:16px;background:#f0fdf4;">
+        <div style="font-size:14px;font-weight:700;color:#16a34a;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #86efac;">Proposta de Negócio</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Simulador em anexo no email (clientes de café)</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
           <div>
             <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Tipo de negócio</label>
@@ -2202,11 +2218,11 @@ var _unused_placeholder = 1;
           </div>
         </div>
         <div id="pg-prop-preview" style="margin-top:12px;font-size:12px;color:var(--muted);"></div>
-      </div>
+      </div><!-- /pg-proposta-section -->
 
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
         <button class="btn btn-secondary" onclick="prosGanhoFechar()">Cancelar</button>
-        <button class="btn btn-primary" onclick="prosGanhoExportar()" style="background:#16a34a;border-color:#16a34a;">⬇ Exportar Cadastro SAP</button>
+        <button class="btn btn-primary" onclick="prosGanhoExportar()" style="background:#16a34a;border-color:#16a34a;">Criar ficha de Cadastro e Proposta de Negócio</button>
       </div>
       <div id="pg-autosave-hint" style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right;">Alterações guardadas automaticamente</div>
       <div id="pg-status" style="margin-top:4px;font-size:12px;text-align:right;"></div>
@@ -2318,7 +2334,7 @@ var _unused_placeholder = 1;
       </div>
       <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap;">
         <button class="btn btn-secondary" onclick="prosCloseModal()">Cancelar</button>
-        <button id="pros-btn-cadastro" class="btn" onclick="prosModalAbrirCadastro()" style="display:none;background:#16a34a;color:#fff;border-color:#16a34a;">📋 Exportar Cadastro SAP</button>
+        <button id="pros-btn-cadastro" class="btn" onclick="prosModalAbrirCadastro()" style="display:none;background:#16a34a;color:#fff;border-color:#16a34a;">📋 Cadastro e Proposta</button>
         <button class="btn btn-primary" onclick="prosSave()">Guardar</button>
       </div>
       <div id="pros-modal-status" style="margin-top:10px;font-size:12px;text-align:right;"></div>
@@ -7132,6 +7148,10 @@ const PROS_CADASTRO_OBRIGATORIOS = [
   ['cep', 'CEP'], ['cidade', 'Cidade'], ['canal', 'Canal Distribuição'], ['regiao', 'Região (Estado)'],
   ['icms', 'Contrib. ICMS'], ['pagto', 'Cond. Pagamento'], ['rota', 'Rota'], ['vendedor', 'Vendedor'],
 ];
+const PROS_PROPOSTA_OBRIGATORIOS = [
+  ['prop_produto', 'Produto / Lote'], ['prop_prazo', 'Prazo contrato (meses)'],
+  ['prop_qtdmes', 'Quantidade contratada/mês'],
+];
 const PROS_CADASTRO_AUTOSAVE_IDS = [
   'pg-motivo','pg-empresa','pg-grupo','pg-nome','pg-cnpj','pg-fantasia','pg-ie','pg-email','pg-tel1','pg-tel2',
   'pg-rua','pg-nro','pg-supl','pg-bairro','pg-cep','pg-cidade','pg-canal','pg-regiao','pg-icms','pg-pagto','pg-rota',
@@ -7463,7 +7483,7 @@ function renderProsList(cont, dados) {
       <td style="${TD}">${p.proxima_acao?escHtml(p.proxima_acao):''}</td>
       <td style="${TD}">${acaoStr}</td>
       <td style="${TD}text-align:center;white-space:nowrap;" onclick="event.stopPropagation()">
-        ${p.estado==='ganho'?`<button onclick="prosGanhoAbrir(prosData.find(x=>x.id===${p.id}))" style="background:none;border:1px solid #86efac;border-radius:4px;color:#16a34a;cursor:pointer;font-size:11px;padding:2px 7px;margin-right:3px;" title="Exportar Cadastro SAP">📋</button>`:''}
+        ${p.estado==='ganho'?`<button onclick="prosGanhoAbrir(prosData.find(x=>x.id===${p.id}))" style="background:none;border:1px solid #86efac;border-radius:4px;color:#16a34a;cursor:pointer;font-size:11px;padding:2px 7px;margin-right:3px;" title="Cadastro e Proposta de Negócio">📋</button>`:''}
         <button onclick="prosEliminar(${p.id})" style="background:none;border:1px solid #fca5a5;border-radius:4px;color:#dc2626;cursor:pointer;font-size:11px;padding:2px 7px;" title="Eliminar">🗑</button>
       </td>
     </tr>`;
@@ -7507,7 +7527,7 @@ function prosOnEstadoChange(val) {
     if (missing.length) {
       const st = document.getElementById('pros-modal-status');
       if (st) {
-        st.innerHTML = `<span style="color:var(--muted)">Preenche o cadastro SAP (botão abaixo). Faltam: ${missing.join(', ')}.</span>`;
+        st.innerHTML = `<span style="color:var(--muted)">Preenche a ficha de cadastro (botão abaixo). Faltam: ${missing.join(', ')}.</span>`;
       }
     }
   }
@@ -7802,8 +7822,8 @@ async function prosSave(opts = {}) {
     const missingCad = prosValidarCadastroObrigatorio(merged);
     if (missingCad.length) {
       ganhoCadastroIncompleto = true;
-      const msg = `Cadastro SAP incompleto — usa "Exportar Cadastro SAP": ${missingCad.join(', ')}.`;
-      if (autosave) prosSetAutoSaveStatus('✅ Ganho guardado — completa cadastro SAP', 'var(--muted)');
+      const msg = `Cadastro SAP incompleto — usa "Cadastro e Proposta": ${missingCad.join(', ')}.`;
+      if (autosave) prosSetAutoSaveStatus('✅ Ganho guardado — completa ficha de cadastro', 'var(--muted)');
       else st.innerHTML = `<span style="color:var(--danger)">${msg}</span>`;
     }
   }
@@ -7941,6 +7961,7 @@ function prosCadastroCollectFromForm() {
   const equip = {};
   cfg.equipamentos.forEach(e => { equip[e.cod] = propNum('pg-prop-eq-' + e.cod); });
   return {
+    cliente_cafe: document.getElementById('pg-cliente-cafe-sim')?.checked === true,
     motivo: document.getElementById('pg-motivo')?.value || '',
     empresa: document.getElementById('pg-empresa')?.value || '',
     grupo: document.getElementById('pg-grupo')?.value || '',
@@ -7996,6 +8017,25 @@ function prosValidarCadastroObrigatorio(data) {
   return missing;
 }
 
+function prosValidarPropostaObrigatorio(data) {
+  const missing = [];
+  PROS_PROPOSTA_OBRIGATORIOS.forEach(([key, label]) => {
+    if (key === 'prop_prazo' || key === 'prop_qtdmes') {
+      if (!data[key] || parseFloat(data[key]) <= 0) missing.push(label);
+    } else if (!(data[key] || '').trim()) {
+      missing.push(label);
+    }
+  });
+  return missing;
+}
+
+function prosGanhoClienteCafeChange() {
+  const isCafe = document.getElementById('pg-cliente-cafe-sim')?.checked === true;
+  const sec = document.getElementById('pg-proposta-section');
+  if (sec) sec.style.display = isCafe ? 'block' : 'none';
+  if (prosGanhoLeadId && prosGanhoAutoSaveReady) scheduleProsGanhoAutoSave(300);
+}
+
 function prosFormSnapshotGanho() { return JSON.stringify(prosCadastroCollectFromForm()); }
 
 function prosSetGanhoAutoSaveStatus(text, color) {
@@ -8020,7 +8060,9 @@ async function prosGanhoAutoSave() {
 }
 
 function prosIsGanhoAutosaveField(el) {
-  if (!el || !el.id) return false;
+  if (!el) return false;
+  if (el.name === 'pg-cliente-cafe') return true;
+  if (!el.id) return false;
   return el.id.startsWith('pg-') && el.id !== 'pg-status' && el.id !== 'pg-autosave-hint' && el.id !== 'pg-prop-preview';
 }
 
@@ -8100,6 +8142,10 @@ async function prosSaveCadastroJson(opts = {}) {
 function prosCadastroApplyToForm(cad, p) {
   const c = cad || {};
   const setVal = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== '') el.value = v; };
+  const isCafe = c.cliente_cafe === true;
+  document.getElementById('pg-cliente-cafe-sim').checked = isCafe;
+  document.getElementById('pg-cliente-cafe-nao').checked = !isCafe;
+  prosGanhoClienteCafeChange();
   setVal('pg-motivo', c.motivo); setVal('pg-empresa', c.empresa); setVal('pg-grupo', c.grupo);
   document.getElementById('pg-nome').value = c.nome || p?.nome || '';
   document.getElementById('pg-cnpj').value = c.cnpj || p?.cnpj || '';
@@ -8200,6 +8246,9 @@ async function prosGanhoAbrir(p) {
     document.getElementById('pg-prop-xic-cap').value = 0;
     document.getElementById('pg-prop-outros').value = 0;
     document.getElementById('pg-prop-rappel').value = 0;
+    document.getElementById('pg-cliente-cafe-sim').checked = false;
+    document.getElementById('pg-cliente-cafe-nao').checked = true;
+    prosGanhoClienteCafeChange();
     propTipoChange();
     prosGanhoEmpresaChange();
     prosGanhoRegiaoChange();
@@ -8225,7 +8274,7 @@ async function prosModalAbrirCadastro() {
     const ok = await prosSave({ keepOpen: true, autosave: true });
     if (!ok) return;
   }
-  if (!prosEditId) { st.innerHTML = '<span style="color:var(--danger)">Guarda o lead antes de abrir o cadastro SAP.</span>'; return; }
+  if (!prosEditId) { st.innerHTML = '<span style="color:var(--danger)">Guarda o lead antes de abrir cadastro e proposta.</span>'; return; }
   const p = prosFindById(prosEditId) || {
     id: prosEditId, nome: document.getElementById('pros-f-nome').value.trim(),
     vendedor: document.getElementById('pros-f-vendedor').value,
@@ -8499,8 +8548,22 @@ async function prosGanhoExportar() {
     };
     const primeiro = document.getElementById(idMap[emFalta[0]] || 'pg-nome');
     if (primeiro) { primeiro.focus(); primeiro.style.borderColor = 'var(--danger)'; }
-    st.innerHTML = `<span style="color:var(--danger)">Preenche os campos obrigatórios: ${emFalta.join(', ')}.</span>`;
+    st.innerHTML = `<span style="color:var(--danger)">Ficha de Cadastro — preenche os campos obrigatórios: ${emFalta.join(', ')}.</span>`;
     return;
+  }
+  const isCafe = data.cliente_cafe === true;
+  if (isCafe) {
+    const emFaltaProp = prosValidarPropostaObrigatorio(data);
+    if (emFaltaProp.length) {
+      const propIdMap = {
+        'Produto / Lote': 'pg-prop-produto', 'Prazo contrato (meses)': 'pg-prop-prazo',
+        'Quantidade contratada/mês': 'pg-prop-qtdmes',
+      };
+      const primeiro = document.getElementById(propIdMap[emFaltaProp[0]] || 'pg-prop-produto');
+      if (primeiro) { primeiro.focus(); primeiro.style.borderColor = 'var(--danger)'; }
+      st.innerHTML = `<span style="color:var(--danger)">Proposta de Negócio — preenche os campos obrigatórios: ${emFaltaProp.join(', ')}.</span>`;
+      return;
+    }
   }
   PROS_CADASTRO_AUTOSAVE_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.style.borderColor = ''; });
   st.innerHTML = '<span style="color:var(--muted)">A gerar...</span>';
@@ -8559,24 +8622,29 @@ async function prosGanhoExportar() {
     a.download = `Cadastro_${(dados.nome||'cliente').replace(/[^a-zA-Z0-9]/g,'_').substring(0,20)}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
-    toast('✅ Cadastro exportado!');
+    toast('✅ Ficha de Cadastro exportada!');
 
-    // Gerar e descarregar a Proposta de Negócio (simulador) junto com o cadastro
-    const tipoSel = document.getElementById('pg-prop-tipo')?.value || 'Q';
-    const cfgP = PROP_SIM[tipoSel] || PROP_SIM.Q;
-    const prodSel = document.getElementById('pg-prop-produto');
-    const prodTxt = prodSel ? (prodSel.options[prodSel.selectedIndex]?.text || '') : '';
-    const propPrazo = document.getElementById('pg-prop-prazo')?.value || '';
-    const propQtdMes = document.getElementById('pg-prop-qtdmes')?.value || '';
-    const propEquipTxt = cfgP.equipamentos
-      .filter(e => propNum('pg-prop-eq-' + e.cod) > 0)
-      .map(e => `${e.nome} x${document.getElementById('pg-prop-eq-' + e.cod).value}`)
-      .join(', ');
-    try {
-      await propGerarSimulador(dados.nome);
-      toast('✅ Proposta exportada!');
-    } catch (e) {
-      toast('Erro na proposta: ' + e.message, 'error');
+    let propTexto = '';
+    if (isCafe) {
+      const tipoSel = document.getElementById('pg-prop-tipo')?.value || 'Q';
+      const cfgP = PROP_SIM[tipoSel] || PROP_SIM.Q;
+      const prodSel = document.getElementById('pg-prop-produto');
+      const prodTxt = prodSel ? (prodSel.options[prodSel.selectedIndex]?.text || '') : '';
+      const propPrazo = document.getElementById('pg-prop-prazo')?.value || '';
+      const propQtdMes = document.getElementById('pg-prop-qtdmes')?.value || '';
+      const propEquipTxt = cfgP.equipamentos
+        .filter(e => propNum('pg-prop-eq-' + e.cod) > 0)
+        .map(e => `${e.nome} x${document.getElementById('pg-prop-eq-' + e.cod).value}`)
+        .join(', ');
+      try {
+        await propGerarSimulador(dados.nome);
+        toast('✅ Proposta de Negócio exportada!');
+      } catch (e) {
+        toast('Erro na proposta: ' + e.message, 'error');
+      }
+      propTexto = propQtdMes
+        ? `\n\nProposta de negócio (${tipoSel === 'Q' ? 'Delta Q' : 'Grão'}) — simulador em anexo:\n  • Produto: ${prodTxt || '—'}\n  • Prazo: ${propPrazo || '—'} meses\n  • ${cfgP.unidade}/mês: ${propQtdMes || '—'}\n  • Equipamentos: ${propEquipTxt || '—'}`
+        : '';
     }
 
     st.innerHTML = '';
@@ -8587,14 +8655,12 @@ async function prosGanhoExportar() {
     const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
     const motivo = dados.motivo || 'Abertura de Cliente';
     const assunto = encodeURIComponent(`${motivo} - ${dados.nome}`);
-    const propTexto = propQtdMes
-      ? `\n\nProposta de negócio (${tipoSel === 'Q' ? 'Delta Q' : 'Grão'}) — simulador em anexo:\n  • Produto: ${prodTxt || '—'}\n  • Prazo: ${propPrazo || '—'} meses\n  • ${cfgP.unidade}/mês: ${propQtdMes || '—'}\n  • Equipamentos: ${propEquipTxt || '—'}`
-      : '';
+    const anexosTxt = isCafe ? 'ficha de cadastro e a proposta de negócio' : 'ficha de cadastro';
 
     const corpo = encodeURIComponent(
 `${saudacao},
 
-Segue em anexo o formulário de ${motivo.toLowerCase()} do cliente ${dados.nome}${propTexto ? ' e a proposta de negócio' : ''} para aprovação.${propTexto}
+Segue em anexo a ${anexosTxt} do cliente ${dados.nome} para aprovação.${propTexto}
 
 Aguardo aprovação.
 
