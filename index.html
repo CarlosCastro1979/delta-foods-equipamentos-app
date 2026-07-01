@@ -1832,8 +1832,9 @@ var _unused_placeholder = 1;
         <select id="sc-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="renderSemCompras()">
           <option value="">Todos os vendedores</option>
         </select>
-        <select id="sc-periodo" class="form-input" style="min-width:160px;height:36px;font-size:13px;" onchange="renderSemCompras()">
-          <option value="6">Mais de 6 meses</option>
+        <select id="sc-periodo" class="form-input" style="min-width:200px;height:36px;font-size:13px;" onchange="renderSemCompras()">
+          <option value="1">Último mês (1–5 meses)</option>
+          <option value="6" selected>Mais de 6 meses</option>
           <option value="9">Mais de 9 meses</option>
           <option value="12">Mais de 12 meses</option>
         </select>
@@ -3742,6 +3743,7 @@ function renderSemCompras() {
 
   const vendFilt   = document.getElementById('sc-vendedor')?.value || '';
   const periodoMin = parseInt(document.getElementById('sc-periodo')?.value || '6');
+  const modoUltimoMes = periodoMin === 1;
   const hoje = scDataRef || new Date();
 
   // Calcula meses sem comprar por cliente
@@ -3757,9 +3759,13 @@ function renderSemCompras() {
     const diffMs = hoje - ultimaCompra;
     const mesesSemComprar = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.44));
 
-    if (mesesSemComprar >= periodoMin) {
-      resultado.push({ ...cli, ultimaCompra, mesesSemComprar });
+    if (modoUltimoMes) {
+      // Último mês: 1–5 meses sem comprar — exclui os já na lista +6 meses (com e sem dívida)
+      if (mesesSemComprar < 1 || mesesSemComprar >= 6) continue;
+    } else if (mesesSemComprar < periodoMin) {
+      continue;
     }
+    resultado.push({ ...cli, ultimaCompra, mesesSemComprar });
   }
 
   // Ordena: mais tempo sem comprar primeiro
@@ -3769,11 +3775,17 @@ function renderSemCompras() {
   const n12 = resultado.filter(c => c.mesesSemComprar >= 12).length;
   const n9  = resultado.filter(c => c.mesesSemComprar >= 9 && c.mesesSemComprar < 12).length;
   const n6  = resultado.filter(c => c.mesesSemComprar >= 6 && c.mesesSemComprar < 9).length;
+  const n5  = resultado.filter(c => c.mesesSemComprar >= 5 && c.mesesSemComprar < 6).length;
+  const n34 = resultado.filter(c => c.mesesSemComprar >= 3 && c.mesesSemComprar < 5).length;
+  const n12m = resultado.filter(c => c.mesesSemComprar >= 1 && c.mesesSemComprar < 3).length;
 
-  document.getElementById('sc-info').innerHTML =
-    `<span style="color:var(--danger);font-weight:600;">${resultado.length} clientes</span> sem compras há mais de ${periodoMin} meses` +
-    (periodoMin <= 6 ? ` &nbsp;·&nbsp; <span style="color:var(--danger)">🔴 +12m: ${n12}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟡 9-12m: ${n9}</span> &nbsp;·&nbsp; <span style="color:#ca8a04">🟠 6-9m: ${n6}</span>` : '') +
-    ` &nbsp;·&nbsp; Referência: ${hoje.toLocaleDateString('pt-BR')}`;
+  document.getElementById('sc-info').innerHTML = modoUltimoMes
+    ? `<span style="color:#d97706;font-weight:600;">${resultado.length} clientes</span> sem compras no último mês (1–5 meses) — excluídos os +6 meses` +
+      ` &nbsp;·&nbsp; <span style="color:#ca8a04">🟡 1-2m: ${n12m}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟠 3-4m: ${n34}</span> &nbsp;·&nbsp; <span style="color:#c8102e">🔴 5m: ${n5}</span>` +
+      ` &nbsp;·&nbsp; Referência: ${hoje.toLocaleDateString('pt-BR')}`
+    : `<span style="color:var(--danger);font-weight:600;">${resultado.length} clientes</span> sem compras há mais de ${periodoMin} meses` +
+      (periodoMin <= 6 ? ` &nbsp;·&nbsp; <span style="color:var(--danger)">🔴 +12m: ${n12}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟡 9-12m: ${n9}</span> &nbsp;·&nbsp; <span style="color:#ca8a04">🟠 6-9m: ${n6}</span>` : '') +
+      ` &nbsp;·&nbsp; Referência: ${hoje.toLocaleDateString('pt-BR')}`;
 
   if (!resultado.length) {
     cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum cliente sem compras neste período.</div>';
@@ -3796,7 +3808,14 @@ function renderSemCompras() {
   });
 
   // SEM DÍVIDA: dentro de cada grupo ordena por vendedor
-  const buildGruposSemDiv = (lista) => [
+  const buildGruposSemDiv = (lista) => modoUltimoMes ? [
+    { label: '🟡 1-2 meses', cor: '#ca8a04', bg: '#FEFCE8',
+      clientes: lista.filter(c => c.mesesSemComprar >= 1 && c.mesesSemComprar < 3).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
+    { label: '🟠 3-4 meses', cor: '#d97706', bg: '#FFFBEB',
+      clientes: lista.filter(c => c.mesesSemComprar >= 3 && c.mesesSemComprar < 5).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
+    { label: '🔴 5 meses', cor: '#c8102e', bg: '#FEF2F2',
+      clientes: lista.filter(c => c.mesesSemComprar >= 5 && c.mesesSemComprar < 6).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
+  ].filter(g => g.clientes.length > 0) : [
     { label: '🔴 Mais de 12 meses', cor: '#c8102e', bg: '#FEF2F2',
       clientes: lista.filter(c => c.mesesSemComprar >= 12).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
     { label: '🟠 Entre 9 e 12 meses', cor: '#d97706', bg: '#FFFBEB',
@@ -3821,8 +3840,12 @@ function renderSemCompras() {
         <tbody>
           ${lista.map((c, i) => {
             const div = scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)];
-            const faixaCor = c.mesesSemComprar >= 12 ? '#c8102e' : c.mesesSemComprar >= 9 ? '#d97706' : '#ca8a04';
-            const faixaBg  = c.mesesSemComprar >= 12 ? '#FEF2F2' : c.mesesSemComprar >= 9 ? '#FFFBEB' : '#FEFCE8';
+            const faixaCor = modoUltimoMes
+              ? (c.mesesSemComprar >= 5 ? '#c8102e' : c.mesesSemComprar >= 3 ? '#d97706' : '#ca8a04')
+              : (c.mesesSemComprar >= 12 ? '#c8102e' : c.mesesSemComprar >= 9 ? '#d97706' : '#ca8a04');
+            const faixaBg  = modoUltimoMes
+              ? (c.mesesSemComprar >= 5 ? '#FEF2F2' : c.mesesSemComprar >= 3 ? '#FFFBEB' : '#FEFCE8')
+              : (c.mesesSemComprar >= 12 ? '#FEF2F2' : c.mesesSemComprar >= 9 ? '#FFFBEB' : '#FEFCE8');
             return `<tr style="background:${i%2===0?'#fff':'#fafafa'}">
               <td class="col-vend">${c.vendedor||'—'}</td>
               <td class="col-code">${c.cod}</td>
@@ -3962,6 +3985,7 @@ async function exportSCExcel() {
   await ensureXLSX();
   const vendFilt   = document.getElementById('sc-vendedor')?.value || '';
   const periodoMin = parseInt(document.getElementById('sc-periodo')?.value || '6');
+  const modoUltimoMes = periodoMin === 1;
   const hoje = scDataRef || new Date();
 
   const rows = [['Vendedor','Cód.','Nome','CEP','Última Compra','Meses sem comprar','Faixa','Situação Dívida','Total Vencido (R$)']];
@@ -3970,8 +3994,14 @@ async function exportSCExcel() {
     const codNorm = normalizaCodSC(cli.cod);
     const ultimaCompra = getUltimaCompraFamilia(cli.cod);
     const meses = ultimaCompra ? Math.floor((hoje - ultimaCompra) / (1000*60*60*24*30.44)) : 999;
-    if (meses < periodoMin) continue;
-    const faixa = meses >= 12 ? '+12 meses' : meses >= 9 ? '9-12 meses' : '6-9 meses';
+    if (modoUltimoMes) {
+      if (meses < 1 || meses >= 6) continue;
+    } else if (meses < periodoMin) {
+      continue;
+    }
+    const faixa = modoUltimoMes
+      ? (meses >= 5 ? '5 meses' : meses >= 3 ? '3-4 meses' : '1-2 meses')
+      : (meses >= 12 ? '+12 meses' : meses >= 9 ? '9-12 meses' : '6-9 meses');
     const div = scDividasData[cli.cod] || scDividasData[normalizaCodSC(cli.cod)];
     const vencido = div ? div.vencido : 0;
     const lista = div ? 'Com divida' : 'Sem divida';
