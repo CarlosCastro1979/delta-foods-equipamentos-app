@@ -12,7 +12,8 @@ done
 
 echo "Delta Foods · Gestão de Equipamentos"
 echo "Local:  http://localhost:${PORT}/delta-foods-equipamentos-app/"
+echo "Bind:   0.0.0.0:${PORT} (all interfaces — use Cursor Ports forwarding)"
 echo "Online: https://carloscastro1979.github.io/delta-foods-equipamentos-app/"
 echo ""
 cd "$ROOT"
-exec python3 -m http.server "$PORT"
+exec python3 -m http.server "$PORT" --bind 0.0.0.0
