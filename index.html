@@ -197,6 +197,68 @@
   input::placeholder, textarea::placeholder { color: #94a3b8; }
   input:disabled, select:disabled, textarea:disabled { background: var(--surface2); color: var(--muted); cursor: not-allowed; }
 
+  /* Lead modal tabs */
+  .pros-tab-btn {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-main);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color var(--transition), border-color var(--transition);
+  }
+  .pros-tab-btn:hover { color: var(--text); }
+  .pros-tab-btn.pros-tab-active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .pros-tab-btn.pros-tab-hidden { display: none; }
+  .pros-tab-panel { max-height: 65vh; overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
+  #pg-cadastro-section, #pg-proposta-section { overflow: hidden; }
+  .pros-form-grid { display: grid; gap: 10px; }
+  .pros-form-grid > * { min-width: 0; }
+  .pros-form-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pros-form-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pros-form-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pros-form-grid-rua { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
+  .pros-modal-header-cafe {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px 14px;
+    flex-wrap: wrap;
+    padding: 6px 12px;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    min-width: 0;
+  }
+  .pros-modal-header-cafe-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .pros-modal-header-cafe-options {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .pros-modal-header-cafe-opt {
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+
   /* EQUIPAMENTOS */
   .equip-list { display: flex; flex-direction: column; gap: 10px; }
 
@@ -1928,325 +1990,36 @@ var _unused_placeholder = 1;
     <div id="pros-content"></div>
   </div>
 
-  <!-- MODAL CLIENTE GANHO -->
-  <div id="pros-ganho-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1100;overflow-y:auto;">
+  <!-- MODAL PROSPEÇÃO (Lead + Cadastro + Simulação) -->
+  <div id="pros-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;overflow-y:auto;" onclick="prosCloseModalOnBg(event)">
     <div style="background:var(--surface);border-radius:12px;max-width:780px;margin:30px auto;padding:28px;position:relative;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-        <div>
-          <h2 style="font-size:17px;font-weight:600;color:#16a34a;">✅ Cliente Ganho</h2>
-          <div id="pros-ganho-nome-label" style="font-size:13px;color:var(--muted);margin-top:2px;"></div>
-        </div>
-        <button onclick="prosGanhoFechar()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);">✕</button>
-      </div>
-
-      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-        <span style="font-size:13px;font-weight:600;color:var(--text);">É cliente de café?</span>
-        <div style="display:flex;gap:16px;">
-          <label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;">
-            <input type="radio" name="pg-cliente-cafe" id="pg-cliente-cafe-sim" value="sim" onchange="prosGanhoClienteCafeChange()"> Sim
-          </label>
-          <label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;">
-            <input type="radio" name="pg-cliente-cafe" id="pg-cliente-cafe-nao" value="nao" checked onchange="prosGanhoClienteCafeChange()"> Não
-          </label>
-        </div>
-      </div>
-
-      <div id="pg-cadastro-section" style="border:2px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:16px;">
-        <div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #e5e7eb;">Ficha de Cadastro</div>
-
-      <!-- SECÇÃO: Cabeçalho -->
-      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">CABEÇALHO</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Motivo</label>
-            <select id="pg-motivo" class="form-input" style="width:100%;font-size:13px;">
-              <option>Abertura de Cliente</option>
-              <option>Alteração de Cliente</option>
-              <option>Cancelamento de Cliente</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Empresa</label>
-            <select id="pg-empresa" class="form-input" style="width:100%;font-size:13px;" onchange="prosGanhoEmpresaChange()">
-              <option value="GN52 - Delta Foods Brasil">GN52 - Delta Foods Brasil</option>
-              <option value="GN53 - Q-Brasil">GN53 - Q-Brasil</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Grupo de Contas</label>
-            <select id="pg-grupo" class="form-input" style="width:100%;font-size:13px;">
-              <option>BR01 - Clientes PJ</option>
-              <option>BR02 - Clientes PF</option>
-            </select>
-          </div>
-        </div>
-        <!-- Campos automáticos -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-top:8px;">
-          <div>
-            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Dept. Comercial (auto)</label>
-            <div id="pg-dept" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
-          </div>
-          <div>
-            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Org. Vendas (auto)</label>
-            <div id="pg-org" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
-          </div>
-          <div>
-            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Escrit. Vendas (auto)</label>
-            <div id="pg-escrit" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
-          </div>
-          <div>
-            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Centro Fornecedor (auto)</label>
-            <div id="pg-centro" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- SECÇÃO: Dados Gerais -->
-      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">DADOS GERAIS</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Nome / Razão Social *</label>
-            <input type="text" id="pg-nome" class="form-input" style="width:100%;font-size:13px;">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CNPJ / CPF *</label>
-            <input type="text" id="pg-cnpj" class="form-input" style="width:100%;font-size:13px;" placeholder="00.000.000/0000-00">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Nome Fantasia</label>
-            <input type="text" id="pg-fantasia" class="form-input" style="width:100%;font-size:13px;">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Inscrição Estadual</label>
-            <input type="text" id="pg-ie" class="form-input" style="width:100%;font-size:13px;">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Email</label>
-            <input type="email" id="pg-email" class="form-input" style="width:100%;font-size:13px;" autocapitalize="none" autocorrect="off" spellcheck="false" oninput="prosNormalizeEmail(this)">
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <div>
-              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Tel. 1</label>
-              <input type="text" id="pg-tel1" class="form-input" style="width:100%;font-size:13px;">
-            </div>
-            <div>
-              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Tel. 2</label>
-              <input type="text" id="pg-tel2" class="form-input" style="width:100%;font-size:13px;">
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- SECÇÃO: Endereço -->
-      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">ENDEREÇO</div>
-        <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px;">
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Rua *</label>
-            <input type="text" id="pg-rua" class="form-input" style="width:100%;font-size:13px;">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Nro.</label>
-            <input type="text" id="pg-nro" class="form-input" style="width:100%;font-size:13px;">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Complemento</label>
-            <input type="text" id="pg-supl" class="form-input" style="width:100%;font-size:13px;">
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Bairro</label>
-            <input type="text" id="pg-bairro" class="form-input" style="width:100%;font-size:13px;">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CEP</label>
-            <input type="text" id="pg-cep" class="form-input" style="width:100%;font-size:13px;" placeholder="00000-000">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Cidade</label>
-            <input type="text" id="pg-cidade" class="form-input" style="width:100%;font-size:13px;" value="SÃO PAULO">
-          </div>
-        </div>
-      </div>
-
-      <!-- SECÇÃO: Área de Vendas -->
-      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
-        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">ÁREA DE VENDAS</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Canal Distribuição</label>
-            <select id="pg-canal" class="form-input" style="width:100%;font-size:13px;" onchange="prosGanhoCanalChange()">
-              <option value="00 - Grupo Nabeiro">00 - Grupo Nabeiro</option>
-              <option value="01 - Retalhista">01 - Retalhista</option>
-              <option value="03 - Delta Office">03 - Delta Office</option>
-              <option value="04 - Restauração" selected>04 - Restauração</option>
-              <option value="09 - E-commerce">09 - E-commerce</option>
-              <option value="12 - Balcão Geral">12 - Balcão Geral</option>
-              <option value="13 - Revendedores">13 - Revendedores</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Região (Estado)</label>
-            <select id="pg-regiao" class="form-input" style="width:100%;font-size:13px;" onchange="prosGanhoRegiaoChange()">
-              <option value="AC - Acre">AC - Acre</option><option value="AL - Alagoas">AL - Alagoas</option>
-              <option value="AM - Amazonas">AM - Amazonas</option><option value="AP - Amapá">AP - Amapá</option>
-              <option value="BA - Bahia">BA - Bahia</option><option value="CE - Ceará">CE - Ceará</option>
-              <option value="DF - Brasília">DF - Brasília</option><option value="ES - Espírito Santo">ES - Espírito Santo</option>
-              <option value="GO - Goiás">GO - Goiás</option><option value="MA - Maranhão">MA - Maranhão</option>
-              <option value="MG - Minas Gerais">MG - Minas Gerais</option><option value="MS - Mato Grosso do Sul">MS - Mato Grosso do Sul</option>
-              <option value="MT - Mato Grosso">MT - Mato Grosso</option><option value="PA - Pará">PA - Pará</option>
-              <option value="PB - Paraíba">PB - Paraíba</option><option value="PE - Pernambuco">PE - Pernambuco</option>
-              <option value="PI - Piauí">PI - Piauí</option><option value="PR - Paraná">PR - Paraná</option>
-              <option value="RJ - Rio de Janeiro">RJ - Rio de Janeiro</option><option value="RN - Rio Grande do Norte">RN - Rio Grande do Norte</option>
-              <option value="RO - Rondônia">RO - Rondônia</option><option value="RR - Roraima">RR - Roraima</option>
-              <option value="RS - Rio Grande do Sul">RS - Rio Grande do Sul</option><option value="SC - Santa Catarina">SC - Santa Catarina</option>
-              <option value="SE - Sergipe">SE - Sergipe</option><option value="SP - São Paulo" selected>SP - São Paulo</option>
-              <option value="TO - Tocantins">TO - Tocantins</option><option value="ZF - Zona Franca Manaus">ZF - Zona Franca Manaus</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Contrib. ICMS</label>
-            <select id="pg-icms" class="form-input" style="width:100%;font-size:13px;">
-              <option value="Z1 - Contribuinte ICMS">Z1 - Contribuinte ICMS</option>
-              <option value="Z2 - Isento sem I.E.">Z2 - Isento sem I.E.</option>
-              <option value="Z9 - Não Contribuinte de ICMS" selected>Z9 - Não Contribuinte de ICMS</option>
-            </select>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Cond. Pagamento</label>
-            <select id="pg-pagto" class="form-input" style="width:100%;font-size:13px;">
-              <option>BR07 - Até 7 dias s/ desconto</option>
-              <option>BR14 - 14 dias sem desconto</option>
-              <option>BR21 - 21 dias sem desconto</option>
-              <option>BR28 - 28 dias sem desconto</option>
-              <option selected>BR30 - 30 dias sem desconto</option>
-              <option>BR42 - 42 dias sem desconto</option>
-              <option>BR60 - 60 dias sem desconto</option>
-              <option>BR90 - 90 dias sem desconto</option>
-              <option>BR99 - Pronto Pagamento s/desconto</option>
-              <option>BRZ2 - Pagamento em 2x 30/60</option>
-              <option>BRZ3 - Pagamento em 3x 30/60/90</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Rota</label>
-            <select id="pg-rota" class="form-input" style="width:100%;font-size:13px;">
-              <option>0 - Rota 0</option><option>1 - Rota 1</option><option>2 - Rota 2</option>
-              <option selected>3 - Rota 3</option><option>4 - Rota 4</option><option>5 - Rota 5</option>
-              <option>6 - Rota 6</option><option>7 - Rota 7</option><option>8 - Rota 8</option><option>9 - Rota 9</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Equipe Vendas (auto)</label>
-            <div id="pg-equipe" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Esquema Fiscal (auto)</label>
-            <div id="pg-fiscal" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
-          </div>
-        </div>
-        <div style="margin-top:10px;">
-          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Vendedor</label>
-          <select id="pg-vendedor" class="form-input" style="width:100%;font-size:13px;"></select>
-        </div>
-        <div style="margin-top:10px;">
-          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Sector Industrial</label>
-          <select id="pg-sector" class="form-input" style="width:100%;font-size:13px;">
-            <option value="">— Selecionar —</option>
-            <option>1000 ( Canal:01 | CNPJ:Sim | I.E.:Sim | Revende:Sim )</option>
-            <option>2000 ( Canal:03 | CNPJ:Sim | I.E.:Sim | Revende:Consumidor Final )</option>
-            <option>3000 ( Canal:03 | CNPJ:Sim | I.E.:Não | Revende:Consumidor Final )</option>
-            <option>5000 ( Canal:04 | CNPJ:Sim | I.E.:Sim | Revende:Sim )</option>
-            <option>2000 ( Canal:09 | CNPJ:Sim | I.E.:Sim | Revende:Consumidor Final )</option>
-            <option>3000 ( Canal:09 | CNPJ:Sim | I.E.:Não | Revende:Consumidor Final )</option>
-            <option>3000 ( Canal:09 | CNPJ:Não | I.E.:Não | Revende:Consumidor Final )</option>
-            <option>2000 ( Canal:12 | CNPJ:Sim | I.E.:Sim | Revende:Consumidor Final )</option>
-            <option>3000 ( Canal:12 | CNPJ:Sim | I.E.:Não | Revende:Consumidor Final )</option>
-            <option>1000 ( Canal:13 | CNPJ:Sim | I.E.:Sim | Revende:Sim )</option>
-          </select>
-        </div>
-      </div>
-      </div><!-- /pg-cadastro-section -->
-
-      <div id="pg-proposta-section" style="display:none;border:2px solid #86efac;border-radius:10px;padding:16px;margin-bottom:16px;background:#f0fdf4;">
-        <div style="font-size:14px;font-weight:700;color:#16a34a;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #86efac;">Proposta de Negócio</div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Simulador em anexo no email (clientes de café)</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Tipo de negócio</label>
-            <select id="pg-prop-tipo" class="form-input" style="width:100%;font-size:13px;" onchange="propTipoChange()" oninput="propCalcular()">
-              <option value="Q">Delta Q (cápsulas)</option>
-              <option value="GRAO">Grão (kg)</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Produto / Lote</label>
-            <select id="pg-prop-produto" class="form-input" style="width:100%;font-size:13px;" onchange="propCalcular()" oninput="propCalcular()"></select>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Prazo contrato (meses)</label>
-            <input type="number" id="pg-prop-prazo" class="form-input" style="width:100%;font-size:13px;" value="36" min="0" oninput="propCalcular()">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;"><span id="pg-prop-qtd-label">Cápsulas</span> contratadas/mês</label>
-            <input type="number" id="pg-prop-qtdmes" class="form-input" style="width:100%;font-size:13px;" placeholder="0" min="0" oninput="propCalcular()">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Desconto NF (%)</label>
-            <input type="number" id="pg-prop-desconto" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" step="0.1" oninput="propCalcular()">
-          </div>
-        </div>
-        <div style="margin-bottom:10px;">
-          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Equipamentos (quantidade)</label>
-          <div id="pg-prop-equip-list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Xícaras Expresso</label>
-            <input type="number" id="pg-prop-xic-ex" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" oninput="propCalcular()">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Xícaras Cappuccino</label>
-            <input type="number" id="pg-prop-xic-cap" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" oninput="propCalcular()">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Outros invest. (R$/mês)</label>
-            <input type="number" id="pg-prop-outros" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" step="0.01" oninput="propCalcular()">
-          </div>
-          <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Rappel (%)</label>
-            <input type="number" id="pg-prop-rappel" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" step="0.1" oninput="propCalcular()">
-          </div>
-        </div>
-        <div id="pg-prop-preview" style="margin-top:12px;font-size:12px;color:var(--muted);"></div>
-      </div><!-- /pg-proposta-section -->
-
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px;">
-        <button class="btn btn-secondary" onclick="prosGanhoFechar()">Cancelar</button>
-        <button class="btn btn-primary" onclick="prosGanhoExportar()" style="background:#16a34a;border-color:#16a34a;">Criar ficha de Cadastro e Proposta de Negócio</button>
-      </div>
-      <div id="pg-autosave-hint" style="margin-top:8px;font-size:11px;color:var(--muted);text-align:right;">Alterações guardadas automaticamente</div>
-      <div id="pg-status" style="margin-top:4px;font-size:12px;text-align:right;"></div>
-    </div>
-  </div>
-
-  <!-- MODAL PROSPEÇÃO -->
-  <div id="pros-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;overflow-y:auto;">
-    <div style="background:var(--surface);border-radius:12px;max-width:640px;margin:40px auto;padding:28px;position:relative;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-        <div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+        <div style="flex:0 0 auto;">
           <h2 id="pros-modal-title" style="font-size:17px;font-weight:600;">Novo Lead</h2>
           <div id="pros-autosave-hint" style="font-size:11px;color:var(--muted);margin-top:2px;">Alterações guardadas automaticamente</div>
         </div>
-        <button onclick="prosCloseModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);">✕</button>
+        <div id="pros-modal-header-cafe" class="pros-modal-header-cafe">
+          <span class="pros-modal-header-cafe-label">Cliente para Compra de Café?</span>
+          <div class="pros-modal-header-cafe-options">
+            <label class="pros-modal-header-cafe-opt">
+              <input type="radio" name="pg-cliente-cafe" id="pg-cliente-cafe-sim" value="sim" onchange="prosGanhoClienteCafeChange()"> Sim
+            </label>
+            <label class="pros-modal-header-cafe-opt">
+              <input type="radio" name="pg-cliente-cafe" id="pg-cliente-cafe-nao" value="nao" checked onchange="prosGanhoClienteCafeChange()"> Não
+            </label>
+          </div>
+        </div>
+        <button onclick="prosCloseModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);flex:0 0 auto;margin-left:auto;">✕</button>
       </div>
+
+      <div id="pros-tab-bar" style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;margin-bottom:18px;">
+        <button type="button" id="pros-tab-btn-lead" class="pros-tab-btn pros-tab-active" onclick="prosSwitchTab('lead')">Lead</button>
+        <button type="button" id="pros-tab-btn-cadastro" class="pros-tab-btn" onclick="prosSwitchTab('cadastro')">Fichas de Cadastro</button>
+        <button type="button" id="pros-tab-btn-simulacao" class="pros-tab-btn" onclick="prosSwitchTab('simulacao')">Simulação de Negócio</button>
+      </div>
+
+      <!-- TAB: Lead -->
+      <div id="pros-tab-lead" class="pros-tab-panel">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
         <div style="grid-column:1/-1;">
           <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Razão Social *</label>
@@ -2340,11 +2113,275 @@ var _unused_placeholder = 1;
         <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;">HISTÓRICO</div>
         <div id="pros-modal-hist-list" style="max-height:200px;overflow-y:auto;"></div>
       </div>
-      <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap;">
-        <button class="btn btn-secondary" onclick="prosCloseModal()">Cancelar</button>
-        <button id="pros-btn-cadastro" class="btn" onclick="prosModalAbrirCadastro()" style="display:none;background:#16a34a;color:#fff;border-color:#16a34a;">📋 Cadastro e Proposta</button>
-        <button class="btn btn-primary" onclick="prosSave()">Guardar</button>
+      <div id="pros-lead-export-wrap" style="margin-top:16px;display:none;">
+        <button id="pros-btn-export-email" class="btn" onclick="prosEnviarEmailExportar()" style="width:100%;background:#16a34a;color:#fff;border-color:#16a34a;padding:10px 16px;">✉ Enviar email e exportar documentos</button>
       </div>
+      </div><!-- /pros-tab-lead -->
+
+      <!-- TAB: Fichas de Cadastro -->
+      <div id="pros-tab-cadastro" class="pros-tab-panel" style="display:none;">
+      <div id="pg-cadastro-section" style="border:2px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:0;">
+        <div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #e5e7eb;">Ficha de Cadastro</div>
+
+      <!-- SECÇÃO: Cabeçalho -->
+      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">CABEÇALHO</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Motivo</label>
+            <select id="pg-motivo" class="form-input" style="width:100%;font-size:13px;">
+              <option>Abertura de Cliente</option>
+              <option>Alteração de Cliente</option>
+              <option>Cancelamento de Cliente</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Empresa</label>
+            <select id="pg-empresa" class="form-input" style="width:100%;font-size:13px;" onchange="prosGanhoEmpresaChange()">
+              <option value="GN52 - Delta Foods Brasil">GN52 - Delta Foods Brasil</option>
+              <option value="GN53 - Q-Brasil">GN53 - Q-Brasil</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Grupo de Contas</label>
+            <select id="pg-grupo" class="form-input" style="width:100%;font-size:13px;">
+              <option>BR01 - Clientes PJ</option>
+              <option>BR02 - Clientes PF</option>
+            </select>
+          </div>
+        </div>
+        <!-- Campos automáticos -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-top:8px;">
+          <div>
+            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Dept. Comercial (auto)</label>
+            <div id="pg-dept" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Org. Vendas (auto)</label>
+            <div id="pg-org" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Escrit. Vendas (auto)</label>
+            <div id="pg-escrit" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:2px;">Centro Fornecedor (auto)</label>
+            <div id="pg-centro" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECÇÃO: Dados Gerais -->
+      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">DADOS GERAIS</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Nome / Razão Social *</label>
+            <input type="text" id="pg-nome" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CNPJ / CPF *</label>
+            <input type="text" id="pg-cnpj" class="form-input" style="width:100%;font-size:13px;" placeholder="00.000.000/0000-00">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Nome Fantasia</label>
+            <input type="text" id="pg-fantasia" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Inscrição Estadual</label>
+            <input type="text" id="pg-ie" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Email</label>
+            <input type="email" id="pg-email" class="form-input" style="width:100%;font-size:13px;" autocapitalize="none" autocorrect="off" spellcheck="false" oninput="prosNormalizeEmail(this)">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Tel. 1</label>
+              <input type="text" id="pg-tel1" class="form-input" style="width:100%;font-size:13px;">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Tel. 2</label>
+              <input type="text" id="pg-tel2" class="form-input" style="width:100%;font-size:13px;">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECÇÃO: Endereço -->
+      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">ENDEREÇO</div>
+        <div class="pros-form-grid pros-form-grid-rua" style="margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Rua *</label>
+            <input type="text" id="pg-rua" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Nro.</label>
+            <input type="text" id="pg-nro" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Complemento</label>
+            <input type="text" id="pg-supl" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+        </div>
+        <div class="pros-form-grid pros-form-grid-3">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Bairro</label>
+            <input type="text" id="pg-bairro" class="form-input" style="width:100%;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">CEP</label>
+            <input type="text" id="pg-cep" class="form-input" style="width:100%;font-size:13px;" placeholder="00000-000">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Cidade</label>
+            <input type="text" id="pg-cidade" class="form-input" style="width:100%;font-size:13px;" value="SÃO PAULO">
+          </div>
+        </div>
+      </div>
+
+      <!-- SECÇÃO: Área de Vendas -->
+      <div style="background:#f8f8f8;border-radius:8px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;letter-spacing:.5px;">ÁREA DE VENDAS</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Canal Distribuição</label>
+            <select id="pg-canal" class="form-input" style="width:100%;font-size:13px;" onchange="prosGanhoCanalChange()">
+              <option value="00 - Grupo Nabeiro">00 - Grupo Nabeiro</option>
+              <option value="01 - Retalhista">01 - Retalhista</option>
+              <option value="03 - Delta Office">03 - Delta Office</option>
+              <option value="04 - Restauração" selected>04 - Restauração</option>
+              <option value="13 - Revendedores">13 - Revendedores</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Região (Estado)</label>
+            <select id="pg-regiao" class="form-input" style="width:100%;font-size:13px;" onchange="prosGanhoRegiaoChange()">
+              <option value="AC - Acre">AC - Acre</option><option value="AL - Alagoas">AL - Alagoas</option>
+              <option value="AM - Amazonas">AM - Amazonas</option><option value="AP - Amapá">AP - Amapá</option>
+              <option value="BA - Bahia">BA - Bahia</option><option value="CE - Ceará">CE - Ceará</option>
+              <option value="DF - Brasília">DF - Brasília</option><option value="ES - Espírito Santo">ES - Espírito Santo</option>
+              <option value="GO - Goiás">GO - Goiás</option><option value="MA - Maranhão">MA - Maranhão</option>
+              <option value="MG - Minas Gerais">MG - Minas Gerais</option><option value="MS - Mato Grosso do Sul">MS - Mato Grosso do Sul</option>
+              <option value="MT - Mato Grosso">MT - Mato Grosso</option><option value="PA - Pará">PA - Pará</option>
+              <option value="PB - Paraíba">PB - Paraíba</option><option value="PE - Pernambuco">PE - Pernambuco</option>
+              <option value="PI - Piauí">PI - Piauí</option><option value="PR - Paraná">PR - Paraná</option>
+              <option value="RJ - Rio de Janeiro">RJ - Rio de Janeiro</option><option value="RN - Rio Grande do Norte">RN - Rio Grande do Norte</option>
+              <option value="RO - Rondônia">RO - Rondônia</option><option value="RR - Roraima">RR - Roraima</option>
+              <option value="RS - Rio Grande do Sul">RS - Rio Grande do Sul</option><option value="SC - Santa Catarina">SC - Santa Catarina</option>
+              <option value="SE - Sergipe">SE - Sergipe</option><option value="SP - São Paulo" selected>SP - São Paulo</option>
+              <option value="TO - Tocantins">TO - Tocantins</option><option value="ZF - Zona Franca Manaus">ZF - Zona Franca Manaus</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Contrib. ICMS</label>
+            <select id="pg-icms" class="form-input" style="width:100%;font-size:13px;">
+              <option value="Z1 - Contribuinte ICMS">Z1 - Contribuinte ICMS</option>
+              <option value="Z2 - Isento sem I.E.">Z2 - Isento sem I.E.</option>
+              <option value="Z9 - Não Contribuinte de ICMS" selected>Z9 - Não Contribuinte de ICMS</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Cond. Pagamento</label>
+            <select id="pg-pagto" class="form-input" style="width:100%;font-size:13px;"></select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Rota</label>
+            <select id="pg-rota" class="form-input" style="width:100%;font-size:13px;">
+              <option>0 - Rota 0</option><option>1 - Rota 1</option><option>2 - Rota 2</option>
+              <option selected>3 - Rota 3</option><option>4 - Rota 4</option><option>5 - Rota 5</option>
+              <option>6 - Rota 6</option><option>7 - Rota 7</option><option>8 - Rota 8</option><option>9 - Rota 9</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Equipe Vendas (auto)</label>
+            <div id="pg-equipe" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Esquema Fiscal (auto)</label>
+            <div id="pg-fiscal" style="font-size:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;color:#6b7280;"></div>
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Vendedor</label>
+          <select id="pg-vendedor" class="form-input" style="width:100%;font-size:13px;"></select>
+        </div>
+        <div style="margin-top:10px;">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Sector Industrial</label>
+          <select id="pg-sector" class="form-input" style="width:100%;font-size:13px;">
+            <option value="">— Selecionar —</option>
+            <option>1000 ( Canal:01 | CNPJ:Sim | I.E.:Sim | Revende:Sim )</option>
+            <option>2000 ( Canal:03 | CNPJ:Sim | I.E.:Sim | Revende:Consumidor Final )</option>
+            <option>3000 ( Canal:03 | CNPJ:Sim | I.E.:Não | Revende:Consumidor Final )</option>
+            <option>5000 ( Canal:04 | CNPJ:Sim | I.E.:Sim | Revende:Sim )</option>
+            <option>1000 ( Canal:13 | CNPJ:Sim | I.E.:Sim | Revende:Sim )</option>
+          </select>
+        </div>
+      </div>
+      </div><!-- /pg-cadastro-section -->
+      </div><!-- /pros-tab-cadastro -->
+
+      <!-- TAB: Simulação de Negócio -->
+      <div id="pros-tab-simulacao" class="pros-tab-panel" style="display:none;">
+      <div id="pg-proposta-section" style="border:2px solid #86efac;border-radius:10px;padding:16px;margin-bottom:0;background:#f0fdf4;">
+        <div style="font-size:14px;font-weight:700;color:#16a34a;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #86efac;">Simulação de Negócio</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Simulador em anexo no email (clientes de café)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Tipo de negócio</label>
+            <select id="pg-prop-tipo" class="form-input" style="width:100%;font-size:13px;" onchange="propTipoChange()" oninput="propCalcular()">
+              <option value="Q">Delta Q (cápsulas)</option>
+              <option value="GRAO">Grão (kg)</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Produto / Lote</label>
+            <select id="pg-prop-produto" class="form-input" style="width:100%;font-size:13px;" onchange="propCalcular()" oninput="propCalcular()"></select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Prazo contrato (meses)</label>
+            <input type="number" id="pg-prop-prazo" class="form-input" style="width:100%;font-size:13px;" value="36" min="0" oninput="propCalcular()">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;"><span id="pg-prop-qtd-label">Cápsulas</span> contratadas/mês</label>
+            <input type="number" id="pg-prop-qtdmes" class="form-input" style="width:100%;font-size:13px;" placeholder="0" min="0" oninput="propCalcular()">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Desconto NF (%)</label>
+            <input type="number" id="pg-prop-desconto" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" step="0.1" oninput="propCalcular()">
+          </div>
+        </div>
+        <div style="margin-bottom:10px;">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Equipamentos (quantidade)</label>
+          <div id="pg-prop-equip-list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Xícaras Expresso</label>
+            <input type="number" id="pg-prop-xic-ex" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" oninput="propCalcular()">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Xícaras Cappuccino</label>
+            <input type="number" id="pg-prop-xic-cap" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" oninput="propCalcular()">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Outros invest. (R$/mês)</label>
+            <input type="number" id="pg-prop-outros" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" step="0.01" oninput="propCalcular()">
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Rappel (%)</label>
+            <input type="number" id="pg-prop-rappel" class="form-input" style="width:100%;font-size:13px;" value="0" min="0" step="0.1" oninput="propCalcular()">
+          </div>
+        </div>
+        <div id="pg-prop-preview" style="margin-top:12px;font-size:12px;color:var(--muted);"></div>
+      </div><!-- /pg-proposta-section -->
+      </div><!-- /pros-tab-simulacao -->
+
       <div id="pros-modal-status" style="margin-top:10px;font-size:12px;text-align:right;"></div>
     </div>
   </div>
@@ -7280,6 +7317,10 @@ let prosGanhoAutoSaveTimer = null;
 let prosGanhoAutoSaveAbort = null;
 let prosGanhoAutoSaveReady = false;
 let prosGanhoLastSnapshot = '';
+let prosCadastroJsonUnavailable = false;
+let prosActiveTab = 'lead';
+let prosFieldSyncLock = false;
+let prosFieldSyncAbort = null;
 const PROS_AUTOSAVE_FIELDS = ['nome','contato','vendedor','segmento','regiao','cnpj','celular','email','estado','marca','marca-outro','preco','caps','kg','acao','data-acao'];
 const PROS_CADASTRO_OBRIGATORIOS = [
   ['nome', 'Nome / Razão Social'], ['cnpj', 'CNPJ / CPF'], ['fantasia', 'Nome Fantasia'],
@@ -7297,6 +7338,160 @@ const PROS_CADASTRO_AUTOSAVE_IDS = [
   'pg-vendedor','pg-sector','pg-prop-tipo','pg-prop-produto','pg-prop-prazo','pg-prop-qtdmes','pg-prop-desconto',
   'pg-prop-xic-ex','pg-prop-xic-cap','pg-prop-outros','pg-prop-rappel',
 ];
+
+const PROS_FIELD_SYNC_PAIRS = [
+  { lead: 'pros-f-nome', cadastro: 'pg-nome' },
+  { lead: 'pros-f-cnpj', cadastro: 'pg-cnpj' },
+  { lead: 'pros-f-email', cadastro: 'pg-email' },
+  { lead: 'pros-f-celular', cadastro: 'pg-tel1' },
+];
+
+function prosCadastroLeadId() { return prosEditId || prosGanhoLeadId; }
+
+function prosFmtSupabaseErr(msg) {
+  const m = String(msg || '');
+  if (/cadastro_json/i.test(m) && /schema cache|could not find|column|coluna/i.test(m)) {
+    return 'Coluna cadastro_json em falta na base de dados. Contacte o administrador.';
+  }
+  return m;
+}
+
+function prosSwitchTab(tab) {
+  prosActiveTab = tab;
+  ['lead', 'cadastro', 'simulacao'].forEach(t => {
+    const panel = document.getElementById('pros-tab-' + t);
+    const btn = document.getElementById('pros-tab-btn-' + t);
+    if (panel) panel.style.display = t === tab ? 'block' : 'none';
+    if (btn) btn.classList.toggle('pros-tab-active', t === tab);
+  });
+}
+
+function prosIsClienteCafe() {
+  return document.getElementById('pg-cliente-cafe-sim')?.checked === true;
+}
+
+function prosExibirErroSimulacaoNegocio(emFalta) {
+  prosSwitchTab('simulacao');
+  const propIdMap = {
+    'Produto / Lote': 'pg-prop-produto',
+    'Prazo contrato (meses)': 'pg-prop-prazo',
+    'Quantidade contratada/mês': 'pg-prop-qtdmes',
+  };
+  const primeiro = document.getElementById(propIdMap[emFalta[0]] || 'pg-prop-produto');
+  if (primeiro) { primeiro.focus(); primeiro.style.borderColor = 'var(--danger)'; }
+  const st = document.getElementById('pros-modal-status');
+  const detalhe = emFalta.length ? ` — preenche: ${emFalta.join(', ')}` : '';
+  if (st) st.innerHTML = `<span style="color:var(--danger)">Simulação de negócio obrigatória${detalhe}.</span>`;
+  toast('Simulação de negócio obrigatória', 'error');
+}
+
+function prosUpdateSimulacaoTabVisibility() {
+  const isCafe = prosIsClienteCafe();
+  const btn = document.getElementById('pros-tab-btn-simulacao');
+  const panel = document.getElementById('pros-tab-simulacao');
+  if (btn) btn.classList.toggle('pros-tab-hidden', !isCafe);
+  if (panel && !isCafe) {
+    panel.style.display = 'none';
+    if (prosActiveTab === 'simulacao') prosSwitchTab('lead');
+  }
+}
+
+function prosUpdateLeadExportButton() {
+  const wrap = document.getElementById('pros-lead-export-wrap');
+  const estado = document.getElementById('pros-f-estado')?.value;
+  if (wrap) wrap.style.display = (estado === 'ganho' && prosEditId) ? 'block' : 'none';
+}
+
+function prosSyncFieldValue(fromId, toId, direction) {
+  const from = document.getElementById(fromId);
+  const to = document.getElementById(toId);
+  if (!from || !to || from === to) return;
+  let val = from.value;
+  if (fromId === 'pros-f-email' || toId === 'pg-email') val = val.toLowerCase();
+  if (to.value !== val) {
+    prosFieldSyncLock = true;
+    to.value = val;
+    if (direction === 'lead-to-cad' && toId === 'pg-nome') {
+      const fant = document.getElementById('pg-fantasia');
+      if (fant && !fant.value.trim()) fant.value = val;
+    }
+    if (direction === 'lead-to-cad' && toId === 'pg-vendedor') {
+      const vendLead = document.getElementById('pros-f-vendedor')?.value;
+      const sapVend = PG_VENDEDOR_SAP[vendLead] || '';
+      if (sapVend) {
+        for (const opt of to.options) { if (opt.value === sapVend) { to.value = sapVend; break; } }
+      }
+    }
+    prosFieldSyncLock = false;
+    if (direction === 'lead-to-cad' && prosGanhoAutoSaveReady && prosCadastroLeadId()) {
+      scheduleProsGanhoAutoSave(500);
+    }
+  }
+}
+
+function prosInitFieldSync() {
+  if (prosFieldSyncAbort) prosFieldSyncAbort.abort();
+  prosFieldSyncAbort = new AbortController();
+  const { signal } = prosFieldSyncAbort;
+  const overlay = document.getElementById('pros-modal-overlay');
+  if (!overlay) return;
+  PROS_FIELD_SYNC_PAIRS.forEach(({ lead, cadastro }) => {
+    const leadEl = document.getElementById(lead);
+    const cadEl = document.getElementById(cadastro);
+    if (leadEl) {
+      const syncToCad = () => { if (!prosFieldSyncLock) prosSyncFieldValue(lead, cadastro, 'lead-to-cad'); };
+      leadEl.addEventListener('input', syncToCad, { signal });
+      leadEl.addEventListener('change', syncToCad, { signal });
+    }
+    if (cadEl) {
+      const syncToLead = () => { if (!prosFieldSyncLock) prosSyncFieldValue(cadastro, lead, 'cad-to-lead'); };
+      cadEl.addEventListener('input', syncToLead, { signal });
+      cadEl.addEventListener('change', syncToLead, { signal });
+    }
+  });
+  const vendLead = document.getElementById('pros-f-vendedor');
+  if (vendLead) {
+    vendLead.addEventListener('change', () => {
+      if (!prosFieldSyncLock) {
+        const sapVend = PG_VENDEDOR_SAP[vendLead.value] || '';
+        const pgVend = document.getElementById('pg-vendedor');
+        if (pgVend && sapVend) {
+          for (const opt of pgVend.options) { if (opt.value === sapVend) { pgVend.value = sapVend; break; } }
+        }
+      }
+    }, { signal });
+  }
+}
+
+function prosTeardownFieldSync() {
+  if (prosFieldSyncAbort) { prosFieldSyncAbort.abort(); prosFieldSyncAbort = null; }
+}
+
+function prosLoadCadastroIntoForm(p) {
+  const lead = p || (prosEditId ? prosFindById(prosEditId) : null);
+  const cad = (lead?.cadastro_json && typeof lead.cadastro_json === 'object') ? lead.cadastro_json : null;
+  if (cad && Object.keys(cad).length) {
+    prosCadastroApplyToForm(cad, lead);
+  } else if (lead) {
+    document.getElementById('pg-nome').value = lead.nome || '';
+    document.getElementById('pg-cnpj').value = lead.cnpj || '';
+    document.getElementById('pg-fantasia').value = lead.nome || '';
+    document.getElementById('pg-email').value = (lead.email || '').toLowerCase();
+    document.getElementById('pg-tel1').value = lead.celular || '';
+    document.getElementById('pg-cliente-cafe-sim').checked = false;
+    document.getElementById('pg-cliente-cafe-nao').checked = true;
+    prosGanhoEmpresaChange();
+    prosGanhoRegiaoChange();
+    propTipoChange();
+    const sapVend = PG_VENDEDOR_SAP[lead.vendedor] || '';
+    if (sapVend) {
+      const sel = document.getElementById('pg-vendedor');
+      if (sel) for (const opt of sel.options) { if (opt.value === sapVend) { sel.value = sapVend; break; } }
+    }
+  }
+  prosGanhoClienteCafeChange();
+  prosUpdateSimulacaoTabVisibility();
+}
 
 function prosCnpjMask(el) {
   const v = el.value.replace(/\D/g, '').slice(0, 14);
@@ -7650,8 +7845,7 @@ function renderProsList(cont, dados) {
 }
 
 function prosOnEstadoChange(val) {
-  const b = document.getElementById('pros-btn-cadastro');
-  if (b) b.style.display = val === 'ganho' ? 'inline-flex' : 'none';
+  prosUpdateLeadExportButton();
   if (val === 'ganho') {
     const pRef = prosEditId ? prosFindById(prosEditId) : {};
     const merged = prosCadastroMergedFromLead({
@@ -7666,7 +7860,7 @@ function prosOnEstadoChange(val) {
     if (missing.length) {
       const st = document.getElementById('pros-modal-status');
       if (st) {
-        st.innerHTML = `<span style="color:var(--muted)">Preenche a ficha de cadastro (botão abaixo). Faltam: ${missing.join(', ')}.</span>`;
+        st.innerHTML = `<span style="color:var(--muted)">Preenche a ficha de cadastro (separador Fichas de Cadastro). Faltam: ${missing.join(', ')}.</span>`;
       }
     }
   }
@@ -7849,9 +8043,13 @@ function teardownProsAutoSave() {
 }
 
 function prosOpenModal() {
+  prosCadastroJsonUnavailable = false;
   prosEditId = null;
+  prosGanhoLeadId = null;
   prosHistTodayId = null;
   prosSavedNota = '';
+  prosActiveTab = 'lead';
+  prosSwitchTab('lead');
   document.getElementById('pros-modal-title').textContent = 'Novo Lead';
   ['nome','contato','cnpj','celular','email','acao'].forEach(f => document.getElementById('pros-f-'+f).value = '');
   ['preco','caps','kg'].forEach(f => document.getElementById('pros-f-'+f).value = '');
@@ -7864,15 +8062,29 @@ function prosOpenModal() {
   document.getElementById('pros-f-estado').value = 'identificado';
   document.getElementById('pros-modal-hist').style.display = 'none';
   document.getElementById('pros-modal-status').textContent = '';
+  document.getElementById('pg-cliente-cafe-sim').checked = false;
+  document.getElementById('pg-cliente-cafe-nao').checked = true;
+  prosGanhoClienteCafeChange();
+  ['pg-nome','pg-cnpj','pg-fantasia','pg-email','pg-tel1','pg-rua','pg-nro','pg-bairro','pg-cep'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('pg-cidade').value = 'SÃO PAULO';
+  prosUpdateLeadExportButton();
   document.getElementById('pros-modal-overlay').style.display = 'block';
   initProsAutoSave();
+  initProsGanhoAutoSave();
+  prosInitFieldSync();
   setTimeout(()=>document.getElementById('pros-f-nome').focus(), 100);
 }
 
-async function prosOpenEdit(id) {
+async function prosOpenEdit(id, initialTab) {
   const p = prosFindById(id);
   if (!p) return;
+  prosCadastroJsonUnavailable = false;
   prosEditId = p.id;
+  prosGanhoLeadId = p.id;
+  prosActiveTab = initialTab || 'lead';
+  prosSwitchTab(prosActiveTab);
   document.getElementById('pros-modal-title').textContent = 'Editar Lead';
   document.getElementById('pros-f-nome').value      = p.nome || '';
   document.getElementById('pros-f-contato').value   = p.contacto || '';
@@ -7916,15 +8128,47 @@ async function prosOpenEdit(id) {
   }
 
   document.getElementById('pros-f-estado').value = estadoAtual;
-  const btnCad = document.getElementById('pros-btn-cadastro');
-  if (btnCad) btnCad.style.display = (estadoAtual === 'ganho') ? 'inline-flex' : 'none';
+  prosUpdateLeadExportButton();
+
+  // Carregar cadastro / simulação
+  let leadFresh = p;
+  try {
+    const resCad = await fetch(PROS_URL + `?id=eq.${p.id}&select=*`, { headers: HEADERS });
+    if (resCad.ok) {
+      const rows = await resCad.json();
+      if (rows[0]) {
+        leadFresh = rows[0];
+        const idx = prosData.findIndex(x => String(x.id) === String(p.id));
+        if (idx >= 0) prosData[idx] = { ...prosData[idx], ...leadFresh };
+      }
+    }
+  } catch (e) {}
+  prosLoadCadastroIntoForm(leadFresh);
+  PROS_FIELD_SYNC_PAIRS.forEach(({ lead, cadastro }) => prosSyncFieldValue(lead, cadastro, 'lead-to-cad'));
 
   document.getElementById('pros-modal-overlay').style.display = 'block';
   initProsAutoSave();
+  initProsGanhoAutoSave();
+  prosInitFieldSync();
 }
 
-function prosCloseModal() {
+function prosCloseModalOnBg(e) {
+  if (e.target === document.getElementById('pros-modal-overlay')) prosCloseModal();
+}
+
+async function prosCloseModal() {
+  clearTimeout(prosAutoSaveTimer);
+  clearTimeout(prosGanhoAutoSaveTimer);
+  if (prosAutoSaveReady && prosCanAutoSave() && prosFormSnapshot() !== prosLastSavedSnapshot) {
+    await prosSave({ keepOpen: true, autosave: true });
+  }
+  if (prosCadastroLeadId() && prosFormSnapshotGanho() !== prosGanhoLastSnapshot) {
+    await prosSaveCadastroJson({ silent: true });
+  }
   teardownProsAutoSave();
+  teardownProsGanhoAutoSave();
+  prosTeardownFieldSync();
+  prosGanhoLeadId = null;
   document.getElementById('pros-modal-overlay').style.display = 'none';
 }
 
@@ -7961,7 +8205,7 @@ async function prosSave(opts = {}) {
     const missingCad = prosValidarCadastroObrigatorio(merged);
     if (missingCad.length) {
       ganhoCadastroIncompleto = true;
-      const msg = `Cadastro SAP incompleto — usa "Cadastro e Proposta": ${missingCad.join(', ')}.`;
+      const msg = `Cadastro SAP incompleto — completa o separador Fichas de Cadastro: ${missingCad.join(', ')}.`;
       if (autosave) prosSetAutoSaveStatus('✅ Ganho guardado — completa ficha de cadastro', 'var(--muted)');
       else st.innerHTML = `<span style="color:var(--danger)">${msg}</span>`;
     }
@@ -8034,12 +8278,15 @@ async function prosSave(opts = {}) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const criado = await res.json();
       prosEditId = criado[0]?.id;
+      prosGanhoLeadId = prosEditId;
     }
 
     const mudouEstado = estadoAnterior !== null && estadoAnterior !== estadoFinal;
     if (prosEditId) {
       await prosUpsertHistorico(prosEditId, { estadoAnterior, estado: estadoFinal, nota, mudouEstado });
     }
+
+    prosUpdateLeadExportButton();
 
     if (autosave) {
       if (!ganhoCadastroIncompleto) prosSetAutoSaveStatus('✅ Guardado automaticamente', '#16a34a');
@@ -8062,11 +8309,9 @@ const CADASTRO_TEMPLATE_B64 = 'UEsDBBQABgAIAAAAIQCr2N8t7AEAAGQHAAATAAgCW0NvbnRlb
 
 const PG_VENDEDORES = {
   'GN52_00': [],
-  'GN52_01': ['99520009 - GORGA Varejo MARCIO','99520018 - DIOGO OLIVEIRA'],
-  'GN52_03': ['99520005 - OFFICE Marcio','99520015 - HELCIO GRECIO - OFFICE','99520016 - DANIELA SANTOS - OFFICE','99520017 - FONTES PAULO - OFFICE','99520019 - Neves Office Filipe'],
+  'GN52_01': ['99520009 - GORGA Varejo MARCIO','99520018 - DIOGO OLIVEIRA','99520001 - GORGA Ecommerce MÁRCIO'],
+  'GN52_03': ['99520005 - OFFICE Marcio','99520015 - HELCIO GRECIO - OFFICE','99520016 - DANIELA SANTOS - OFFICE','99520017 - FONTES PAULO - OFFICE','99520019 - Neves Office Filipe','99520011 - Institucional Balcão','99520012 - Gorga Inst Marcio'],
   'GN52_04': ['99520002 - GREGIO HELCIO','99520006 - DANIELA SANTOS','99520007 - Fontes Paulo','99520010 - Neves Filipe'],
-  'GN52_09': ['99520001 - GORGA Ecommerce MÁRCIO'],
-  'GN52_12': ['99520011 - Institucional Balcão','99520012 - Gorga Inst Marcio'],
   'GN52_13': ['99520003 - BOTTELLO MASSIMO','99520004 - OLIVEIRA Distribuidores DIOGO','99520008 - GORGA Sellers MÁRCIO'],
   'GN53_01': ['99530001 - OLIVEIRA Var QB DIOGO'],
   'GN53_13': ['99530002 - BOTTELLO QBRASIL MASSIMO','99530003 - Cafetaria Marcio','99530005 - Distr Varejo QB Diogo'],
@@ -8076,10 +8321,75 @@ const PG_EQUIPE_CANAL = {
   '01': 'RT1 - Equipa 1-retalho',
   '03': 'GRP - Vendedor GRUPO',
   '04': 'HR1 - Equipa 1-restauração',
-  '09': 'VIT - Vendas Internet',
-  '12': 'VCB - Balcão Geral',
   '13': 'HBN - Revendedor Nacional',
 };
+
+const PRAZOS_PAGAMENTO = {
+  BR00: 'Pronto PAG',
+  BRD1: '14 DIAS', BRD2: '21 DIAS', BRD3: '30 DIAS', BRD4: '45 DIAS',
+  BRD5: '60 DIAS', BRD6: '90 DIAS', BRD7: '120 DIAS', BRD9: '14/21/28',
+  BRE1: '30/60/90', BRE2: '60/90', BRE3: '60/90/120',
+  BR30: '30 DIAS', BR45: '45 DIAS', BR60: '60 DIAS', BR90: '90 DIAS', BR120: '120 DIAS',
+};
+
+const PRAZOS_POR_CANAL = {
+  '00': ['BR00', 'BR30', 'BR45', 'BR60', 'BR90', 'BR120'],
+  '01': ['BR00', 'BR30', 'BR45', 'BR60', 'BR90', 'BR120'],
+  '03': ['BR00', 'BRD1', 'BRD2', 'BRD3', 'BRD4', 'BRD9', 'BRE1'],
+  '04': ['BR00', 'BRD1', 'BRD2', 'BRD3', 'BRD4', 'BRD9', 'BRE1'],
+  '13': ['BR00', 'BRD3', 'BRD4', 'BRD5', 'BRD6', 'BRD7', 'BRE1', 'BRE2', 'BRE3'],
+};
+
+const PRAZO_PAGTO_LEGACY = {
+  BR99: 'BR00', BR07: 'BRD1', BR14: 'BRD1', BR21: 'BRD2', BR28: 'BRD9',
+  BR42: 'BRD4', BRZ2: 'BRE1', BRZ3: 'BRE1',
+};
+
+function prazoPagtoLabel(code) {
+  return `${code} - ${PRAZOS_PAGAMENTO[code] || code}`;
+}
+
+function prosCanalCodFromSelect(val) {
+  return String(val || '').substring(0, 2);
+}
+
+function prosMigrarCanalLegacy(canalVal) {
+  const cod = prosCanalCodFromSelect(canalVal);
+  if (cod === '09') return '01 - Retalhista';
+  if (cod === '12') return '03 - Delta Office';
+  return canalVal || '';
+}
+
+function prosDefaultPagtoForCanal(canalCod) {
+  const codes = PRAZOS_POR_CANAL[canalCod] || PRAZOS_POR_CANAL['04'];
+  const code = codes.includes('BRD3') ? 'BRD3' : (codes.includes('BR30') ? 'BR30' : codes[0]);
+  return prazoPagtoLabel(code);
+}
+
+function prosResolvePagtoForCanal(savedPagto, canalCod) {
+  const codes = PRAZOS_POR_CANAL[canalCod] || PRAZOS_POR_CANAL['04'];
+  if (!savedPagto) return prosDefaultPagtoForCanal(canalCod);
+  const savedCode = String(savedPagto).trim().split(/\s+/)[0];
+  if (codes.includes(savedCode)) return prazoPagtoLabel(savedCode);
+  const mapped = PRAZO_PAGTO_LEGACY[savedCode];
+  if (mapped && codes.includes(mapped)) return prazoPagtoLabel(mapped);
+  return prosDefaultPagtoForCanal(canalCod);
+}
+
+function prosRefreshPagtoDropdown(canalCod, selectedPagto) {
+  const sel = document.getElementById('pg-pagto');
+  if (!sel) return;
+  const codes = PRAZOS_POR_CANAL[canalCod] || PRAZOS_POR_CANAL['04'];
+  const pick = prosResolvePagtoForCanal(selectedPagto, canalCod);
+  sel.innerHTML = codes.map(c => {
+    const label = prazoPagtoLabel(c);
+    return `<option value="${label}">${label}</option>`;
+  }).join('');
+  for (const opt of sel.options) {
+    if (opt.value === pick) { sel.value = pick; return; }
+  }
+  if (sel.options.length) sel.selectedIndex = 0;
+}
 
 // Mapa vendedor DFB → código SAP canal 04
 const PG_VENDEDOR_SAP = {
@@ -8100,7 +8410,7 @@ function prosCadastroCollectFromForm() {
   const equip = {};
   cfg.equipamentos.forEach(e => { equip[e.cod] = propNum('pg-prop-eq-' + e.cod); });
   return {
-    cliente_cafe: document.getElementById('pg-cliente-cafe-sim')?.checked === true,
+    cliente_cafe: prosIsClienteCafe(),
     motivo: document.getElementById('pg-motivo')?.value || '',
     empresa: document.getElementById('pg-empresa')?.value || '',
     grupo: document.getElementById('pg-grupo')?.value || '',
@@ -8142,7 +8452,7 @@ function prosCadastroMergedFromLead(p, useForm) {
     rua: cad.rua || '', nro: cad.nro || '', bairro: cad.bairro || '', cep: cad.cep || '',
     cidade: cad.cidade || 'SÃO PAULO', canal: cad.canal || '04 - Restauração',
     regiao: cad.regiao || 'SP - São Paulo', icms: cad.icms || 'Z9 - Não Contribuinte de ICMS',
-    pagto: cad.pagto || 'BR30 - 30 dias sem desconto', rota: cad.rota || '3 - Rota 3',
+    pagto: cad.pagto || prosDefaultPagtoForCanal('04'), rota: cad.rota || '3 - Rota 3',
     vendedor: cad.vendedor || PG_VENDEDOR_SAP[vend] || '',
   };
 }
@@ -8169,16 +8479,14 @@ function prosValidarPropostaObrigatorio(data) {
 }
 
 function prosGanhoClienteCafeChange() {
-  const isCafe = document.getElementById('pg-cliente-cafe-sim')?.checked === true;
-  const sec = document.getElementById('pg-proposta-section');
-  if (sec) sec.style.display = isCafe ? 'block' : 'none';
-  if (prosGanhoLeadId && prosGanhoAutoSaveReady) scheduleProsGanhoAutoSave(300);
+  prosUpdateSimulacaoTabVisibility();
+  if (prosCadastroLeadId() && prosGanhoAutoSaveReady) scheduleProsGanhoAutoSave(300);
 }
 
 function prosFormSnapshotGanho() { return JSON.stringify(prosCadastroCollectFromForm()); }
 
 function prosSetGanhoAutoSaveStatus(text, color) {
-  const el = document.getElementById('pg-autosave-hint');
+  const el = document.getElementById('pros-autosave-hint');
   if (!el) return;
   el.textContent = text || 'Alterações guardadas automaticamente';
   el.style.color = color || 'var(--muted)';
@@ -8186,14 +8494,14 @@ function prosSetGanhoAutoSaveStatus(text, color) {
 
 function scheduleProsGanhoAutoSave(delay = 800) {
   clearTimeout(prosGanhoAutoSaveTimer);
-  if (!prosGanhoAutoSaveReady || !prosGanhoLeadId) return;
+  if (prosCadastroJsonUnavailable || !prosGanhoAutoSaveReady || !prosCadastroLeadId()) return;
   if (prosFormSnapshotGanho() === prosGanhoLastSnapshot) return;
   prosSetGanhoAutoSaveStatus('A guardar...', 'var(--muted)');
   prosGanhoAutoSaveTimer = setTimeout(() => prosGanhoAutoSave(), delay);
 }
 
 async function prosGanhoAutoSave() {
-  if (!prosGanhoAutoSaveReady || !prosGanhoLeadId) return;
+  if (prosCadastroJsonUnavailable || !prosGanhoAutoSaveReady || !prosCadastroLeadId()) return;
   if (prosFormSnapshotGanho() === prosGanhoLastSnapshot) return;
   await prosSaveCadastroJson({ silent: true });
 }
@@ -8202,7 +8510,7 @@ function prosIsGanhoAutosaveField(el) {
   if (!el) return false;
   if (el.name === 'pg-cliente-cafe') return true;
   if (!el.id) return false;
-  return el.id.startsWith('pg-') && el.id !== 'pg-status' && el.id !== 'pg-autosave-hint' && el.id !== 'pg-prop-preview';
+  return el.id.startsWith('pg-') && el.id !== 'pg-prop-preview';
 }
 
 function initProsGanhoAutoSave() {
@@ -8211,7 +8519,7 @@ function initProsGanhoAutoSave() {
   prosGanhoLastSnapshot = prosFormSnapshotGanho();
   prosGanhoAutoSaveAbort = new AbortController();
   const { signal } = prosGanhoAutoSaveAbort;
-  const overlay = document.getElementById('pros-ganho-overlay');
+  const overlay = document.getElementById('pros-modal-overlay');
   if (overlay) {
     overlay.addEventListener('input', (e) => {
       if (prosIsGanhoAutosaveField(e.target)) scheduleProsGanhoAutoSave();
@@ -8231,15 +8539,16 @@ function teardownProsGanhoAutoSave() {
 
 async function prosSaveCadastroJson(opts = {}) {
   const { silent = false } = opts;
-  if (!prosGanhoLeadId) return false;
+  const leadId = prosCadastroLeadId();
+  if (!leadId) return false;
   const data = prosCadastroCollectFromForm();
   const missing = prosValidarCadastroObrigatorio(data);
-  const st = document.getElementById('pg-status');
-  const estadoAnteriorCad = prosFindById(prosGanhoLeadId)?.estado || null;
+  const st = document.getElementById('pros-modal-status');
+  const estadoAnteriorCad = prosFindById(leadId)?.estado || null;
   const payload = { cadastro_json: data, atualizado_em: new Date().toISOString() };
   if (!missing.length) payload.estado = 'ganho';
   try {
-    const res = await fetch(PROS_URL + `?id=eq.${prosGanhoLeadId}`, {
+    const res = await fetch(PROS_URL + `?id=eq.${leadId}`, {
       method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=representation' }, body: JSON.stringify(payload)
     });
     if (!res.ok) {
@@ -8252,17 +8561,18 @@ async function prosSaveCadastroJson(opts = {}) {
     }
     const updated = await res.json();
     if (updated[0]) {
-      const idx = prosData.findIndex(x => String(x.id) === String(prosGanhoLeadId));
+      const idx = prosData.findIndex(x => String(x.id) === String(leadId));
       if (idx >= 0) prosData[idx] = { ...prosData[idx], ...updated[0] };
     }
     prosGanhoLastSnapshot = prosFormSnapshotGanho();
     if (!missing.length) {
       if (estadoAnteriorCad !== 'ganho') {
-        await prosUpsertHistorico(prosGanhoLeadId, { estadoAnterior: estadoAnteriorCad, estado: 'ganho', nota: '', mudouEstado: true });
+        await prosUpsertHistorico(leadId, { estadoAnterior: estadoAnteriorCad, estado: 'ganho', nota: '', mudouEstado: true });
       }
       const estEl = document.getElementById('pros-f-estado');
       if (estEl) estEl.value = 'ganho';
       prosLastSavedSnapshot = prosFormSnapshot();
+      prosUpdateLeadExportButton();
       prosSetGanhoAutoSaveStatus('Guardado — cliente Ganho', '#16a34a');
       if (!silent && st) st.innerHTML = '<span style="color:#16a34a">Cadastro completo — cliente Ganho.</span>';
     } else {
@@ -8272,8 +8582,14 @@ async function prosSaveCadastroJson(opts = {}) {
     renderPros();
     return true;
   } catch (e) {
-    prosSetGanhoAutoSaveStatus('Erro: ' + e.message, 'var(--danger)');
-    if (!silent && st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
+    const friendly = prosFmtSupabaseErr(e.message);
+    if (friendly !== e.message) {
+      prosCadastroJsonUnavailable = true;
+      clearTimeout(prosGanhoAutoSaveTimer);
+    }
+    const display = friendly.startsWith('Coluna') ? friendly : 'Erro: ' + friendly;
+    prosSetGanhoAutoSaveStatus(display, 'var(--danger)');
+    if (!silent && st) st.innerHTML = `<span style="color:var(--danger)">${display}</span>`;
     return false;
   }
 }
@@ -8294,8 +8610,10 @@ function prosCadastroApplyToForm(cad, p) {
   setVal('pg-tel2', c.tel2); setVal('pg-ie', c.ie); setVal('pg-rua', c.rua); setVal('pg-nro', c.nro);
   setVal('pg-supl', c.supl); setVal('pg-bairro', c.bairro); setVal('pg-cep', c.cep);
   document.getElementById('pg-cidade').value = c.cidade || 'SÃO PAULO';
-  setVal('pg-canal', c.canal); setVal('pg-regiao', c.regiao); setVal('pg-icms', c.icms);
-  setVal('pg-pagto', c.pagto); setVal('pg-rota', c.rota); setVal('pg-sector', c.sector);
+  const canalMigrado = prosMigrarCanalLegacy(c.canal || '');
+  setVal('pg-canal', canalMigrado || undefined);
+  setVal('pg-regiao', c.regiao); setVal('pg-icms', c.icms);
+  setVal('pg-rota', c.rota); setVal('pg-sector', c.sector);
   document.getElementById('pg-prop-tipo').value = c.prop_tipo || 'Q';
   document.getElementById('pg-prop-prazo').value = c.prop_prazo != null ? c.prop_prazo : 36;
   document.getElementById('pg-prop-qtdmes').value = c.prop_qtdmes || '';
@@ -8310,6 +8628,7 @@ function prosCadastroApplyToForm(cad, p) {
     const el = document.getElementById('pg-prop-eq-' + cod); if (el) el.value = qtd;
   });
   prosGanhoEmpresaChange(); prosGanhoRegiaoChange();
+  prosRefreshPagtoDropdown(prosCanalCodFromSelect(document.getElementById('pg-canal')?.value), c.pagto);
   const vend = c.vendedor || PG_VENDEDOR_SAP[p?.vendedor] || '';
   if (vend) { const sel = document.getElementById('pg-vendedor'); for (const opt of sel.options) { if (opt.value === vend) { sel.value = vend; break; } } }
 }
@@ -8334,6 +8653,7 @@ function prosGanhoCanalChange() {
   const sel = document.getElementById('pg-vendedor');
   sel.innerHTML = vendedores.map(v => `<option value="${v}">${v}</option>`).join('') || '<option value="">— Sem vendedores para este canal —</option>';
   document.getElementById('pg-equipe').textContent = PG_EQUIPE_CANAL[canalCod] || '';
+  prosRefreshPagtoDropdown(canalCod, document.getElementById('pg-pagto')?.value || '');
 }
 
 function prosGanhoRegiaoChange() {
@@ -8344,96 +8664,35 @@ function prosGanhoRegiaoChange() {
 
 async function prosGanhoAbrir(p) {
   if (!p || !p.id) { toast('Lead inválido — guarda o registo antes de abrir o cadastro.', 'error'); return; }
-  prosGanhoLeadId = p.id;
-  let lead = prosFindById(p.id) || p;
-  try {
-    const res = await fetch(PROS_URL + `?id=eq.${p.id}&select=*`, { headers: HEADERS });
-    if (res.ok) {
-      const rows = await res.json();
-      if (rows[0]) {
-        lead = rows[0];
-        const idx = prosData.findIndex(x => String(x.id) === String(p.id));
-        if (idx >= 0) prosData[idx] = { ...prosData[idx], ...lead };
-      }
-    }
-  } catch (e) {}
-  document.getElementById('pros-ganho-nome-label').textContent = lead.nome || '';
-  document.getElementById('pg-status').textContent = '';
-  prosSetGanhoAutoSaveStatus('', 'var(--muted)');
-  const cad = (lead.cadastro_json && typeof lead.cadastro_json === 'object') ? lead.cadastro_json : null;
-  if (cad && Object.keys(cad).length) {
-    prosCadastroApplyToForm(cad, lead);
-  } else {
-    document.getElementById('pg-nome').value = lead.nome || '';
-    document.getElementById('pg-cnpj').value = lead.cnpj || '';
-    document.getElementById('pg-fantasia').value = lead.nome || '';
-    document.getElementById('pg-email').value = (lead.email || '').toLowerCase();
-    document.getElementById('pg-tel1').value = lead.celular || '';
-    document.getElementById('pg-tel2').value = '';
-    document.getElementById('pg-ie').value = '';
-    document.getElementById('pg-rua').value = '';
-    document.getElementById('pg-nro').value = '';
-    document.getElementById('pg-supl').value = '';
-    document.getElementById('pg-bairro').value = '';
-    document.getElementById('pg-cep').value = '';
-    document.getElementById('pg-cidade').value = 'SÃO PAULO';
-    document.getElementById('pg-prop-tipo').value = 'Q';
-    document.getElementById('pg-prop-prazo').value = 36;
-    document.getElementById('pg-prop-qtdmes').value = '';
-    document.getElementById('pg-prop-desconto').value = 0;
-    document.getElementById('pg-prop-xic-ex').value = 0;
-    document.getElementById('pg-prop-xic-cap').value = 0;
-    document.getElementById('pg-prop-outros').value = 0;
-    document.getElementById('pg-prop-rappel').value = 0;
-    document.getElementById('pg-cliente-cafe-sim').checked = false;
-    document.getElementById('pg-cliente-cafe-nao').checked = true;
-    prosGanhoClienteCafeChange();
-    propTipoChange();
-    prosGanhoEmpresaChange();
-    prosGanhoRegiaoChange();
-    const sapVend = PG_VENDEDOR_SAP[lead.vendedor] || '';
-    if (sapVend) { const sel = document.getElementById('pg-vendedor'); for (const opt of sel.options) { if (opt.value === sapVend) { sel.value = sapVend; break; } } }
-  }
-  const missing = prosValidarCadastroObrigatorio(prosCadastroMergedFromLead(lead));
-  if (lead.estado === 'ganho' && missing.length) {
-    document.getElementById('pg-status').innerHTML = `<span style="color:var(--danger)">Cadastro incompleto: ${missing.join(', ')}.</span>`;
-  }
-  document.getElementById('pros-ganho-overlay').style.display = 'block';
-  initProsGanhoAutoSave();
+  await prosOpenEdit(p.id, 'cadastro');
 }
 
 async function prosModalAbrirCadastro() {
-  const st = document.getElementById('pros-modal-status');
-  if (document.getElementById('pros-f-estado').value !== 'ganho') {
-    st.innerHTML = '<span style="color:var(--danger)">Marca o estado como Ganho antes de exportar.</span>';
-    return;
-  }
-  clearTimeout(prosAutoSaveTimer);
-  if (prosFormSnapshot() !== prosLastSavedSnapshot) {
-    const ok = await prosSave({ keepOpen: true, autosave: true });
-    if (!ok) return;
-  }
-  if (!prosEditId) { st.innerHTML = '<span style="color:var(--danger)">Guarda o lead antes de abrir cadastro e proposta.</span>'; return; }
-  const p = prosFindById(prosEditId) || {
-    id: prosEditId, nome: document.getElementById('pros-f-nome').value.trim(),
-    vendedor: document.getElementById('pros-f-vendedor').value,
-    cnpj: document.getElementById('pros-f-cnpj').value.trim(),
-    celular: document.getElementById('pros-f-celular').value.trim(),
-    email: document.getElementById('pros-f-email').value.trim().toLowerCase(),
-    estado: document.getElementById('pros-f-estado').value,
-  };
-  prosCloseModal();
-  setTimeout(() => prosGanhoAbrir(p), 100);
+  prosSwitchTab('cadastro');
 }
 
 async function prosGanhoFechar() {
-  clearTimeout(prosGanhoAutoSaveTimer);
-  if (prosGanhoLeadId && prosFormSnapshotGanho() !== prosGanhoLastSnapshot) {
-    await prosSaveCadastroJson({ silent: true });
+  prosCloseModal();
+}
+
+async function prosEnviarEmailExportar() {
+  if (prosIsClienteCafe()) {
+    const emFaltaProp = prosValidarPropostaObrigatorio(prosCadastroCollectFromForm());
+    if (emFaltaProp.length) {
+      prosExibirErroSimulacaoNegocio(emFaltaProp);
+      return;
+    }
+    try {
+      prosEnsureSimuladorTemplate();
+      await prosEnsureExcelJS();
+    } catch (e) {
+      const st = document.getElementById('pros-modal-status');
+      if (st) st.innerHTML = `<span style="color:var(--danger)">${e.message}</span>`;
+      toast(e.message, 'error');
+      return;
+    }
   }
-  teardownProsGanhoAutoSave();
-  prosGanhoLeadId = null;
-  document.getElementById('pros-ganho-overlay').style.display = 'none';
+  await prosGanhoExportar();
 }
 
 // ===== Proposta de Negócio (Simulador Delta Q / Grão) =====
@@ -8498,10 +8757,73 @@ function propTipoChange() {
       <input type="number" id="pg-prop-eq-${e.cod}" class="form-input" style="width:64px;font-size:13px;" value="0" min="0" oninput="propCalcular()">
     </div>`).join('');
   propCalcular();
-  if (prosGanhoLeadId && prosGanhoAutoSaveReady) scheduleProsGanhoAutoSave(300);
+  if (prosCadastroLeadId() && prosGanhoAutoSaveReady) scheduleProsGanhoAutoSave(300);
 }
 
 function propNum(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
+
+function propFmtPrecoBR(n) {
+  return 'R$ ' + (n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function propFmtDescontoBR(pctInput) {
+  return (pctInput || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+}
+
+function prosBuildEmailPropostaText() {
+  const tipo = document.getElementById('pg-prop-tipo')?.value || 'Q';
+  const cfg = PROP_SIM[tipo] || PROP_SIM.Q;
+  const m = propComputeModel(tipo);
+  if (!propNum('pg-prop-qtdmes')) return '';
+
+  const descontoInput = propNum('pg-prop-desconto');
+  const rappelInput = propNum('pg-prop-rappel');
+  const tipoLabel = tipo === 'Q' ? 'Delta Q' : 'Grão';
+  const prodNome = m.prod.nome || '—';
+
+  let txt = `\n\nProposta de negócio (${tipoLabel}) — simulador em anexo:\n\n--- PROPOSTA ---\n`;
+  txt += `Produto: ${prodNome}\n`;
+  if (m.precoTabela) txt += `Preço tabela: ${propFmtPrecoBR(m.precoTabela)}\n`;
+  txt += `Desconto NF: ${propFmtDescontoBR(descontoInput)}\n`;
+  if (m.precoNF) txt += `Preço nota fiscal: ${propFmtPrecoBR(m.precoNF)}\n`;
+
+  const propPrazo = document.getElementById('pg-prop-prazo')?.value || '—';
+  const propQtdMes = document.getElementById('pg-prop-qtdmes')?.value || '—';
+  txt += `Prazo: ${propPrazo} meses\n`;
+  txt += `${cfg.unidade}/mês: ${propQtdMes}\n`;
+
+  const equipComQty = cfg.equipamentos.filter(e => propNum('pg-prop-eq-' + e.cod) > 0);
+  const equipTxt = equipComQty.length
+    ? equipComQty.map(e => `${e.nome} x${document.getElementById('pg-prop-eq-' + e.cod).value}`).join(', ')
+    : 'Equipamento próprio';
+  txt += `${equipComQty.length > 1 ? 'Equipamentos' : 'Equipamento'}: ${equipTxt}\n`;
+
+  const invLines = [];
+  cfg.equipamentos.forEach(e => {
+    const q = propNum('pg-prop-eq-' + e.cod);
+    if (q > 0) {
+      const val = (PROP_EQUIP_PRECO[e.cod] || 0) * q;
+      if (val > 0) invLines.push(`${e.nome}: ${q} un. — ${propFmtPrecoBR(val)}`);
+    }
+  });
+  if (m.xicEx > 0) {
+    const val = m.xicEx * PROP_XIC_PRECO.EX;
+    if (val > 0) invLines.push(`Xícaras EX: ${m.xicEx} un. — ${propFmtPrecoBR(val)}`);
+  }
+  if (m.xicCap > 0) {
+    const val = m.xicCap * PROP_XIC_PRECO.CAP;
+    if (val > 0) invLines.push(`Xícaras CAP: ${m.xicCap} un. — ${propFmtPrecoBR(val)}`);
+  }
+  if (m.outros > 0) invLines.push(`Outros: ${propFmtPrecoBR(m.outros)}`);
+  if (rappelInput > 0) invLines.push(`Rappel: ${propFmtDescontoBR(rappelInput)}`);
+
+  if (invLines.length) {
+    txt += `\n--- INVESTIMENTOS ---\n`;
+    invLines.forEach(line => { txt += line + '\n'; });
+    if (m.investContrato > 0) txt += `Total investimentos: ${propFmtPrecoBR(m.investContrato)}\n`;
+  }
+
+  return txt;
+}
 
 // Replica as fórmulas do simulador para preview e para preencher o Excel
 function propComputeModel(tipo) {
@@ -8578,17 +8900,46 @@ function propCalcular() {
     </div>`;
 }
 
-async function propGerarSimulador(nomeCliente) {
-  if (!window.SIMULADOR_TEMPLATE_B64) { toast('Template do simulador não carregou.', 'error'); return; }
-  // ExcelJS preserva formatação, imagens e estilos (ao contrário do SheetJS)
-  if (!window.ExcelJS) {
-    await new Promise((res, rej) => {
+function triggerBlobDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 200);
+}
+
+const prosSleep = ms => new Promise(r => setTimeout(r, ms));
+let prosExcelJsLoadPromise = null;
+
+function prosEnsureSimuladorTemplate() {
+  if (!window.SIMULADOR_TEMPLATE_B64) {
+    throw new Error('Template do simulador não carregou — confirma que simulador-template.js está no mesmo diretório que index.html.');
+  }
+}
+
+async function prosEnsureExcelJS() {
+  if (window.ExcelJS) return;
+  if (!prosExcelJsLoadPromise) {
+    prosExcelJsLoadPromise = new Promise((res, rej) => {
       const s = document.createElement('script');
       s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
-      s.onload = res; s.onerror = rej;
+      s.onload = res;
+      s.onerror = () => rej(new Error('Não foi possível carregar ExcelJS (CDN).'));
       document.head.appendChild(s);
     });
   }
+  await prosExcelJsLoadPromise;
+}
+
+async function propGerarSimulador(nomeCliente) {
+  prosEnsureSimuladorTemplate();
+  await prosEnsureExcelJS();
   const raw = atob(window.SIMULADOR_TEMPLATE_B64);
   const arr = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
@@ -8600,7 +8951,7 @@ async function propGerarSimulador(nomeCliente) {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(arr.buffer);
   const ws = wb.getWorksheet(cfg.sheet);
-  if (!ws) { toast('Folha do simulador não encontrada.', 'error'); return; }
+  if (!ws) throw new Error(`Folha "${cfg.sheet}" não encontrada no template do simulador.`);
 
   // Substituir referências externas [1]PRESSUPOSTOS pela folha interna (link externo não é exportado)
   ws.eachRow({ includeEmpty: false }, row => {
@@ -8663,21 +9014,40 @@ async function propGerarSimulador(nomeCliente) {
 
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `Proposta_${tipo === 'Q' ? 'DeltaQ' : 'Grao'}_${(nomeCliente || 'cliente').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}.xlsx`;
-  a.click();
-  URL.revokeObjectURL(url);
+  const filename = `Proposta_${tipo === 'Q' ? 'DeltaQ' : 'Grao'}_${(nomeCliente || 'cliente').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}.xlsx`;
+  triggerBlobDownload(blob, filename);
+  return filename;
 }
 
 async function prosGanhoExportar() {
-  const st = document.getElementById('pg-status');
+  const st = document.getElementById('pros-modal-status');
+  if (document.getElementById('pros-f-estado')?.value !== 'ganho') {
+    const msg = 'Marca o estado como Ganho antes de exportar.';
+    if (st) st.innerHTML = `<span style="color:var(--danger)">${msg}</span>`;
+    toast(msg, 'error');
+    return;
+  }
+  clearTimeout(prosAutoSaveTimer);
   clearTimeout(prosGanhoAutoSaveTimer);
+  if (prosFormSnapshot() !== prosLastSavedSnapshot) {
+    const ok = await prosSave({ keepOpen: true, autosave: true });
+    if (!ok) {
+      toast('Não foi possível guardar o lead. Verifica Razão Social e Vendedor.', 'error');
+      return;
+    }
+  }
+  if (!prosEditId) {
+    const msg = 'Guarda o lead antes de exportar documentos.';
+    if (st) st.innerHTML = `<span style="color:var(--danger)">${msg}</span>`;
+    toast(msg, 'error');
+    return;
+  }
+  prosGanhoLeadId = prosEditId;
   await prosSaveCadastroJson({ silent: true });
   const data = prosCadastroCollectFromForm();
   const emFalta = prosValidarCadastroObrigatorio(data);
   if (emFalta.length) {
+    prosSwitchTab('cadastro');
     const idMap = {
       'Nome / Razão Social': 'pg-nome', 'CNPJ / CPF': 'pg-cnpj', 'CNPJ / CPF (14 dígitos)': 'pg-cnpj',
       'Nome Fantasia': 'pg-fantasia', 'Email': 'pg-email', 'Tel. 1': 'pg-tel1', 'Rua': 'pg-rua',
@@ -8687,20 +9057,24 @@ async function prosGanhoExportar() {
     };
     const primeiro = document.getElementById(idMap[emFalta[0]] || 'pg-nome');
     if (primeiro) { primeiro.focus(); primeiro.style.borderColor = 'var(--danger)'; }
-    st.innerHTML = `<span style="color:var(--danger)">Ficha de Cadastro — preenche os campos obrigatórios: ${emFalta.join(', ')}.</span>`;
+    const msgCad = `Ficha de Cadastro — preenche: ${emFalta.join(', ')}.`;
+    if (st) st.innerHTML = `<span style="color:var(--danger)">${msgCad}</span>`;
+    toast(msgCad, 'error');
     return;
   }
-  const isCafe = data.cliente_cafe === true;
+  const isCafe = prosIsClienteCafe();
   if (isCafe) {
     const emFaltaProp = prosValidarPropostaObrigatorio(data);
     if (emFaltaProp.length) {
-      const propIdMap = {
-        'Produto / Lote': 'pg-prop-produto', 'Prazo contrato (meses)': 'pg-prop-prazo',
-        'Quantidade contratada/mês': 'pg-prop-qtdmes',
-      };
-      const primeiro = document.getElementById(propIdMap[emFaltaProp[0]] || 'pg-prop-produto');
-      if (primeiro) { primeiro.focus(); primeiro.style.borderColor = 'var(--danger)'; }
-      st.innerHTML = `<span style="color:var(--danger)">Proposta de Negócio — preenche os campos obrigatórios: ${emFaltaProp.join(', ')}.</span>`;
+      prosExibirErroSimulacaoNegocio(emFaltaProp);
+      return;
+    }
+    try {
+      prosEnsureSimuladorTemplate();
+      await prosEnsureExcelJS();
+    } catch (e) {
+      if (st) st.innerHTML = `<span style="color:var(--danger)">${e.message}</span>`;
+      toast(e.message, 'error');
       return;
     }
   }
@@ -8753,41 +9127,34 @@ async function prosGanhoExportar() {
         body: JSON.stringify(dados)
       }
     );
-    if (!res.ok) throw new Error('Erro ' + res.status);
+    if (!res.ok) {
+      let errMsg = 'Erro ' + res.status;
+      try {
+        const errBody = await res.json();
+        if (errBody?.error) errMsg = errBody.error;
+      } catch (e) {}
+      throw new Error(errMsg);
+    }
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Cadastro_${(dados.nome||'cliente').replace(/[^a-zA-Z0-9]/g,'_').substring(0,20)}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerBlobDownload(blob, `Cadastro_${(dados.nome||'cliente').replace(/[^a-zA-Z0-9]/g,'_').substring(0,20)}.xlsx`);
     toast('✅ Ficha de Cadastro exportada!');
 
     let propTexto = '';
     if (isCafe) {
-      const tipoSel = document.getElementById('pg-prop-tipo')?.value || 'Q';
-      const cfgP = PROP_SIM[tipoSel] || PROP_SIM.Q;
-      const prodSel = document.getElementById('pg-prop-produto');
-      const prodTxt = prodSel ? (prodSel.options[prodSel.selectedIndex]?.text || '') : '';
-      const propPrazo = document.getElementById('pg-prop-prazo')?.value || '';
-      const propQtdMes = document.getElementById('pg-prop-qtdmes')?.value || '';
-      const propEquipTxt = cfgP.equipamentos
-        .filter(e => propNum('pg-prop-eq-' + e.cod) > 0)
-        .map(e => `${e.nome} x${document.getElementById('pg-prop-eq-' + e.cod).value}`)
-        .join(', ');
       try {
+        await prosSleep(450);
         await propGerarSimulador(dados.nome);
         toast('✅ Proposta de Negócio exportada!');
       } catch (e) {
-        toast('Erro na proposta: ' + e.message, 'error');
+        const msgProp = 'Erro na proposta de negócio: ' + e.message;
+        if (st) st.innerHTML = `<span style="color:var(--danger)">${msgProp}</span>`;
+        toast(msgProp, 'error');
+        return;
       }
-      propTexto = propQtdMes
-        ? `\n\nProposta de negócio (${tipoSel === 'Q' ? 'Delta Q' : 'Grão'}) — simulador em anexo:\n  • Produto: ${prodTxt || '—'}\n  • Prazo: ${propPrazo || '—'} meses\n  • ${cfgP.unidade}/mês: ${propQtdMes || '—'}\n  • Equipamentos: ${propEquipTxt || '—'}`
-        : '';
+      propTexto = prosBuildEmailPropostaText();
     }
 
-    st.innerHTML = '';
-    prosGanhoFechar();
+    if (st) st.innerHTML = '<span style="color:#16a34a">Documentos exportados — email a abrir...</span>';
 
     // Abrir email pré-preenchido
     const hora = new Date().getHours();
@@ -8812,7 +9179,7 @@ ${getUtilizadorAtual()}`
     setTimeout(() => { window.location.href = mailto; }, 800);
 
   } catch(e) {
-    st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
+    if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
   }
 }
 
