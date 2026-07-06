@@ -6054,15 +6054,8 @@ function showVendasImport() {
   document.getElementById('vendas-upload-step').style.display = 'none';
   document.getElementById('vendas-pin-input').value = '';
   const _vsEl = document.getElementById('dados-vendas-status') || document.getElementById('vendas-status');
-  // Guardar data da última carga
-  localStorage.setItem('delta_vendas_ultima_carga', JSON.stringify({
-    data: new Date().toISOString(),
-    ficheiro: event.target.files?.[0]?.name || 'desconhecido',
-    novos: newVendas.length,
-    ignorados: datasIgnoradas
-  }));
   renderUltimaVendasCarga();
-  _vsEl.innerHTML = '';
+  if (_vsEl) _vsEl.innerHTML = '';
   setTimeout(() => document.getElementById('vendas-pin-input').focus(), 100);
 }
 function closeVendasModal() {
@@ -6092,8 +6085,10 @@ async function checkVendasPin() {
 async function processVendasFile(event) {
   const file = event.target.files[0];
   if (!file) return;
-  (document.getElementById('dados-vendas-status') || document.getElementById('vendas-status')).innerHTML =
-    '<div style="color:var(--muted);font-size:12px">⏳ A processar ficheiro...</div>';
+  const statusEl = document.getElementById('dados-vendas-status') || document.getElementById('vendas-status');
+  const resetStatus = (html) => { if (statusEl) statusEl.innerHTML = html || ''; };
+
+  resetStatus('<div style="color:var(--muted);font-size:12px">⏳ A processar ficheiro...</div>');
 
   if (!window.XLSX) {
     await new Promise((res, rej) => {
@@ -6109,16 +6104,36 @@ async function processVendasFile(event) {
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = window.XLSX.utils.sheet_to_json(ws, {header: 1});
 
-  if (!rows.length) { toast('Ficheiro vazio.', 'error'); return; }
+  if (!rows.length) {
+    toast('Ficheiro vazio.', 'error');
+    resetStatus('');
+    event.target.value = '';
+    return;
+  }
 
-  const headers = rows[0].map(h => String(h || ''));
-  const iHierarq = headers.indexOf('Hierarq.produtos');
-  const iEmissor = headers.indexOf('Emissor da ordem');
-  const iData = headers.indexOf('Data');
-  const iPeso = headers.findIndex(h => h === 'Peso líq.');
+  const headers = rows[0].map(h => String(h || '').trim());
+  const iHierarq = headers.findIndex(h => /hierarq/i.test(h) && /prod/i.test(h));
+  const iEmissor = headers.findIndex(h => /emissor/i.test(h));
+  const iData = headers.findIndex(h => /^data$/i.test(h));
+  const iPeso = headers.findIndex(h => /peso\s*l[ií]q/i.test(h));
 
   if (iHierarq < 0 || iEmissor < 0 || iData < 0 || iPeso < 0) {
-    toast('Colunas não encontradas. Verifica o ficheiro.', 'error'); return;
+    const hasCliente = headers.some(h => /^cliente$/i.test(h));
+    const hasNome = headers.some(h => /nome/i.test(h) && !/emissor/i.test(h));
+    if (hasCliente && hasNome) {
+      toast('Este ficheiro é a Lista de Clientes SAP. Usa «Carregar Lista SAP» (secção 👥 abaixo).', 'error');
+    } else {
+      const faltam = [
+        iHierarq < 0 ? 'Hierarq.produtos' : null,
+        iEmissor < 0 ? 'Emissor da ordem' : null,
+        iData < 0 ? 'Data' : null,
+        iPeso < 0 ? 'Peso líq.' : null,
+      ].filter(Boolean).join(', ');
+      toast(`Colunas não encontradas (${faltam}). Verifica se é o Excel de vendas SAP.`, 'error');
+    }
+    resetStatus('');
+    event.target.value = '';
+    return;
   }
 
   // Get existing vendas and their dates to avoid duplicates
