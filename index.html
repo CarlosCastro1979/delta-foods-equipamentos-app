@@ -5748,15 +5748,8 @@ async function enviarPedidoAT() {
   const data = new Date().toLocaleDateString('pt-BR');
   const hora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
 
-  // Mapa vendedor → email corporativo
-  const VENDEDOR_EMAILS = {
-    'PAULO FONTES':   'paulo.fontes@deltafoodsbrasil.com.br',
-    'DANIELA SANTOS': 'daniela.silva@deltafoodsbrasil.com.br',
-    'HÉLCIO GRÉGIO':  'helcio.gregio@deltafoodsbrasil.com.br',
-    'FILIPE NEVES':   'filipe.neves@deltafoodsbrasil.com.br',
-    'CARLOS CASTRO':  'carlos.castro@deltafoodsbrasil.com.br',
-  };
-
+  // Mapa vendedor → email corporativo (usa mapa global)
+  const vendedorEmail = getEmailUtilizador(vendedor);
   const tipoLabel = atTipoEquip === 'domestico' ? 'Doméstico' : 'Profissional';
 
   const morada = getMorada(clienteCod);
@@ -5809,7 +5802,6 @@ Enviado via Delta Foods App`;
   const equipTipoStr = selectedEquips.map(e => e.tipo).join(', ');
   const equipTagStr  = selectedEquips.map(e => e.tag).filter(Boolean).join(', ');
 
-  const vendedorEmail = VENDEDOR_EMAILS[vendedor] || '';
   const ccList = atTipoEquip === 'domestico'
     ? ['filipe.neves@deltafoodsbrasil.com.br']
     : ['carlos.castro@deltafoodsbrasil.com.br', 'filipe.neves@deltafoodsbrasil.com.br', 'ricardo.vicentesilva@deltafoodsbrasil.com.br'];
@@ -7083,6 +7075,36 @@ async function exportContratosExcel() {
 // ─── UTILIZADOR / LOGIN ──────────────────────────────
 const ADMINS = ['Carlos Castro', 'Filipe Neves'];
 
+const UTILIZADOR_EMAILS = {
+  'PAULO FONTES':   'paulo.fontes@deltafoodsbrasil.com.br',
+  'DANIELA SANTOS': 'daniela.silva@deltafoodsbrasil.com.br',
+  'HELIO GREGIO':   'helcio.gregio@deltafoodsbrasil.com.br',
+  'HELCIO GREGIO':  'helcio.gregio@deltafoodsbrasil.com.br',
+  'FILIPE NEVES':   'filipe.neves@deltafoodsbrasil.com.br',
+  'CARLOS CASTRO':  'carlos.castro@deltafoodsbrasil.com.br',
+};
+
+function normNomeUtilizador(s) {
+  return String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+function getEmailUtilizador(nome) {
+  return UTILIZADOR_EMAILS[normNomeUtilizador(nome)] || '';
+}
+
+// mailto de aprovação: abre com a conta corporativa do remetente (se configurada no Outlook)
+function buildMailtoAprovacao({ remetenteNome, destinatario, cc = [], assunto, corpo }) {
+  const to = destinatario || 'carlos.castro@deltafoodsbrasil.com.br';
+  const remetenteEmail = getEmailUtilizador(remetenteNome);
+  const ccList = [...new Set(cc.filter(Boolean))];
+  const ccParams = ccList.map(e => `cc=${encodeURIComponent(e)}`).join('&');
+  const tail = `${ccParams ? ccParams + '&' : ''}subject=${assunto}&body=${corpo}`;
+  if (remetenteEmail) {
+    return `mailto:${encodeURIComponent(remetenteEmail)}?to=${encodeURIComponent(to)}&${tail}`;
+  }
+  return `mailto:${encodeURIComponent(to)}?${tail}`;
+}
+
 function isAdmin() {
   return ADMINS.includes(getUtilizadorAtual());
 }
@@ -7278,6 +7300,8 @@ async function enviarEncerramento() {
   const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
 
   const assunto = encodeURIComponent(`Cancelamento de Cliente - ${r.nome}`);
+  const remetente = getUtilizadorAtual();
+  const remetenteEmail = getEmailUtilizador(remetente) || getEmailUtilizador(r.vendedor);
   const corpo = encodeURIComponent(
 `${saudacao},
 
@@ -7291,12 +7315,15 @@ Segue o pedido de encerramento do cliente abaixo para aprovação:
 Aguardo aprovação.
 
 Cumprimentos,
-${getUtilizadorAtual()}`
+${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`
   );
 
-  const ccParams = ['Filipe.Neves@deltafoodsbrasil.com.br', 'dadosmestres.entidades2@gruponabeiro.com']
-    .map(e => `cc=${encodeURIComponent(e)}`).join('&');
-  const mailto = `mailto:${encodeURIComponent('carlos.castro@deltafoodsbrasil.com.br')}?${ccParams}&subject=${assunto}&body=${corpo}`;
+  const mailto = buildMailtoAprovacao({
+    remetenteNome: remetente || r.vendedor,
+    cc: ['filipe.neves@deltafoodsbrasil.com.br', 'dadosmestres.entidades2@gruponabeiro.com'],
+    assunto,
+    corpo,
+  });
   window.location.href = mailto;
 
   // Marcar registo como encerramento pendente no Supabase (se tiver id)
@@ -9193,6 +9220,8 @@ async function prosGanhoExportar() {
     const assunto = encodeURIComponent(`${motivo} - ${dados.nome}`);
     const anexosTxt = isCafe ? 'ficha de cadastro e a proposta de negócio' : 'ficha de cadastro';
 
+    const remetente = getUtilizadorAtual();
+    const remetenteEmail = getEmailUtilizador(remetente);
     const corpo = encodeURIComponent(
 `${saudacao},
 
@@ -9201,11 +9230,14 @@ Segue em anexo a ${anexosTxt} do cliente ${dados.nome} para aprovação.${propTe
 Aguardo aprovação.
 
 Cumprimentos,
-${getUtilizadorAtual()}`
+${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`
     );
-    const ccParams = ['filipe.neves@deltafoodsbrasil.com.br', 'daniela.kucinski@deltafoodsbrasil.com.br']
-      .map(e => `cc=${encodeURIComponent(e)}`).join('&');
-    const mailto = `mailto:${encodeURIComponent('carlos.castro@deltafoodsbrasil.com.br')}?${ccParams}&subject=${assunto}&body=${corpo}`;
+    const mailto = buildMailtoAprovacao({
+      remetenteNome: remetente,
+      cc: ['filipe.neves@deltafoodsbrasil.com.br', 'daniela.kucinski@deltafoodsbrasil.com.br'],
+      assunto,
+      corpo,
+    });
     setTimeout(() => { window.location.href = mailto; }, 800);
 
   } catch(e) {
