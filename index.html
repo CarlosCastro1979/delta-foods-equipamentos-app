@@ -1895,7 +1895,7 @@ var _unused_placeholder = 1;
           <option value="">Todos os vendedores</option>
         </select>
         <select id="sc-periodo" class="form-input" style="min-width:200px;height:36px;font-size:13px;" onchange="updateSCPeriodoUI(); renderSemCompras()">
-          <option value="1">Último mês (1–5 meses)</option>
+          <option value="1">Último mês (2–5 meses calend.)</option>
           <option value="6" selected>Mais de 6 meses</option>
           <option value="9">Mais de 9 meses</option>
           <option value="12">Mais de 12 meses</option>
@@ -3342,31 +3342,56 @@ async function scSaveToSupabase(novasVendas) {
   }
 }
 
+// Meses de calendário desde a última compra (0 = comprou este mês, 1 = mês passado, …)
+function mesesCalendarioSemCompra(ultimaCompra, hoje) {
+  if (!ultimaCompra || !hoje) return 999;
+  return (hoje.getFullYear() - ultimaCompra.getFullYear()) * 12 + (hoje.getMonth() - ultimaCompra.getMonth());
+}
+
+function scGuardarVendaData(cod, dt) {
+  if (!cod || !dt) return;
+  const codOrig = String(cod).trim();
+  const codNorm = normalizaCodSC(codOrig);
+  for (const key of [codNorm, codOrig]) {
+    if (!scVendasData[key] || dt > scVendasData[key]) scVendasData[key] = dt;
+  }
+}
+
 async function scLoadFromSupabase() {
   try {
     document.getElementById('sc-info').innerHTML =
       '<span style="color:var(--muted);font-size:12px;">⏳ A carregar histórico...</span>';
-    const res = await fetch(
-      'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/vendas_historico?select=cod_cliente,ultima_compra,updated_at&order=ultima_compra.desc',
-      { headers: HEADERS }
-    );
-    const data = await res.json();
-    if (!Array.isArray(data) || !data.length) return false;
 
     scVendasData = {};
     let lastUpdate = '';
-    for (const row of data) {
-      // Guardar com a chave normalizada E a original para garantir match
-      const codNorm = String(row.cod_cliente || '').trim().replace(/^0+/, '') || '0';
-      const codOrig = String(row.cod_cliente || '').trim();
-      const dt = new Date(row.ultima_compra);
-      scVendasData[codNorm] = dt;
-      scVendasData[codOrig] = dt;
-      if (row.updated_at > lastUpdate) lastUpdate = row.updated_at;
+    const pageSize = 1000;
+    let offset = 0;
+    let totalRows = 0;
+
+    while (true) {
+      const res = await fetch(
+        `https://qnscwppgljobelplgbkp.supabase.co/rest/v1/vendas_historico?select=cod_cliente,ultima_compra,updated_at&order=cod_cliente.asc&limit=${pageSize}&offset=${offset}`,
+        { headers: HEADERS }
+      );
+      const data = await res.json();
+      if (!Array.isArray(data) || !data.length) break;
+
+      for (const row of data) {
+        const dt = parseDateSC(row.ultima_compra);
+        if (!dt) continue;
+        scGuardarVendaData(row.cod_cliente, dt);
+        if (row.updated_at > lastUpdate) lastUpdate = row.updated_at;
+      }
+
+      totalRows += data.length;
+      if (data.length < pageSize) break;
+      offset += pageSize;
     }
+
+    if (!totalRows) return false;
     scLoaded = true;
 
-    const nClientes = data.length;
+    const nClientes = new Set(Object.keys(scVendasData).map(k => normalizaCodSC(k))).size;
     const dtUpdate = lastUpdate ? new Date(lastUpdate).toLocaleDateString('pt-BR') : '—';
     document.getElementById('sc-info').innerHTML =
       `<span style="color:var(--muted);font-size:12px;">📦 Histórico: <strong>${nClientes}</strong> clientes · Última actualização: <strong>${dtUpdate}</strong></span>`;
@@ -3388,7 +3413,7 @@ async function initSemCompras() {
 
   // Carrega vendas e dívidas do Supabase em paralelo
   const promises = [];
-  if (!scLoaded) promises.push(scLoadFromSupabase().then(ok => { if (ok) scDataRef = new Date(); }));
+  if (!scLoaded) promises.push(scLoadFromSupabase());
   if (!scDividasLoaded) promises.push(scLoadDividasFromSupabase());
   if (!codRelacionados.length) promises.push(loadCodRelacionados());
   if (!allData?.length) {
@@ -3405,6 +3430,7 @@ async function initSemCompras() {
     }
   }
   if (promises.length) await Promise.all(promises);
+  scDataRef = new Date();
 
   renderSemCompras();
 }
@@ -3868,15 +3894,17 @@ function renderSemCompras() {
     if (!ultimaCompra) continue;
 
     const diffMs = hoje - ultimaCompra;
-    const mesesSemComprar = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.44));
+    const mesesDias = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.44));
+    const mesesCal = mesesCalendarioSemCompra(ultimaCompra, hoje);
+    const mesesSemComprar = modoUltimoMes ? mesesCal : mesesDias;
 
     if (modoUltimoMes) {
-      // Último mês: 1–5 meses sem comprar — exclui os já na lista +6 meses (com e sem dívida)
-      if (mesesSemComprar < 1 || mesesSemComprar >= 6) continue;
-    } else if (mesesSemComprar < periodoMin) {
+      // 2–5 meses de calendário sem comprar — exclui mês actual/anterior e lista +6 meses
+      if (mesesCal < 2 || mesesCal >= 6) continue;
+    } else if (mesesDias < periodoMin) {
       continue;
     }
-    resultado.push({ ...cli, ultimaCompra, mesesSemComprar });
+    resultado.push({ ...cli, ultimaCompra, mesesSemComprar, mesesCal, mesesDias });
   }
 
   const listaExibir = filtroEquipProf
@@ -3890,17 +3918,17 @@ function renderSemCompras() {
   const n12 = listaExibir.filter(c => c.mesesSemComprar >= 12).length;
   const n9  = listaExibir.filter(c => c.mesesSemComprar >= 9 && c.mesesSemComprar < 12).length;
   const n6  = listaExibir.filter(c => c.mesesSemComprar >= 6 && c.mesesSemComprar < 9).length;
-  const n5  = listaExibir.filter(c => c.mesesSemComprar >= 5 && c.mesesSemComprar < 6).length;
-  const n34 = listaExibir.filter(c => c.mesesSemComprar >= 3 && c.mesesSemComprar < 5).length;
-  const n12m = listaExibir.filter(c => c.mesesSemComprar >= 1 && c.mesesSemComprar < 3).length;
+  const n5  = listaExibir.filter(c => c.mesesSemComprar === 5).length;
+  const n34 = listaExibir.filter(c => c.mesesSemComprar >= 3 && c.mesesSemComprar <= 4).length;
+  const n2  = listaExibir.filter(c => c.mesesSemComprar === 2).length;
 
   document.getElementById('sc-info').innerHTML = modoUltimoMes
     ? (filtroEquipProf
-      ? `<span style="color:#1d4ed8;font-weight:600;">${listaExibir.length} clientes</span> com equipamento profissional sem compras (1–5 meses)` +
-        ` &nbsp;·&nbsp; <span style="color:#ca8a04">🟡 1-2m: ${n12m}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟠 3-4m: ${n34}</span> &nbsp;·&nbsp; <span style="color:#c8102e">🔴 5m: ${n5}</span>` +
+      ? `<span style="color:#1d4ed8;font-weight:600;">${listaExibir.length} clientes</span> com equipamento profissional sem compras (2–5 meses calend.)` +
+        ` &nbsp;·&nbsp; <span style="color:#ca8a04">🟡 2m: ${n2}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟠 3-4m: ${n34}</span> &nbsp;·&nbsp; <span style="color:#c8102e">🔴 5m: ${n5}</span>` +
         ` &nbsp;·&nbsp; Referência: ${hoje.toLocaleDateString('pt-BR')}`
-      : `<span style="color:#d97706;font-weight:600;">${listaExibir.length} clientes</span> sem compras no último mês (1–5 meses) — excluídos os +6 meses` +
-        ` &nbsp;·&nbsp; <span style="color:#ca8a04">🟡 1-2m: ${n12m}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟠 3-4m: ${n34}</span> &nbsp;·&nbsp; <span style="color:#c8102e">🔴 5m: ${n5}</span>` +
+      : `<span style="color:#d97706;font-weight:600;">${listaExibir.length} clientes</span> sem compras há 2–5 meses (calend.) — excl. mês actual/anterior e +6 meses` +
+        ` &nbsp;·&nbsp; <span style="color:#ca8a04">🟡 2m: ${n2}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟠 3-4m: ${n34}</span> &nbsp;·&nbsp; <span style="color:#c8102e">🔴 5m: ${n5}</span>` +
         ` &nbsp;·&nbsp; Referência: ${hoje.toLocaleDateString('pt-BR')}`)
     : `<span style="color:var(--danger);font-weight:600;">${listaExibir.length} clientes</span> sem compras há mais de ${periodoMin} meses` +
       (periodoMin <= 6 ? ` &nbsp;·&nbsp; <span style="color:var(--danger)">🔴 +12m: ${n12}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟡 9-12m: ${n9}</span> &nbsp;·&nbsp; <span style="color:#ca8a04">🟠 6-9m: ${n6}</span>` : '') +
@@ -3930,12 +3958,12 @@ function renderSemCompras() {
 
   // SEM DÍVIDA: dentro de cada grupo ordena por vendedor
   const buildGruposSemDiv = (lista) => modoUltimoMes ? [
-    { label: '🟡 1-2 meses', cor: '#ca8a04', bg: '#FEFCE8',
-      clientes: lista.filter(c => c.mesesSemComprar >= 1 && c.mesesSemComprar < 3).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
+    { label: '🟡 2 meses', cor: '#ca8a04', bg: '#FEFCE8',
+      clientes: lista.filter(c => c.mesesSemComprar === 2).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
     { label: '🟠 3-4 meses', cor: '#d97706', bg: '#FFFBEB',
-      clientes: lista.filter(c => c.mesesSemComprar >= 3 && c.mesesSemComprar < 5).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
+      clientes: lista.filter(c => c.mesesSemComprar >= 3 && c.mesesSemComprar <= 4).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
     { label: '🔴 5 meses', cor: '#c8102e', bg: '#FEF2F2',
-      clientes: lista.filter(c => c.mesesSemComprar >= 5 && c.mesesSemComprar < 6).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
+      clientes: lista.filter(c => c.mesesSemComprar === 5).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
   ].filter(g => g.clientes.length > 0) : [
     { label: '🔴 Mais de 12 meses', cor: '#c8102e', bg: '#FEF2F2',
       clientes: lista.filter(c => c.mesesSemComprar >= 12).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
@@ -4129,15 +4157,17 @@ async function exportSCExcel() {
     if (vendFilt && cli.vendedor !== vendFilt) continue;
     const codNorm = normalizaCodSC(cli.cod);
     const ultimaCompra = getUltimaCompraFamilia(cli.cod);
-    const meses = ultimaCompra ? Math.floor((hoje - ultimaCompra) / (1000*60*60*24*30.44)) : 999;
+    const mesesDias = ultimaCompra ? Math.floor((hoje - ultimaCompra) / (1000*60*60*24*30.44)) : 999;
+    const mesesCal = ultimaCompra ? mesesCalendarioSemCompra(ultimaCompra, hoje) : 999;
+    const meses = modoUltimoMes ? mesesCal : mesesDias;
     if (modoUltimoMes) {
-      if (meses < 1 || meses >= 6) continue;
-    } else if (meses < periodoMin) {
+      if (mesesCal < 2 || mesesCal >= 6) continue;
+    } else if (mesesDias < periodoMin) {
       continue;
     }
     if (filtroEquipProf && !clienteTemEquipProfissional(cli.cod)) continue;
     const faixa = modoUltimoMes
-      ? (meses >= 5 ? '5 meses' : meses >= 3 ? '3-4 meses' : '1-2 meses')
+      ? (mesesCal === 5 ? '5 meses' : mesesCal >= 3 ? '3-4 meses' : '2 meses')
       : (meses >= 12 ? '+12 meses' : meses >= 9 ? '9-12 meses' : '6-9 meses');
     const div = scDividasData[cli.cod] || scDividasData[normalizaCodSC(cli.cod)];
     const vencido = div ? div.vencido : 0;
@@ -4149,7 +4179,7 @@ async function exportSCExcel() {
   const mesIdx = filtroEquipProf ? 6 : 5;
   rows.sort((a,b) => (b[mesIdx]||0) - (a[mesIdx]||0));
 
-  const sheetName = filtroEquipProf ? 'Sem Compras Equip Prof' : (modoUltimoMes ? 'Sem Compras 1-5m' : 'Sem Compras');
+  const sheetName = filtroEquipProf ? 'Sem Compras Equip Prof' : (modoUltimoMes ? 'Sem Compras 2-5m' : 'Sem Compras');
   const fileName = filtroEquipProf
     ? 'clientes_sem_compras_equip_profissional.xlsx'
     : (modoUltimoMes ? 'clientes_sem_compras_ultimo_mes.xlsx' : 'clientes_sem_compras.xlsx');
