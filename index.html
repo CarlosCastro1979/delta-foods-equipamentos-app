@@ -1476,21 +1476,10 @@ var _unused_placeholder = 1;
     <div class="sub-nav">
       <button class="sub-tab analise-subtab active" data-sub="resumo" onclick="showAnalise('resumo')">Resumo</button>
       <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
+      <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
       <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div id="resumo-content"></div>
-
-    <!-- Histórico de Encerrados -->
-    <div style="margin-top:28px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <div style="font-size:15px;font-weight:600;">🔴 Clientes com Pedido de Encerramento</div>
-        <button class="btn btn-secondary btn-sm" onclick="loadEncerrados()">↺ Actualizar</button>
-      </div>
-      <div id="encerrados-content">
-        <div style="color:var(--muted);font-size:13px;padding:20px 0;">A carregar...</div>
-      </div>
-    </div>
-
   </div>
 
   <div class="panel" id="panel-at">
@@ -1886,6 +1875,7 @@ var _unused_placeholder = 1;
     <div class="sub-nav">
       <button class="sub-tab analise-subtab" data-sub="resumo" onclick="showAnalise('resumo')">Resumo</button>
       <button class="sub-tab analise-subtab active" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
+      <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
       <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -1894,15 +1884,12 @@ var _unused_placeholder = 1;
         <select id="sc-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="renderSemCompras()">
           <option value="">Todos os vendedores</option>
         </select>
-        <select id="sc-periodo" class="form-input" style="min-width:200px;height:36px;font-size:13px;" onchange="updateSCPeriodoUI(); renderSemCompras()">
-          <option value="1">Último mês (2–5 meses calend.)</option>
-          <option value="6" selected>Mais de 6 meses</option>
-          <option value="9">Mais de 9 meses</option>
-          <option value="12">Mais de 12 meses</option>
-        </select>
-
         <button class="btn btn-secondary btn-sm" onclick="exportSCExcel()" style="min-height:36px;">⬇ Excel</button>
       </div>
+    </div>
+    <div id="sc-faixas-wrap" style="margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;">Períodos — selecciona um ou mais</div>
+      <div id="sc-faixas-row" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
       <button id="sc-btn-divida" onclick="toggleSCFiltro('divida')"
@@ -1922,7 +1909,6 @@ var _unused_placeholder = 1;
       <span style="font-size:12px;color:var(--muted);">Com máquina nossa — deveriam comprar todos os meses</span>
     </div>
     <div id="sc-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
-    <div id="sc-encerramentos-pendentes" style="display:none;margin-bottom:20px;"></div>
     <div id="sc-content">
       <div style="padding:60px 20px;text-align:center;color:var(--muted);">
         <div style="font-size:40px;margin-bottom:12px;">📂</div>
@@ -1932,11 +1918,35 @@ var _unused_placeholder = 1;
     </div>
   </div>
 
+  <!-- PANEL: ENCERRAMENTO PENDENTE -->
+  <div class="panel" id="panel-encerramento-pendente">
+    <div class="sub-nav">
+      <button class="sub-tab analise-subtab" data-sub="resumo" onclick="showAnalise('resumo')">Resumo</button>
+      <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
+      <button class="sub-tab analise-subtab active" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+      <div style="font-size:15px;font-weight:600;">🟠 Encerramento pendente</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <select id="ep-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="renderEncerramentoPendente()">
+          <option value="">Todos os vendedores</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="renderEncerramentoPendente()" style="min-height:36px;">↺ Actualizar</button>
+      </div>
+    </div>
+    <div id="ep-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+    <div id="ep-content">
+      <div style="color:var(--muted);font-size:13px;padding:20px 0;">A carregar...</div>
+    </div>
+  </div>
+
   <!-- PANEL: FORA SP -->
   <div class="panel" id="panel-fora-sp">
     <div class="sub-nav">
       <button class="sub-tab analise-subtab" data-sub="resumo" onclick="showAnalise('resumo')">Resumo</button>
       <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
+      <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
       <button class="sub-tab analise-subtab active" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -3095,8 +3105,9 @@ function getSCEncerramentosPendentesLista(vendFilt) {
     .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
 }
 
-function buildSCEncerramentosPendentesHtml(lista) {
+function buildSCEncerramentosPendentesHtml(lista, opts) {
   if (!lista.length) return '';
+  const comSeparador = !opts || opts.separador !== false;
   const rows = lista.map(d => {
     const dt = d.criado_em ? new Date(d.criado_em).toLocaleDateString('pt-BR') : '—';
     return `<tr style="border-bottom:1px solid #fde68a;background:#fffbeb;">
@@ -3127,7 +3138,7 @@ function buildSCEncerramentosPendentesHtml(lista) {
       </table>
     </div>
   </div>
-  <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
+  ${comSeparador ? '<div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>' : ''}`;
 }
 
 // ─── PIN ÁREA DADOS ──────────────────────────────────
@@ -3561,8 +3572,19 @@ async function initSemCompras() {
   if (promises.length) await Promise.all(promises);
   await loadSCEncerramentosPendentes();
   scDataRef = new Date();
+  initSCFaixaBtns();
 
   renderSemCompras();
+}
+
+async function initEncerramentoPendente() {
+  const sel = document.getElementById('ep-vendedor');
+  if (sel && sel.options.length <= 1) {
+    const vendedores = [...new Set(getListaClientesActiva().map(c => c.vendedor).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">Todos os vendedores</option>' +
+      vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+  }
+  await renderEncerramentoPendente();
 }
 
 async function handleSCFileImport(event) {
@@ -3925,6 +3947,73 @@ let scFiltroActivo = 'ambos';
 let scFiltroEquipProf = false;
 let scEquipProfMap = null;
 
+const SC_FAIXAS = [
+  { id: '1m', label: '1 mês', cor: '#65a30d', bg: '#f7fee7' },
+  { id: '2m', label: '2 meses', cor: '#ca8a04', bg: '#FEFCE8' },
+  { id: '3-4m', label: '3-4 meses', cor: '#d97706', bg: '#FFFBEB' },
+  { id: '5m', label: '5 meses', cor: '#ea580c', bg: '#FFF7ED' },
+  { id: '6-9m', label: '6-9 meses', cor: '#ca8a04', bg: '#FEFCE8' },
+  { id: '9-12m', label: '9-12 meses', cor: '#d97706', bg: '#FFFBEB' },
+  { id: '12+', label: '+12 meses', cor: '#c8102e', bg: '#FEF2F2' },
+];
+let scFaixasActivas = new Set(SC_FAIXAS.map(f => f.id));
+
+function getSCFaixaCliente(mesesCal, mesesDias) {
+  if (mesesCal < 1) return null;
+  if (mesesCal <= 5) {
+    if (mesesCal === 1) return '1m';
+    if (mesesCal === 2) return '2m';
+    if (mesesCal <= 4) return '3-4m';
+    return '5m';
+  }
+  if (mesesDias >= 12) return '12+';
+  if (mesesDias >= 9) return '9-12m';
+  return '6-9m';
+}
+
+function getSCFaixaMeta(id) {
+  return SC_FAIXAS.find(f => f.id === id) || { id, label: id, cor: '#666', bg: '#f5f5f5' };
+}
+
+function initSCFaixaBtns() {
+  const row = document.getElementById('sc-faixas-row');
+  if (!row || row.dataset.inited) return;
+  row.dataset.inited = '1';
+  row.innerHTML = SC_FAIXAS.map(f => `
+    <button type="button" id="sc-faixa-${f.id}" data-faixa="${f.id}" onclick="toggleSCFaixa('${f.id}')"
+      style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:2px solid ${f.cor};">
+      ${f.label}
+    </button>`).join('');
+  updateSCFaixaBtns();
+}
+
+function updateSCFaixaBtns() {
+  for (const f of SC_FAIXAS) {
+    const btn = document.getElementById('sc-faixa-' + f.id);
+    if (!btn) continue;
+    const on = scFaixasActivas.has(f.id);
+    btn.style.background = on ? f.cor : '#fff';
+    btn.style.color = on ? '#fff' : f.cor;
+    btn.style.borderColor = f.cor;
+  }
+}
+
+function toggleSCFaixa(id) {
+  if (scFaixasActivas.has(id)) {
+    if (scFaixasActivas.size <= 1) return;
+    scFaixasActivas.delete(id);
+  } else {
+    scFaixasActivas.add(id);
+  }
+  updateSCFaixaBtns();
+  updateSCFaixasUI();
+  renderSemCompras();
+}
+
+function scTemFaixaCurtaActiva() {
+  return ['1m', '2m', '3-4m', '5m'].some(id => scFaixasActivas.has(id));
+}
+
 function buildSCEquipProfMap() {
   if (scEquipProfMap) return scEquipProfMap;
   scEquipProfMap = new Map();
@@ -3946,11 +4035,10 @@ function getEquipProfissionaisStr(cod) {
   return equips.map(e => e.tipo + (e.tag ? ` #${e.tag}` : '')).join(', ');
 }
 
-function updateSCPeriodoUI() {
-  const modoUltimoMes = document.getElementById('sc-periodo')?.value === '1';
+function updateSCFaixasUI() {
   const row = document.getElementById('sc-filtro-equip-prof-row');
-  if (row) row.style.display = modoUltimoMes ? 'flex' : 'none';
-  if (!modoUltimoMes) scFiltroEquipProf = false;
+  if (row) row.style.display = scTemFaixaCurtaActiva() ? 'flex' : 'none';
+  if (!scTemFaixaCurtaActiva()) scFiltroEquipProf = false;
   updateSCFiltroEquipProfBtn();
 }
 
@@ -4005,120 +4093,76 @@ function renderSemCompras() {
   const cont = document.getElementById('sc-content');
   if (!scLoaded || !cont) return;
 
-  updateSCPeriodoUI();
+  initSCFaixaBtns();
+  updateSCFaixasUI();
 
-  const vendFilt   = document.getElementById('sc-vendedor')?.value || '';
-  const periodoMin = parseInt(document.getElementById('sc-periodo')?.value || '6');
-  const modoUltimoMes = periodoMin === 1;
-  const filtroEquipProf = modoUltimoMes && scFiltroEquipProf;
+  const vendFilt = document.getElementById('sc-vendedor')?.value || '';
+  const filtroEquipProf = scFiltroEquipProf && scTemFaixaCurtaActiva();
   const hoje = scDataRef || new Date();
-  const pendentesLista = getSCEncerramentosPendentesLista(vendFilt);
-  const elPendentes = document.getElementById('sc-encerramentos-pendentes');
-  if (elPendentes) {
-    if (pendentesLista.length) {
-      elPendentes.style.display = 'block';
-      elPendentes.innerHTML = buildSCEncerramentosPendentesHtml(pendentesLista);
-    } else {
-      elPendentes.style.display = 'none';
-      elPendentes.innerHTML = '';
-    }
-  }
 
-  // Calcula meses sem comprar por cliente
   const resultado = [];
   for (const cli of getListaClientesActiva()) {
     if (vendFilt && cli.vendedor !== vendFilt) continue;
     if (clienteTemEncerramentoPendente(cli.cod)) continue;
-    const codNorm = normalizaCodSC(cli.cod);
     const ultimaCompra = getUltimaCompraFamilia(cli.cod);
-
-    // Só considera clientes com pelo menos uma venda no histórico
     if (!ultimaCompra) continue;
 
-    const diffMs = hoje - ultimaCompra;
-    const mesesDias = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 30.44));
+    const mesesDias = Math.floor((hoje - ultimaCompra) / (1000 * 60 * 60 * 24 * 30.44));
     const mesesCal = mesesCalendarioSemCompra(ultimaCompra, hoje);
-    const mesesSemComprar = modoUltimoMes ? mesesCal : mesesDias;
+    const faixaId = getSCFaixaCliente(mesesCal, mesesDias);
+    if (!faixaId || !scFaixasActivas.has(faixaId)) continue;
 
-    if (modoUltimoMes) {
-      // 2–5 meses de calendário sem comprar — exclui mês actual/anterior e lista +6 meses
-      if (mesesCal < 2 || mesesCal >= 6) continue;
-    } else if (mesesDias < periodoMin) {
-      continue;
-    }
-    resultado.push({ ...cli, ultimaCompra, mesesSemComprar, mesesCal, mesesDias });
+    const faixaMeta = getSCFaixaMeta(faixaId);
+    const mesesSemComprar = mesesCal <= 5 ? mesesCal : mesesDias;
+    resultado.push({ ...cli, ultimaCompra, mesesSemComprar, mesesCal, mesesDias, faixaId, faixaMeta });
   }
 
   const listaExibir = filtroEquipProf
     ? resultado.filter(c => clienteTemEquipProfissional(c.cod))
     : resultado;
 
-  // Ordena: mais tempo sem comprar primeiro
   listaExibir.sort((a, b) => b.mesesSemComprar - a.mesesSemComprar);
 
-  // Estatísticas
-  const n12 = listaExibir.filter(c => c.mesesSemComprar >= 12).length;
-  const n9  = listaExibir.filter(c => c.mesesSemComprar >= 9 && c.mesesSemComprar < 12).length;
-  const n6  = listaExibir.filter(c => c.mesesSemComprar >= 6 && c.mesesSemComprar < 9).length;
-  const n5  = listaExibir.filter(c => c.mesesSemComprar === 5).length;
-  const n34 = listaExibir.filter(c => c.mesesSemComprar >= 3 && c.mesesSemComprar <= 4).length;
-  const n2  = listaExibir.filter(c => c.mesesSemComprar === 2).length;
+  const contagemFaixas = {};
+  SC_FAIXAS.forEach(f => { contagemFaixas[f.id] = 0; });
+  listaExibir.forEach(c => { contagemFaixas[c.faixaId] = (contagemFaixas[c.faixaId] || 0) + 1; });
 
-  document.getElementById('sc-info').innerHTML = modoUltimoMes
-    ? (filtroEquipProf
-      ? `<span style="color:#1d4ed8;font-weight:600;">${listaExibir.length} clientes</span> com equipamento profissional sem compras (2–5 meses calend.)` +
-        ` &nbsp;·&nbsp; <span style="color:#ca8a04">🟡 2m: ${n2}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟠 3-4m: ${n34}</span> &nbsp;·&nbsp; <span style="color:#c8102e">🔴 5m: ${n5}</span>` +
-        ` &nbsp;·&nbsp; Referência: ${hoje.toLocaleDateString('pt-BR')}`
-      : `<span style="color:#d97706;font-weight:600;">${listaExibir.length} clientes</span> sem compras há 2–5 meses (calend.) — excl. mês actual/anterior e +6 meses` +
-        ` &nbsp;·&nbsp; <span style="color:#ca8a04">🟡 2m: ${n2}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟠 3-4m: ${n34}</span> &nbsp;·&nbsp; <span style="color:#c8102e">🔴 5m: ${n5}</span>` +
-        ` &nbsp;·&nbsp; Referência: ${hoje.toLocaleDateString('pt-BR')}`)
-    : `<span style="color:var(--danger);font-weight:600;">${listaExibir.length} clientes</span> sem compras há mais de ${periodoMin} meses` +
-      (periodoMin <= 6 ? ` &nbsp;·&nbsp; <span style="color:var(--danger)">🔴 +12m: ${n12}</span> &nbsp;·&nbsp; <span style="color:#d97706">🟡 9-12m: ${n9}</span> &nbsp;·&nbsp; <span style="color:#ca8a04">🟠 6-9m: ${n6}</span>` : '') +
-      ` &nbsp;·&nbsp; Referência: ${hoje.toLocaleDateString('pt-BR')}`;
+  const faixasResumo = SC_FAIXAS
+    .filter(f => scFaixasActivas.has(f.id) && contagemFaixas[f.id])
+    .map(f => `<span style="color:${f.cor}">● ${f.label}: ${contagemFaixas[f.id]}</span>`)
+    .join(' &nbsp;·&nbsp; ');
 
-  if (!listaExibir.length && !pendentesLista.length) {
-    cont.innerHTML = filtroEquipProf
-      ? '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum cliente com equipamento profissional sem compras neste período.</div>'
-      : '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum cliente sem compras neste período.</div>';
-    return;
-  }
+  document.getElementById('sc-info').innerHTML =
+    `<span style="color:var(--danger);font-weight:600;">${listaExibir.length} clientes</span> sem compras` +
+    (faixasResumo ? ` &nbsp;·&nbsp; ${faixasResumo}` : '') +
+    ` &nbsp;·&nbsp; Referência: ${hoje.toLocaleDateString('pt-BR')}`;
 
   if (!listaExibir.length) {
-    cont.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">Todos os clientes deste filtro têm encerramento pendente ou não se aplicam.</div>';
+    cont.innerHTML = filtroEquipProf
+      ? '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum cliente com equipamento profissional nos períodos seleccionados.</div>'
+      : '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum cliente sem compras nos períodos seleccionados.</div>';
     return;
   }
 
-  // Separa em com dívida e sem dívida
   const comDivida = listaExibir.filter(c => scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)]);
   const semDivida = listaExibir.filter(c => !scDividasData[c.cod] && !scDividasData[normalizaCodSC(c.cod)]);
 
-  // COM DÍVIDA: ordena por vendedor, depois dívida mais antiga (maior antiguidade +120 primeiro)
   comDivida.sort((a, b) => {
     if (a.vendedor !== b.vendedor) return (a.vendedor||'').localeCompare(b.vendedor||'');
     const da = scDividasData[a.cod] || scDividasData[normalizaCodSC(a.cod)] || {};
     const db = scDividasData[b.cod] || scDividasData[normalizaCodSC(b.cod)] || {};
-    // Ordena por antiguidade: mais antiga primeiro (+120 > 90-120 > ...)
     const antiguidadeA = (da.a120||0)*6 + (da.a90_120||0)*5 + (da.a60_90||0)*4 + (da.a30_60||0)*3 + (da.a15_30||0)*2 + (da.a0_15||0);
     const antiguidadeB = (db.a120||0)*6 + (db.a90_120||0)*5 + (db.a60_90||0)*4 + (db.a30_60||0)*3 + (db.a15_30||0)*2 + (db.a0_15||0);
     return antiguidadeB - antiguidadeA;
   });
 
-  // SEM DÍVIDA: dentro de cada grupo ordena por vendedor
-  const buildGruposSemDiv = (lista) => modoUltimoMes ? [
-    { label: '🟡 2 meses', cor: '#ca8a04', bg: '#FEFCE8',
-      clientes: lista.filter(c => c.mesesSemComprar === 2).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
-    { label: '🟠 3-4 meses', cor: '#d97706', bg: '#FFFBEB',
-      clientes: lista.filter(c => c.mesesSemComprar >= 3 && c.mesesSemComprar <= 4).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
-    { label: '🔴 5 meses', cor: '#c8102e', bg: '#FEF2F2',
-      clientes: lista.filter(c => c.mesesSemComprar === 5).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
-  ].filter(g => g.clientes.length > 0) : [
-    { label: '🔴 Mais de 12 meses', cor: '#c8102e', bg: '#FEF2F2',
-      clientes: lista.filter(c => c.mesesSemComprar >= 12).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
-    { label: '🟠 Entre 9 e 12 meses', cor: '#d97706', bg: '#FFFBEB',
-      clientes: lista.filter(c => c.mesesSemComprar >= 9 && c.mesesSemComprar < 12).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
-    { label: '🟡 Entre 6 e 9 meses', cor: '#ca8a04', bg: '#FEFCE8',
-      clientes: lista.filter(c => c.mesesSemComprar >= 6 && c.mesesSemComprar < 9).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'')) },
-  ].filter(g => g.clientes.length > 0);
+  const buildGruposSemDiv = (lista) => SC_FAIXAS
+    .filter(f => scFaixasActivas.has(f.id))
+    .map(f => ({
+      label: f.label, cor: f.cor, bg: f.bg,
+      clientes: lista.filter(c => c.faixaId === f.id).sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||''))
+    }))
+    .filter(g => g.clientes.length > 0);
 
   function buildTableComDiv(lista) {
     if (!lista.length) return '';
@@ -4138,12 +4182,7 @@ function renderSemCompras() {
         <tbody>
           ${lista.map((c, i) => {
             const div = scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)];
-            const faixaCor = modoUltimoMes
-              ? (c.mesesSemComprar >= 5 ? '#c8102e' : c.mesesSemComprar >= 3 ? '#d97706' : '#ca8a04')
-              : (c.mesesSemComprar >= 12 ? '#c8102e' : c.mesesSemComprar >= 9 ? '#d97706' : '#ca8a04');
-            const faixaBg  = modoUltimoMes
-              ? (c.mesesSemComprar >= 5 ? '#FEF2F2' : c.mesesSemComprar >= 3 ? '#FFFBEB' : '#FEFCE8')
-              : (c.mesesSemComprar >= 12 ? '#FEF2F2' : c.mesesSemComprar >= 9 ? '#FFFBEB' : '#FEFCE8');
+            const fm = c.faixaMeta;
             const colEquip = filtroEquipProf
               ? `<td class="col-equip" style="font-size:11px;">${getEquipProfissionaisStr(c.cod)}</td>`
               : '';
@@ -4153,7 +4192,7 @@ function renderSemCompras() {
               <td class="col-nome" style="font-weight:500;">${c.nome}</td>
               ${colEquip}
               <td class="col-date">${c.ultimaCompra ? c.ultimaCompra.toLocaleDateString('pt-BR') : '—'}</td>
-              <td class="col-meses"><span style="background:${faixaBg};color:${faixaCor};border-radius:12px;padding:2px 6px;font-weight:700;font-size:11px;">${c.mesesSemComprar}m</span></td>
+              <td class="col-meses"><span style="background:${fm.bg};color:${fm.cor};border-radius:12px;padding:2px 6px;font-weight:700;font-size:11px;">${c.mesesSemComprar}m</span></td>
               <td class="col-money" style="font-weight:700;color:#c8102e;">${div ? formatEur(div.vencido) : '—'}</td>
               <td class="col-aging">${div ? agingCompact(div) : '—'}</td>
             </tr>`;
@@ -4184,7 +4223,6 @@ function renderSemCompras() {
             ${grupo.clientes.map((c, i) => {
               const registo = (allData||[]).find(r => normalizaCodSC(r.cod) === normalizaCodSC(c.cod));
               const pendente = registo?.encerramento_pendente;
-              // Mostrar botão sempre — se não encontrar registo usa dados do cliente da lista SAP
               const nomeEsc = (c.nome||'').replace(/'/g,"\'").replace(/"/g,'&quot;');
               const btnEnc = pendente
                 ? `<span style="font-size:10px;color:#f59e0b;font-weight:600;">🟠 Pendente</span>`
@@ -4211,7 +4249,6 @@ function renderSemCompras() {
 
   let html = '';
 
-  // ── RESUMO POR VENDEDOR ──
   const resumoVend = {};
   listaExibir.forEach(c => {
     const v = c.vendedor || '—';
@@ -4254,10 +4291,10 @@ function renderSemCompras() {
     </table>
   </div>
   <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
+
   const mostrarComDiv = scFiltroActivo === 'divida' || scFiltroActivo === 'ambos';
   const mostrarSemDiv = scFiltroActivo === 'sem-divida' || scFiltroActivo === 'ambos';
 
-  // SECÇÃO 1: Com dívida — lista única ordenada por vendedor + antiguidade
   if (comDivida.length && mostrarComDiv) {
     const totalDivida = comDivida.reduce((s,c) => {
       const d = scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)];
@@ -4271,12 +4308,10 @@ function renderSemCompras() {
     html += buildTableComDiv(comDivida);
   }
 
-  // SEPARADOR
   if (comDivida.length && mostrarComDiv && semDivida.length && mostrarSemDiv) {
     html += `<div style="border-top:2px dashed #e0e0e0;margin:24px 0 20px;"></div>`;
   }
 
-  // SECÇÃO 2: Sem dívida — separado por período, ordenado por vendedor dentro de cada grupo
   if (semDivida.length && mostrarSemDiv) {
     html += `<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
       <span style="font-size:14px;font-weight:700;color:#16a34a;">✅ Sem dívida — ${semDivida.length} clientes</span>
@@ -4291,10 +4326,8 @@ function renderSemCompras() {
 async function exportSCExcel() {
   if (!scLoaded) { toast('Carrega primeiro um ficheiro de vendas.', 'error'); return; }
   await ensureXLSX();
-  const vendFilt   = document.getElementById('sc-vendedor')?.value || '';
-  const periodoMin = parseInt(document.getElementById('sc-periodo')?.value || '6');
-  const modoUltimoMes = periodoMin === 1;
-  const filtroEquipProf = modoUltimoMes && scFiltroEquipProf;
+  const vendFilt = document.getElementById('sc-vendedor')?.value || '';
+  const filtroEquipProf = scFiltroEquipProf && scTemFaixaCurtaActiva();
   const hoje = scDataRef || new Date();
 
   const headers = ['Vendedor','Cód.','Nome','CEP','Última Compra','Meses sem comprar','Faixa','Situação Dívida','Total Vencido (R$)'];
@@ -4302,34 +4335,28 @@ async function exportSCExcel() {
   const rows = [headers];
   for (const cli of getListaClientesActiva()) {
     if (vendFilt && cli.vendedor !== vendFilt) continue;
-    const codNorm = normalizaCodSC(cli.cod);
+    if (clienteTemEncerramentoPendente(cli.cod)) continue;
     const ultimaCompra = getUltimaCompraFamilia(cli.cod);
-    const mesesDias = ultimaCompra ? Math.floor((hoje - ultimaCompra) / (1000*60*60*24*30.44)) : 999;
-    const mesesCal = ultimaCompra ? mesesCalendarioSemCompra(ultimaCompra, hoje) : 999;
-    const meses = modoUltimoMes ? mesesCal : mesesDias;
-    if (modoUltimoMes) {
-      if (mesesCal < 2 || mesesCal >= 6) continue;
-    } else if (mesesDias < periodoMin) {
-      continue;
-    }
+    if (!ultimaCompra) continue;
+    const mesesDias = Math.floor((hoje - ultimaCompra) / (1000*60*60*24*30.44));
+    const mesesCal = mesesCalendarioSemCompra(ultimaCompra, hoje);
+    const faixaId = getSCFaixaCliente(mesesCal, mesesDias);
+    if (!faixaId || !scFaixasActivas.has(faixaId)) continue;
     if (filtroEquipProf && !clienteTemEquipProfissional(cli.cod)) continue;
-    const faixa = modoUltimoMes
-      ? (mesesCal === 5 ? '5 meses' : mesesCal >= 3 ? '3-4 meses' : '2 meses')
-      : (meses >= 12 ? '+12 meses' : meses >= 9 ? '9-12 meses' : '6-9 meses');
+    const faixa = getSCFaixaMeta(faixaId).label;
+    const meses = mesesCal <= 5 ? mesesCal : mesesDias;
     const div = scDividasData[cli.cod] || scDividasData[normalizaCodSC(cli.cod)];
     const vencido = div ? div.vencido : 0;
     const lista = div ? 'Com divida' : 'Sem divida';
-    const row = [cli.vendedor||'', cli.cod, cli.nome, cli.cep, ultimaCompra ? ultimaCompra.toLocaleDateString('pt-BR') : 'Sem dados', meses >= 999 ? '' : meses, faixa, lista, vencido || ''];
+    const row = [cli.vendedor||'', cli.cod, cli.nome, cli.cep, ultimaCompra.toLocaleDateString('pt-BR'), meses, faixa, lista, vencido || ''];
     if (filtroEquipProf) row.splice(4, 0, getEquipProfissionaisStr(cli.cod));
     rows.push(row);
   }
   const mesIdx = filtroEquipProf ? 6 : 5;
   rows.sort((a,b) => (b[mesIdx]||0) - (a[mesIdx]||0));
 
-  const sheetName = filtroEquipProf ? 'Sem Compras Equip Prof' : (modoUltimoMes ? 'Sem Compras 2-5m' : 'Sem Compras');
-  const fileName = filtroEquipProf
-    ? 'clientes_sem_compras_equip_profissional.xlsx'
-    : (modoUltimoMes ? 'clientes_sem_compras_ultimo_mes.xlsx' : 'clientes_sem_compras.xlsx');
+  const sheetName = filtroEquipProf ? 'Sem Compras Equip Prof' : 'Sem Compras';
+  const fileName = filtroEquipProf ? 'clientes_sem_compras_equip_profissional.xlsx' : 'clientes_sem_compras.xlsx';
   const colWidths = filtroEquipProf
     ? [{wch:20},{wch:10},{wch:40},{wch:12},{wch:36},{wch:14},{wch:18},{wch:12},{wch:14},{wch:18}]
     : [{wch:20},{wch:10},{wch:40},{wch:12},{wch:14},{wch:18},{wch:12},{wch:14},{wch:18}];
@@ -5594,7 +5621,7 @@ function switchTab(tab) {
   if (tab === 'prospeccao') initProsTab();
 }
 
-// Sub-menu "Análise Clientes Horeca": Resumo / Sem Compras / Fora SP
+// Sub-menu "Análise Clientes Horeca": Resumo / Sem Compras / Encerramento pendente / Fora SP
 function showAnalise(sub) {
   window._analiseSub = sub;
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -5608,8 +5635,9 @@ function showAnalise(sub) {
     const p = document.getElementById('sub-panel-' + s);
     if (p) p.style.display = 'none';
   });
-  if (sub === 'resumo') { loadResumo(); loadEncerrados(); }
+  if (sub === 'resumo') loadResumo();
   if (sub === 'sem-compras') initSemCompras();
+  if (sub === 'encerramento-pendente') initEncerramentoPendente();
   if (sub === 'fora-sp') initForaSP();
 }
 
@@ -7324,66 +7352,32 @@ function getUtilizadorAtual() {
 }
 
 // ─── ENCERRAMENTO DE CLIENTE ─────────────────────────
-async function loadEncerrados() {
-  const el = document.getElementById('encerrados-content');
+async function renderEncerramentoPendente() {
+  const el = document.getElementById('ep-content');
+  const info = document.getElementById('ep-info');
   if (!el) return;
   el.innerHTML = '<div style="color:var(--muted);font-size:13px;">A carregar...</div>';
   try {
     await loadSCEncerramentosPendentes();
-    const dados = [...scEncerramentosPendentes.values()];
-    if (!dados.length) {
-      el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Nenhum pedido de encerramento pendente.</div>';
+    const vendFilt = document.getElementById('ep-vendedor')?.value || '';
+    const lista = getSCEncerramentosPendentesLista(vendFilt);
+    if (info) {
+      info.innerHTML = lista.length
+        ? `<span style="color:#f59e0b;font-weight:600;">${lista.length} cliente${lista.length > 1 ? 's' : ''}</span> com pedido de encerramento aguardando aprovação no SAP`
+        : 'Nenhum pedido de encerramento pendente.';
+    }
+    if (!lista.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:40px 0;text-align:center;">Nenhum pedido de encerramento pendente.</div>';
       return;
     }
-
-    // Agrupar por vendedor
-    const porVendedor = {};
-    dados.forEach(d => {
-      const v = d.vendedor || '—';
-      if (!porVendedor[v]) porVendedor[v] = [];
-      porVendedor[v].push(d);
-    });
-
-    const TH = 'padding:7px 10px;font-size:11px;color:var(--muted);font-weight:600;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;';
-    const TD = 'padding:7px 10px;font-size:12px;border-bottom:1px solid #f3f4f6;vertical-align:middle;';
-
-    let html = '';
-    for (const [vendedor, lista] of Object.entries(porVendedor)) {
-      const rows = lista.map(d => {
-        const dt = d.criado_em ? new Date(d.criado_em).toLocaleDateString('pt-BR') : '—';
-        return `<tr>
-          <td style="${TD}font-weight:600;">${d.nome || '—'}</td>
-          <td style="${TD}">${d.cod || '—'}</td>
-          <td style="${TD}">${d.cep || '—'}</td>
-          <td style="${TD}">${d.motivo || '—'}</td>
-          <td style="${TD}">${d.solicitado_por || '—'}</td>
-          <td style="${TD}color:var(--muted);">${dt}</td>
-        </tr>`;
-      }).join('');
-
-      html += `<div style="margin-bottom:20px;">
-        <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:8px;padding:6px 10px;background:#f8f8f8;border-radius:6px;">
-          ${vendedor} — ${lista.length} pedido${lista.length>1?'s':''}
-        </div>
-        <div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border);">
-          <table style="width:100%;border-collapse:collapse;">
-            <thead><tr style="background:#f5f5f5;">
-              <th style="${TH}">Nome</th>
-              <th style="${TH}">Cód. SAP</th>
-              <th style="${TH}">CEP</th>
-              <th style="${TH}">Motivo</th>
-              <th style="${TH}">Solicitado por</th>
-              <th style="${TH}">Data</th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      </div>`;
-    }
-    el.innerHTML = html;
+    el.innerHTML = buildSCEncerramentosPendentesHtml(lista, { separador: false });
   } catch(e) {
     el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro: ${e.message}</div>`;
   }
+}
+
+async function loadEncerrados() {
+  await renderEncerramentoPendente();
 }
 
 // ─── ENCERRAMENTO DE CLIENTE ─────────────────────────
@@ -7502,7 +7496,7 @@ ${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`
     });
     renderTable();
     renderSemCompras();
-    loadEncerrados();
+    renderEncerramentoPendente();
     toast('✅ Pedido de encerramento enviado.');
   } catch(e) {
     console.warn('Erro ao marcar encerramento:', e.message);
