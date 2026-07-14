@@ -1,0 +1,15 @@
+---
+description: Números em tabelas de resumo devem ser clicáveis para filtrar/drill-down
+alwaysApply: true
+---
+
+# Resumo clicável (drill-down)
+
+Preferência do utilizador:
+
+Quando existir uma tabela de **resumo / agregados** acima de uma lista detalhada:
+
+1. Números filtráveis (contagens, buckets) devem ser **clicáveis**.
+2. Clique → mostrar só as linhas desse número.
+3. Banner do filtro activo + botão Limpar.
+4. "—" / zero não clicável; cursor/underline nos clicáveis.

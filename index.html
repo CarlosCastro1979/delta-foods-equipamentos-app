@@ -1477,6 +1477,7 @@ var _unused_placeholder = 1;
       <button class="sub-tab analise-subtab active" data-sub="resumo" onclick="showAnalise('resumo')">Resumo</button>
       <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
       <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="contencioso-pendente" onclick="showAnalise('contencioso-pendente')">Contencioso pendente</button>
       <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div id="resumo-content"></div>
@@ -1876,6 +1877,7 @@ var _unused_placeholder = 1;
       <button class="sub-tab analise-subtab" data-sub="resumo" onclick="showAnalise('resumo')">Resumo</button>
       <button class="sub-tab analise-subtab active" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
       <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="contencioso-pendente" onclick="showAnalise('contencioso-pendente')">Contencioso pendente</button>
       <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -1924,6 +1926,7 @@ var _unused_placeholder = 1;
       <button class="sub-tab analise-subtab" data-sub="resumo" onclick="showAnalise('resumo')">Resumo</button>
       <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
       <button class="sub-tab analise-subtab active" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="contencioso-pendente" onclick="showAnalise('contencioso-pendente')">Contencioso pendente</button>
       <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -1941,12 +1944,37 @@ var _unused_placeholder = 1;
     </div>
   </div>
 
+  <!-- PANEL: CONTENCIOSO PENDENTE -->
+  <div class="panel" id="panel-contencioso-pendente">
+    <div class="sub-nav">
+      <button class="sub-tab analise-subtab" data-sub="resumo" onclick="showAnalise('resumo')">Resumo</button>
+      <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
+      <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
+      <button class="sub-tab analise-subtab active" data-sub="contencioso-pendente" onclick="showAnalise('contencioso-pendente')">Contencioso pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+      <div style="font-size:15px;font-weight:600;color:#7f1d1d;">Contencioso pendente</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <select id="cp-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="renderContenciosoPendente()">
+          <option value="">Todos os vendedores</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="renderContenciosoPendente()" style="min-height:36px;">↺ Actualizar</button>
+      </div>
+    </div>
+    <div id="cp-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+    <div id="cp-content">
+      <div style="color:var(--muted);font-size:13px;padding:20px 0;">A carregar...</div>
+    </div>
+  </div>
+
   <!-- PANEL: FORA SP -->
   <div class="panel" id="panel-fora-sp">
     <div class="sub-nav">
       <button class="sub-tab analise-subtab" data-sub="resumo" onclick="showAnalise('resumo')">Resumo</button>
       <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
       <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="contencioso-pendente" onclick="showAnalise('contencioso-pendente')">Contencioso pendente</button>
       <button class="sub-tab analise-subtab active" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -2535,6 +2563,26 @@ var _unused_placeholder = 1;
     </div>
   </div>
 
+<!-- MODAL PASSAR A CONTENCIOSO -->
+  <div id="contencioso-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1200;align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border-radius:12px;width:480px;padding:28px;position:relative;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+        <h2 style="font-size:16px;font-weight:600;color:#7f1d1d;">Passar a Contencioso</h2>
+        <button onclick="fecharContencioso()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+      </div>
+      <div id="contencioso-info" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px;"></div>
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:5px;">Observações</label>
+        <textarea id="contencioso-obs" class="form-input" style="width:100%;min-height:90px;resize:vertical;" placeholder="Observações a incluir no email (opcional)..."></textarea>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
+        <button class="btn btn-secondary" onclick="fecharContencioso()">Cancelar</button>
+        <button class="btn btn-sm" onclick="enviarContencioso()" style="background:#7f1d1d;border-color:#7f1d1d;color:#fff;padding:8px 16px;">✉ Enviar pedido Contencioso</button>
+      </div>
+      <div id="contencioso-status" style="margin-top:8px;font-size:12px;text-align:right;"></div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="modal-overlay" onclick="closeModalOnBg(event)">
   <div class="modal" id="modal-edit">
     <div class="modal-header">
@@ -3110,6 +3158,8 @@ function buildSCEncerramentosPendentesHtml(lista, opts) {
   const comSeparador = !opts || opts.separador !== false;
   const rows = lista.map(d => {
     const dt = d.criado_em ? new Date(d.criado_em).toLocaleDateString('pt-BR') : '—';
+    const idEsc = String(d.id || '').replace(/'/g, "\\'");
+    const codEsc = String(d.cod || '').replace(/'/g, "\\'");
     return `<tr style="border-bottom:1px solid #fde68a;background:#fffbeb;">
       <td style="padding:8px 10px;font-size:12px;">${d.vendedor || '—'}</td>
       <td style="padding:8px 10px;font-size:12px;">${d.cod || '—'}</td>
@@ -3118,6 +3168,10 @@ function buildSCEncerramentosPendentesHtml(lista, opts) {
       <td style="padding:8px 10px;font-size:12px;color:var(--muted);">${d.solicitado_por || '—'}</td>
       <td style="padding:8px 10px;font-size:12px;color:var(--muted);">${dt}</td>
       <td style="padding:8px 10px;"><span style="font-size:10px;color:#f59e0b;font-weight:700;background:#fef3c7;padding:2px 8px;border-radius:10px;">🟠 Aguarda aprovação</span></td>
+      <td style="padding:8px 10px;">
+        <button onclick="cancelarPedidoEncerramento('${codEsc}','${idEsc}')"
+          style="background:#fff;border:1px solid #dc2626;border-radius:4px;color:#dc2626;cursor:pointer;font-size:10px;padding:3px 8px;white-space:nowrap;">Cancelar pedido</button>
+      </td>
     </tr>`;
   }).join('');
   return `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;">
@@ -3133,12 +3187,49 @@ function buildSCEncerramentosPendentesHtml(lista, opts) {
           <th>Solicitado por</th>
           <th class="col-date">Data</th>
           <th class="col-action">Estado</th>
+          <th class="col-action">Ação</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
   </div>
   ${comSeparador ? '<div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>' : ''}`;
+}
+
+async function cancelarPedidoEncerramento(cod, id) {
+  if (!confirm('Cancelar este pedido de encerramento? O cliente volta a aparecer em Sem Compras.')) return;
+  const k = normCod(cod);
+  try {
+    if (id) {
+      await fetch(`${ENCERRADOS_URL}?id=eq.${id}`, {
+        method: 'DELETE', headers: { ...HEADERS, 'Prefer': 'return=minimal' }
+      });
+    } else if (k) {
+      await fetch(`${ENCERRADOS_URL}?cod=eq.${encodeURIComponent(k)}`, {
+        method: 'DELETE', headers: { ...HEADERS, 'Prefer': 'return=minimal' }
+      });
+    }
+    const regs = (allData || []).filter(r => normCod(r.cod) === k && r.id);
+    for (const r of regs) {
+      await fetch(`${SUPA_URL}?id=eq.${r.id}`, {
+        method: 'PATCH',
+        headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ encerramento_pendente: false, encerramento_motivo: null })
+      });
+      const idx = allData.findIndex(x => x.id === r.id);
+      if (idx >= 0) {
+        allData[idx].encerramento_pendente = false;
+        allData[idx].encerramento_motivo = null;
+      }
+    }
+    scEncerramentosPendentes.delete(k);
+    toast('Pedido de encerramento cancelado.');
+    renderTable();
+    renderSemCompras();
+    renderEncerramentoPendente();
+  } catch(e) {
+    toast('Erro ao cancelar: ' + e.message, 'error');
+  }
 }
 
 // ─── PIN ÁREA DADOS ──────────────────────────────────
@@ -3556,6 +3647,7 @@ async function initSemCompras() {
   if (!scLoaded) promises.push(scLoadFromSupabase());
   if (!scDividasLoaded) promises.push(scLoadDividasFromSupabase());
   if (!codRelacionados.length) promises.push(loadCodRelacionados());
+  promises.push(loadSCContenciosoPendentes());
   if (!allData?.length) {
     const cache = getRegistosCache();
     if (cache?.length) {
@@ -3762,10 +3854,88 @@ function getUltimaCompraFamilia(cod) {
 }
 
 let scDividasLoaded = false;
+let scDividasRefDate = null; // data de referência do aging (carga do Excel)
+
+function startOfDayLocal(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function parseExcelDateFlexible(val) {
+  if (val == null || val === '') return null;
+  if (val instanceof Date && !isNaN(val)) return startOfDayLocal(val);
+  if (typeof val === 'number' && window.XLSX?.SSF?.parse_date_code) {
+    const p = window.XLSX.SSF.parse_date_code(val);
+    if (p) return startOfDayLocal(new Date(p.y, p.m - 1, p.d));
+  }
+  if (typeof val === 'number') {
+    // Excel serial date (approx)
+    const epoch = new Date(Date.UTC(1899, 11, 30));
+    const d = new Date(epoch.getTime() + val * 86400000);
+    if (!isNaN(d)) return startOfDayLocal(d);
+  }
+  const s = String(val).trim();
+  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (m) {
+    const dd = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10) - 1;
+    let yy = parseInt(m[3], 10);
+    if (yy < 100) yy += 2000;
+    const d = new Date(yy, mm, dd);
+    if (!isNaN(d)) return startOfDayLocal(d);
+  }
+  const d2 = new Date(s);
+  return isNaN(d2) ? null : startOfDayLocal(d2);
+}
+
+function minDiasBucketAging(d) {
+  if (!d) return null;
+  if ((d.a120 || 0) > 0) return 120;
+  if ((d.a90_120 || 0) > 0) return 90;
+  if ((d.a60_90 || 0) > 0) return 60;
+  if ((d.a30_60 || 0) > 0) return 30;
+  if ((d.a15_30 || 0) > 0) return 15;
+  if ((d.a0_15 || 0) > 0) return 1;
+  return null;
+}
+
+/** Dias desde o vencimento até à data do email (hoje). Preferência: data vencimento → dias no Excel → aging. */
+function calcDiasAtrasoDesdeVencimento(d, asOf = new Date()) {
+  if (!d) return null;
+  const hoje = startOfDayLocal(asOf);
+  if (d.vencimento) {
+    const venc = startOfDayLocal(d.vencimento);
+    return Math.max(0, Math.round((hoje - venc) / 86400000));
+  }
+  const ref = scDividasRefDate ? startOfDayLocal(scDividasRefDate) : hoje;
+  if (d.diasAtrasoRelatorio != null && !isNaN(d.diasAtrasoRelatorio)) {
+    const extra = Math.max(0, Math.round((hoje - ref) / 86400000));
+    return Math.max(0, Math.round(d.diasAtrasoRelatorio) + extra);
+  }
+  const minBucket = minDiasBucketAging(d);
+  if (minBucket == null) return null;
+  const vencEstimado = new Date(ref);
+  vencEstimado.setDate(vencEstimado.getDate() - minBucket);
+  return Math.max(0, Math.round((hoje - startOfDayLocal(vencEstimado)) / 86400000));
+}
+
+function setDividasRefDate(dt) {
+  scDividasRefDate = startOfDayLocal(dt || new Date());
+  try { localStorage.setItem('delta_dividas_ref', scDividasRefDate.toISOString()); } catch(e) {}
+}
+
+function loadDividasRefDate() {
+  try {
+    const s = localStorage.getItem('delta_dividas_ref');
+    if (s) scDividasRefDate = startOfDayLocal(new Date(s));
+  } catch(e) {}
+}
 
 // Dívidas: carregadas do ficheiro mensal, guardadas no Supabase, substituídas a cada upload
 async function scLoadDividasFromSupabase() {
   try {
+    loadDividasRefDate();
     const res = await fetch(
       'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico?select=*&limit=5000',
       { headers: HEADERS }
@@ -3784,9 +3954,12 @@ async function scLoadDividasFromSupabase() {
           a0_15: row.aging_0_15, a15_30: row.aging_15_30,
           a30_60: row.aging_30_60, a60_90: row.aging_60_90,
           a90_120: row.aging_90_120, a120: row.aging_120,
+          vencimento: row.data_vencimento ? parseExcelDateFlexible(row.data_vencimento) : null,
+          diasAtrasoRelatorio: row.dias_atraso != null ? Number(row.dias_atraso) : null,
         };
       }
     }
+    if (!scDividasRefDate) setDividasRefDate(new Date());
     scDividasLoaded = true;
     console.log('scLoadDividas: carregados', Object.keys(scDividasData).length, 'clientes com dívida');
     return true;
@@ -3833,12 +4006,15 @@ async function handleSCDividasImport(event) {
   const i60_90   = headers.findIndex(h => h === '60-90');
   const i90_120  = headers.findIndex(h => h === '90-120');
   const i120     = headers.findIndex(h => h === '+ 120' || h === '+120');
+  const iVencim  = headers.findIndex(h => /vencim/i.test(h) && !/^vencido$/i.test(h));
+  const iDias    = headers.findIndex(h => /^dias$/i.test(h) || /dias\s*atraso/i.test(h) || /maior\s*atraso/i.test(h));
 
   if (iCod === -1 || iVencido === -1) {
     toast('Colunas CÓDIGO ou VENCIDO não encontradas.', 'error');
     event.target.value = ''; return;
   }
 
+  setDividasRefDate(new Date());
   const novasDividas = {};
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
@@ -3846,6 +4022,8 @@ async function handleSCDividasImport(event) {
     const cod = String(row[iCod]).trim();
     const vencido = parseFloat(row[iVencido]) || 0;
     if (vencido <= 0) continue;
+    const vencimento = iVencim >= 0 ? parseExcelDateFlexible(row[iVencim]) : null;
+    const diasAtrasoRelatorio = iDias >= 0 ? (parseFloat(row[iDias]) || null) : null;
     novasDividas[cod] = {
       vencido,
       a0_15:   parseFloat(row[i0_15])   || 0,
@@ -3854,6 +4032,8 @@ async function handleSCDividasImport(event) {
       a60_90:  parseFloat(row[i60_90])  || 0,
       a90_120: parseFloat(row[i90_120]) || 0,
       a120:    parseFloat(row[i120])    || 0,
+      vencimento,
+      diasAtrasoRelatorio,
     };
   }
 
@@ -4089,6 +4269,31 @@ function toggleSCFiltro(tipo) {
   renderSemCompras();
 }
 
+/** Drill-down do resumo Sem Compras: filtra por vendedor e/ou com dívida */
+function scFiltrarResumo(vendEnc, tipo) {
+  const vend = vendEnc === 'todos' ? '' : decodeURIComponent(vendEnc);
+  const sel = document.getElementById('sc-vendedor');
+  if (sel) sel.value = vend;
+
+  scFiltroActivo = (tipo === 'divida' || tipo === 'sem-divida') ? tipo : 'ambos';
+
+  const btnDiv    = document.getElementById('sc-btn-divida');
+  const btnSemDiv = document.getElementById('sc-btn-sem-divida');
+  if (btnDiv && btnSemDiv) {
+    if (scFiltroActivo === 'divida') {
+      btnDiv.style.background = '#c8102e'; btnDiv.style.color = '#fff';
+      btnSemDiv.style.background = '#fff'; btnSemDiv.style.color = '#16a34a';
+    } else if (scFiltroActivo === 'sem-divida') {
+      btnDiv.style.background = '#fff'; btnDiv.style.color = '#c8102e';
+      btnSemDiv.style.background = '#16a34a'; btnSemDiv.style.color = '#fff';
+    } else {
+      btnDiv.style.background = '#c8102e'; btnDiv.style.color = '#fff';
+      btnSemDiv.style.background = '#16a34a'; btnSemDiv.style.color = '#fff';
+    }
+  }
+  renderSemCompras();
+}
+
 function renderSemCompras() {
   const cont = document.getElementById('sc-content');
   if (!scLoaded || !cont) return;
@@ -4178,6 +4383,7 @@ function renderSemCompras() {
           <th class="col-meses">Mês</th>
           <th class="col-money">Vencido</th>
           <th class="col-aging">Antig.</th>
+          <th class="col-action">Ação</th>
         </tr></thead>
         <tbody>
           ${lista.map((c, i) => {
@@ -4186,6 +4392,16 @@ function renderSemCompras() {
             const colEquip = filtroEquipProf
               ? `<td class="col-equip" style="font-size:11px;">${getEquipProfissionaisStr(c.cod)}</td>`
               : '';
+            const temDivMais4m = div && (div.a120 || 0) > 0;
+            const nomeEsc = (c.nome||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+            const vendEsc = (c.vendedor||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+            const pendCont = clienteTemContenciosoPendente(c.cod);
+            const btnCont = !temDivMais4m
+              ? '<span style="color:#ccc;font-size:11px;">—</span>'
+              : pendCont
+                ? `<span style="font-size:10px;color:#7f1d1d;font-weight:600;">Pendente</span>`
+                : `<button onclick="abrirContencioso('${c.cod}','${nomeEsc}','${vendEsc}')"
+                  style="background:#7f1d1d;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:10px;padding:3px 8px;white-space:nowrap;">Passar a Contencioso</button>`;
             return `<tr style="background:${i%2===0?'#fff':'#fafafa'}">
               <td class="col-vend">${c.vendedor||'—'}</td>
               <td class="col-code">${c.cod}</td>
@@ -4195,6 +4411,7 @@ function renderSemCompras() {
               <td class="col-meses"><span style="background:${fm.bg};color:${fm.cor};border-radius:12px;padding:2px 6px;font-weight:700;font-size:11px;">${c.mesesSemComprar}m</span></td>
               <td class="col-money" style="font-weight:700;color:#c8102e;">${div ? formatEur(div.vencido) : '—'}</td>
               <td class="col-aging">${div ? agingCompact(div) : '—'}</td>
+              <td class="col-action">${btnCont}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -4259,8 +4476,8 @@ function renderSemCompras() {
   });
 
   html += `<div style="margin-bottom:20px;display:inline-block;min-width:420px;max-width:100%;">
-    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por vendedor</div>
-    <table style="border-collapse:collapse;font-size:13px;width:100%;">
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por vendedor <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica nos números para filtrar)</span></div>
+    <table style="border-collapse:collapse;font-size:13px;width:100%;" id="sc-resumo-tbl">
       <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
         <th style="padding:7px 14px;text-align:left;font-weight:600;">Vendedor</th>
         <th style="padding:7px 14px;text-align:center;font-weight:600;">Total sem compras</th>
@@ -4268,20 +4485,22 @@ function renderSemCompras() {
         <th style="padding:7px 14px;text-align:right;font-weight:600;">Total dívida</th>
       </tr></thead>
       <tbody>
-        ${Object.entries(resumoVend).sort((a,b) => b[1].total - a[1].total).map(([v, d], i) => `
+        ${Object.entries(resumoVend).sort((a,b) => b[1].total - a[1].total).map(([v, d], i) => {
+          const ve = encodeURIComponent(v);
+          return `
         <tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
-          <td style="padding:7px 14px;font-weight:500;">${v}</td>
-          <td style="padding:7px 14px;text-align:center;font-weight:600;">${d.total}</td>
-          <td style="padding:7px 14px;text-align:center;color:${d.comDiv>0?'#c8102e':'var(--muted)'};">${d.comDiv > 0 ? d.comDiv : '—'}</td>
-          <td style="padding:7px 14px;text-align:right;font-weight:${d.totalDivida>0?'600':'400'};color:${d.totalDivida>0?'#c8102e':'var(--muted)'};">
+          <td style="padding:7px 14px;font-weight:500;cursor:pointer;" onclick="scFiltrarResumo('${ve}','todos')" title="Filtrar este vendedor">🔍 ${v}</td>
+          <td style="padding:7px 14px;text-align:center;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="scFiltrarResumo('${ve}','todos')" title="Ver estes clientes">${d.total}</td>
+          <td style="padding:7px 14px;text-align:center;color:${d.comDiv>0?'#c8102e':'var(--muted)'};cursor:${d.comDiv>0?'pointer':'default'};text-decoration:${d.comDiv>0?'underline':'none'};text-underline-offset:2px;" ${d.comDiv>0?`onclick="scFiltrarResumo('${ve}','divida')" title="Ver só com dívida"`:''}>${d.comDiv > 0 ? d.comDiv : '—'}</td>
+          <td style="padding:7px 14px;text-align:right;font-weight:${d.totalDivida>0?'600':'400'};color:${d.totalDivida>0?'#c8102e':'var(--muted)'};cursor:${d.comDiv>0?'pointer':'default'};" ${d.comDiv>0?`onclick="scFiltrarResumo('${ve}','divida')"`:''}>
             ${d.totalDivida > 0 ? 'R$ ' + d.totalDivida.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}
           </td>
-        </tr>`).join('')}
+        </tr>`;}).join('')}
         <tr style="border-top:2px solid var(--border);background:#f9f9f9;">
-          <td style="padding:7px 14px;font-weight:700;">Total</td>
-          <td style="padding:7px 14px;text-align:center;font-weight:700;">${listaExibir.length}</td>
-          <td style="padding:7px 14px;text-align:center;font-weight:700;color:#c8102e;">${comDivida.length || '—'}</td>
-          <td style="padding:7px 14px;text-align:right;font-weight:700;color:#c8102e;">
+          <td style="padding:7px 14px;font-weight:700;cursor:pointer;" onclick="scFiltrarResumo('todos','todos')">🔍 Total</td>
+          <td style="padding:7px 14px;text-align:center;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="scFiltrarResumo('todos','todos')">${listaExibir.length}</td>
+          <td style="padding:7px 14px;text-align:center;font-weight:700;color:#c8102e;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="scFiltrarResumo('todos','divida')">${comDivida.length || '—'}</td>
+          <td style="padding:7px 14px;text-align:right;font-weight:700;color:#c8102e;cursor:pointer;" onclick="scFiltrarResumo('todos','divida')">
             ${comDivida.reduce((s,c) => { const d=scDividasData[c.cod]||scDividasData[normalizaCodSC(c.cod)]; return s+(d?d.vencido:0); }, 0) > 0
               ? 'R$ ' + comDivida.reduce((s,c) => { const d=scDividasData[c.cod]||scDividasData[normalizaCodSC(c.cod)]; return s+(d?d.vencido:0); }, 0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
               : '—'}
@@ -5024,6 +5243,7 @@ async function carregarListaSAP(event) {
   const NPESS_VENDEDOR = getVendedoresMap(); // apenas activos (não 999)
   let novaLista    = [];
   const codsAnulados = [];
+  const codsContencioso = [];
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
@@ -5036,6 +5256,11 @@ async function carregarListaSAP(event) {
 
     if (String(npess).endsWith('999')) {
       codsAnulados.push(cod);
+      continue;
+    }
+    // Contencioso (código termina em 13, ex. 99520013) — sai da lista pendente
+    if (isVendedorContenciosoCode(npess)) {
+      codsContencioso.push(cod);
       continue;
     }
     const vendedor = NPESS_VENDEDOR[npess] || '';
@@ -5064,11 +5289,12 @@ async function carregarListaSAP(event) {
   // → precisam de revisão (serão assinalados em Por Registar)
   // Calculado depois da confirmação em loadPendentes
 
-  _sapImportBuffer = { novaLista, codsAnulados, fileName: file.name };
+  _sapImportBuffer = { novaLista, codsAnulados, codsContencioso, fileName: file.name };
 
   let statusHtml = `<strong>${novaLista.length}</strong> clientes activos`;
   if (adicionados) statusHtml += ` &nbsp;·&nbsp; <span style="color:#2e7d32">+${adicionados} novos</span>`;
-  if (removidos)   statusHtml += ` &nbsp;·&nbsp; <span style="color:#f57c00">-${removidos} removidos</span>`;
+  if (removidos) statusHtml += ` &nbsp;·&nbsp; <span style="color:#c62828">-${removidos} removidos</span>`;
+  if (codsContencioso.length) statusHtml += ` &nbsp;·&nbsp; <span style="color:#7f1d1d">${codsContencioso.length} em Contencioso (*13)</span>`;
   if (codsAnulados.length) {
     statusHtml += `<br><span style="color:var(--muted)">${codsAnulados.length} anulado(s) no ficheiro SAP (vendedor 999)</span>`;
     statusHtml += `<br><span id="sap-anulados-registo" style="color:#c62828">A verificar quantos têm registo na app...</span>`;
@@ -5100,7 +5326,7 @@ async function carregarListaSAP(event) {
 
 async function confirmarCargaSAP() {
   if (!_sapImportBuffer) return;
-  const { codsAnulados, fileName } = _sapImportBuffer;
+  const { codsAnulados, fileName, codsContencioso = [] } = _sapImportBuffer;
   const novaLista = deduplicarListaSAPPorCod(_sapImportBuffer.novaLista);
 
   document.getElementById('sap-confirm-btn').disabled = true;
@@ -5126,6 +5352,7 @@ async function confirmarCargaSAP() {
       return codsAnulados.filter(c => set.has(normCod(c)));
     })() : []);
   try { localStorage.setItem('delta_sap_anulados', JSON.stringify(codsParaApagar.map(normCod))); } catch(e) {}
+  try { localStorage.setItem('delta_sap_contencioso', JSON.stringify((codsContencioso || []).map(normCod))); } catch(e) {}
   foraSPCache = null;
   clearRegistosCache();
 
@@ -5173,8 +5400,13 @@ async function confirmarCargaSAP() {
   if (atualizados) msg += ` ${atualizados} registo(s) manual(ais) validado(s) pelo SAP.`;
   if (erros)    msg += ` ⚠ ${erros} erro(s) ao apagar.`;
 
+  const nCont = await removerPedidosContenciosoPorCods(codsContencioso || []);
+  if (nCont) msg += ` ${nCont} pedido(s) Contencioso concluído(s) no SAP.`;
+
   await loadSCEncerramentosPendentes();
+  await loadSCContenciosoPendentes();
   renderSemCompras();
+  renderContenciosoPendente();
 
   document.getElementById('sap-load-status').style.display = 'none';
   const resultEl = document.getElementById('sap-result');
@@ -5638,6 +5870,7 @@ function showAnalise(sub) {
   if (sub === 'resumo') loadResumo();
   if (sub === 'sem-compras') initSemCompras();
   if (sub === 'encerramento-pendente') initEncerramentoPendente();
+  if (sub === 'contencioso-pendente') initContenciosoPendente();
   if (sub === 'fora-sp') initForaSP();
 }
 
@@ -6432,6 +6665,7 @@ function loadContratos(prefix, contratos = []) {
 let contratosCache = null; // cache em memória — só vai ao Supabase uma vez por sessão
 
 async function loadContratosTab(forceRefresh = false) {
+  window._contratosNivelFiltro = null;
   const cont = document.getElementById('contratos-content');
 
   // Usa cache se disponível e não forçar refresh
@@ -6557,8 +6791,22 @@ async function loadContratosTab(forceRefresh = false) {
       return;
     }
 
-    // Sort by % cumprimento asc (worst first)
-    rows.sort((a, b) => (a.pctTotal || 0) - (b.pctTotal || 0) || (a.pct || 0) - (b.pct || 0));
+    // Ordenação: 1) cumpridos (≥100% total) → 2) acima do esperado (YTD>100%) → 3) restantes → 4) abaixo 50% YTD
+    const contratoSortRank = (r) => {
+      const pctYtd = r.pct;
+      if (r.pctTotal != null && r.pctTotal >= 100) return 0; // cumprido
+      if (pctYtd != null && pctYtd > 100) return 1;           // acima do esperado
+      if (pctYtd != null && pctYtd < 50) return 3;            // abaixo 50%
+      return 2;                                              // restantes
+    };
+    rows.sort((a, b) => {
+      const ra = contratoSortRank(a);
+      const rb = contratoSortRank(b);
+      if (ra !== rb) return ra - rb;
+      if (ra === 3) return (a.pct ?? 0) - (b.pct ?? 0);
+      return (b.pctTotal ?? 0) - (a.pctTotal ?? 0) || (b.pct ?? 0) - (a.pct ?? 0);
+    });
+    window._contratosSortRank = contratoSortRank;
 
     const unidadeLabel = u => u === 'Kg' ? 'Kg' : 'Cáps';
     const fmtNum = (n, u) => {
@@ -6569,51 +6817,7 @@ async function loadContratosTab(forceRefresh = false) {
     const pctBg = p => p === null ? '#f5f5f5' : p >= 90 ? '#e8f5e9' : p >= 60 ? '#fff3e0' : '#ffebee';
 
     // ── RESUMO POR VENDEDOR ──
-    const resumoVendContr = {};
-    rows.forEach(r => {
-      const v = r.vendedor || '—';
-      if (!resumoVendContr[v]) resumoVendContr[v] = { total: 0, abaixo50: 0, entre50_75: 0, acima100: 0 };
-      resumoVendContr[v].total++;
-      const p = r.pct !== null ? r.pct : null;
-      if (p === null) return;
-      if (p < 50)  resumoVendContr[v].abaixo50++;
-      else if (p < 75) resumoVendContr[v].entre50_75++;
-      else if (p >= 100) resumoVendContr[v].acima100++;
-    });
-
-    let html = `<div style="margin-bottom:20px;max-width:100%;">
-      <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por vendedor — % YTD</div>
-      <div class="table-wrap"><table style="border-collapse:collapse;font-size:13px;width:100%;">
-        <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
-          <th style="padding:7px 14px;text-align:left;font-weight:600;">Vendedor</th>
-          <th style="padding:7px 14px;text-align:center;font-weight:600;">Contratos</th>
-          <th style="padding:7px 14px;text-align:center;font-weight:600;color:#c62828;">Abaixo 50%</th>
-          <th style="padding:7px 14px;text-align:center;font-weight:600;color:#f57c00;">50% – 75%</th>
-          <th style="padding:7px 14px;text-align:center;font-weight:600;color:#2e7d32;">100% ou +</th>
-        </tr></thead>
-        <tbody>
-          ${Object.entries(resumoVendContr).sort((a,b) => b[1].total - a[1].total).map(([v, d], i) => {
-            const ve = encodeURIComponent(v);
-            return `
-          <tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}" class="contr-resumo-row" data-vend="${ve}">
-            <td style="padding:7px 14px;font-weight:500;cursor:pointer;" data-nivel="todos">🔍 ${v}</td>
-            <td style="padding:7px 14px;text-align:center;font-weight:600;cursor:pointer;" data-nivel="todos">${d.total}</td>
-            <td style="padding:7px 14px;text-align:center;font-weight:${d.abaixo50>0?'700':'400'};color:${d.abaixo50>0?'#c62828':'var(--muted)'};cursor:${d.abaixo50>0?'pointer':'default'};" data-nivel="${d.abaixo50>0?'abaixo50':''}">${d.abaixo50||'—'}</td>
-            <td style="padding:7px 14px;text-align:center;font-weight:${d.entre50_75>0?'700':'400'};color:${d.entre50_75>0?'#f57c00':'var(--muted)'};cursor:${d.entre50_75>0?'pointer':'default'};" data-nivel="${d.entre50_75>0?'entre50_75':''}">${d.entre50_75||'—'}</td>
-            <td style="padding:7px 14px;text-align:center;font-weight:${d.acima100>0?'700':'400'};color:${d.acima100>0?'#2e7d32':'var(--muted)'};cursor:${d.acima100>0?'pointer':'default'};" data-nivel="${d.acima100>0?'acima100':''}">${d.acima100||'—'}</td>
-          </tr>`;}).join('')}
-          <tr style="border-top:2px solid var(--border);background:#f9f9f9;">
-            <td style="padding:7px 14px;font-weight:700;cursor:pointer;" class="contr-resumo-row" data-vend="todos" data-nivel="todos">🔍 Total</td>
-            <td style="padding:7px 14px;text-align:center;font-weight:700;cursor:pointer;" class="contr-resumo-row" data-vend="todos" data-nivel="todos">${rows.length}</td>
-            <td style="padding:7px 14px;text-align:center;font-weight:700;color:#c62828;cursor:pointer;" class="contr-resumo-row" data-vend="todos" data-nivel="abaixo50">${Object.values(resumoVendContr).reduce((s,d)=>s+d.abaixo50,0)||'—'}</td>
-            <td style="padding:7px 14px;text-align:center;font-weight:700;color:#f57c00;cursor:pointer;" class="contr-resumo-row" data-vend="todos" data-nivel="entre50_75">${Object.values(resumoVendContr).reduce((s,d)=>s+d.entre50_75,0)||'—'}</td>
-            <td style="padding:7px 14px;text-align:center;font-weight:700;color:#2e7d32;cursor:pointer;" class="contr-resumo-row" data-vend="todos" data-nivel="acima100">${Object.values(resumoVendContr).reduce((s,d)=>s+d.acima100,0)||'—'}</td>
-          </tr>
-        </tbody>
-      </table></div>
-    </div>
-    <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
-
+    let html = buildContratosResumoHtml(rows, window._contratosNivelFiltro || null);
     // Main contracts table — cabeçalho com coluna DOCS
     const TH2 = 'padding:8px 12px;font-weight:700;font-size:11px;border:1px solid #ddd;background:#f5f5f5;';
     html += `<div class="table-wrap"><table class="data-table wide" style="border-collapse:collapse;font-size:12px;">
@@ -6628,7 +6832,7 @@ async function loadContratosTab(forceRefresh = false) {
         <th style="${TH2}text-align:right;min-width:100px">TOTAL</th>
         <th style="${TH2}text-align:right;min-width:110px">ESPERADO</th>
         <th style="${TH2}text-align:right;min-width:100px">REAL</th>
-        <th style="${TH2}text-align:center;min-width:80px">% TOTAL 🔺</th>
+        <th style="${TH2}text-align:center;min-width:80px">% TOTAL</th>
         <th style="${TH2}text-align:center;min-width:80px">% YTD</th>
         <th style="${TH2}text-align:center;min-width:200px">ALERTA</th>
         <th style="${TH2}text-align:center;min-width:80px">📄 DOCS</th>
@@ -6713,44 +6917,77 @@ async function loadContratosTab(forceRefresh = false) {
 // Filtra a tabela de contratos por vendedor e nível de cumprimento
 // Chamada pelo event delegation do resumo (clique nas células coloridas)
 function filtrarContratosTabela(vend, nivel) {
-  const allRows = window._contratosAllRows;
-  if (!allRows) return;
-
-  // Actualizar o select de vendedor se necessário
+  if (!window._contratosAllRows) return;
   const sel = document.getElementById('contratos-vendedor');
-  if (sel && vend && vend !== 'todos') {
-    sel.value = vend;
-  } else if (sel && (!vend || vend === 'todos')) {
-    sel.value = '';
+  if (sel) {
+    if (vend && vend !== 'todos') sel.value = vend;
+    else sel.value = '';
   }
-
-  let rows = vend && vend !== 'todos' ? allRows.filter(r => r.vendedor === vend) : allRows;
-
-  if (nivel && nivel !== 'todos') {
-    rows = rows.filter(r => {
-      const p = r.pct;
-      if (nivel === 'abaixo50')   return p !== null && p < 50;
-      if (nivel === 'entre50_75') return p !== null && p >= 50 && p < 75;
-      if (nivel === 'entre75_90') return p !== null && p >= 75 && p < 90;
-      if (nivel === 'acima100')   return p !== null && p >= 100;
-      if (nivel === 'sem_meta')   return p === null;
-      return true;
-    });
-  }
-
-  if (!rows.length) {
-    document.getElementById('contratos-content').innerHTML =
-      '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum contrato para este filtro.</div>';
-    return;
-  }
-
-  // Reutilizar filtrarContratosVendedor com as rows já filtradas via flag temporária
-  window._contratosFilteredRows = rows;
-  const prevAll = window._contratosAllRows;
-  window._contratosAllRows = rows;
+  window._contratosNivelFiltro = (nivel && nivel !== 'todos') ? nivel : null;
   filtrarContratosVendedor();
-  window._contratosAllRows = prevAll;
-  window._contratosFilteredRows = null;
+}
+
+function limparFiltroNivelContratos() {
+  window._contratosNivelFiltro = null;
+  filtrarContratosVendedor();
+}
+
+function buildContratosResumoHtml(scopeRows, activeNivel) {
+  const resumo = {};
+  scopeRows.forEach(r => {
+    const v = r.vendedor || '—';
+    if (!resumo[v]) resumo[v] = { total: 0, abaixo50: 0, entre50_75: 0, acima100: 0 };
+    resumo[v].total++;
+    const p = r.pct;
+    if (p === null) return;
+    if (p < 50) resumo[v].abaixo50++;
+    else if (p < 75) resumo[v].entre50_75++;
+    else if (p >= 100) resumo[v].acima100++;
+  });
+  const cell = (n, nivel, cor) => {
+    if (!n) return `<td style="padding:7px 14px;text-align:center;color:var(--muted);">—</td>`;
+    const isActive = activeNivel === nivel;
+    return `<td style="padding:7px 14px;text-align:center;font-weight:700;color:${cor};cursor:pointer;text-decoration:underline;text-underline-offset:2px;${isActive ? 'background:#fff7ed;outline:2px solid #fdba74;outline-offset:-2px;' : ''}" data-nivel="${nivel}" title="Filtrar estes ${n} contratos">${n}</td>`;
+  };
+  const nomeLabels = { abaixo50: 'Abaixo 50%', entre50_75: '50%–75%', acima100: '100% ou +' };
+  const banner = activeNivel
+    ? `<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:12px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;padding:4px 10px;border-radius:16px;font-weight:600;">Filtro: ${nomeLabels[activeNivel] || activeNivel}</span>
+        <button type="button" onclick="limparFiltroNivelContratos()" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">✕ Limpar filtro</button>
+      </div>`
+    : '';
+  return `${banner}<div style="margin-bottom:20px;max-width:100%;">
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por vendedor — % YTD <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica nos números para filtrar)</span></div>
+    <div class="table-wrap"><table style="border-collapse:collapse;font-size:13px;width:100%;">
+      <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+        <th style="padding:7px 14px;text-align:left;font-weight:600;">Vendedor</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;">Contratos</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;color:#c62828;">Abaixo 50%</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;color:#f57c00;">50%–75%</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;color:#2e7d32;">100% ou +</th>
+      </tr></thead>
+      <tbody>
+        ${Object.entries(resumo).sort((a,b) => b[1].total - a[1].total).map(([v, d], i) => {
+          const ve = encodeURIComponent(v);
+          return `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}" class="contr-resumo-row" data-vend="${ve}">
+            <td style="padding:7px 14px;font-weight:500;cursor:pointer;" data-nivel="todos" title="Ver todos deste vendedor">🔍 ${v}</td>
+            <td style="padding:7px 14px;text-align:center;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" data-nivel="todos">${d.total}</td>
+            ${cell(d.abaixo50, 'abaixo50', '#c62828')}
+            ${cell(d.entre50_75, 'entre50_75', '#f57c00')}
+            ${cell(d.acima100, 'acima100', '#2e7d32')}
+          </tr>`;
+        }).join('')}
+        <tr style="border-top:2px solid var(--border);background:#f9f9f9;" class="contr-resumo-row" data-vend="todos">
+          <td style="padding:7px 14px;font-weight:700;cursor:pointer;" data-nivel="todos">🔍 Total</td>
+          <td style="padding:7px 14px;text-align:center;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" data-nivel="todos">${scopeRows.length}</td>
+          ${cell(Object.values(resumo).reduce((s,d)=>s+d.abaixo50,0), 'abaixo50', '#c62828')}
+          ${cell(Object.values(resumo).reduce((s,d)=>s+d.entre50_75,0), 'entre50_75', '#f57c00')}
+          ${cell(Object.values(resumo).reduce((s,d)=>s+d.acima100,0), 'acima100', '#2e7d32')}
+        </tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
 }
 
 function filtrarContratosVendedor() {
@@ -6762,16 +6999,47 @@ function filtrarContratosVendedor() {
   const nomeFilt = (document.getElementById('contratos-search-nome')?.value||'').trim().toLowerCase();
   const numFilt  = (document.getElementById('contratos-search-num')?.value||'').trim().toLowerCase();
 
-  let rows = vendFilt ? allRows.filter(r => r.vendedor === vendFilt) : allRows;
-  if (codFilt)  rows = rows.filter(r => String(r.cod||'').toLowerCase().includes(codFilt));
-  if (nomeFilt) rows = rows.filter(r => String(r.nome||'').toLowerCase().includes(nomeFilt));
-  if (numFilt)  rows = rows.filter(r => String(r.contrato||'').toLowerCase().includes(numFilt));
+  let scopeRows = vendFilt ? allRows.filter(r => r.vendedor === vendFilt) : allRows;
+  if (codFilt)  scopeRows = scopeRows.filter(r => String(r.cod||'').toLowerCase().includes(codFilt));
+  if (nomeFilt) scopeRows = scopeRows.filter(r => String(r.nome||'').toLowerCase().includes(nomeFilt));
+  if (numFilt)  scopeRows = scopeRows.filter(r => String(r.contrato||'').toLowerCase().includes(numFilt));
+
+  const nivel = window._contratosNivelFiltro || null;
+  let rows = scopeRows;
+  if (nivel) {
+    rows = scopeRows.filter(r => {
+      const p = r.pct;
+      if (nivel === 'abaixo50')   return p !== null && p < 50;
+      if (nivel === 'entre50_75') return p !== null && p >= 50 && p < 75;
+      if (nivel === 'entre75_90') return p !== null && p >= 75 && p < 90;
+      if (nivel === 'acima100')   return p !== null && p >= 100;
+      if (nivel === 'sem_meta')   return p === null;
+      return true;
+    });
+  }
+
+  // Mesma ordem: cumpridos → acima esperado → restantes → abaixo 50%
+  const rank = window._contratosSortRank || ((r) => {
+    const pctYtd = r.pct;
+    if (r.pctTotal != null && r.pctTotal >= 100) return 0;
+    if (pctYtd != null && pctYtd > 100) return 1;
+    if (pctYtd != null && pctYtd < 50) return 3;
+    return 2;
+  });
+  rows = [...rows].sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    if (ra === 3) return (a.pct ?? 0) - (b.pct ?? 0);
+    return (b.pctTotal ?? 0) - (a.pctTotal ?? 0) || (b.pct ?? 0) - (a.pct ?? 0);
+  });
 
   const countEl = document.getElementById('contratos-count');
   if (countEl) countEl.textContent = rows.length < allRows.length ? `${rows.length} de ${allRows.length}` : `${allRows.length} contratos`;
 
   if (!rows.length) {
     document.getElementById('contratos-content').innerHTML =
+      buildContratosResumoHtml(scopeRows, nivel) +
       '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum contrato para este filtro.</div>';
     return;
   }
@@ -6783,47 +7051,7 @@ function filtrarContratosVendedor() {
     ? n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' Kg'
     : Math.round(n).toLocaleString('pt-BR')+' Cáps';
 
-  // Resumo
-  const resumo = {};
-  rows.forEach(r => {
-    const v = r.vendedor||'—';
-    if (!resumo[v]) resumo[v] = {total:0,abaixo50:0,entre50_75:0,acima100:0};
-    resumo[v].total++;
-    const p = r.pct;
-    if (p === null) return;
-    if (p < 50) resumo[v].abaixo50++;
-    else if (p < 75) resumo[v].entre50_75++;
-    else if (p >= 100) resumo[v].acima100++;
-  });
-
-  let html = `<div style="margin-bottom:20px;display:inline-block;min-width:480px;max-width:100%;">
-    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por vendedor — % YTD</div>
-    <table style="border-collapse:collapse;font-size:13px;width:100%;">
-      <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
-        <th style="padding:7px 14px;text-align:left;font-weight:600;">Vendedor</th>
-        <th style="padding:7px 14px;text-align:center;font-weight:600;">Contratos</th>
-        <th style="padding:7px 14px;text-align:center;font-weight:600;color:#c62828;">Abaixo 50%</th>
-        <th style="padding:7px 14px;text-align:center;font-weight:600;color:#f57c00;">50%–75%</th>
-        <th style="padding:7px 14px;text-align:center;font-weight:600;color:#2e7d32;">100% ou +</th>
-      </tr></thead><tbody>
-      ${Object.entries(resumo).sort((a,b)=>b[1].total-a[1].total).map(([v,d],i)=>`
-      <tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
-        <td style="padding:7px 14px;font-weight:500;">${v}</td>
-        <td style="padding:7px 14px;text-align:center;font-weight:600;">${d.total}</td>
-        <td style="padding:7px 14px;text-align:center;font-weight:${d.abaixo50?'700':'400'};color:${d.abaixo50?'#c62828':'var(--muted)'};">${d.abaixo50||'—'}</td>
-        <td style="padding:7px 14px;text-align:center;font-weight:${d.entre50_75?'700':'400'};color:${d.entre50_75?'#f57c00':'var(--muted)'};">${d.entre50_75||'—'}</td>
-        <td style="padding:7px 14px;text-align:center;font-weight:${d.acima100?'700':'400'};color:${d.acima100?'#2e7d32':'var(--muted)'};">${d.acima100||'—'}</td>
-      </tr>`).join('')}
-      <tr style="border-top:2px solid var(--border);background:#f9f9f9;">
-        <td style="padding:7px 14px;font-weight:700;">Total</td>
-        <td style="padding:7px 14px;text-align:center;font-weight:700;">${rows.length}</td>
-        <td style="padding:7px 14px;text-align:center;font-weight:700;color:#c62828;">${Object.values(resumo).reduce((s,d)=>s+d.abaixo50,0)||'—'}</td>
-        <td style="padding:7px 14px;text-align:center;font-weight:700;color:#f57c00;">${Object.values(resumo).reduce((s,d)=>s+d.entre50_75,0)||'—'}</td>
-        <td style="padding:7px 14px;text-align:center;font-weight:700;color:#2e7d32;">${Object.values(resumo).reduce((s,d)=>s+d.acima100,0)||'—'}</td>
-      </tr></tbody>
-    </table></div>
-    <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
-
+  let html = buildContratosResumoHtml(scopeRows, nivel);
   // Tabela de contratos (reutiliza HTML do contrato original por linha)
   const TH = 'padding:8px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:11px;background:#f5f5f5;';
   html += `<div style="overflow-x:auto;width:100%"><table style="border-collapse:collapse;font-size:12px;width:max-content;min-width:100%">
@@ -6838,7 +7066,7 @@ function filtrarContratosVendedor() {
       <th style="${TH}text-align:right">TOTAL</th>
       <th style="${TH}text-align:right">ESPERADO</th>
       <th style="${TH}text-align:right">REAL</th>
-      <th style="${TH}text-align:center">% TOTAL 🔺</th>
+      <th style="${TH}text-align:center">% TOTAL</th>
       <th style="${TH}text-align:center">% YTD</th>
       <th style="${TH}text-align:center;min-width:160px">ALERTA</th>
       <th style="${TH}text-align:center;min-width:100px">📄 DOCS</th>
@@ -6847,10 +7075,12 @@ function filtrarContratosVendedor() {
   rows.forEach((r, idx) => {
     const td = `padding:8px 12px;border:1px solid #eee;font-size:12px;white-space:nowrap;${idx%2===0?'background:#fff;':'background:#fafafa;'}`;
     const pBg  = pctBg(r.pct);  const pCol  = pctColor(r.pct);
-    const alertaHtml = r.alerta === 'volume'
-      ? `<span style="background:#ffebee;color:#c62828;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700" title="Consumo atingiu ${r.pctTotal}% do total contratado">⚠️ Volume</span>`
-      : r.alerta === 'tempo'
-      ? `<span style="background:#fff3e0;color:#f57c00;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700">⏳ Tempo</span>`
+    const alertaHtml = r.alerta === 'finalizado'
+      ? `<span style="background:#e8f5e9;color:#1b5e20;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">✅ Contrato Finalizado — Negociar</span>`
+      : r.alerta === 'perto_fim'
+      ? `<span style="background:#fff3e0;color:#e65100;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🔔 Perto do Final — Negociar</span>`
+      : r.alerta === 'sem_consumo'
+      ? `<span style="background:#ffebee;color:#b71c1c;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🚫 Sem Consumo — Analisar</span>`
       : `<span style="color:#aaa;font-size:11px">—</span>`;
     const docPath = `${r.cod}/${r.contrato}`;
     const nfKey = `nf|${docPath}`;
@@ -7518,6 +7748,329 @@ ${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`
   }
 
   fecharEncerramento();
+}
+
+// ─── PASSAR A CONTENCIOSO ────────────────────────────
+const CONTENCIOSO_VENDEDOR = '99520013';
+const CONTENCIOSO_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/clientes_contencioso';
+const CONTENCIOSO_LS_KEY = 'delta_contencioso_pendentes';
+let _contenciosoCliente = null;
+let scContenciosoPendentes = new Map();
+
+function isVendedorContenciosoCode(npessOrCod) {
+  const s = String(npessOrCod || '').trim();
+  if (!s) return false;
+  return s === CONTENCIOSO_VENDEDOR || s.endsWith('13');
+}
+
+function readContenciosoLocal() {
+  try { return JSON.parse(localStorage.getItem(CONTENCIOSO_LS_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+
+function writeContenciosoLocal(lista) {
+  try { localStorage.setItem(CONTENCIOSO_LS_KEY, JSON.stringify(lista)); } catch(e) {}
+}
+
+function clienteTemContenciosoPendente(cod) {
+  return scContenciosoPendentes.has(normCod(cod));
+}
+
+async function apagarContenciosoPorIds(ids) {
+  if (!ids.length) return;
+  for (let i = 0; i < ids.length; i += 100) {
+    const lote = ids.slice(i, i + 100);
+    try {
+      await fetch(`${CONTENCIOSO_URL}?id=in.(${lote.join(',')})`, {
+        method: 'DELETE', headers: { ...HEADERS, 'Prefer': 'return=minimal' }
+      });
+    } catch(e) { console.warn('apagarContenciosoPorIds:', e.message); }
+  }
+}
+
+async function loadSCContenciosoPendentes() {
+  scContenciosoPendentes = new Map();
+  const idsApagar = [];
+  const seen = new Set();
+  const contenciosoSap = new Set(
+    (JSON.parse(localStorage.getItem('delta_sap_contencioso') || '[]')).map(normCod)
+  );
+
+  const ingest = (lista) => {
+    for (const d of lista) {
+      const k = normCod(d.cod);
+      if (!k) continue;
+      if (contenciosoSap.has(k) || !codClienteAindaActivo(k)) {
+        if (d.id) idsApagar.push(d.id);
+        continue;
+      }
+      if (seen.has(k)) {
+        if (d.id) idsApagar.push(d.id);
+        continue;
+      }
+      seen.add(k);
+      scContenciosoPendentes.set(k, d);
+    }
+  };
+
+  try {
+    const res = await fetch(`${CONTENCIOSO_URL}?select=*&order=criado_em.desc`, { headers: HEADERS });
+    if (res.ok) {
+      const dados = await res.json();
+      if (Array.isArray(dados)) ingest(dados);
+    }
+  } catch(e) {
+    console.warn('loadSCContenciosoPendentes supabase:', e.message);
+  }
+
+  // Fallback / merge localStorage
+  const local = readContenciosoLocal();
+  ingest(local.filter(d => !scContenciosoPendentes.has(normCod(d.cod))));
+
+  // Persist cleaned local mirror
+  writeContenciosoLocal([...scContenciosoPendentes.values()]);
+  if (idsApagar.length) await apagarContenciosoPorIds(idsApagar);
+}
+
+async function guardarPedidoContencioso(pedido) {
+  const k = normCod(pedido.cod);
+  scContenciosoPendentes.set(k, pedido);
+  const local = readContenciosoLocal().filter(d => normCod(d.cod) !== k);
+  local.unshift(pedido);
+  writeContenciosoLocal(local);
+  try {
+    const res = await fetch(CONTENCIOSO_URL, {
+      method: 'POST',
+      headers: { ...HEADERS, 'Prefer': 'return=representation' },
+      body: JSON.stringify({
+        cod: pedido.cod,
+        nome: pedido.nome,
+        vendedor: pedido.vendedor,
+        valor_divida: pedido.valor_divida,
+        dias_atraso: pedido.dias_atraso,
+        ultima_compra: pedido.ultima_compra,
+        observacoes: pedido.observacoes || '',
+        solicitado_por: pedido.solicitado_por,
+        criado_em: pedido.criado_em
+      })
+    });
+    if (res.ok) {
+      const rows = await res.json().catch(() => null);
+      if (Array.isArray(rows) && rows[0]?.id) {
+        pedido.id = rows[0].id;
+        scContenciosoPendentes.set(k, pedido);
+        writeContenciosoLocal([...scContenciosoPendentes.values()]);
+      }
+    }
+  } catch(e) {
+    console.warn('guardarPedidoContencioso:', e.message);
+  }
+}
+
+async function removerPedidosContenciosoPorCods(cods) {
+  const set = new Set(cods.map(normCod).filter(Boolean));
+  if (!set.size) return 0;
+  let removidos = 0;
+  const ids = [];
+  for (const [k, d] of [...scContenciosoPendentes.entries()]) {
+    if (!set.has(k)) continue;
+    scContenciosoPendentes.delete(k);
+    if (d.id) ids.push(d.id);
+    removidos++;
+  }
+  writeContenciosoLocal([...scContenciosoPendentes.values()]);
+  if (ids.length) await apagarContenciosoPorIds(ids);
+  // também por código (caso sem id)
+  for (const c of set) {
+    try {
+      await fetch(`${CONTENCIOSO_URL}?cod=eq.${encodeURIComponent(c)}`, {
+        method: 'DELETE', headers: { ...HEADERS, 'Prefer': 'return=minimal' }
+      });
+    } catch(e) {}
+  }
+  return removidos;
+}
+
+async function initContenciosoPendente() {
+  const sel = document.getElementById('cp-vendedor');
+  if (sel && sel.options.length <= 1) {
+    const vendedores = [...new Set(getListaClientesActiva().map(c => c.vendedor).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">Todos os vendedores</option>' +
+      vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+  }
+  await renderContenciosoPendente();
+}
+
+async function renderContenciosoPendente() {
+  const el = document.getElementById('cp-content');
+  const info = document.getElementById('cp-info');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--muted);font-size:13px;">A carregar...</div>';
+  try {
+    await loadSCContenciosoPendentes();
+    const vendFilt = document.getElementById('cp-vendedor')?.value || '';
+    const lista = [...scContenciosoPendentes.values()]
+      .filter(d => !vendFilt || d.vendedor === vendFilt)
+      .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
+    if (info) {
+      info.innerHTML = lista.length
+        ? `<span style="color:#7f1d1d;font-weight:600;">${lista.length} cliente${lista.length > 1 ? 's' : ''}</span> com pedido Contencioso a aguardar (saem da lista quando o SAP passar para vendedor *13)`
+        : 'Nenhum pedido Contencioso pendente.';
+    }
+    if (!lista.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:40px 0;text-align:center;">Nenhum pedido Contencioso pendente.</div>';
+      return;
+    }
+    const rows = lista.map(d => {
+      const dt = d.criado_em ? new Date(d.criado_em).toLocaleDateString('pt-BR') : '—';
+      const idEsc = String(d.id || '').replace(/'/g, "\\'");
+      const codEsc = String(d.cod || '').replace(/'/g, "\\'");
+      const valor = d.valor_divida != null ? formatEur(d.valor_divida) : '—';
+      return `<tr style="border-bottom:1px solid #fecaca;background:#fef2f2;">
+        <td style="padding:8px 10px;font-size:12px;">${d.vendedor || '—'}</td>
+        <td style="padding:8px 10px;font-size:12px;">${d.cod || '—'}</td>
+        <td style="padding:8px 10px;font-size:12px;font-weight:500;">${d.nome || '—'}</td>
+        <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;color:#7f1d1d;">${valor}</td>
+        <td style="padding:8px 10px;font-size:12px;text-align:center;">${d.dias_atraso != null ? d.dias_atraso + 'd' : '—'}</td>
+        <td style="padding:8px 10px;font-size:12px;color:var(--muted);">${d.solicitado_por || '—'}</td>
+        <td style="padding:8px 10px;font-size:12px;color:var(--muted);">${dt}</td>
+        <td style="padding:8px 10px;"><span style="font-size:10px;color:#7f1d1d;font-weight:700;background:#fee2e2;padding:2px 8px;border-radius:10px;">Aguarda SAP</span></td>
+        <td style="padding:8px 10px;">
+          <button onclick="cancelarPedidoContencioso('${codEsc}','${idEsc}')"
+            style="background:#fff;border:1px solid #dc2626;border-radius:4px;color:#dc2626;cursor:pointer;font-size:10px;padding:3px 8px;white-space:nowrap;">Cancelar pedido</button>
+        </td>
+      </tr>`;
+    }).join('');
+    el.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;">
+      <div class="table-wrap">
+        <table class="data-table data-table--sc" style="width:100%;">
+          <thead><tr style="background:#fee2e2;">
+            <th class="col-vend">Vendedor</th>
+            <th class="col-code">Cód.</th>
+            <th class="col-nome">Nome</th>
+            <th class="col-money">Dívida</th>
+            <th>Dias atraso</th>
+            <th>Solicitado por</th>
+            <th class="col-date">Data</th>
+            <th class="col-action">Estado</th>
+            <th class="col-action">Ação</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro: ${e.message}</div>`;
+  }
+}
+
+async function cancelarPedidoContencioso(cod, id) {
+  if (!confirm('Cancelar este pedido Contencioso?')) return;
+  try {
+    await removerPedidosContenciosoPorCods([cod]);
+    if (id) {
+      await fetch(`${CONTENCIOSO_URL}?id=eq.${id}`, {
+        method: 'DELETE', headers: { ...HEADERS, 'Prefer': 'return=minimal' }
+      });
+    }
+    toast('Pedido Contencioso cancelado.');
+    renderSemCompras();
+    renderContenciosoPendente();
+  } catch(e) {
+    toast('Erro ao cancelar: ' + e.message, 'error');
+  }
+}
+
+function abrirContencioso(cod, nome, vendedor) {
+  const div = scDividasData[cod] || scDividasData[normalizaCodSC(cod)];
+  if (!div || !(div.a120 > 0)) {
+    toast('Este cliente não tem dívida com mais de 4 meses (+120d).');
+    return;
+  }
+  if (clienteTemContenciosoPendente(cod)) {
+    toast('Já existe um pedido Contencioso pendente para este cliente.');
+    return;
+  }
+  const ultima = (typeof getUltimaCompraFamilia === 'function') ? getUltimaCompraFamilia(cod) : null;
+  const ultimaTxt = ultima ? ultima.toLocaleDateString('pt-BR') : '—';
+  const diasAtraso = calcDiasAtrasoDesdeVencimento(div);
+  const diasTxt = diasAtraso != null ? String(diasAtraso) : '—';
+  _contenciosoCliente = {
+    cod, nome, vendedor,
+    vencido: div.vencido || 0,
+    diasAtraso: diasTxt,
+    ultimaCompra: ultimaTxt
+  };
+  document.getElementById('contencioso-info').innerHTML =
+    `<strong>${nome || '—'}</strong><br>
+     <span style="color:var(--muted);">Cód. SAP: ${cod || '—'} &nbsp;|&nbsp; Vendedor: ${vendedor || '—'} &nbsp;|&nbsp; Últ. compra: ${ultimaTxt}</span><br>
+     <span style="color:#7f1d1d;font-weight:600;">Dívida: ${formatEur(div.vencido)} &nbsp;|&nbsp; Dias em atraso: ${diasTxt}</span><br>
+     <span style="color:var(--muted);font-size:12px;">Passar para vendedor Contencioso: ${CONTENCIOSO_VENDEDOR}</span>`;
+  document.getElementById('contencioso-obs').value = '';
+  document.getElementById('contencioso-status').textContent = '';
+  document.getElementById('contencioso-overlay').style.display = 'flex';
+}
+
+function fecharContencioso() {
+  document.getElementById('contencioso-overlay').style.display = 'none';
+  _contenciosoCliente = null;
+}
+
+async function enviarContencioso() {
+  const c = _contenciosoCliente;
+  if (!c) return;
+
+  const obs = (document.getElementById('contencioso-obs').value || '').trim();
+  // Recalcula no momento do envio (dias até hoje)
+  const div = scDividasData[c.cod] || scDividasData[normalizaCodSC(c.cod)];
+  const diasNum = div ? calcDiasAtrasoDesdeVencimento(div) : null;
+  const diasTxt = diasNum != null ? String(diasNum) : (c.diasAtraso || '—');
+  const hora = new Date().getHours();
+  const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
+
+  const assunto = encodeURIComponent(`Pedido Contencioso - ${c.nome} (${c.cod})`);
+  const corpo = encodeURIComponent(
+`${saudacao},
+
+Solicito a passagem do cliente abaixo para o código de vendedor Contencioso ${CONTENCIOSO_VENDEDOR}:
+
+  • Nome: ${c.nome || '—'}
+  • Código SAP: ${c.cod || '—'}
+  • Vendedor actual: ${c.vendedor || '—'}
+  • Data da última compra: ${c.ultimaCompra || '—'}
+  • Dias em atraso: ${diasTxt}
+  • Valor da dívida: ${formatEur(c.vencido)}
+${obs ? `\n  • Observações: ${obs}\n` : ''}
+Aguardo tratamento.
+
+Cumprimentos,
+${getUtilizadorAtual()}`
+  );
+
+  // Outlook (Windows) usa ";" entre destinatários; "," falha ou deixa de fora alguns
+  const mailto =
+    'mailto:andrea.albuquerque@deltafoodsbrasil.com.br;daniela.kucinski@deltafoodsbrasil.com.br' +
+    '?cc=' + encodeURIComponent('filipe.neves@deltafoodsbrasil.com.br;carlos.castro@deltafoodsbrasil.com.br') +
+    '&subject=' + assunto +
+    '&body=' + corpo;
+  window.location.href = mailto;
+
+  const pedido = {
+    cod: c.cod,
+    nome: c.nome,
+    vendedor: c.vendedor,
+    valor_divida: c.vencido,
+    dias_atraso: diasNum,
+    ultima_compra: c.ultimaCompra,
+    observacoes: obs,
+    solicitado_por: getUtilizadorAtual(),
+    criado_em: new Date().toISOString()
+  };
+  await guardarPedidoContencioso(pedido);
+  toast('✅ Pedido Contencioso aberto no email e registado como pendente.');
+  fecharContencioso();
+  renderSemCompras();
+  renderContenciosoPendente();
 }
 
 // ─── PROSPEÇÃO ──────────────────────────────────────
