@@ -1552,6 +1552,7 @@ var _unused_placeholder = 1;
       <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
       <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
       <button class="sub-tab analise-subtab" data-sub="contencioso-pendente" onclick="showAnalise('contencioso-pendente')">Contencioso pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="clientes-contencioso" onclick="showAnalise('clientes-contencioso')">Clientes no Contencioso</button>
       <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div id="resumo-content"></div>
@@ -1952,6 +1953,7 @@ var _unused_placeholder = 1;
       <button class="sub-tab analise-subtab active" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
       <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
       <button class="sub-tab analise-subtab" data-sub="contencioso-pendente" onclick="showAnalise('contencioso-pendente')">Contencioso pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="clientes-contencioso" onclick="showAnalise('clientes-contencioso')">Clientes no Contencioso</button>
       <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -2001,6 +2003,7 @@ var _unused_placeholder = 1;
       <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
       <button class="sub-tab analise-subtab active" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
       <button class="sub-tab analise-subtab" data-sub="contencioso-pendente" onclick="showAnalise('contencioso-pendente')">Contencioso pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="clientes-contencioso" onclick="showAnalise('clientes-contencioso')">Clientes no Contencioso</button>
       <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -2025,6 +2028,7 @@ var _unused_placeholder = 1;
       <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
       <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
       <button class="sub-tab analise-subtab active" data-sub="contencioso-pendente" onclick="showAnalise('contencioso-pendente')">Contencioso pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="clientes-contencioso" onclick="showAnalise('clientes-contencioso')">Clientes no Contencioso</button>
       <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -2042,6 +2046,36 @@ var _unused_placeholder = 1;
     </div>
   </div>
 
+  <!-- PANEL: CLIENTES NO CONTENCIOSO (vendedor 99520013, canais 03/04) -->
+  <div class="panel" id="panel-clientes-contencioso">
+    <div class="sub-nav">
+      <button class="sub-tab analise-subtab" data-sub="resumo" onclick="showAnalise('resumo')">Resumo</button>
+      <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
+      <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="contencioso-pendente" onclick="showAnalise('contencioso-pendente')">Contencioso pendente</button>
+      <button class="sub-tab analise-subtab active" data-sub="clientes-contencioso" onclick="showAnalise('clientes-contencioso')">Clientes no Contencioso</button>
+      <button class="sub-tab analise-subtab" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+      <div style="font-size:15px;font-weight:600;color:#7f1d1d;">Clientes no Contencioso</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <select id="cc-canal" class="form-input" style="min-width:140px;height:36px;font-size:13px;" onchange="renderClientesContencioso()">
+          <option value="">Canais 03 e 04</option>
+          <option value="03">03</option>
+          <option value="04">04</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="renderClientesContencioso()" style="min-height:36px;">↺ Actualizar</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportClientesContenciosoExcel()" style="min-height:36px;">⬇ Excel</button>
+      </div>
+    </div>
+    <div id="cc-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+      Clientes SAP com vendedor <b>99520013</b> nos canais <b>03</b> e <b>04</b>. Deixam de contar nos registos activos.
+    </div>
+    <div id="cc-content">
+      <div style="color:var(--muted);font-size:13px;padding:20px 0;">Carrega a Lista SAP para actualizar esta lista.</div>
+    </div>
+  </div>
+
   <!-- PANEL: FORA SP -->
   <div class="panel" id="panel-fora-sp">
     <div class="sub-nav">
@@ -2049,6 +2083,7 @@ var _unused_placeholder = 1;
       <button class="sub-tab analise-subtab" data-sub="sem-compras" onclick="showAnalise('sem-compras')">Sem Compras</button>
       <button class="sub-tab analise-subtab" data-sub="encerramento-pendente" onclick="showAnalise('encerramento-pendente')">Encerramento pendente</button>
       <button class="sub-tab analise-subtab" data-sub="contencioso-pendente" onclick="showAnalise('contencioso-pendente')">Contencioso pendente</button>
+      <button class="sub-tab analise-subtab" data-sub="clientes-contencioso" onclick="showAnalise('clientes-contencioso')">Clientes no Contencioso</button>
       <button class="sub-tab analise-subtab active" data-sub="fora-sp" onclick="showAnalise('fora-sp')">Fora SP</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
@@ -3035,9 +3070,9 @@ async function salvarRegisto() {
     clearRegistosCache();
     limparForm();
     loadPendentes();
-    // Update count
+    // Update count (exclui Contencioso 03/04)
     const all = await fetchRegistosPaginado('id', 'criado_em.desc');
-    setStatus(true, all.length);
+    setStatus(true, getRegistosActivos(all).length);
   } catch(e) {
     toast('Erro ao guardar: ' + e.message, 'error');
   } finally {
@@ -3154,8 +3189,10 @@ function preservarCamposRicosListaSAP(novaLista, listaAnterior) {
 }
 
 // Clientes já registados na app não devem desaparecer da lista só porque o Excel novo os omitiu.
-async function reporClientesRegistadosNaLista(novaLista, listaAnterior, codsAnulados) {
+async function reporClientesRegistadosNaLista(novaLista, listaAnterior, codsAnulados, codsContencioso) {
   const anul = new Set((codsAnulados || []).map(normCod));
+  const cont = new Set((codsContencioso || []).map(normCod));
+  getCodsContenciosoSet().forEach(k => cont.add(k));
   const novaKeys = new Set((novaLista || []).map(listaClienteKey));
   const prevMap = {};
   (listaAnterior || []).forEach(c => { prevMap[listaClienteKey(c)] = c; });
@@ -3167,7 +3204,7 @@ async function reporClientesRegistadosNaLista(novaLista, listaAnterior, codsAnul
   const out = [...(novaLista || [])];
   for (const reg of regs) {
     const k = normCod(reg.cod);
-    if (!k || anul.has(k) || novaKeys.has(k)) continue;
+    if (!k || anul.has(k) || cont.has(k) || novaKeys.has(k)) continue;
     const prev = prevMap[k] || det[k];
     if (prev) {
       out.push(prev);
@@ -3583,16 +3620,18 @@ function renderTable() {
   const nomeFilt = document.getElementById('filtro-nome')?.value?.trim()?.toLowerCase() || '';
   const tabelaBody = document.getElementById('table-body');
 
-  let filtered = allData || [];
+  // Contencioso (*13) não conta / não aparece nos registos activos
+  const activos = getRegistosActivos(allData);
+  let filtered = activos;
   if (vendFilt) filtered = filtered.filter(r => r.vendedor === vendFilt);
   if (codFilt) filtered = filtered.filter(r => (r.cod||'').toLowerCase().includes(codFilt));
   if (nomeFilt) filtered = filtered.filter(r => (r.nome||'').toLowerCase().includes(nomeFilt));
 
   const badgeEl = document.getElementById('invalidos-badge');
 
-  // Detetar códigos duplicados
+  // Detetar códigos duplicados (só nos activos)
   const codCount = {};
-  (allData||[]).forEach(r => {
+  activos.forEach(r => {
     const c = String(r.cod||'').trim();
     if (c) codCount[c] = (codCount[c]||0) + 1;
   });
@@ -3627,7 +3666,8 @@ function renderTable() {
   }
 
   const countEl = document.getElementById('record-count');
-  if (countEl) countEl.textContent = `${filtered.length} de ${(allData||[]).length} registos`;
+  if (countEl) countEl.textContent = `${filtered.length} de ${activos.length} registos`;
+  setStatus(true, activos.length);
 
   if (!filtered.length) {
     if (tabelaBody) tabelaBody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum registo encontrado.</td></tr>';
@@ -5584,6 +5624,7 @@ async function carregarListaSAP(event) {
   let novaLista    = [];
   const codsAnulados = [];
   const codsContencioso = [];
+  const listaContencioso = [];
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
@@ -5598,13 +5639,6 @@ async function carregarListaSAP(event) {
       codsAnulados.push(cod);
       continue;
     }
-    // Contencioso (código termina em 13, ex. 99520013) — sai da lista pendente
-    if (isVendedorContenciosoCode(npess)) {
-      codsContencioso.push(cod);
-      continue;
-    }
-    const vendedor = NPESS_VENDEDOR[npess] || '';
-    if (!vendedor) continue; // código desconhecido — ignora
     const cnpj = iCNPJ >= 0 ? String(row[iCNPJ]||'').trim() : '';
     const canal = iCanal >= 0 ? String(row[iCanal]||'').trim() : '';
     // Morada / contacto (só preenche o que existir no ficheiro)
@@ -5615,8 +5649,8 @@ async function carregarListaSAP(event) {
       const m = rua.match(/^(.*?)[,\s]+(\d+[A-Za-z]?)\s*$/);
       if (m) { rua = m[1].trim().replace(/[,\s]+$/, ''); nro = m[2]; }
     }
-    novaLista.push({
-      cod, nome, cep, vendedor, cnpj, canal,
+    const rowObj = {
+      cod, nome, cep, cnpj, canal,
       rua, nro,
       bairro: getCell(row, iBairro),
       supl:   getCell(row, iCompl),
@@ -5626,7 +5660,17 @@ async function carregarListaSAP(event) {
       tel1:   getCell(row, iTel1),
       tel2:   getCell(row, iTel2),
       ie:     getCell(row, iIE),
-    });
+      npess:  String(npess || ''),
+    };
+    // Contencioso (99520013 / *13) — sai da lista activa e entra em "Clientes no Contencioso"
+    if (isVendedorContenciosoCode(npess)) {
+      listaContencioso.push({ ...rowObj, vendedor: CONTENCIOSO_VENDEDOR });
+      codsContencioso.push(cod);
+      continue;
+    }
+    const vendedor = NPESS_VENDEDOR[npess] || '';
+    if (!vendedor) continue; // código desconhecido — ignora
+    novaLista.push({ ...rowObj, vendedor });
   }
 
   if (!novaLista.length && !codsAnulados.length) {
@@ -5648,7 +5692,7 @@ async function carregarListaSAP(event) {
   // → precisam de revisão (serão assinalados em Por Registar)
   // Calculado depois da confirmação em loadPendentes
 
-  _sapImportBuffer = { novaLista, codsAnulados, codsContencioso, fileName: file.name, colDiag };
+  _sapImportBuffer = { novaLista, codsAnulados, codsContencioso, listaContencioso, fileName: file.name, colDiag };
 
   const nComRua = novaLista.filter(c => c.rua).length;
   const nComCnpj = novaLista.filter(c => c.cnpj).length;
@@ -5661,7 +5705,11 @@ async function carregarListaSAP(event) {
   let statusHtml = `<strong>${novaLista.length}</strong> clientes activos`;
   if (adicionados) statusHtml += ` &nbsp;·&nbsp; <span style="color:#2e7d32">+${adicionados} novos</span>`;
   if (removidos) statusHtml += ` &nbsp;·&nbsp; <span style="color:#c62828">-${removidos} removidos</span>`;
-  if (codsContencioso.length) statusHtml += ` &nbsp;·&nbsp; <span style="color:#7f1d1d">${codsContencioso.length} em Contencioso (*13)</span>`;
+  if (codsContencioso.length) {
+    const nHoreca = (listaContencioso || []).filter(c => canalEhContenciosoHoreca(c.canal)).length;
+    statusHtml += ` &nbsp;·&nbsp; <span style="color:#7f1d1d">${codsContencioso.length} Contencioso (*13)`
+      + (nHoreca ? ` · ${nHoreca} nos canais 03/04` : '') + `</span>`;
+  }
   statusHtml += `<br><span style="color:${nComRua && nComCnpj ? '#166534' : '#b45309'}">Dados ricos no ficheiro: `
     + `morada ${nComRua}/${novaLista.length} · CNPJ ${nComCnpj} · email ${nComEmail} · tel ${nComTel} · canal ${nComCanal}</span>`;
   statusHtml += `<br><span style="color:var(--muted);font-size:12px">Colunas OK: ${colsOk.join(', ') || '—'}`
@@ -5773,8 +5821,9 @@ async function confirmarCargaSAP() {
 
   try {
 
-  // Manter na lista clientes já registados na app mesmo que o Excel novo os tenha omitido.
-  const repostos = await reporClientesRegistadosNaLista(novaLista, listaAntes, codsAnulados);
+  // Manter na lista clientes já registados na app mesmo que o Excel novo os tenha omitido
+  // (exceto anulados 999 e Contencioso *13).
+  const repostos = await reporClientesRegistadosNaLista(novaLista, listaAntes, codsAnulados, codsContencioso);
   novaLista = deduplicarListaSAPPorCod(repostos.lista);
   acumularSapDetalhe(novaLista);
 
@@ -5798,7 +5847,9 @@ async function confirmarCargaSAP() {
       return codsAnulados.filter(c => set.has(normCod(c)));
     })() : []);
   try { localStorage.setItem('delta_sap_anulados', JSON.stringify(codsParaApagar.map(normCod))); } catch(e) {}
-  try { localStorage.setItem('delta_sap_contencioso', JSON.stringify((codsContencioso || []).map(normCod))); } catch(e) {}
+  // Lista "Clientes no Contencioso" (vendedor 99520013) — canais 03/04 deixam de contar nos registos
+  const listaContencioso = deduplicarListaSAPPorCod(_sapImportBuffer.listaContencioso || []);
+  guardarListaContencioso(listaContencioso);
   foraSPCache = null;
   clearRegistosCache();
 
@@ -5854,9 +5905,15 @@ async function confirmarCargaSAP() {
   if (atualizados) msg += ` ${atualizados} registo(s) manual(ais) validado(s) pelo SAP.`;
   if (nCad) msg += ` ${nCad} cadastro(s) actualizado(s) com dados SAP.`;
   if (erros)    msg += ` ⚠ ${erros} erro(s) ao apagar.`;
+  const nContLista = getListaContenciosoActiva().length;
+  if (listaContencioso.length) {
+    msg += ` ${listaContencioso.length} no Contencioso (*13)`;
+    if (nContLista) msg += ` · ${nContLista} nos canais 03/04 (lista "Clientes no Contencioso")`;
+    msg += '.';
+  }
 
   const nCont = await removerPedidosContenciosoPorCods(codsContencioso || []);
-  if (nCont) msg += ` ${nCont} pedido(s) Contencioso concluído(s) no SAP.`;
+  if (nCont) msg += ` ${nCont} pedido(s) Contencioso pendente concluído(s) no SAP.`;
 
   await loadSCEncerramentosPendentes();
   await loadSCContenciosoPendentes();
@@ -6065,7 +6122,7 @@ async function enviarPedidoInstalacao() {
     // Email
     const dataFmt = new Date(data + 'T12:00:00').toLocaleDateString('pt-BR');
     const equipsStr = equipamentos.map(e => e.tipo).join(', ');
-    const mailto = `mailto:daniela.kucinski@deltafoodsbrasil.com.br?cc=${ccString([])}&subject=Pedido de Instalação — ${cliente?.nome||cod}&body=Pedido de instalação:%0A%0ACliente: ${encodeURIComponent(cliente?.nome||cod)} (${cod})%0AVendedor: ${encodeURIComponent(cliente?.vendedor||'')}%0AEquipamentos: ${encodeURIComponent(equipsStr)}%0AData desejada: ${encodeURIComponent(dataFmt)}%0AUrgência: ${urgencia}${obs?'%0AObservações: '+encodeURIComponent(obs):''}`;
+    const mailto = `mailto:daniela.kucinski@deltafoodsbrasil.com.br?${ccMailtoParam([])}&subject=Pedido de Instalação — ${cliente?.nome||cod}&body=Pedido de instalação:%0A%0ACliente: ${encodeURIComponent(cliente?.nome||cod)} (${cod})%0AVendedor: ${encodeURIComponent(cliente?.vendedor||'')}%0AEquipamentos: ${encodeURIComponent(equipsStr)}%0AData desejada: ${encodeURIComponent(dataFmt)}%0AUrgência: ${urgencia}${obs?'%0AObservações: '+encodeURIComponent(obs):''}`;
     window.open(mailto, '_blank');
 
     toast('✅ Pedido de instalação registado.', 'success');
@@ -6084,12 +6141,13 @@ async function enviarPedidoInstalacao() {
 // ─── RESUMO ──────────────────────────────────────────
 async function loadResumo() {
   try {
-    const registados = await fetchRegistosPaginado('vendedor,cod', 'cod.asc');
+    const registados = getRegistosActivos(await fetchRegistosPaginado('vendedor,cod', 'cod.asc'));
 
     const vendedores = {};
     const codRegistados = new Set(registados.map(r => normCod(r.cod)));
+    const contSet = getCodsContenciosoSet();
 
-    const _listaStats = getListaClientesActiva();
+    const _listaStats = getListaClientesActiva().filter(c => !contSet.has(normCod(c.cod)));
     _listaStats.forEach(c => {
       const v = c.vendedor;
       if (!vendedores[v]) vendedores[v] = { total: 0, registados: 0 };
@@ -6101,12 +6159,13 @@ async function loadResumo() {
     const totalRegistados = _listaStats.filter(c => codRegistados.has(normCod(c.cod))).length;
     const totalPendentes  = totalSistema - totalRegistados;
     const pctGlobal = totalSistema > 0 ? Math.round(totalRegistados/totalSistema*100) : 0;
+    const nContencioso = getListaContenciosoActiva().length;
 
     // Shared styles
     const wrap  = 'max-width:520px;margin-bottom:24px;flex:1 1 420px;';
     const title = 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px;';
     const cards = 'display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;';
-    const card  = (bg, bc, nc, lc) => `background:${bg};border:1px solid ${bc};border-radius:8px;padding:10px 18px;min-width:90px;text-align:center;`;
+    const card  = (bg, bc) => `background:${bg};border:1px solid ${bc};border-radius:8px;padding:10px 18px;min-width:90px;text-align:center;`;
     const num   = (c) => `font-size:20px;font-weight:700;color:${c};`;
     const lbl   = (c) => `font-size:11px;color:${c};margin-top:1px;`;
     const th    = 'padding:7px 12px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;';
@@ -6116,6 +6175,10 @@ async function loadResumo() {
       const b = pct>=100?'#F0FDF4':pct>=50?'#FFFBEB':'#FEF2F2';
       return `<span style="background:${b};color:${c};padding:2px 8px;border-radius:10px;font-weight:700;font-size:12px;">${pct}%</span>`;
     };
+    const contCardClick = nContencioso
+      ? 'cursor:pointer;text-decoration:underline;text-underline-offset:2px;'
+      : '';
+    const contCardOn = nContencioso ? `onclick="showAnalise('clientes-contencioso')" title="Ver Clientes no Contencioso"` : '';
 
     let html = `<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin-left:24px;"><div style="${wrap}">
       <div style="${title}">Registo de Clientes</div>
@@ -6124,6 +6187,7 @@ async function loadResumo() {
         <div style="${card('#F0FDF4','#BBF7D0')}"><div style="${num('#16a34a')}">${totalRegistados}</div><div style="${lbl('#166534')}">Registados</div></div>
         <div style="${card('#FEF2F2','#FECACA')}"><div style="${num('#c8102e')}">${totalPendentes}</div><div style="${lbl('#991b1b')}">Por registar</div></div>
         <div style="${card('#EFF6FF','#BFDBFE')}"><div style="${num('#1d4ed8')}">${pctGlobal}%</div><div style="${lbl('#1e40af')}">Cobertura</div></div>
+        <div ${contCardOn} style="${card('#FEF2F2','#FECACA')}${contCardClick}"><div style="${num('#7f1d1d')}">${nContencioso || '—'}</div><div style="${lbl('#991b1b')}">Contencioso</div></div>
       </div>
       <table style="width:auto;border-collapse:collapse;">
         <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
@@ -6168,8 +6232,9 @@ async function loadResumoCont() {
     const res = await fetch(SUPA_URL + '?select=cod,vendedor,equipamentos,contratos', {
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
     });
-    const registos = await res.json();
-    if (!Array.isArray(registos)) return;
+    const registosRaw = await res.json();
+    if (!Array.isArray(registosRaw)) return;
+    const registos = getRegistosActivos(registosRaw);
 
     const stats = {};
     for (const r of registos) {
@@ -6328,7 +6393,63 @@ function showAnalise(sub) {
   if (sub === 'sem-compras') initSemCompras();
   if (sub === 'encerramento-pendente') initEncerramentoPendente();
   if (sub === 'contencioso-pendente') initContenciosoPendente();
+  if (sub === 'clientes-contencioso') renderClientesContencioso();
   if (sub === 'fora-sp') initForaSP();
+}
+
+function renderClientesContencioso() {
+  const el = document.getElementById('cc-content');
+  const info = document.getElementById('cc-info');
+  if (!el) return;
+  const canalFilt = document.getElementById('cc-canal')?.value || '';
+  const lista = getListaContenciosoActiva(canalFilt)
+    .slice()
+    .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+  window._clientesContenciosoView = lista;
+  if (info) {
+    info.innerHTML = lista.length
+      ? `<span style="color:#7f1d1d;font-weight:600;">${lista.length} cliente${lista.length > 1 ? 's' : ''}</span> com vendedor <b>${CONTENCIOSO_VENDEDOR}</b> nos canais 03/04 — <b>não contam</b> nos registos activos.`
+      : 'Nenhum cliente Contencioso (canais 03/04) na última carga SAP. Carrega a Lista SAP para actualizar.';
+  }
+  if (!lista.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:40px 0;text-align:center;">Sem clientes no Contencioso para os filtros seleccionados.</div>';
+    return;
+  }
+  const rows = lista.map(c => `<tr style="border-bottom:1px solid #fecaca;background:#fef2f2;">
+    <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(c.cod || '—')}</td>
+    <td style="padding:8px 10px;font-size:12px;font-weight:500;">${escHtml(c.nome || '—')}</td>
+    <td style="padding:8px 10px;font-size:12px;">${escHtml(c.canal || '—')}</td>
+    <td style="padding:8px 10px;font-size:12px;">${escHtml(c.cep || '—')}</td>
+    <td style="padding:8px 10px;font-size:12px;">${escHtml(c.cidade || '—')}</td>
+    <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(c.cnpj || '—')}</td>
+    <td style="padding:8px 10px;font-size:11px;color:#7f1d1d;font-weight:700;">${CONTENCIOSO_VENDEDOR}</td>
+  </tr>`).join('');
+  el.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;">
+    <div class="table-wrap">
+      <table class="data-table" style="width:100%;">
+        <thead><tr style="background:#fee2e2;">
+          <th>Cód.</th><th>Nome</th><th>Canal</th><th>CEP</th><th>Cidade</th><th>CNPJ</th><th>Vendedor SAP</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+  try { if (typeof enableTableSort === 'function') enableTableSort(el.querySelector('table')); } catch (e) {}
+}
+
+function exportClientesContenciosoExcel() {
+  const lista = window._clientesContenciosoView || getListaContenciosoActiva(document.getElementById('cc-canal')?.value || '');
+  if (!lista.length) { toast('Nada para exportar.', 'error'); return; }
+  if (!window.XLSX) { toast('Biblioteca Excel não carregada.', 'error'); return; }
+  const rows = lista.map(c => ({
+    Codigo: c.cod, Nome: c.nome, Canal: c.canal, CEP: c.cep, Cidade: c.cidade,
+    CNPJ: c.cnpj, Email: c.email, Tel1: c.tel1, Vendedor_SAP: CONTENCIOSO_VENDEDOR,
+  }));
+  const ws = window.XLSX.utils.json_to_sheet(rows);
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Contencioso');
+  window.XLSX.writeFile(wb, 'Clientes_no_Contencioso.xlsx');
+  toast('Excel exportado.');
 }
 
 // ─── PEDIDO AT ──────────────────────────────────────
@@ -6674,10 +6795,9 @@ Enviado via Delta Foods App`;
     ? []
     : ['carlos.castro@deltafoodsbrasil.com.br', 'ricardo.vicentesilva@deltafoodsbrasil.com.br'];
   if (vendedorEmail) ccList.push(vendedorEmail);
-  // CC num único parâmetro separado por ';' — o Filipe entra sempre (ccString)
-  const ccParams = `cc=${ccString(ccList)}`;
   const assunto = encodeURIComponent(`ABERTURA DE CHAMADO ${clienteCod} ${clienteNome}`);
-  const mailtoUrl = `mailto:${encodeURIComponent('info.br@gruponabeiro.com')}?${ccParams}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
+  // Não usar encodeURIComponent no endereço do mailto — no Outlook mobile %40 = "endereço inválido"
+  const mailtoUrl = `mailto:${mailtoAddr('info.br@gruponabeiro.com')}?${ccMailtoParam(ccList)}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
 
   // Save chamado to Supabase
   try {
@@ -7975,10 +8095,9 @@ function getEmailUtilizador(nome) {
 // CC obrigatório em TODOS os emails gerados pela app (pedido dos vendedores).
 const CC_FIXO_FILIPE = 'filipe.neves@deltafoodsbrasil.com.br';
 
-// Garante que o Filipe Neves entra sempre em CC e devolve os endereços de CC
-// como UM único valor separado por ';' (formato fiável no Outlook Windows).
-// Importante: o separador tem de ser um ';' literal — se for codificado (%3B)
-// o Outlook trata tudo como um único destinatário inválido e ignora o CC.
+// Garante que o Filipe Neves entra sempre em CC.
+// Separador: vírgula (RFC 5322 / mailto). O Outlook mobile trata "a;b;c" como
+// UM endereço inválido e mostra "Verificar endereço de email".
 function ccString(cc) {
   const arr = (Array.isArray(cc) ? cc : [cc])
     .map(e => String(e || '').trim())
@@ -7990,19 +8109,28 @@ function ccString(cc) {
     const k = e.toLowerCase();
     if (!seen.has(k)) { seen.add(k); out.push(e); }
   }
-  return out.join(';');
+  return out.join(', ');
+}
+
+/** Path do mailto SEM encode do @ — Outlook Android/tablet rejeita info.br%40dominio.com. */
+function mailtoAddr(email) {
+  return String(email || '').trim();
+}
+
+/** Parâmetro cc= do mailto com valor URL-encoded (vírgulas → %2C). */
+function ccMailtoParam(cc) {
+  return 'cc=' + encodeURIComponent(ccString(cc));
 }
 
 // mailto de aprovação: abre com a conta corporativa do remetente (se configurada no Outlook)
 function buildMailtoAprovacao({ remetenteNome, destinatario, cc = [], assunto, corpo }) {
   const to = destinatario || 'carlos.castro@deltafoodsbrasil.com.br';
   const remetenteEmail = getEmailUtilizador(remetenteNome);
-  const ccParams = `cc=${ccString(cc)}`;
-  const tail = `${ccParams}&subject=${assunto}&body=${corpo}`;
+  const tail = `${ccMailtoParam(cc)}&subject=${assunto}&body=${corpo}`;
   if (remetenteEmail) {
-    return `mailto:${encodeURIComponent(remetenteEmail)}?to=${encodeURIComponent(to)}&${tail}`;
+    return `mailto:${mailtoAddr(remetenteEmail)}?to=${encodeURIComponent(to)}&${tail}`;
   }
-  return `mailto:${encodeURIComponent(to)}?${tail}`;
+  return `mailto:${mailtoAddr(to)}?${tail}`;
 }
 
 // ─── Outlook: rascunho HTML + anexos (mailto não suporta HTML/anexos) ─────────
@@ -8044,12 +8172,29 @@ function outlookGuessMime(filename) {
   return 'application/octet-stream';
 }
 
+/** Endpoints da API local (serve.ps1) que abrem o .eml no Outlook. */
+function outlookDraftApiUrls() {
+  const urls = [
+    // Mesmo host (app via serve.ps1)
+    '/api/open-outlook-draft',
+    '/delta-foods-equipamentos-app/api/open-outlook-draft',
+  ];
+  // Portas locais — também a partir do GitHub Pages (CORS no serve.ps1)
+  for (const port of [8088, 8080, 8090, 5505]) {
+    urls.push(`http://127.0.0.1:${port}/api/open-outlook-draft`);
+    urls.push(`http://localhost:${port}/api/open-outlook-draft`);
+  }
+  return urls;
+}
+
 /** Abre rascunho no Outlook com corpo HTML e anexos já incluídos. */
 async function outlookAbrirRascunho({ to, cc, subject, html, attachments = [], draftName = 'Delta_rascunho_Outlook.eml', toastMsg } = {}) {
   const boundary = `DELTA_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-  const ccVal = (cc == null || cc === '')
+  // Headers RFC: vírgulas entre endereços (não ponto-e-vírgula)
+  let ccVal = (cc == null || cc === '')
     ? (typeof ccString === 'function' ? ccString([]) : 'filipe.neves@deltafoodsbrasil.com.br')
     : String(cc);
+  if (ccVal.includes(';')) ccVal = ccVal.split(';').map(s => s.trim()).filter(Boolean).join(', ');
   const parts = [
     `To: ${to}`,
     `Cc: ${ccVal}`,
@@ -8084,31 +8229,22 @@ async function outlookAbrirRascunho({ to, cc, subject, html, attachments = [], d
   const eml = parts.join('\r\n');
   const emlBytes = new Blob([eml], { type: 'message/rfc822' });
 
-  // serve.ps1 grava o .eml e faz Start-Process → Outlook. Sem isso o browser não consegue
-  // abrir o Outlook com HTML+anexos (mailto não suporta).
-  try {
-    const endpoints = [
-      '/api/open-outlook-draft',
-      '/api/open-mc00-email',
-      '/delta-foods-equipamentos-app/api/open-outlook-draft',
-      '/delta-foods-equipamentos-app/api/open-mc00-email',
-    ];
-    for (const ep of endpoints) {
-      try {
-        const r = await fetch(ep, {
-          method: 'POST',
-          headers: { 'Content-Type': 'message/rfc822; charset=utf-8' },
-          body: eml,
-        });
-        if (r.status === 204 || r.ok) {
-          toast(toastMsg || '📧 Outlook aberto com email e anexos.');
-          return true;
-        }
-      } catch (_) { /* endpoint inexistente neste host */ }
-    }
-  } catch (_) { /* GitHub Pages / servidor estático sem API */ }
+  // serve.ps1 grava o .eml e faz Start-Process → Outlook (fluxo principal que desenvolvemos).
+  for (const ep of outlookDraftApiUrls()) {
+    try {
+      const r = await fetch(ep, {
+        method: 'POST',
+        headers: { 'Content-Type': 'message/rfc822; charset=utf-8' },
+        body: eml,
+      });
+      if (r.status === 204 || r.ok) {
+        toast(toastMsg || '📧 Outlook aberto com email e anexos.');
+        return true;
+      }
+    } catch (_) { /* porta/host sem API */ }
+  }
 
-  // Fallback: NÃO usar window.open(blob) — isso só navega para blob:… e não abre o Outlook.
+  // Fallback só se serve.ps1 não estiver a correr
   const fileName = draftName || 'Delta_rascunho_Outlook.eml';
   if (navigator.msSaveOrOpenBlob) {
     navigator.msSaveOrOpenBlob(emlBytes, fileName);
@@ -8117,8 +8253,8 @@ async function outlookAbrirRascunho({ to, cc, subject, html, attachments = [], d
   }
   triggerBlobDownload(emlBytes, fileName);
   toast(
-    '📧 Ficheiro .eml descarregado — abre-o para ver o email no Outlook (com anexos). '
-    + 'Para abrir automaticamente: corre serve.ps1 e usa http://localhost:8080/delta-foods-equipamentos-app/',
+    '📧 Corre serve.ps1 e tenta de novo — o Outlook deve abrir com o Excel em anexo. '
+    + '(URL: http://localhost:8088/delta-foods-equipamentos-app/)',
     'warn'
   );
   return false;
@@ -8352,6 +8488,7 @@ ${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`
 const CONTENCIOSO_VENDEDOR = '99520013';
 const CONTENCIOSO_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/clientes_contencioso';
 const CONTENCIOSO_LS_KEY = 'delta_contencioso_pendentes';
+const CONTENCIOSO_LISTA_KEY = 'delta_clientes_contencioso';
 let _contenciosoCliente = null;
 let scContenciosoPendentes = new Map();
 
@@ -8359,6 +8496,68 @@ function isVendedorContenciosoCode(npessOrCod) {
   const s = String(npessOrCod || '').trim();
   if (!s) return false;
   return s === CONTENCIOSO_VENDEDOR || s.endsWith('13');
+}
+
+/** Canais Horeca em Contencioso: 03 (Office/Institucional) e 04 (Restauração). */
+function canalEhContenciosoHoreca(canal) {
+  const m = String(canal || '').match(/\d{1,2}/);
+  if (!m) return false;
+  const cod = m[0].padStart(2, '0');
+  return cod === '03' || cod === '04';
+}
+
+function canalCodFromSap(canal) {
+  const m = String(canal || '').match(/\d{1,2}/);
+  return m ? m[0].padStart(2, '0') : '';
+}
+
+function getListaContenciosoRaw() {
+  try {
+    const s = localStorage.getItem(CONTENCIOSO_LISTA_KEY);
+    return s ? JSON.parse(s) : [];
+  } catch (e) { return []; }
+}
+
+/** Lista "Clientes no Contencioso": vendedor 99520013 (*13) nos canais 03 e 04. */
+function getListaContenciosoActiva(filtroCanal) {
+  const want = filtroCanal ? String(filtroCanal).padStart(2, '0') : '';
+  return getListaContenciosoRaw().filter(c => {
+    if (!canalEhContenciosoHoreca(c.canal)) return false;
+    if (want && canalCodFromSap(c.canal) !== want) return false;
+    return true;
+  });
+}
+
+/** Códigos a excluir dos registos: só canais 03/04 com vendedor Contencioso. */
+function getCodsContenciosoSet() {
+  const set = new Set();
+  getListaContenciosoActiva().forEach(c => {
+    const k = normCod(c.cod);
+    if (k) set.add(k);
+  });
+  return set;
+}
+
+function isCodContencioso(cod) {
+  return getCodsContenciosoSet().has(normCod(cod));
+}
+
+/** Registos activos = exclui clientes no Contencioso (deixam de ser contabilizados). */
+function getRegistosActivos(data) {
+  const src = data || allData || [];
+  const cont = getCodsContenciosoSet();
+  if (!cont.size) return src;
+  return src.filter(r => !cont.has(normCod(r.cod)));
+}
+
+function guardarListaContencioso(lista) {
+  const arr = Array.isArray(lista) ? lista : [];
+  try { localStorage.setItem(CONTENCIOSO_LISTA_KEY, JSON.stringify(arr)); } catch (e) {}
+  // Só códigos 03/04 — usados para excluir dos registos activos
+  try {
+    const cods03_04 = arr.filter(c => canalEhContenciosoHoreca(c.canal)).map(c => normCod(c.cod)).filter(Boolean);
+    localStorage.setItem('delta_sap_contencioso', JSON.stringify(cods03_04));
+  } catch (e) {}
 }
 
 function readContenciosoLocal() {
@@ -8645,11 +8844,11 @@ Cumprimentos,
 ${getUtilizadorAtual()}`
   );
 
-  // Outlook (Windows) usa ";" entre destinatários; o CC tem de usar ';' literal
-  // (NÃO codificado) — senão o Filipe e o Carlos são ignorados. ccString garante o Filipe.
+  // Vários "Para": vírgula no path (RFC). CC via ccMailtoParam (encode %2C) — evita
+  // o aviso "Verificar endereço de email" no Outlook mobile/tablet.
   const mailto =
-    'mailto:andrea.albuquerque@deltafoodsbrasil.com.br;daniela.kucinski@deltafoodsbrasil.com.br' +
-    '?cc=' + ccString(['carlos.castro@deltafoodsbrasil.com.br']) +
+    'mailto:andrea.albuquerque@deltafoodsbrasil.com.br,daniela.kucinski@deltafoodsbrasil.com.br' +
+    '?' + ccMailtoParam(['carlos.castro@deltafoodsbrasil.com.br']) +
     '&subject=' + assunto +
     '&body=' + corpo;
   window.location.href = mailto;
@@ -10342,7 +10541,7 @@ async function prosEnsureExcelJS() {
   await prosExcelJsLoadPromise;
 }
 
-async function propGerarSimulador(nomeCliente) {
+async function propGerarSimulador(nomeCliente, opts = {}) {
   prosEnsureSimuladorTemplate();
   await prosEnsureExcelJS();
   const raw = atob(window.SIMULADOR_TEMPLATE_B64);
@@ -10420,7 +10619,7 @@ async function propGerarSimulador(nomeCliente) {
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const filename = `Proposta_${tipo === 'Q' ? 'DeltaQ' : 'Grao'}_${(nomeCliente || 'cliente').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}.xlsx`;
-  triggerBlobDownload(blob, filename);
+  if (!opts.skipDownload) triggerBlobDownload(blob, filename);
   return { blob, filename };
 }
 
@@ -10469,7 +10668,8 @@ const CADASTRO_SERVER_URL = 'https://web-production-d9451c.up.railway.app/gerar-
 const CADASTRO_SERVER_ENABLED = false;
 
 // Gera o Excel de cadastro. Por omissão gera no browser (sem depender de servidor).
-async function prosGerarCadastroXlsx(dados) {
+// opts.skipDownload=true quando o ficheiro vai só em anexo no Outlook (como no MC00).
+async function prosGerarCadastroXlsx(dados, opts = {}) {
   if (CADASTRO_SERVER_ENABLED) {
     try {
       const res = await fetch(CADASTRO_SERVER_URL, {
@@ -10480,13 +10680,13 @@ async function prosGerarCadastroXlsx(dados) {
       if (!res.ok) throw new Error('Erro ' + res.status);
       const blob = await res.blob();
       const filename = `Cadastro_${(dados.nome||'cliente').replace(/[^a-zA-Z0-9]/g,'_').substring(0,20)}.xlsx`;
-      triggerBlobDownload(blob, filename);
+      if (!opts.skipDownload) triggerBlobDownload(blob, filename);
       return { blob, filename };
     } catch (e) {
       console.warn('Servidor de cadastro indisponível, a gerar Excel localmente:', e && e.message);
     }
   }
-  return await gerarCadastroXlsxLocal(dados);
+  return await gerarCadastroXlsxLocal(dados, opts);
 }
 
 function prosCadastroResumoEmailHtml(dados) {
@@ -10541,7 +10741,7 @@ ${propHtml}
 <p>Cumprimentos,<br>${outlookEmailEsc(remetente)}${remetenteEmail ? '<br>' + outlookEmailEsc(remetenteEmail) : ''}</p>
 </body></html>`;
 
-  await outlookAbrirRascunho({
+  return outlookAbrirRascunho({
     to: 'carlos.castro@deltafoodsbrasil.com.br',
     cc: ccString(['daniela.kucinski@deltafoodsbrasil.com.br']),
     subject: `${motivo} - ${dados.nome || 'Cliente'}`,
@@ -11854,17 +12054,20 @@ async function alteracaoCadastralExportar() {
   PROS_CADASTRO_AUTOSAVE_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.style.borderColor = ''; });
   // Guarda sempre o cadastro no cliente antes de exportar/enviar.
   await guardarCadastroCliente({ silent: true });
-  if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar ficha de alteração...</span>';
+  if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar ficha e abrir Outlook...</span>';
   const dados = prosCollectCadastroDados();
   try {
-    const cadastro = await prosGerarCadastroXlsx(dados);
-    toast('✅ Cadastro guardado e ficha exportada!');
-    if (st) st.innerHTML = '<span style="color:#16a34a">Cadastro guardado · ficha exportada — email a abrir...</span>';
-    await prosAbrirEmailCadastro(dados, {
+    // Excel só em anexo no Outlook — sem download/Save As separado (igual ao MC00)
+    const cadastro = await prosGerarCadastroXlsx(dados, { skipDownload: true });
+    if (st) st.innerHTML = '<span style="color:#16a34a">Cadastro guardado — a abrir Outlook com Excel em anexo...</span>';
+    const ok = await prosAbrirEmailCadastro(dados, {
       isCafe: false,
       propTexto: '',
       attachments: cadastro?.blob ? [{ blob: cadastro.blob, filename: cadastro.filename }] : [],
     });
+    if (ok !== false && st) {
+      st.innerHTML = '<span style="color:#16a34a">Cadastro guardado · Outlook aberto com Excel em anexo.</span>';
+    }
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
     toast('Erro: ' + e.message, 'error');
@@ -11936,8 +12139,7 @@ async function prosGanhoExportar() {
   const dados = prosCollectCadastroDados();
 
   try {
-    const cadastro = await prosGerarCadastroXlsx(dados);
-    toast('✅ Ficha de Cadastro exportada!');
+    const cadastro = await prosGerarCadastroXlsx(dados, { skipDownload: true });
 
     let propTexto = '';
     const attachments = [];
@@ -11946,9 +12148,8 @@ async function prosGanhoExportar() {
     if (isCafe) {
       try {
         await prosSleep(450);
-        const proposta = await propGerarSimulador(dados.nome);
+        const proposta = await propGerarSimulador(dados.nome, { skipDownload: true });
         if (proposta?.blob) attachments.push({ blob: proposta.blob, filename: proposta.filename });
-        toast('✅ Proposta de Negócio exportada!');
       } catch (e) {
         const msgProp = 'Erro na proposta de negócio: ' + e.message;
         if (st) st.innerHTML = `<span style="color:var(--danger)">${msgProp}</span>`;
@@ -11958,9 +12159,12 @@ async function prosGanhoExportar() {
       propTexto = prosBuildEmailPropostaText();
     }
 
-    if (st) st.innerHTML = '<span style="color:#16a34a">Documentos exportados — email a abrir...</span>';
+    if (st) st.innerHTML = '<span style="color:#16a34a">A abrir Outlook com documentos em anexo...</span>';
 
-    await prosAbrirEmailCadastro(dados, { isCafe, propTexto, attachments });
+    const ok = await prosAbrirEmailCadastro(dados, { isCafe, propTexto, attachments });
+    if (ok !== false && st) {
+      st.innerHTML = '<span style="color:#16a34a">Outlook aberto com documentos em anexo.</span>';
+    }
 
   } catch(e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
@@ -11971,7 +12175,7 @@ async function prosGanhoExportar() {
 // Mapeamento de células idêntico ao servidor (server.py /gerar-cadastro) para garantir
 // que o ficheiro fica igual. Não fecha modais nem mostra toast — isso é da responsabilidade
 // de quem chama (via prosGerarCadastroXlsx).
-async function gerarCadastroXlsxLocal(d) {
+async function gerarCadastroXlsxLocal(d, opts = {}) {
   await ensureXLSX();
 
   // Carregar template original (preserva formatação, dropdowns, fórmulas)
@@ -12028,7 +12232,7 @@ async function gerarCadastroXlsxLocal(d) {
   const filename = `Cadastro_${nome}.xlsx`;
   const out = window.XLSX.write(wb, { bookType: 'xlsx', cellStyles: true, type: 'array' });
   const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  triggerBlobDownload(blob, filename);
+  if (!opts.skipDownload) triggerBlobDownload(blob, filename);
   return { blob, filename };
 }
 
@@ -12334,7 +12538,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     setStatus(Array.isArray(data), undefined);
     if (Array.isArray(data)) {
       const all = await fetchRegistosPaginado('id', 'criado_em.desc');
-      setStatus(true, all.length);
+      setStatus(true, getRegistosActivos(all).length);
     }
   } catch { setStatus(false); }
 });

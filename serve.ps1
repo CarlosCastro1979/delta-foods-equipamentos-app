@@ -1,4 +1,4 @@
-$preferred = if ($env:PORT) { [int]$env:PORT } else { 8080 }
+$preferred = if ($env:PORT) { [int]$env:PORT } else { 8088 }
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $appDir = Join-Path $root 'delta-foods-equipamentos-app'
 $syncFiles = @('index.html', 'manifest.json', 'sw.js', 'simulador-template.js', 'mc00-template.xlsx', 'icon-192.png', 'icon-512.png')
@@ -60,9 +60,17 @@ function Open-EmlDraft([string]$emlPath) {
     [void][System.Diagnostics.Process]::Start($psi)
 }
 
+function Set-CorsHeaders($res) {
+    # Permite GitHub Pages / outro host chamar a API local para abrir o Outlook
+    $res.Headers['Access-Control-Allow-Origin'] = '*'
+    $res.Headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS, GET'
+    $res.Headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    $res.Headers['Access-Control-Max-Age'] = '86400'
+}
+
 $listener = $null
 $port = $null
-foreach ($tryPort in @($preferred, 8080, 8088, 8090, 5505)) {
+foreach ($tryPort in @($preferred, 8088, 8080, 8090, 5505)) {
     try {
         $listener = Start-AppListener $tryPort
         $port = $tryPort
@@ -72,13 +80,13 @@ foreach ($tryPort in @($preferred, 8080, 8088, 8090, 5505)) {
     }
 }
 if (-not $listener) {
-    throw "Nao foi possivel iniciar o servidor local (portas ocupadas). Fecha o processo na 8080/8090 ou define PORT."
+    throw "Nao foi possivel iniciar o servidor local (portas ocupadas). Fecha o processo na 8088/8080 ou define PORT."
 }
 
 Write-Host ''
 Write-Host 'Delta Foods - Gestao de Equipamentos' -ForegroundColor Green
 Write-Host "Local:  http://localhost:$port/delta-foods-equipamentos-app/" -ForegroundColor Cyan
-Write-Host 'API Outlook: POST /api/open-outlook-draft' -ForegroundColor DarkGray
+Write-Host 'API Outlook: POST /api/open-outlook-draft (CORS activo)' -ForegroundColor DarkGray
 Write-Host 'Online: https://carloscastro1979.github.io/delta-foods-equipamentos-app/' -ForegroundColor DarkGray
 Write-Host 'Ctrl+C para parar' -ForegroundColor DarkGray
 Write-Host ''
@@ -91,29 +99,40 @@ while ($listener.IsListening) {
     try {
         Sync-AppAssets
         $path = $ctx.Request.Url.LocalPath
-        $isOutlookApi = ($ctx.Request.HttpMethod -eq 'POST') -and (
+        $method = $ctx.Request.HttpMethod
+        $isOutlookPath = (
             $path -eq '/api/open-outlook-draft' -or
             $path -eq '/api/open-mc00-email' -or
             $path -eq '/delta-foods-equipamentos-app/api/open-outlook-draft' -or
             $path -eq '/delta-foods-equipamentos-app/api/open-mc00-email'
         )
 
-        if ($isOutlookApi) {
-            $ms = New-Object System.IO.MemoryStream
-            $ctx.Request.InputStream.CopyTo($ms)
-            $emlBytes = $ms.ToArray()
-            if ($emlBytes.Length -lt 20 -or $emlBytes.Length -gt 25MB) {
-                $res.StatusCode = 400
-                $err = [Text.Encoding]::UTF8.GetBytes('Invalid draft')
-                $res.ContentLength64 = $err.Length
-                $res.OutputStream.Write($err, 0, $err.Length)
-                Write-Host "  400  POST $path (draft invalido)" -ForegroundColor Yellow
-            } else {
-                $tmp = Join-Path $env:TEMP ("MC00_draft_{0}.eml" -f [guid]::NewGuid().ToString('N'))
-                [IO.File]::WriteAllBytes($tmp, $emlBytes)
-                $openEmlPath = $tmp
-                $openEmlKb = [math]::Round($emlBytes.Length / 1KB)
+        if ($isOutlookPath) {
+            Set-CorsHeaders $res
+            if ($method -eq 'OPTIONS') {
                 $res.StatusCode = 204
+                $res.ContentLength64 = 0
+                Write-Host "  204  OPTIONS $path (CORS)" -ForegroundColor DarkGray
+            } elseif ($method -eq 'POST') {
+                $ms = New-Object System.IO.MemoryStream
+                $ctx.Request.InputStream.CopyTo($ms)
+                $emlBytes = $ms.ToArray()
+                if ($emlBytes.Length -lt 20 -or $emlBytes.Length -gt 25MB) {
+                    $res.StatusCode = 400
+                    $err = [Text.Encoding]::UTF8.GetBytes('Invalid draft')
+                    $res.ContentLength64 = $err.Length
+                    $res.OutputStream.Write($err, 0, $err.Length)
+                    Write-Host "  400  POST $path (draft invalido)" -ForegroundColor Yellow
+                } else {
+                    $tmp = Join-Path $env:TEMP ("MC00_draft_{0}.eml" -f [guid]::NewGuid().ToString('N'))
+                    [IO.File]::WriteAllBytes($tmp, $emlBytes)
+                    $openEmlPath = $tmp
+                    $openEmlKb = [math]::Round($emlBytes.Length / 1KB)
+                    $res.StatusCode = 204
+                    $res.ContentLength64 = 0
+                }
+            } else {
+                $res.StatusCode = 405
                 $res.ContentLength64 = 0
             }
         } else {
