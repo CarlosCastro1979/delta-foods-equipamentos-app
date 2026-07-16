@@ -2417,11 +2417,12 @@ var _unused_placeholder = 1;
             </select>
           </div>
           <div>
-            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Contrib. ICMS</label>
+            <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Contrib. ICMS <span style="font-weight:400;">(financeira)</span></label>
             <select id="pg-icms" class="form-input" style="width:100%;font-size:13px;">
+              <option value="">— Financeira —</option>
               <option value="Z1 - Contribuinte ICMS">Z1 - Contribuinte ICMS</option>
               <option value="Z2 - Isento sem I.E.">Z2 - Isento sem I.E.</option>
-              <option value="Z9 - Não Contribuinte de ICMS" selected>Z9 - Não Contribuinte de ICMS</option>
+              <option value="Z9 - Não Contribuinte de ICMS">Z9 - Não Contribuinte de ICMS</option>
             </select>
           </div>
         </div>
@@ -8926,7 +8927,8 @@ const PROS_CADASTRO_OBRIGATORIOS = [
   ['nome', 'Nome / Razão Social'], ['cnpj', 'CNPJ / CPF'], ['fantasia', 'Nome Fantasia'],
   ['email', 'Email'], ['tel1', 'Tel. 1'], ['rua', 'Rua'], ['nro', 'Nro.'], ['bairro', 'Bairro'],
   ['cep', 'CEP'], ['cidade', 'Cidade'], ['canal', 'Canal Distribuição'], ['regiao', 'Região (Estado)'],
-  ['icms', 'Contrib. ICMS'], ['pagto', 'Cond. Pagamento'], ['rota', 'Rota'], ['vendedor', 'Vendedor'],
+  ['pagto', 'Cond. Pagamento'], ['rota', 'Rota'], ['vendedor', 'Vendedor'],
+  // Contrib. ICMS não é obrigatório — preenchido pela financeira
 ];
 const PROS_PROPOSTA_OBRIGATORIOS = [
   ['prop_produto', 'Produto / Lote'], ['prop_prazo', 'Prazo contrato (meses)'],
