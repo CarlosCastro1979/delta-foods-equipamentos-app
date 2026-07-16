@@ -454,7 +454,7 @@
   table.data-table .col-aging { text-align: center; }
   table.data-table .col-action { text-align: center; }
 
-  table.data-table--registos .col-nome { min-width: 260px; }
+  table.data-table--registos .col-nome { min-width: 200px; }
 
   table.data-table--sc th.col-vend,
   table.data-table--sc th.col-code,
@@ -592,6 +592,16 @@
     animation: slideUp 0.25s ease;
     box-shadow: var(--shadow-lg);
   }
+  .modal.modal-wide-cad { max-width: 900px; }
+
+  /* Abas dentro do modal de editar registo */
+  .edit-tab-bar { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:18px; }
+  .edit-tab-btn {
+    background:none; border:none; border-bottom:2px solid transparent; margin-bottom:-2px;
+    padding:9px 18px; font-size:14px; font-weight:600; color:var(--muted); cursor:pointer;
+  }
+  .edit-tab-btn:hover { color:var(--text); }
+  .edit-tab-btn.active { color:#b91c1c; border-bottom-color:#b91c1c; }
 
   @keyframes slideUp {
     from { transform: translateY(20px); opacity: 0; }
@@ -1337,11 +1347,10 @@ var _unused_placeholder = 1;
       <input type="text" id="filtro-nome" placeholder="🔍 Nome cliente" oninput="renderTable()" style="flex:1;min-width:160px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface)">
       <button class="btn btn-secondary btn-sm" onclick="loadData(true)">↻ Atualizar</button>
       <button class="btn btn-secondary btn-sm" onclick="exportExcel()">⬇ Excel</button>
-      <button id="invalidos-badge" class="badge-invalid" onclick="toggleFiltroInvalidos()" title="Clica para filtrar só os códigos inválidos"></button>
+      <button id="invalidos-badge" class="badge-invalid" style="display:none"></button>
       <span id="record-count" style="font-size:12px;color:var(--muted);font-family:var(--font-mono)"></span>
-      <input type="checkbox" id="filtro-invalidos" style="display:none" onchange="renderTable()">
     </div>
-    <div class="table-wrap">
+    <div class="table-wrap" style="overflow-x:auto;">
       <table class="data-table data-table--registos">
         <thead>
           <tr>
@@ -2038,7 +2047,7 @@ var _unused_placeholder = 1;
           <div id="pros-autosave-hint" style="font-size:11px;color:var(--muted);margin-top:2px;">Alterações guardadas automaticamente</div>
         </div>
         <div id="pros-modal-header-cafe" class="pros-modal-header-cafe">
-          <span class="pros-modal-header-cafe-label">Cliente para Compra de Café?</span>
+          <span class="pros-modal-header-cafe-label">Cliente de Caps ou Grão?</span>
           <div class="pros-modal-header-cafe-options">
             <label class="pros-modal-header-cafe-opt">
               <input type="radio" name="pg-cliente-cafe" id="pg-cliente-cafe-sim" value="sim" onchange="prosGanhoClienteCafeChange()"> Sim
@@ -2608,6 +2617,12 @@ var _unused_placeholder = 1;
 
     <!-- STEP 2: editar campos -->
     <div id="modal-step2" style="display:none">
+      <div class="edit-tab-bar">
+        <button type="button" id="edit-tab-btn-registo" class="edit-tab-btn active" onclick="editSwitchTab('registo')">📋 Registo</button>
+        <button type="button" id="edit-tab-btn-cadastro" class="edit-tab-btn" onclick="editSwitchTab('cadastro')">📝 Dados Cadastrais</button>
+      </div>
+
+      <div id="edit-tab-registo">
       <div class="form-row">
         <div class="form-group">
           <label>Vendedor</label>
@@ -2660,6 +2675,19 @@ var _unused_placeholder = 1;
         <button class="btn btn-danger btn-sm" onclick="confirmarExclusao()">🗑 Excluir Registo</button>
         <button class="btn btn-sm" onclick="abrirEncerramentoCliente()" style="background:#f59e0b;border-color:#f59e0b;color:#fff;">⚠ Pedido de Encerramento</button>
         <button class="btn btn-secondary" onclick="closeModal()" style="margin-left:auto">Cancelar</button>
+      </div>
+      </div><!-- /edit-tab-registo -->
+
+      <!-- ABA: DADOS CADASTRAIS (ficha de cadastro reutilizada) -->
+      <div id="edit-tab-cadastro" style="display:none">
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#1e3a8a;margin-bottom:16px;">
+          ℹ️ Ficha de cadastro pré-preenchida com os dados do cliente. As alterações são <strong>guardadas automaticamente</strong>. Quando terminar, use o botão abaixo para gerar o Excel e enviar por email.
+        </div>
+        <div id="edit-cadastro-host"></div>
+        <div id="edit-cadastro-status" style="margin-top:12px;font-size:12.5px;text-align:right;min-height:16px;"></div>
+        <div style="margin-top:6px;display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn" onclick="alteracaoCadastralExportar()" style="flex:1;min-width:200px;background:#16a34a;border-color:#16a34a;color:#fff;padding:11px 16px;font-weight:600;">✉ Enviar email e exportar Excel</button>
+        </div>
       </div>
     </div>
 
@@ -3285,24 +3313,14 @@ function renderTable() {
   const vendFilt = document.getElementById('filtro-vendedor-lista')?.value || '';
   const codFilt = document.getElementById('filtro-cod')?.value?.trim()?.toLowerCase() || '';
   const nomeFilt = document.getElementById('filtro-nome')?.value?.trim()?.toLowerCase() || '';
-  const soInvalidos = document.getElementById('filtro-invalidos')?.checked || false;
   const tabelaBody = document.getElementById('table-body');
-
-  const codsValidos = getCodsListaAtiva();
 
   let filtered = allData || [];
   if (vendFilt) filtered = filtered.filter(r => r.vendedor === vendFilt);
   if (codFilt) filtered = filtered.filter(r => (r.cod||'').toLowerCase().includes(codFilt));
   if (nomeFilt) filtered = filtered.filter(r => (r.nome||'').toLowerCase().includes(nomeFilt));
-  if (soInvalidos) filtered = filtered.filter(r => !codsValidos.has(String(r.cod||'').trim()));
 
-  // Contar inválidos no total (antes do filtro de texto)
-  const totalInvalidos = (allData||[]).filter(r => !codsValidos.has(String(r.cod||'').trim())).length;
   const badgeEl = document.getElementById('invalidos-badge');
-  if (badgeEl) {
-    badgeEl.textContent = totalInvalidos > 0 ? `⚠ ${totalInvalidos} código${totalInvalidos>1?'s':''} inválido${totalInvalidos>1?'s':''} — ver Por Registar` : '';
-    badgeEl.style.display = totalInvalidos > 0 ? 'inline-flex' : 'none';
-  }
 
   // Detetar códigos duplicados
   const codCount = {};
@@ -3353,16 +3371,12 @@ function renderTable() {
     const equipHtml = equips.map(e =>
       `<span class="equip-tag-badge">${e.tipo}${e.tag ? ` <span class="tag-num">#${e.tag}</span>` : ''}</span>`
     ).join('');
-    const isInvalid = codsValidos.size > 0 && !codsValidos.has(String(r.cod||'').trim());
     const isDuplicated = codsDuplicados.has(String(r.cod||'').trim());
     const isPendente = r.encerramento_pendente === true;
-    const rowStyle = isInvalid ? ' class="row-invalid"'
-      : isPendente ? ' style="background:#fff7ed;"'
+    const rowStyle = isPendente ? ' style="background:#fff7ed;"'
       : isDuplicated ? ' style="background:#fff8f0;"' : '';
-    const codCell = isInvalid
-      ? `<td class="col-code"><span class="cod-invalid" title="Código não encontrado na lista de clientes SAP">${r.cod || '—'} ⚠</span></td>`
-      : isPendente
-        ? `<td class="col-code"><span style="color:#f59e0b;font-weight:600;" title="Encerramento pendente: ${r.encerramento_motivo||''}">${r.cod || '—'} 🟠</span></td>`
+    const codCell = isPendente
+      ? `<td class="col-code"><span style="color:#f59e0b;font-weight:600;" title="Encerramento pendente: ${r.encerramento_motivo||''}">${r.cod || '—'} 🟠</span></td>`
       : isDuplicated
         ? `<td class="col-code"><span style="color:#ff6b35;font-weight:600;" title="Código duplicado — existe mais de um registo com este código">${r.cod || '—'} 🔴</span></td>`
         : `<td class="col-code">${r.cod || '—'}</td>`;
@@ -3462,8 +3476,12 @@ function exportCSV() { exportExcel(); }
 
 // ─── MODAL HELPERS ────────────────────────────────────
 function closeModal() {
+  flushEditCadastroSave();
   document.getElementById('modal-overlay').classList.remove('open');
   editingId = null;
+  // Devolve a ficha de cadastro ao modal de Prospeção e repõe a largura normal.
+  garantirFichaCadastralEmCasa();
+  const m = document.getElementById('modal-edit'); if (m) m.classList.remove('modal-wide-cad');
 }
 
 function closeModalOnBg(e) {
@@ -4966,12 +4984,18 @@ function openEdit(id) {
   document.getElementById('modal-step1').style.display = 'none';
   document.getElementById('modal-step2').style.display = 'block';
   goToStep2();
+  // A ficha de cadastro só é preenchida na 1.ª vez que se abre a aba; começa sempre na aba Registo.
+  _editCadPreenchido = false;
+  editSwitchTab('registo');
   document.getElementById('modal-overlay').classList.add('open');
 }
 
 function closeEdit() {
+  flushEditCadastroSave();
   document.getElementById('modal-overlay').classList.remove('open');
   editingId = null;
+  garantirFichaCadastralEmCasa();
+  const m = document.getElementById('modal-edit'); if (m) m.classList.remove('modal-wide-cad');
 }
 
 async function salvarEdicao() {
@@ -5021,24 +5045,25 @@ async function loadPendentes() {
     // Validação exclusivamente por código SAP — CNPJ/nome podem repetir em códigos diferentes
     const data = await fetchRegistosPaginado('cod,nome,vendedor,manual', 'cod.asc');
 
-    const codsListaActivaNorm = new Set(listaAtiva.map(c => normCod(c.cod)));
     const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
 
-    const porRegistar = listaAtiva.filter(c => !codRegistados.has(normCod(c.cod)));
+    // Fallback por NOME: o SAP tem por vezes o MESMO cliente sob dois códigos
+    // diferentes (ex.: SPI 444090 e 754434; WAJ 452047 e 428078). Se já existe um
+    // registo com o mesmo nome, o cliente já foi tratado e NÃO deve reaparecer em
+    // "Por Registar", mesmo que o segundo código do SAP ainda não tenha registo
+    // próprio (ou que o código tenha mudado / haja gralha).
+    const normNome = s => String(s || '').toUpperCase().normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]/g, '');
+    const nomesRegistados = new Set((data || []).map(r => normNome(r.nome)).filter(Boolean));
 
-    let anuladosSet = new Set();
-    try {
-      const an = JSON.parse(localStorage.getItem('delta_sap_anulados') || '[]');
-      anuladosSet = new Set(an.map(normCod));
-    } catch(e) {}
+    // "Por registar" = cliente da lista SAP sem registo pelo código E sem registo
+    // com o mesmo nome. Assim, duplicados do SAP e clientes já preenchidos sob
+    // outro código deixam de reaparecer a cada recarga.
+    const porRegistar = listaAtiva.filter(c =>
+      !codRegistados.has(normCod(c.cod)) && !nomesRegistados.has(normNome(c.nome))
+    );
 
-    const paraRevisao = (data || [])
-      .filter(r => !codsListaActivaNorm.has(normCod(r.cod)) && !r.manual && !anuladosSet.has(normCod(r.cod)))
-      .map(r => ({
-        cod: r.cod, nome: r.nome || '—', cep: '', vendedor: r.vendedor || '—', _revisao: true
-      }));
-
-    pendentesData = [...paraRevisao, ...porRegistar];
+    pendentesData = porRegistar;
   } catch(e) {
     console.error('loadPendentes error:', e);
     toast('Erro ao carregar pendentes — tenta novamente.', 'error');
@@ -5235,6 +5260,23 @@ async function carregarListaSAP(event) {
   const iCNPJ    = headers.findIndex(h => h.includes('ID fiscal') || h.includes('fiscal'));
   const iCanal   = headers.findIndex(h => /^canal$/i.test(String(h || '').trim()));
 
+  // Colunas extra de morada/contacto — deteção tolerante a variações de nome de cabeçalho.
+  const _hn = headers.map(h => String(h || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim());
+  const findH   = re => _hn.findIndex(h => re.test(h));
+  const findAll = re => _hn.map((h, idx) => re.test(h) ? idx : -1).filter(i => i >= 0);
+  const iRua    = findH(/(^|\b)(rua|logradouro|endereco)(\b|$)/);
+  const iNroCol = findH(/^(nro|numero|num)\.?$/);
+  const iBairro = findH(/bairro/);
+  const iCompl  = findH(/complement/);
+  const iCidade = findH(/(^cid|cidade|localidade|munic|^local$)/);
+  const iUF     = findH(/(^uf$|^regiao$|^estado$)/);
+  const iEmail  = findH(/mail/);
+  const _telIdx = findAll(/(tel|fone|celular)/);
+  const iTel1   = _telIdx[0] != null ? _telIdx[0] : -1;
+  const iTel2   = _telIdx[1] != null ? _telIdx[1] : -1;
+  const iIE     = findH(/(inscr.*estad|^ie$|insc\.?\s*est)/);
+  const getCell = (row, i) => i >= 0 ? String(row[i] || '').trim() : '';
+
   if (iCliente === -1 || iNome === -1) {
     toast('Colunas "Cliente" e "Nome" não encontradas. Verifica o ficheiro.', 'error');
     return;
@@ -5267,7 +5309,26 @@ async function carregarListaSAP(event) {
     if (!vendedor) continue; // código desconhecido — ignora
     const cnpj = iCNPJ >= 0 ? String(row[iCNPJ]||'').trim() : '';
     const canal = iCanal >= 0 ? String(row[iCanal]||'').trim() : '';
-    novaLista.push({cod, nome, cep, vendedor, cnpj, canal});
+    // Morada / contacto (só preenche o que existir no ficheiro)
+    let rua = getCell(row, iRua);
+    let nro = getCell(row, iNroCol);
+    if (!nro && rua) {
+      // O nº costuma vir no fim da própria Rua ("Av X 776" → rua="Av X", nro="776").
+      const m = rua.match(/^(.*?)[,\s]+(\d+[A-Za-z]?)\s*$/);
+      if (m) { rua = m[1].trim().replace(/[,\s]+$/, ''); nro = m[2]; }
+    }
+    novaLista.push({
+      cod, nome, cep, vendedor, cnpj, canal,
+      rua, nro,
+      bairro: getCell(row, iBairro),
+      supl:   getCell(row, iCompl),
+      cidade: getCell(row, iCidade),
+      uf:     getCell(row, iUF),
+      email:  getCell(row, iEmail),
+      tel1:   getCell(row, iTel1),
+      tel2:   getCell(row, iTel2),
+      ie:     getCell(row, iIE),
+    });
   }
 
   if (!novaLista.length && !codsAnulados.length) {
@@ -5322,6 +5383,62 @@ async function carregarListaSAP(event) {
       if (el) el.textContent = 'Não foi possível verificar registos — confirma com cuidado.';
     });
   }
+}
+
+// Aplica a um cadastro guardado os campos que vêm do SAP (SAP ganha nos seus campos).
+// Mantém intactos os campos que o SAP não fornece (preenchidos à mão). Devolve {cad, changed, campos}.
+function mesclarSapNoCadastro(cadOrig, sap) {
+  const cad = { ...(cadOrig || {}) };
+  const campos = [];
+  const set = (k, v, label) => {
+    if (v == null) return;
+    const nv = String(v).trim();
+    if (nv === '') return;
+    const atual = String(cad[k] == null ? '' : cad[k]).trim();
+    if (atual !== nv) { cad[k] = nv; campos.push(label || k); }
+  };
+  set('nome', sap.nome, 'Nome');
+  set('cnpj', fmtCnpjCadastro(sap.cnpj), 'CNPJ');
+  set('cep', formatCep(sap.cep), 'CEP');
+  set('rua', sap.rua, 'Rua');
+  set('nro', sap.nro, 'Nº');
+  set('bairro', sap.bairro, 'Bairro');
+  set('supl', sap.supl, 'Complemento');
+  set('cidade', sap.cidade, 'Cidade');
+  set('email', (sap.email || '').toLowerCase(), 'Email');
+  set('tel1', sap.tel1, 'Tel 1');
+  set('tel2', sap.tel2, 'Tel 2');
+  set('ie', sap.ie, 'IE');
+  set('canal', pgCanalFromSap(sap.canal), 'Canal');
+  set('vendedor', pgVendedorSapFromNome(sap.vendedor), 'Vendedor');
+  set('regiao', pgRegiaoFromCep(sap.cep), 'Região');
+  return { cad, changed: campos.length > 0, campos };
+}
+
+// Percorre os registos que já têm cadastro guardado e actualiza os campos que o SAP mudou.
+async function reconciliarCadastrosComSAP(novaLista) {
+  try {
+    const sapMap = {};
+    (novaLista || []).forEach(c => { sapMap[normCod(c.cod)] = c; });
+    const res = await fetch(`${SUPA_URL}?select=id,cod,cadastro_json&cadastro_json=not.is.null`, { headers: HEADERS });
+    if (!res.ok) return 0;
+    const regs = await res.json();
+    if (!Array.isArray(regs)) return 0;
+    let n = 0;
+    for (const reg of regs) {
+      const sap = sapMap[normCod(reg.cod)];
+      if (!sap) continue;
+      const { cad, changed } = mesclarSapNoCadastro(reg.cadastro_json, sap);
+      if (!changed) continue;
+      const patch = await fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
+        method: 'PATCH',
+        headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ cadastro_json: cad })
+      });
+      if (patch.ok) n++;
+    }
+    return n;
+  } catch (e) { console.warn('reconciliarCadastrosComSAP', e); return 0; }
 }
 
 async function confirmarCargaSAP() {
@@ -5394,10 +5511,15 @@ async function confirmarCargaSAP() {
   await publicarListaClientesSupabase(novaLista);
   toast('A sincronizar com outros dispositivos...', 'info');
 
+  // 4b. Reconciliar cadastros já guardados com o SAP (SAP ganha nos campos que fornece)
+  const nCad = await reconciliarCadastrosComSAP(novaLista);
+  if (nCad) clearRegistosCache();
+
   // 5. Resultado
   let msg = `✅ Lista actualizada com ${novaLista.length} clientes.`;
   if (apagados) msg += ` ${apagados} registo(s) anulado(s) apagado(s).`;
   if (atualizados) msg += ` ${atualizados} registo(s) manual(ais) validado(s) pelo SAP.`;
+  if (nCad) msg += ` ${nCad} cadastro(s) actualizado(s) com dados SAP.`;
   if (erros)    msg += ` ⚠ ${erros} erro(s) ao apagar.`;
 
   const nCont = await removerPedidosContenciosoPorCods(codsContencioso || []);
@@ -5609,7 +5731,7 @@ async function enviarPedidoInstalacao() {
     // Email
     const dataFmt = new Date(data + 'T12:00:00').toLocaleDateString('pt-BR');
     const equipsStr = equipamentos.map(e => e.tipo).join(', ');
-    const mailto = `mailto:daniela.kucinski@deltafoodsbrasil.com.br?cc=filipe.neves@deltafoodsbrasil.com.br&subject=Pedido de Instalação — ${cliente?.nome||cod}&body=Pedido de instalação:%0A%0ACliente: ${encodeURIComponent(cliente?.nome||cod)} (${cod})%0AVendedor: ${encodeURIComponent(cliente?.vendedor||'')}%0AEquipamentos: ${encodeURIComponent(equipsStr)}%0AData desejada: ${encodeURIComponent(dataFmt)}%0AUrgência: ${urgencia}${obs?'%0AObservações: '+encodeURIComponent(obs):''}`;
+    const mailto = `mailto:daniela.kucinski@deltafoodsbrasil.com.br?cc=${ccString([])}&subject=Pedido de Instalação — ${cliente?.nome||cod}&body=Pedido de instalação:%0A%0ACliente: ${encodeURIComponent(cliente?.nome||cod)} (${cod})%0AVendedor: ${encodeURIComponent(cliente?.vendedor||'')}%0AEquipamentos: ${encodeURIComponent(equipsStr)}%0AData desejada: ${encodeURIComponent(dataFmt)}%0AUrgência: ${urgencia}${obs?'%0AObservações: '+encodeURIComponent(obs):''}`;
     window.open(mailto, '_blank');
 
     toast('✅ Pedido de instalação registado.', 'success');
@@ -6214,11 +6336,11 @@ Enviado via Delta Foods App`;
   const equipTagStr  = selectedEquips.map(e => e.tag).filter(Boolean).join(', ');
 
   const ccList = atTipoEquip === 'domestico'
-    ? ['filipe.neves@deltafoodsbrasil.com.br']
-    : ['carlos.castro@deltafoodsbrasil.com.br', 'filipe.neves@deltafoodsbrasil.com.br', 'ricardo.vicentesilva@deltafoodsbrasil.com.br'];
-  if (vendedorEmail && !ccList.includes(vendedorEmail)) ccList.push(vendedorEmail);
-  // Cada email no CC é um parâmetro separado — compatível com Outlook e Gmail
-  const ccParams = ccList.map(e => `cc=${encodeURIComponent(e)}`).join('&');
+    ? []
+    : ['carlos.castro@deltafoodsbrasil.com.br', 'ricardo.vicentesilva@deltafoodsbrasil.com.br'];
+  if (vendedorEmail) ccList.push(vendedorEmail);
+  // CC num único parâmetro separado por ';' — o Filipe entra sempre (ccString)
+  const ccParams = `cc=${ccString(ccList)}`;
   const assunto = encodeURIComponent(`ABERTURA DE CHAMADO ${clienteCod} ${clienteNome}`);
   const mailtoUrl = `mailto:${encodeURIComponent('info.br@gruponabeiro.com')}?${ccParams}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
 
@@ -7515,13 +7637,33 @@ function getEmailUtilizador(nome) {
   return UTILIZADOR_EMAILS[normNomeUtilizador(nome)] || '';
 }
 
+// CC obrigatório em TODOS os emails gerados pela app (pedido dos vendedores).
+const CC_FIXO_FILIPE = 'filipe.neves@deltafoodsbrasil.com.br';
+
+// Garante que o Filipe Neves entra sempre em CC e devolve os endereços de CC
+// como UM único valor separado por ';' (formato fiável no Outlook Windows).
+// Importante: o separador tem de ser um ';' literal — se for codificado (%3B)
+// o Outlook trata tudo como um único destinatário inválido e ignora o CC.
+function ccString(cc) {
+  const arr = (Array.isArray(cc) ? cc : [cc])
+    .map(e => String(e || '').trim())
+    .filter(Boolean);
+  arr.push(CC_FIXO_FILIPE);
+  const seen = new Set();
+  const out = [];
+  for (const e of arr) {
+    const k = e.toLowerCase();
+    if (!seen.has(k)) { seen.add(k); out.push(e); }
+  }
+  return out.join(';');
+}
+
 // mailto de aprovação: abre com a conta corporativa do remetente (se configurada no Outlook)
 function buildMailtoAprovacao({ remetenteNome, destinatario, cc = [], assunto, corpo }) {
   const to = destinatario || 'carlos.castro@deltafoodsbrasil.com.br';
   const remetenteEmail = getEmailUtilizador(remetenteNome);
-  const ccList = [...new Set(cc.filter(Boolean))];
-  const ccParams = ccList.map(e => `cc=${encodeURIComponent(e)}`).join('&');
-  const tail = `${ccParams ? ccParams + '&' : ''}subject=${assunto}&body=${corpo}`;
+  const ccParams = `cc=${ccString(cc)}`;
+  const tail = `${ccParams}&subject=${assunto}&body=${corpo}`;
   if (remetenteEmail) {
     return `mailto:${encodeURIComponent(remetenteEmail)}?to=${encodeURIComponent(to)}&${tail}`;
   }
@@ -7529,7 +7671,9 @@ function buildMailtoAprovacao({ remetenteNome, destinatario, cc = [], assunto, c
 }
 
 function isAdmin() {
-  return ADMINS.includes(getUtilizadorAtual());
+  const norm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const atual = norm(getUtilizadorAtual());
+  return ADMINS.some(a => norm(a) === atual);
 }
 
 function podeEditarRegisto(vendedor) {
@@ -8047,10 +8191,11 @@ Cumprimentos,
 ${getUtilizadorAtual()}`
   );
 
-  // Outlook (Windows) usa ";" entre destinatários; "," falha ou deixa de fora alguns
+  // Outlook (Windows) usa ";" entre destinatários; o CC tem de usar ';' literal
+  // (NÃO codificado) — senão o Filipe e o Carlos são ignorados. ccString garante o Filipe.
   const mailto =
     'mailto:andrea.albuquerque@deltafoodsbrasil.com.br;daniela.kucinski@deltafoodsbrasil.com.br' +
-    '?cc=' + encodeURIComponent('filipe.neves@deltafoodsbrasil.com.br;carlos.castro@deltafoodsbrasil.com.br') +
+    '?cc=' + ccString(['carlos.castro@deltafoodsbrasil.com.br']) +
     '&subject=' + assunto +
     '&body=' + corpo;
   window.location.href = mailto;
@@ -8817,6 +8962,7 @@ function teardownProsAutoSave() {
 }
 
 function prosOpenModal() {
+  resetModoAlteracaoUI();
   prosCadastroJsonUnavailable = false;
   prosEditId = null;
   prosGanhoLeadId = null;
@@ -8854,6 +9000,7 @@ function prosOpenModal() {
 async function prosOpenEdit(id, initialTab) {
   const p = prosFindById(id);
   if (!p) return;
+  resetModoAlteracaoUI();
   prosCadastroJsonUnavailable = false;
   prosEditId = p.id;
   prosGanhoLeadId = p.id;
@@ -9793,6 +9940,414 @@ async function propGerarSimulador(nomeCliente) {
   return filename;
 }
 
+// Recolhe os campos da Ficha de Cadastro (pg-*) no formato esperado pelo servidor de geração de Excel.
+function prosCollectCadastroDados() {
+  const empresa = document.getElementById('pg-empresa').value;
+  const gn      = empresa.startsWith('GN52') ? 'GN52' : 'GN53';
+  const regiao  = document.getElementById('pg-regiao').value;
+  const isZF    = regiao.startsWith('ZF');
+  return {
+    motivo:      document.getElementById('pg-motivo').value,
+    empresa,
+    grupo:       document.getElementById('pg-grupo').value,
+    dept:        gn === 'GN52' ? 'DFSP - Delta Foods (São Paulo)' : 'QBSP - Q-Brasil (São Paulo)',
+    orgVendas:   gn === 'GN52' ? 'DF01' : 'QB01',
+    escritVendas: gn === 'GN52' ? 'DFSP' : 'QBSP',
+    centro:      gn === 'GN52' ? 'DFSP' : 'QBES',
+    nome:        document.getElementById('pg-nome').value,
+    cnpj:        document.getElementById('pg-cnpj').value,
+    fantasia:    document.getElementById('pg-fantasia').value,
+    ie:          document.getElementById('pg-ie').value,
+    email:       document.getElementById('pg-email').value.trim().toLowerCase(),
+    tel1:        document.getElementById('pg-tel1').value,
+    tel2:        document.getElementById('pg-tel2').value,
+    rua:         document.getElementById('pg-rua').value,
+    nro:         document.getElementById('pg-nro').value,
+    supl:        document.getElementById('pg-supl').value,
+    bairro:      document.getElementById('pg-bairro').value,
+    cep:         document.getElementById('pg-cep').value,
+    cidade:      document.getElementById('pg-cidade').value,
+    canal:       document.getElementById('pg-canal').value,
+    regiao,
+    icms:        document.getElementById('pg-icms').value,
+    pagto:       document.getElementById('pg-pagto').value,
+    rota:        document.getElementById('pg-rota').value,
+    equipe:      document.getElementById('pg-equipe').textContent,
+    vendedor:    document.getElementById('pg-vendedor').value,
+    sector:      document.getElementById('pg-sector').value,
+    fiscal:      isZF ? '2 - Zona Franca - ICMS' : '1 - Sujeito a imposto',
+  };
+}
+
+// Servidor externo de geração de Excel (Railway). Está em baixo → gerar sempre localmente.
+// Quando o servidor for reposto (re-deploy do delta-cadastro-server), põe CADASTRO_SERVER_ENABLED = true.
+const CADASTRO_SERVER_URL = 'https://web-production-d9451c.up.railway.app/gerar-cadastro';
+const CADASTRO_SERVER_ENABLED = false;
+
+// Gera o Excel de cadastro. Por omissão gera no browser (sem depender de servidor).
+async function prosGerarCadastroXlsx(dados) {
+  if (CADASTRO_SERVER_ENABLED) {
+    try {
+      const res = await fetch(CADASTRO_SERVER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY },
+        body: JSON.stringify(dados)
+      });
+      if (!res.ok) throw new Error('Erro ' + res.status);
+      const blob = await res.blob();
+      triggerBlobDownload(blob, `Cadastro_${(dados.nome||'cliente').replace(/[^a-zA-Z0-9]/g,'_').substring(0,20)}.xlsx`);
+      return;
+    } catch (e) {
+      console.warn('Servidor de cadastro indisponível, a gerar Excel localmente:', e && e.message);
+    }
+  }
+  await gerarCadastroXlsxLocal(dados);
+}
+
+// Abre o email de aprovação pré-preenchido (Filipe Neves entra sempre em CC via buildMailtoAprovacao).
+function prosAbrirEmailCadastro(dados, opts = {}) {
+  const { isCafe = false, propTexto = '' } = opts;
+  const hora = new Date().getHours();
+  const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
+  const motivo = dados.motivo || 'Abertura de Cliente';
+  const assunto = encodeURIComponent(`${motivo} - ${dados.nome}`);
+  const anexosTxt = isCafe ? 'ficha de cadastro e a proposta de negócio' : 'ficha de cadastro';
+  const remetente = getUtilizadorAtual();
+  const remetenteEmail = getEmailUtilizador(remetente);
+  const corpo = encodeURIComponent(
+`${saudacao},
+
+Segue em anexo a ${anexosTxt} do cliente ${dados.nome} para aprovação.${propTexto}
+
+Aguardo aprovação.
+
+Cumprimentos,
+${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`
+  );
+  const mailto = buildMailtoAprovacao({
+    remetenteNome: remetente,
+    cc: ['filipe.neves@deltafoodsbrasil.com.br', 'daniela.kucinski@deltafoodsbrasil.com.br'],
+    assunto,
+    corpo,
+  });
+  setTimeout(() => { window.location.href = mailto; }, 800);
+}
+
+// ─── ALTERAÇÃO DE DADOS CADASTRAIS (a partir de um cliente já registado) ──────
+// Reutiliza a mesma Ficha de Cadastro da Prospeção, mas sem lead associado:
+// pré-preenche com o que já temos e gera Excel + email igual ao cliente novo.
+let _modoAlteracaoRegisto = null;
+
+// Encontra o valor SAP do vendedor a partir do nome (registos guardam o nome em maiúsculas).
+function pgVendedorSapFromNome(nome) {
+  if (!nome) return '';
+  const norm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const key = norm(nome);
+  for (const [k, v] of Object.entries(PG_VENDEDOR_SAP)) {
+    if (norm(k) === key) return v;
+  }
+  return '';
+}
+
+// Formata CNPJ vindo do SAP (só dígitos → 00.000.000/0000-00). Devolve o original se não tiver 14 dígitos.
+function fmtCnpjCadastro(v) {
+  const d = String(v || '').replace(/\D/g, '').slice(0, 14);
+  if (d.length !== 14) return String(v || '').trim();
+  return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2}).*/, '$1.$2.$3/$4-$5');
+}
+
+// Converte o canal do SAP (ex.: "04", "04 - Restauração", "Restauração") na opção do dropdown pg-canal.
+function pgCanalFromSap(sapCanal) {
+  const s = String(sapCanal || '').trim();
+  if (!s) return '';
+  const opts = ['00 - Grupo Nabeiro', '01 - Retalhista', '03 - Delta Office', '04 - Restauração', '13 - Revendedores'];
+  const mCod = s.match(/\d{1,2}/);
+  if (mCod) {
+    const cod = mCod[0].padStart(2, '0');
+    const byCode = opts.find(o => o.startsWith(cod + ' '));
+    if (byCode) return byCode;
+  }
+  const norm = x => String(x || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const byText = opts.find(o => norm(o).includes(norm(s)) || norm(s).includes(norm((o.split(' - ')[1] || ''))));
+  return byText || '';
+}
+
+// Deriva a Região (Estado) da opção pg-regiao a partir do CEP (usa estadoPorCEP → "SP", etc.).
+function pgRegiaoFromCep(cep) {
+  const uf = estadoPorCEP(cep);
+  if (!uf || uf === 'Desconhecido') return '';
+  const sel = document.getElementById('pg-regiao');
+  if (sel) {
+    for (const opt of sel.options) { if (opt.value.startsWith(uf + ' ')) return opt.value; }
+  }
+  return '';
+}
+
+// Procura na Prospeção uma ficha de cadastro já preenchida com o mesmo nome/fantasia,
+// para trazer CNPJ, morada, email, etc. (dados que o registo/lista SAP não têm).
+async function prosBuscarCadastroPorNome(nome) {
+  const norm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]/g, '');
+  const alvo = norm(nome);
+  if (!alvo) return null;
+  let candidatos = (prosData || []).filter(p => p && p.cadastro_json && typeof p.cadastro_json === 'object');
+  if (!candidatos.length) {
+    try {
+      const res = await fetch(PROS_URL + '?select=nome,cadastro_json&cadastro_json=not.is.null&limit=2000', { headers: HEADERS });
+      if (res.ok) candidatos = await res.json();
+    } catch (e) { candidatos = []; }
+  }
+  for (const p of candidatos) {
+    const cj = p.cadastro_json || {};
+    const nomes = [cj.nome, cj.fantasia, p.nome].map(norm).filter(Boolean);
+    if (nomes.includes(alvo)) return cj;
+  }
+  return null;
+}
+
+// Garante que a ficha de cadastro (nó único no DOM) está no seu lugar original (modal de Prospeção).
+function garantirFichaCadastralEmCasa() {
+  const sec = document.getElementById('pg-cadastro-section');
+  const home = document.getElementById('pros-tab-cadastro');
+  if (sec && home && sec.parentElement !== home) home.appendChild(sec);
+}
+
+// Restaura a UI normal da Prospeção e devolve a ficha de cadastro ao seu lugar original.
+function resetModoAlteracaoUI() {
+  _modoAlteracaoRegisto = null;
+  garantirFichaCadastralEmCasa();
+  const tabLead = document.getElementById('pros-tab-btn-lead');
+  if (tabLead) tabLead.style.display = '';
+  const tabSim = document.getElementById('pros-tab-btn-simulacao');
+  if (tabSim) tabSim.style.display = '';
+  const cafeHdr = document.getElementById('pros-modal-header-cafe');
+  if (cafeHdr) cafeHdr.style.display = '';
+  const hint = document.getElementById('pros-autosave-hint');
+  if (hint) hint.style.display = '';
+  prosSetGanhoAutoSaveStatus();
+}
+
+let _editCadPreenchido = false;
+
+// Alterna entre as abas do modal de editar registo: 'registo' e 'cadastro'.
+async function editSwitchTab(tab) {
+  const btnR = document.getElementById('edit-tab-btn-registo');
+  const btnC = document.getElementById('edit-tab-btn-cadastro');
+  const panR = document.getElementById('edit-tab-registo');
+  const panC = document.getElementById('edit-tab-cadastro');
+  const modal = document.getElementById('modal-edit');
+  if (!btnR || !btnC || !panR || !panC) return;
+  if (tab === 'cadastro') {
+    // Move a ficha de cadastro (mesmo nó do DOM da Prospeção) para dentro deste modal.
+    const sec = document.getElementById('pg-cadastro-section');
+    const host = document.getElementById('edit-cadastro-host');
+    if (sec && host && sec.parentElement !== host) host.appendChild(sec);
+    if (!_editCadPreenchido) {
+      const st = document.getElementById('edit-cadastro-status');
+      if (st) st.innerHTML = '<span style="color:var(--muted)">A carregar dados do cliente...</span>';
+      try { await preencherFichaCadastro(window._editingRegisto); }
+      finally { if (st) st.innerHTML = ''; }
+      _editCadPreenchido = true;
+    }
+    bindEditCadastroAutoSave();
+    panR.style.display = 'none';
+    panC.style.display = 'block';
+    btnR.classList.remove('active');
+    btnC.classList.add('active');
+    if (modal) modal.classList.add('modal-wide-cad');
+  } else {
+    flushEditCadastroSave();
+    garantirFichaCadastralEmCasa();
+    panC.style.display = 'none';
+    panR.style.display = 'block';
+    btnC.classList.remove('active');
+    btnR.classList.add('active');
+    if (modal) modal.classList.remove('modal-wide-cad');
+  }
+}
+
+// --- Autosave da ficha de cadastro (aba Dados Cadastrais do modal Editar) ---
+let _editCadAutoSaveBound = false;
+let _editCadAutoSaveTimer = null;
+
+function bindEditCadastroAutoSave() {
+  if (_editCadAutoSaveBound) return;
+  const host = document.getElementById('edit-cadastro-host');
+  if (!host) return;
+  // Delegação no host: só apanha eventos enquanto a ficha estiver aqui (modo alteração).
+  host.addEventListener('input', () => scheduleEditCadastroSave(false));
+  host.addEventListener('change', () => scheduleEditCadastroSave(true));
+  _editCadAutoSaveBound = true;
+}
+
+function scheduleEditCadastroSave(immediate) {
+  const sec = document.getElementById('pg-cadastro-section');
+  const host = document.getElementById('edit-cadastro-host');
+  // Guarda apenas quando a ficha está dentro do modal Editar e há um cliente aberto.
+  if (!sec || !host || sec.parentElement !== host || !editingId) return;
+  clearTimeout(_editCadAutoSaveTimer);
+  const doSave = async () => {
+    const st = document.getElementById('edit-cadastro-status');
+    if (st) st.innerHTML = '<span style="color:var(--muted)">A guardar…</span>';
+    const ok = await guardarCadastroCliente({ silent: true });
+    if (st) st.innerHTML = ok
+      ? '<span style="color:#16a34a">✓ Guardado automaticamente</span>'
+      : '<span style="color:var(--danger)">Erro ao guardar — tenta de novo</span>';
+  };
+  if (immediate) doSave();
+  else _editCadAutoSaveTimer = setTimeout(doSave, 700);
+}
+
+// Garante que quaisquer edições pendentes são gravadas antes de sair da aba/fechar o modal.
+function flushEditCadastroSave() {
+  const sec = document.getElementById('pg-cadastro-section');
+  const host = document.getElementById('edit-cadastro-host');
+  if (!sec || !host || sec.parentElement !== host || !editingId) return;
+  if (_editCadAutoSaveTimer) {
+    clearTimeout(_editCadAutoSaveTimer);
+    _editCadAutoSaveTimer = null;
+    guardarCadastroCliente({ silent: true });
+  }
+}
+
+// Preenche a ficha de cadastro a partir de um registo já existente (para alteração cadastral).
+async function preencherFichaCadastro(r) {
+  if (!r) return;
+  // Sem lead de prospecção → autosaves desligados para não criar/gravar leads indevidos.
+  teardownProsAutoSave();
+  teardownProsGanhoAutoSave();
+  prosTeardownFieldSync();
+  prosCadastroJsonUnavailable = false;
+  prosEditId = null;
+  prosGanhoLeadId = null;
+  _modoAlteracaoRegisto = r;
+
+  // 1) Se este cliente já tem cadastro guardado, usa-o tal como está — já reflecte
+  //    as edições manuais e a última reconciliação com o SAP (feita na carga do ficheiro).
+  if (r.cadastro_json && typeof r.cadastro_json === 'object' && Object.keys(r.cadastro_json).length) {
+    const cadSalvo = { ...r.cadastro_json };
+    if (!cadSalvo.motivo) cadSalvo.motivo = 'Alteração de Cliente';
+    cadSalvo.cliente_cafe = false;
+    prosCadastroApplyToForm(cadSalvo, null);
+    const motS = document.getElementById('pg-motivo');
+    if (motS && !r.cadastro_json.motivo) motS.value = 'Alteração de Cliente';
+    const cafeNaoS = document.getElementById('pg-cliente-cafe-nao');
+    if (cafeNaoS) cafeNaoS.checked = true;
+    return;
+  }
+
+  // 2) Primeira vez (sem cadastro guardado): constrói a partir da Prospeção + lista SAP.
+  const sap = (getListaClientesActiva() || []).find(c => normCod(c.cod) === normCod(r.cod)) || {};
+
+  // Base: ficha da Prospeção (se existir, é a mais completa) sobreposta pelos dados da lista SAP.
+  let cad = { cidade: 'SÃO PAULO' };
+  const rico = await prosBuscarCadastroPorNome(r.nome).catch(() => null);
+  if (rico && typeof rico === 'object') cad = { ...cad, ...rico };
+  if (!cad.nome) cad.nome = r.nome || sap.nome || '';
+  if (!cad.fantasia) cad.fantasia = cad.nome;
+  if (!cad.cnpj) cad.cnpj = fmtCnpjCadastro(sap.cnpj);
+  if (!cad.cep) cad.cep = formatCep(r.cep || sap.cep || '');
+  // Morada / contacto vindos da lista SAP (só quando a ficha da Prospeção não os tem).
+  if (!cad.rua) cad.rua = sap.rua || '';
+  if (!cad.nro) cad.nro = sap.nro || '';
+  if (!cad.bairro) cad.bairro = sap.bairro || '';
+  if (!cad.supl) cad.supl = sap.supl || '';
+  if (!cad.cidade || cad.cidade === 'SÃO PAULO') cad.cidade = sap.cidade || cad.cidade || 'SÃO PAULO';
+  if (!cad.email) cad.email = sap.email || '';
+  if (!cad.tel1) cad.tel1 = sap.tel1 || '';
+  if (!cad.tel2) cad.tel2 = sap.tel2 || '';
+  if (!cad.ie) cad.ie = sap.ie || '';
+  if (!cad.canal) cad.canal = pgCanalFromSap(sap.canal);
+  if (!cad.regiao) cad.regiao = pgRegiaoFromCep(cad.cep || r.cep || sap.cep);
+  if (!cad.regiao && sap.uf) {
+    const _sel = document.getElementById('pg-regiao');
+    if (_sel) for (const o of _sel.options) { if (o.value.toUpperCase().startsWith(sap.uf.toUpperCase() + ' ')) { cad.regiao = o.value; break; } }
+  }
+  if (!cad.vendedor) cad.vendedor = pgVendedorSapFromNome(r.vendedor || sap.vendedor);
+  cad.motivo = 'Alteração de Cliente';
+  cad.cliente_cafe = false;
+
+  prosCadastroApplyToForm(cad, null);
+  const mot = document.getElementById('pg-motivo');
+  if (mot) mot.value = 'Alteração de Cliente';
+  const cafeNao = document.getElementById('pg-cliente-cafe-nao');
+  if (cafeNao) cafeNao.checked = true;
+}
+
+// Guarda a ficha de cadastro completa no próprio cliente registado (registos.cadastro_json),
+// para poder consultar/editar sempre. Devolve true em caso de sucesso.
+async function guardarCadastroCliente(opts) {
+  opts = opts || {};
+  const st = document.getElementById('edit-cadastro-status');
+  if (!editingId) { toast('Abre um cliente (Editar) primeiro.', 'error'); return false; }
+  const cad = prosCadastroCollectFromForm();
+  if (!opts.silent && st) st.innerHTML = '<span style="color:var(--muted)">A guardar cadastro...</span>';
+  try {
+    const res = await fetch(`${SUPA_URL}?id=eq.${editingId}`, {
+      method: 'PATCH',
+      headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ cadastro_json: cad })
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      if (/cadastro_json/.test(txt) && /column|schema/i.test(txt)) {
+        throw new Error('Falta a coluna cadastro_json na tabela registos. Corre o SQL de migração no Supabase.');
+      }
+      throw new Error('HTTP ' + res.status);
+    }
+    // Atualiza memória e cache para consulta imediata (sem recarregar).
+    if (window._editingRegisto) window._editingRegisto.cadastro_json = cad;
+    const inAll = (allData || []).find(x => String(x.id) === String(editingId));
+    if (inAll) inAll.cadastro_json = cad;
+    try { setRegistosCache(allData); } catch (e) {}
+    if (!opts.silent) {
+      toast('✅ Cadastro guardado.');
+      if (st) st.innerHTML = '<span style="color:#16a34a">Cadastro guardado no cliente.</span>';
+    }
+    return true;
+  } catch (e) {
+    if (st) st.innerHTML = `<span style="color:var(--danger)">Erro ao guardar: ${e.message}</span>`;
+    toast('Erro ao guardar cadastro: ' + e.message, 'error');
+    return false;
+  }
+}
+
+async function alteracaoCadastralExportar() {
+  clearTimeout(_editCadAutoSaveTimer);
+  _editCadAutoSaveTimer = null;
+  const st = document.getElementById('edit-cadastro-status');
+  const data = prosCadastroCollectFromForm();
+  const emFalta = prosValidarCadastroObrigatorio(data);
+  if (emFalta.length) {
+    const idMap = {
+      'Nome / Razão Social': 'pg-nome', 'CNPJ / CPF': 'pg-cnpj', 'CNPJ / CPF (14 dígitos)': 'pg-cnpj',
+      'Nome Fantasia': 'pg-fantasia', 'Email': 'pg-email', 'Tel. 1': 'pg-tel1', 'Rua': 'pg-rua',
+      'Nro.': 'pg-nro', 'Bairro': 'pg-bairro', 'CEP': 'pg-cep', 'Cidade': 'pg-cidade',
+      'Canal Distribuição': 'pg-canal', 'Região (Estado)': 'pg-regiao', 'Contrib. ICMS': 'pg-icms',
+      'Cond. Pagamento': 'pg-pagto', 'Rota': 'pg-rota', 'Vendedor': 'pg-vendedor',
+    };
+    const primeiro = document.getElementById(idMap[emFalta[0]] || 'pg-nome');
+    if (primeiro) { primeiro.focus(); primeiro.style.borderColor = 'var(--danger)'; }
+    const msg = `Preenche: ${emFalta.join(', ')}.`;
+    if (st) st.innerHTML = `<span style="color:var(--danger)">${msg}</span>`;
+    toast(msg, 'error');
+    return;
+  }
+  PROS_CADASTRO_AUTOSAVE_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.style.borderColor = ''; });
+  // Guarda sempre o cadastro no cliente antes de exportar/enviar.
+  await guardarCadastroCliente({ silent: true });
+  if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar ficha de alteração...</span>';
+  const dados = prosCollectCadastroDados();
+  try {
+    await prosGerarCadastroXlsx(dados);
+    toast('✅ Cadastro guardado e ficha exportada!');
+    if (st) st.innerHTML = '<span style="color:#16a34a">Cadastro guardado · ficha exportada — email a abrir...</span>';
+    prosAbrirEmailCadastro(dados, { isCafe: false, propTexto: '' });
+  } catch (e) {
+    if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
+    toast('Erro: ' + e.message, 'error');
+  }
+}
+
 async function prosGanhoExportar() {
   const st = document.getElementById('pros-modal-status');
   if (document.getElementById('pros-f-estado')?.value !== 'ganho') {
@@ -9855,62 +10410,10 @@ async function prosGanhoExportar() {
   PROS_CADASTRO_AUTOSAVE_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.style.borderColor = ''; });
   st.innerHTML = '<span style="color:var(--muted)">A gerar...</span>';
 
-  const empresa  = document.getElementById('pg-empresa').value;
-  const gn       = empresa.startsWith('GN52') ? 'GN52' : 'GN53';
-  const regiao   = document.getElementById('pg-regiao').value;
-  const isZF     = regiao.startsWith('ZF');
-
-  const dados = {
-    motivo:      document.getElementById('pg-motivo').value,
-    empresa,
-    grupo:       document.getElementById('pg-grupo').value,
-    dept:        gn === 'GN52' ? 'DFSP - Delta Foods (São Paulo)' : 'QBSP - Q-Brasil (São Paulo)',
-    orgVendas:   gn === 'GN52' ? 'DF01' : 'QB01',
-    escritVendas: gn === 'GN52' ? 'DFSP' : 'QBSP',
-    centro:      gn === 'GN52' ? 'DFSP' : 'QBES',
-    nome:        document.getElementById('pg-nome').value,
-    cnpj:        document.getElementById('pg-cnpj').value,
-    fantasia:    document.getElementById('pg-fantasia').value,
-    ie:          document.getElementById('pg-ie').value,
-    email:       document.getElementById('pg-email').value.trim().toLowerCase(),
-    tel1:        document.getElementById('pg-tel1').value,
-    tel2:        document.getElementById('pg-tel2').value,
-    rua:         document.getElementById('pg-rua').value,
-    nro:         document.getElementById('pg-nro').value,
-    supl:        document.getElementById('pg-supl').value,
-    bairro:      document.getElementById('pg-bairro').value,
-    cep:         document.getElementById('pg-cep').value,
-    cidade:      document.getElementById('pg-cidade').value,
-    canal:       document.getElementById('pg-canal').value,
-    regiao,
-    icms:        document.getElementById('pg-icms').value,
-    pagto:       document.getElementById('pg-pagto').value,
-    rota:        document.getElementById('pg-rota').value,
-    equipe:      document.getElementById('pg-equipe').textContent,
-    vendedor:    document.getElementById('pg-vendedor').value,
-    sector:      document.getElementById('pg-sector').value,
-    fiscal:      isZF ? '2 - Zona Franca - ICMS' : '1 - Sujeito a imposto',
-  };
+  const dados = prosCollectCadastroDados();
 
   try {
-    const res = await fetch(
-      'https://web-production-d9451c.up.railway.app/gerar-cadastro',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY },
-        body: JSON.stringify(dados)
-      }
-    );
-    if (!res.ok) {
-      let errMsg = 'Erro ' + res.status;
-      try {
-        const errBody = await res.json();
-        if (errBody?.error) errMsg = errBody.error;
-      } catch (e) {}
-      throw new Error(errMsg);
-    }
-    const blob = await res.blob();
-    triggerBlobDownload(blob, `Cadastro_${(dados.nome||'cliente').replace(/[^a-zA-Z0-9]/g,'_').substring(0,20)}.xlsx`);
+    await prosGerarCadastroXlsx(dados);
     toast('✅ Ficha de Cadastro exportada!');
 
     let propTexto = '';
@@ -9930,39 +10433,18 @@ async function prosGanhoExportar() {
 
     if (st) st.innerHTML = '<span style="color:#16a34a">Documentos exportados — email a abrir...</span>';
 
-    // Abrir email pré-preenchido
-    const hora = new Date().getHours();
-    const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
-    const motivo = dados.motivo || 'Abertura de Cliente';
-    const assunto = encodeURIComponent(`${motivo} - ${dados.nome}`);
-    const anexosTxt = isCafe ? 'ficha de cadastro e a proposta de negócio' : 'ficha de cadastro';
-
-    const remetente = getUtilizadorAtual();
-    const remetenteEmail = getEmailUtilizador(remetente);
-    const corpo = encodeURIComponent(
-`${saudacao},
-
-Segue em anexo a ${anexosTxt} do cliente ${dados.nome} para aprovação.${propTexto}
-
-Aguardo aprovação.
-
-Cumprimentos,
-${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`
-    );
-    const mailto = buildMailtoAprovacao({
-      remetenteNome: remetente,
-      cc: ['filipe.neves@deltafoodsbrasil.com.br', 'daniela.kucinski@deltafoodsbrasil.com.br'],
-      assunto,
-      corpo,
-    });
-    setTimeout(() => { window.location.href = mailto; }, 800);
+    prosAbrirEmailCadastro(dados, { isCafe, propTexto });
 
   } catch(e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
   }
 }
 
-async function prosGanhoGerarExcel(d) {
+// Fallback client-side: gera o Excel de cadastro no browser usando o template embutido.
+// Mapeamento de células idêntico ao servidor (server.py /gerar-cadastro) para garantir
+// que o ficheiro fica igual. Não fecha modais nem mostra toast — isso é da responsabilidade
+// de quem chama (via prosGerarCadastroXlsx).
+async function gerarCadastroXlsxLocal(d) {
   await ensureXLSX();
 
   // Carregar template original (preserva formatação, dropdowns, fórmulas)
@@ -9972,75 +10454,51 @@ async function prosGanhoGerarExcel(d) {
   const wb = window.XLSX.read(arr, { type: 'array', cellStyles: true, cellNF: true, cellDates: true, sheetStubs: true });
   const ws = wb.Sheets['Cliente'];
 
-  // Helper: escrever valor preservando estilo existente
   const set = (ref, v) => {
     if (!ws[ref]) ws[ref] = {};
-    ws[ref].v = v;
+    ws[ref].v = (v == null ? '' : v);
     ws[ref].t = 's';
-    // Limpar fórmula se existir (para que o valor seja usado)
     delete ws[ref].f;
   };
 
-  // Cabeçalho
-  set('U7', d.motivo);
-  set('AL10', d.empresa);
-  set('L10', d.grupo);
+  const gn = String(d.empresa || '').startsWith('GN52') ? 'GN52' : 'GN53';
 
-  // Campos automáticos (substituir fórmulas por valores calculados)
-  set('O13', d.dept);
-  set('K15', d.orgVendas);
-  set('K23', d.escritVendas);
-  set('J30', d.fusoHor);
-  set('J40', d.escritVendas);   // Centro fornecedor escritório vendas
-  set('BA40', d.escritVendas);
-  set('BA36', d.fiscal);
+  set('U7',  d.motivo || 'Abertura de Cliente');
+  set('AL10', d.empresa);
+  set('L10', d.grupo || 'BR01 - Clientes PJ');
+  set('O13', gn === 'GN52' ? 'DFSP - Delta Foods (São Paulo)' : 'QBSP - Q-Brasil (São Paulo)');
+  set('K15', gn === 'GN52' ? 'DF01' : 'QB01');
+  set('K23', gn === 'GN52' ? 'DFSP' : 'QBSP');
+  set('J30', 'BRZLEA');
+  set('J40', gn === 'GN52' ? 'DFSP' : 'QBES');
+  set('BA40', gn === 'GN52' ? 'DFSP' : 'QBSP');
+  set('BA36', d.fiscal || '1 - Sujeito a imposto');
   set('J38', 'CIF - Custo, seguro & frete');
   set('BA38', '3 - Esq. de Cálc.');
-
-  // Dados Gerais
   set('H19', d.nome);
   set('AT19', d.cnpj);
-  set('K21', d.fantasia);
-  set('AM23', d.ie || '');
-
-  // Endereço
+  set('K21', d.fantasia || d.nome);
+  set('AM21', d.ie);
   set('G26', d.rua);
   set('AK26', d.nro);
-  set('AS26', d.supl || '');
+  set('AS26', d.supl);
   set('G28', d.bairro);
   set('AK28', d.cep);
   set('AW28', d.regiao);
-  set('AE30', d.cidade);
-
-  // Contactos
+  set('AE30', d.cidade || 'SÃO PAULO');
   set('G32', d.email);
   set('AE32', d.tel1);
-  set('AZ32', d.tel2 || '');
-
-  // Área de Vendas
+  set('AQ32', d.tel2);
   set('AD15', d.canal);
-  set('J36', d.pagto);   // Cond.Pagto - merged J36:X36
-  set('AC36', d.rota);   // Rota
-  set('AC38', d.equipe); // Equipe vendas
-  set('V40', d.vendedor); // Vendedor - merged V40:AP40
-  // Incoterms (substitui fórmula DN4)
-  set('J38', 'CIF - Custo, seguro & frete');
-  // Escrit.vendas e centro (substituir fórmulas)
-  set('J40', d.escritVendas);
-  set('BA40', d.escritVendas);
-
-  // Sector Industrial
-  if (d.sector) set('AA23', d.sector);
-  // Contrib ICMS - merged AX23:BK23
+  set('J36', d.pagto);
+  set('AC36', d.rota);
+  set('AC38', d.equipe);
+  set('V40', d.vendedor);
   set('AX23', d.icms);
-
-  // Termo pesquisa - K23 merged K23:Q23
-  set('K23', d.escritVendas);
+  if (d.sector) set('AA23', d.sector);
 
   const nome = (d.nome || 'cadastro').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
   window.XLSX.writeFile(wb, `Cadastro_${nome}.xlsx`, { bookType: 'xlsx', cellStyles: true, type: 'binary' });
-  toast('✅ Excel exportado!');
-  prosGanhoFechar();
 }
 
 async function prosEliminar(id) {
@@ -11060,7 +11518,7 @@ async function ctGuardarContratoSuapbase(data) {
 
 function ctAbrirEmail(filename, data) {
   const to = 'daniela.kucinski@deltafoodsbrasil.com.br';
-  const cc = encodeURIComponent('filipe.neves@deltafoodsbrasil.com.br');
+  const cc = ccString([]);
   const subject = encodeURIComponent('Contrato de Comodato Delta Q - ' + data.COMOD_EMPRESA + ' - Para Assinatura');
   const clientEmail = document.getElementById('ct_email').value;
   const b1 = 'Daniela,%0A%0A';
