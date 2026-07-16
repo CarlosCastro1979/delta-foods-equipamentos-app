@@ -593,6 +593,7 @@
     box-shadow: var(--shadow-lg);
   }
   .modal.modal-wide-cad { max-width: 900px; }
+  .modal.modal-wide-mc00 { max-width: 1120px; }
 
   /* Abas dentro do modal de editar registo */
   .edit-tab-bar { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:18px; }
@@ -602,6 +603,69 @@
   }
   .edit-tab-btn:hover { color:var(--text); }
   .edit-tab-btn.active { color:#b91c1c; border-bottom-color:#b91c1c; }
+
+  /* MC00 */
+  .mc00-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px 12px; }
+  .mc00-grid .form-group { margin:0; }
+  .mc00-grid label { font-size:11px; color:var(--muted); font-weight:600; display:block; margin-bottom:4px; }
+  .mc00-grid input, .mc00-grid select, .mc00-grid textarea { width:100%; font-size:13px; }
+  .mc00-grid .mc00-from-cadastro:disabled,
+  .mc00-grid .mc00-from-cadastro[readonly] {
+    background: #f1f5f9; color: #334155; cursor: not-allowed; opacity: 1;
+  }
+  .mc00-prod-wrap { overflow-x:auto; border:1px solid var(--border); border-radius:8px; }
+  .mc00-prod-tbl { width:100%; border-collapse:collapse; font-size:12px; }
+  .mc00-prod-tbl th { background:#f8fafc; padding:8px 10px; font-size:11px; color:var(--muted); text-align:left; border-bottom:1px solid #e5e7eb; white-space:nowrap; }
+  .mc00-prod-tbl td { padding:8px 10px; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+  .mc00-prod-tbl input { width:100%; min-width:56px; font-size:12px; padding:4px 6px; border:1px solid #e5e7eb; border-radius:4px; }
+  .mc00-prod-tbl input.mc00-edit { border-color:#93c5fd; background:#f8fbff; }
+  .mc00-prod-tbl .mc00-prod-code { font-family:var(--font-mono); font-weight:600; font-size:13px; }
+  .mc00-prod-tbl .mc00-prod-desc { font-size:11px; color:var(--muted); margin-top:2px; line-height:1.3; }
+  .mc00-pct-wrap, .mc00-rs-wrap {
+    display:flex; align-items:center; gap:4px;
+  }
+  .mc00-pct-wrap input.mc00-edit,
+  .mc00-rs-wrap input.mc00-edit { flex:1; min-width:0; text-align:right; }
+  .mc00-pct-wrap .mc00-pct-suf,
+  .mc00-rs-wrap .mc00-rs-pre {
+    flex:0 0 auto; font-size:12px; font-weight:700; color:var(--muted);
+  }
+  .mc00-prod-tbl .mc00-plf {
+    font-weight:700; color:#166534; white-space:nowrap; font-size:13px;
+  }
+  .mc00-picker-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1200; align-items:center; justify-content:center; padding:16px; }
+  .mc00-picker-overlay.open { display:flex; }
+  .mc00-picker { background:#fff; border-radius:12px; width:min(920px,96vw); max-height:88vh; display:flex; flex-direction:column; box-shadow:var(--shadow-lg); }
+  .mc00-picker-head { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .mc00-picker-filters { padding:10px 16px; display:flex; flex-wrap:wrap; gap:8px; border-bottom:1px solid #f1f5f9; align-items:center; }
+  /* Evita texto cortado: o global input/select tem padding 10px + height inline 34px */
+  .mc00-picker-filters .form-input,
+  .mc00-picker-filters input,
+  .mc00-picker-filters select {
+    height: auto !important;
+    min-height: 40px;
+    padding: 8px 12px !important;
+    line-height: 1.35;
+    box-sizing: border-box;
+    font-size: 13px;
+  }
+  .mc00-picker-filters input#mc00-pick-search { flex: 1 1 220px; width: auto; min-width: 180px; }
+  .mc00-picker-filters select { flex: 0 1 200px; width: auto; min-width: 160px; max-width: 240px; }
+  .mc00-picker-body { overflow:auto; flex:1; padding:0 8px 8px; min-height:0; }
+  .mc00-picker-row {
+    display:flex; align-items:flex-start; gap:12px; padding:10px 12px;
+    border-bottom:1px solid #f3f4f6; cursor:pointer; width:100%; box-sizing:border-box;
+  }
+  .mc00-picker-row:hover { background:#f9fafb; }
+  .mc00-picker-row.sel { background:#eff6ff; }
+  .mc00-picker-row input[type="checkbox"] {
+    width:16px !important; min-width:16px; max-width:16px; height:16px;
+    margin:3px 0 0; flex:0 0 16px; padding:0; accent-color:#b91c1c;
+  }
+  .mc00-picker-row .mc00-pick-info { flex:1 1 auto; min-width:0; }
+  .mc00-picker-row .mc00-pick-title { font-weight:600; font-size:13px; color:var(--text); line-height:1.3; }
+  .mc00-picker-row .mc00-pick-meta { font-size:11px; color:var(--muted); margin-top:3px; line-height:1.4; word-break:break-word; }
+  .mc00-picker-foot { padding:12px 16px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }
 
   @keyframes slideUp {
     from { transform: translateY(20px); opacity: 0; }
@@ -2010,15 +2074,6 @@ var _unused_placeholder = 1;
         <select id="pros-filtro-vendedor" class="form-input" style="min-width:170px;height:36px;font-size:13px;" onchange="renderPros()">
           <option value="">Todos os vendedores</option>
         </select>
-        <select id="pros-filtro-estado" class="form-input" style="min-width:150px;height:36px;font-size:13px;" onchange="renderPros()">
-          <option value="">Todos os estados</option>
-          <option value="identificado">Identificado</option>
-          <option value="contactado">Contactado</option>
-          <option value="visita">Visita feita</option>
-          <option value="proposta">Proposta enviada</option>
-          <option value="ganho">✅ Ganho</option>
-          <option value="perdido">❌ Perdido</option>
-        </select>
         <select id="pros-filtro-segmento" class="form-input" style="min-width:140px;height:36px;font-size:13px;" onchange="renderPros()">
           <option value="">Todos os segmentos</option>
           <option value="Restaurante">Restaurante</option>
@@ -2035,6 +2090,7 @@ var _unused_placeholder = 1;
       </div>
     </div>
     <div id="pros-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+    <div id="pros-estado-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;"></div>
     <div id="pros-content"></div>
   </div>
 
@@ -2620,6 +2676,7 @@ var _unused_placeholder = 1;
       <div class="edit-tab-bar">
         <button type="button" id="edit-tab-btn-registo" class="edit-tab-btn active" onclick="editSwitchTab('registo')">📋 Registo</button>
         <button type="button" id="edit-tab-btn-cadastro" class="edit-tab-btn" onclick="editSwitchTab('cadastro')">📝 Dados Cadastrais</button>
+        <button type="button" id="edit-tab-btn-mc00" class="edit-tab-btn" onclick="editSwitchTab('mc00')">📄 MC00</button>
       </div>
 
       <div id="edit-tab-registo">
@@ -2689,8 +2746,119 @@ var _unused_placeholder = 1;
           <button class="btn" onclick="alteracaoCadastralExportar()" style="flex:1;min-width:200px;background:#16a34a;border-color:#16a34a;color:#fff;padding:11px 16px;font-weight:600;">✉ Enviar email e exportar Excel</button>
         </div>
       </div>
+
+      <!-- ABA: MC00 (condições especiais de fornecimento) -->
+      <div id="edit-tab-mc00" style="display:none">
+        <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#9a3412;margin-bottom:14px;">
+          ℹ️ MC00 — cabeçalho e Cond. Pagamento vêm do <strong>cadastro</strong> (bloqueados). Editável: Grupo, N.º processo, Informação comercial, P.Tabela e Desc.1 %. Autosave activo.
+        </div>
+        <div class="mc00-grid" id="mc00-header">
+          <div class="form-group">
+            <label>Departamento</label>
+            <select id="mc00-departamento" class="form-input mc00-from-cadastro" disabled>
+              <option value="Brasil" selected>Brasil</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Empresa</label>
+            <select id="mc00-empresa" class="form-input mc00-from-cadastro" disabled>
+              <option value="DFB">DFB</option>
+              <option value="QB">QB</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Grupo</label>
+            <select id="mc00-grupo" class="form-input">
+              <option value="HORECA">HORECA</option>
+              <option value="RETALHO">RETALHO</option>
+              <option value="OFFICE">OFFICE</option>
+              <option value="DISTRIBUIDORES">DISTRIBUIDORES</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Canal</label>
+            <select id="mc00-canal" class="form-input mc00-from-cadastro" disabled>
+              <option value="01 - Retalho">01 - Retalho</option>
+              <option value="03 - Institucional">03 - Institucional</option>
+              <option value="04 - Restauração" selected>04 - Restauração</option>
+              <option value="13 - Revendedores">13 - Revendedores</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Cód. Cliente</label><input id="mc00-cod" class="mc00-from-cadastro" readonly tabindex="-1"></div>
+          <div class="form-group" style="grid-column:span 2;"><label>Razão Social</label><input id="mc00-nome" class="mc00-from-cadastro" readonly tabindex="-1"></div>
+          <div class="form-group" style="grid-column:span 2;"><label>Estabelecimento</label><input id="mc00-estabelecimento" class="mc00-from-cadastro" readonly tabindex="-1"></div>
+          <div class="form-group"><label>CNPJ</label><input id="mc00-cnpj" class="mc00-from-cadastro" readonly tabindex="-1"></div>
+          <div class="form-group" style="grid-column:span 2;"><label>Endereço</label><input id="mc00-endereco" class="mc00-from-cadastro" readonly tabindex="-1"></div>
+          <div class="form-group"><label>CEP</label><input id="mc00-cep" class="mc00-from-cadastro" readonly tabindex="-1"></div>
+          <div class="form-group"><label>Cidade</label><input id="mc00-cidade" class="mc00-from-cadastro" readonly tabindex="-1" value="São Paulo"></div>
+          <div class="form-group"><label>Supervisor</label><input id="mc00-supervisor" class="mc00-from-cadastro" readonly tabindex="-1" value="FILIPE NEVES"></div>
+          <div class="form-group"><label>Vendedor</label><input id="mc00-vendedor" class="mc00-from-cadastro" readonly tabindex="-1"></div>
+          <div class="form-group" style="grid-column:span 2;">
+            <label>Cond. Pagamento <span style="font-weight:400;color:#94a3b8;">(cadastro)</span></label>
+            <select id="mc00-prazo" class="form-input mc00-from-cadastro" disabled></select>
+          </div>
+          <div class="form-group"><label>N.º processo</label><input id="mc00-processo"></div>
+          <div class="form-group" style="grid-column:1 / -1;"><label>Informação comercial</label><textarea id="mc00-info" rows="2" style="width:100%;resize:vertical;"></textarea></div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:18px 0 8px;flex-wrap:wrap;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);">Condições dos produtos</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="mc00OpenPicker()">+ Adicionar produtos do catálogo</button>
+          </div>
+        </div>
+        <div class="mc00-prod-wrap">
+          <table class="mc00-prod-tbl">
+            <thead>
+              <tr>
+                <th style="width:40%;">Cód. SAP</th>
+                <th style="width:18%;">P.Tabela</th>
+                <th style="width:16%;">Desc.1</th>
+                <th style="width:18%;">P. Final</th>
+                <th style="width:40px;"></th>
+              </tr>
+            </thead>
+            <tbody id="mc00-prod-body"></tbody>
+          </table>
+          <div style="padding:6px 10px;font-size:11px;color:var(--muted);border-top:1px solid #f1f5f9;">P. Final = P.Tabela após Desc.1. No Excel saem todas as colunas do padrão MC00.</div>
+        </div>
+        <div id="mc00-status" style="margin-top:12px;font-size:12.5px;text-align:right;min-height:16px;"></div>
+        <div style="margin-top:6px;display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn" onclick="mc00Exportar()" style="flex:1;min-width:200px;background:#16a34a;border-color:#16a34a;color:#fff;padding:11px 16px;font-weight:600;">✉ Enviar email e exportar MC00</button>
+        </div>
+      </div>
     </div>
 
+  </div>
+</div>
+
+<!-- Picker de produtos MC00 (catálogo SAPxUnilog) -->
+<div id="mc00-picker-overlay" class="mc00-picker-overlay" onclick="if(event.target===this)mc00ClosePicker()">
+  <div class="mc00-picker" role="dialog" aria-modal="true">
+    <div class="mc00-picker-head">
+      <div>
+        <div style="font-size:15px;font-weight:700;">Catálogo de produtos</div>
+        <div id="mc00-picker-subtitle" style="font-size:12px;color:var(--muted);">Fonte: Cadastro de Artigos (SAPxUnilog) · escolha múltipla</div>
+      </div>
+      <button type="button" onclick="mc00ClosePicker()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);">✕</button>
+    </div>
+    <div class="mc00-picker-filters">
+      <input id="mc00-pick-search" class="form-input" placeholder="EAN, código SAP ou descrição…" oninput="mc00RenderPickerList()">
+      <select id="mc00-pick-cat" class="form-input" onchange="mc00OnPickCatChange()">
+        <option value="">Todas as categorias</option>
+      </select>
+      <select id="mc00-pick-sub" class="form-input" onchange="mc00RenderPickerList()">
+        <option value="">Todas as subcategorias</option>
+      </select>
+    </div>
+    <div class="mc00-picker-body" id="mc00-picker-list"></div>
+    <div class="mc00-picker-foot">
+      <span id="mc00-pick-count" style="font-size:12.5px;color:var(--muted);">0 seleccionados</span>
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="mc00ClosePicker()">Cancelar</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="mc00ConfirmPicker()">Adicionar seleccionados</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -3477,11 +3645,13 @@ function exportCSV() { exportExcel(); }
 // ─── MODAL HELPERS ────────────────────────────────────
 function closeModal() {
   flushEditCadastroSave();
+  flushMc00Save();
   document.getElementById('modal-overlay').classList.remove('open');
   editingId = null;
   // Devolve a ficha de cadastro ao modal de Prospeção e repõe a largura normal.
   garantirFichaCadastralEmCasa();
-  const m = document.getElementById('modal-edit'); if (m) m.classList.remove('modal-wide-cad');
+  const m = document.getElementById('modal-edit');
+  if (m) { m.classList.remove('modal-wide-cad'); m.classList.remove('modal-wide-mc00'); }
 }
 
 function closeModalOnBg(e) {
@@ -4986,16 +5156,19 @@ function openEdit(id) {
   goToStep2();
   // A ficha de cadastro só é preenchida na 1.ª vez que se abre a aba; começa sempre na aba Registo.
   _editCadPreenchido = false;
+  _editMc00Preenchido = false;
   editSwitchTab('registo');
   document.getElementById('modal-overlay').classList.add('open');
 }
 
 function closeEdit() {
   flushEditCadastroSave();
+  flushMc00Save();
   document.getElementById('modal-overlay').classList.remove('open');
   editingId = null;
   garantirFichaCadastralEmCasa();
-  const m = document.getElementById('modal-edit'); if (m) m.classList.remove('modal-wide-cad');
+  const m = document.getElementById('modal-edit');
+  if (m) { m.classList.remove('modal-wide-cad'); m.classList.remove('modal-wide-mc00'); }
 }
 
 async function salvarEdicao() {
@@ -7670,6 +7843,125 @@ function buildMailtoAprovacao({ remetenteNome, destinatario, cc = [], assunto, c
   return `mailto:${encodeURIComponent(to)}?${tail}`;
 }
 
+// ─── Outlook: rascunho HTML + anexos (mailto não suporta HTML/anexos) ─────────
+function outlookEmailEsc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function outlookEncodeSubjectUtf8(s) {
+  const bytes = unescape(encodeURIComponent(String(s || '')));
+  return `=?UTF-8?B?${btoa(bytes)}?=`;
+}
+
+async function outlookBlobToBase64(blob) {
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function outlookWrapBase64Lines(b64, len = 76) {
+  return String(b64 || '').replace(new RegExp(`.{1,${len}}`, 'g'), '$&\r\n').trim();
+}
+
+function outlookGuessMime(filename) {
+  const n = String(filename || '').toLowerCase();
+  if (n.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if (n.endsWith('.xls')) return 'application/vnd.ms-excel';
+  if (n.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (n.endsWith('.doc')) return 'application/msword';
+  if (n.endsWith('.pdf')) return 'application/pdf';
+  return 'application/octet-stream';
+}
+
+/** Abre rascunho no Outlook com corpo HTML e anexos já incluídos. */
+async function outlookAbrirRascunho({ to, cc, subject, html, attachments = [], draftName = 'Delta_rascunho_Outlook.eml', toastMsg } = {}) {
+  const boundary = `DELTA_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const ccVal = (cc == null || cc === '')
+    ? (typeof ccString === 'function' ? ccString([]) : 'filipe.neves@deltafoodsbrasil.com.br')
+    : String(cc);
+  const parts = [
+    `To: ${to}`,
+    `Cc: ${ccVal}`,
+    `Subject: ${outlookEncodeSubjectUtf8(subject)}`,
+    'X-Unsent: 1',
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: 8bit',
+    '',
+    html || '<p></p>',
+    '',
+  ];
+  for (const att of (attachments || [])) {
+    if (!att || !att.blob) continue;
+    const name = att.filename || 'anexo.bin';
+    const mime = att.mime || outlookGuessMime(name);
+    const b64 = outlookWrapBase64Lines(await outlookBlobToBase64(att.blob));
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${mime}; name="${name}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${name}"`,
+      '',
+      b64,
+      ''
+    );
+  }
+  parts.push(`--${boundary}--`, '');
+  const eml = parts.join('\r\n');
+
+  try {
+    const endpoints = [
+      '/api/open-outlook-draft',
+      '/api/open-mc00-email',
+      '/delta-foods-equipamentos-app/api/open-outlook-draft',
+      '/delta-foods-equipamentos-app/api/open-mc00-email',
+    ];
+    for (const ep of endpoints) {
+      const r = await fetch(ep, {
+        method: 'POST',
+        headers: { 'Content-Type': 'message/rfc822; charset=utf-8' },
+        body: eml,
+      });
+      if (r.status === 204 || r.ok) {
+        toast(toastMsg || '📧 Outlook aberto com email e anexos.');
+        return true;
+      }
+    }
+  } catch (_) { /* GitHub Pages / sem serve.ps1 */ }
+
+  const file = new File([eml], draftName, { type: 'message/rfc822' });
+  if (navigator.msSaveOrOpenBlob) {
+    navigator.msSaveOrOpenBlob(file, file.name);
+  } else {
+    const url = URL.createObjectURL(file);
+    const opened = window.open(url, '_blank');
+    if (!opened) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  toast(toastMsg || '📧 Outlook a abrir com email e anexos.');
+  return true;
+}
+
 function isAdmin() {
   const norm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
   const atual = norm(getUtilizadorAtual());
@@ -8565,18 +8857,42 @@ async function loadProsData() {
   await prosNormalizarMarcasExistentes();
 }
 
-function renderPros() {
-  const vista    = document.getElementById('pros-vista')?.value || 'kanban';
-  const vendedor = document.getElementById('pros-filtro-vendedor')?.value || '';
-  const estado   = document.getElementById('pros-filtro-estado')?.value || '';
-  const segmento = document.getElementById('pros-filtro-segmento')?.value || '';
+let prosEstadoTab = 'todos';
 
-  let dados = prosData.filter(p => {
+function prosSetEstadoTab(estado) {
+  prosEstadoTab = estado;
+  renderPros();
+}
+
+// Barra de abas por estado (com contagens). Sempre visível para se poder trocar de aba.
+function prosEstadoTabsHtml(base, active) {
+  const tabs = [{ key: 'todos', label: 'Todos', cor: '#374151', bg: '#f3f4f6' }]
+    .concat(PROS_PIPELINE.map(k => ({ key: k, label: PROS_ESTADOS[k].label, cor: PROS_ESTADOS[k].cor, bg: PROS_ESTADOS[k].bg })));
+  return tabs.map(t => {
+    const n = t.key === 'todos' ? base.length : base.filter(p => p.estado === t.key).length;
+    const on = t.key === active;
+    const label = t.label.replace('✅ ', '').replace('❌ ', '');
+    return `<button onclick="prosSetEstadoTab('${t.key}')" style="border:1px solid ${on ? t.cor : '#e5e7eb'};background:${on ? t.cor : '#fff'};color:${on ? '#fff' : t.cor};border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .12s;">
+      ${label}
+      <span style="background:${on ? 'rgba(255,255,255,.28)' : t.bg};color:${on ? '#fff' : t.cor};border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;">${n}</span>
+    </button>`;
+  }).join('');
+}
+
+function renderPros() {
+  const vendedor = document.getElementById('pros-filtro-vendedor')?.value || '';
+  const segmento = document.getElementById('pros-filtro-segmento')?.value || '';
+  const estadoTab = prosEstadoTab || 'todos';
+
+  // Base: aplica filtros de vendedor/segmento (serve para contagens das abas e resumo).
+  const base = prosData.filter(p => {
     if (vendedor && p.vendedor !== vendedor) return false;
-    if (estado   && p.estado   !== estado)   return false;
     if (segmento && p.segmento !== segmento) return false;
     return true;
   });
+
+  // Lista: só o estado da aba activa.
+  const dados = estadoTab === 'todos' ? base : base.filter(p => p.estado === estadoTab);
 
   // info
   const ativos   = prosData.filter(p => p.estado !== 'ganho' && p.estado !== 'perdido').length;
@@ -8591,8 +8907,11 @@ function renderPros() {
      <span style="font-weight:600">${ativos} ativos</span> &nbsp;·&nbsp;
      Potencial: ${totalCaps.toLocaleString('pt-BR')} caps/mês${totalKg>0?' + '+totalKg.toFixed(1)+' Kg/mês':''}`;
 
+  const tabsEl = document.getElementById('pros-estado-tabs');
+  if (tabsEl) tabsEl.innerHTML = prosEstadoTabsHtml(base, estadoTab);
+
   const cont = document.getElementById('pros-content');
-  renderProsList(cont, dados);
+  renderProsList(cont, dados, base);
 }
 
 function renderProsKanban(cont, dados) {
@@ -8706,9 +9025,11 @@ function renderProsSummary(dados) {
   </div>`;
 }
 
-function renderProsList(cont, dados) {
+function renderProsList(cont, dados, base) {
+  // Resumo por vendedor mostra sempre a visão completa (todos os estados do filtro actual).
+  const summaryHtml = renderProsSummary(base || dados);
   if (!dados.length) {
-    cont.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px;">Nenhum lead encontrado.</div>';
+    cont.innerHTML = summaryHtml + '<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px;">Nenhum lead neste estado.</div>';
     return;
   }
   const hoje = new Date(); hoje.setHours(0,0,0,0);
@@ -8742,7 +9063,7 @@ function renderProsList(cont, dados) {
     </tr>`;
   }).join('');
 
-  cont.innerHTML = renderProsSummary(dados) + `<div class="table-wrap">
+  cont.innerHTML = summaryHtml + `<div class="table-wrap">
     <table class="data-table wide" style="font-size:13px;">
       <thead><tr>
         <th class="col-nome" style="${TH}">Nome</th>
@@ -9937,7 +10258,7 @@ async function propGerarSimulador(nomeCliente) {
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const filename = `Proposta_${tipo === 'Q' ? 'DeltaQ' : 'Grao'}_${(nomeCliente || 'cliente').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}.xlsx`;
   triggerBlobDownload(blob, filename);
-  return filename;
+  return { blob, filename };
 }
 
 // Recolhe os campos da Ficha de Cadastro (pg-*) no formato esperado pelo servidor de geração de Excel.
@@ -9995,42 +10316,77 @@ async function prosGerarCadastroXlsx(dados) {
       });
       if (!res.ok) throw new Error('Erro ' + res.status);
       const blob = await res.blob();
-      triggerBlobDownload(blob, `Cadastro_${(dados.nome||'cliente').replace(/[^a-zA-Z0-9]/g,'_').substring(0,20)}.xlsx`);
-      return;
+      const filename = `Cadastro_${(dados.nome||'cliente').replace(/[^a-zA-Z0-9]/g,'_').substring(0,20)}.xlsx`;
+      triggerBlobDownload(blob, filename);
+      return { blob, filename };
     } catch (e) {
       console.warn('Servidor de cadastro indisponível, a gerar Excel localmente:', e && e.message);
     }
   }
-  await gerarCadastroXlsxLocal(dados);
+  return await gerarCadastroXlsxLocal(dados);
 }
 
-// Abre o email de aprovação pré-preenchido (Filipe Neves entra sempre em CC via buildMailtoAprovacao).
-function prosAbrirEmailCadastro(dados, opts = {}) {
-  const { isCafe = false, propTexto = '' } = opts;
+function prosCadastroResumoEmailHtml(dados) {
+  const rows = [
+    ['Motivo', dados.motivo || 'Abertura de Cliente'],
+    ['Empresa', dados.empresa || '—'],
+    ['Nome / Razão Social', dados.nome || '—'],
+    ['Nome Fantasia', dados.fantasia || '—'],
+    ['CNPJ / CPF', dados.cnpj || '—'],
+    ['Email', dados.email || '—'],
+    ['Tel. 1', dados.tel1 || '—'],
+    ['Morada', [dados.rua, dados.nro, dados.bairro].filter(Boolean).join(', ') || '—'],
+    ['CEP / Cidade', [dados.cep, dados.cidade].filter(Boolean).join(' — ') || '—'],
+    ['Canal', dados.canal || '—'],
+    ['Região', dados.regiao || '—'],
+    ['Cond. Pagamento', dados.pagto || '—'],
+    ['Vendedor', dados.vendedor || '—'],
+  ];
+  const td = 'border:1px solid #d1d5db;padding:6px 10px;font-family:Calibri,Arial,sans-serif;font-size:12px;';
+  const th = td + 'background:#c8102e;color:#ffffff;font-weight:700;';
+  const body = rows.map(([k, v], i) => {
+    const bg = i % 2 ? '#f9fafb' : '#ffffff';
+    return `<tr style="background:${bg}"><td style="${td}font-weight:600;width:160px;">${outlookEmailEsc(k)}</td><td style="${td}">${outlookEmailEsc(v)}</td></tr>`;
+  }).join('');
+  return `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8102e;min-width:480px;">
+  <thead><tr><th style="${th}text-align:left;" colspan="2">Resumo do cadastro</th></tr></thead>
+  <tbody>${body}</tbody></table>`;
+}
+
+// Abre Outlook com HTML + Excel(s) já anexados (mesmo padrão do MC00).
+async function prosAbrirEmailCadastro(dados, opts = {}) {
+  const { isCafe = false, propTexto = '', attachments = [] } = opts;
   const hora = new Date().getHours();
   const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
   const motivo = dados.motivo || 'Abertura de Cliente';
-  const assunto = encodeURIComponent(`${motivo} - ${dados.nome}`);
   const anexosTxt = isCafe ? 'ficha de cadastro e a proposta de negócio' : 'ficha de cadastro';
   const remetente = getUtilizadorAtual();
   const remetenteEmail = getEmailUtilizador(remetente);
-  const corpo = encodeURIComponent(
-`${saudacao},
+  const propHtml = propTexto
+    ? `<p style="margin:16px 0 8px;font-weight:700;">Proposta de negócio:</p><pre style="font-family:Calibri,Arial,sans-serif;font-size:12px;background:#f9fafb;border:1px solid #e5e7eb;padding:12px;white-space:pre-wrap;">${outlookEmailEsc(String(propTexto).trim())}</pre>`
+    : '';
+  const html =
+`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
+<p>${outlookEmailEsc(saudacao)},</p>
+<p>Segue em anexo a <strong>${outlookEmailEsc(anexosTxt)}</strong> do cliente
+<strong>${outlookEmailEsc(dados.nome || '')}</strong> para aprovação.</p>
+${prosCadastroResumoEmailHtml(dados)}
+${propHtml}
+<p style="margin-top:18px;">Aguardo aprovação.</p>
+<p>Cumprimentos,<br>${outlookEmailEsc(remetente)}${remetenteEmail ? '<br>' + outlookEmailEsc(remetenteEmail) : ''}</p>
+</body></html>`;
 
-Segue em anexo a ${anexosTxt} do cliente ${dados.nome} para aprovação.${propTexto}
-
-Aguardo aprovação.
-
-Cumprimentos,
-${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`
-  );
-  const mailto = buildMailtoAprovacao({
-    remetenteNome: remetente,
-    cc: ['filipe.neves@deltafoodsbrasil.com.br', 'daniela.kucinski@deltafoodsbrasil.com.br'],
-    assunto,
-    corpo,
+  await outlookAbrirRascunho({
+    to: 'carlos.castro@deltafoodsbrasil.com.br',
+    cc: ccString(['daniela.kucinski@deltafoodsbrasil.com.br']),
+    subject: `${motivo} - ${dados.nome || 'Cliente'}`,
+    html,
+    attachments,
+    draftName: 'Cadastro_rascunho_Outlook.eml',
+    toastMsg: '📧 Outlook aberto com cadastro em anexo.',
   });
-  setTimeout(() => { window.location.href = mailto; }, 800);
 }
 
 // ─── ALTERAÇÃO DE DADOS CADASTRAIS (a partir de um cliente já registado) ──────
@@ -10127,17 +10483,31 @@ function resetModoAlteracaoUI() {
 }
 
 let _editCadPreenchido = false;
+let _editMc00Preenchido = false;
 
-// Alterna entre as abas do modal de editar registo: 'registo' e 'cadastro'.
+// Alterna entre as abas do modal de editar: 'registo' | 'cadastro' | 'mc00'
 async function editSwitchTab(tab) {
   const btnR = document.getElementById('edit-tab-btn-registo');
   const btnC = document.getElementById('edit-tab-btn-cadastro');
+  const btnM = document.getElementById('edit-tab-btn-mc00');
   const panR = document.getElementById('edit-tab-registo');
   const panC = document.getElementById('edit-tab-cadastro');
+  const panM = document.getElementById('edit-tab-mc00');
   const modal = document.getElementById('modal-edit');
   if (!btnR || !btnC || !panR || !panC) return;
+
+  // Flush autosaves da aba que se está a deixar
+  if (panC && panC.style.display !== 'none') flushEditCadastroSave();
+  if (panM && panM.style.display !== 'none') flushMc00Save();
+
+  // Reset UI
+  [btnR, btnC, btnM].forEach(b => b && b.classList.remove('active'));
+  if (panR) panR.style.display = 'none';
+  if (panC) panC.style.display = 'none';
+  if (panM) panM.style.display = 'none';
+  if (modal) { modal.classList.remove('modal-wide-cad'); modal.classList.remove('modal-wide-mc00'); }
+
   if (tab === 'cadastro') {
-    // Move a ficha de cadastro (mesmo nó do DOM da Prospeção) para dentro deste modal.
     const sec = document.getElementById('pg-cadastro-section');
     const host = document.getElementById('edit-cadastro-host');
     if (sec && host && sec.parentElement !== host) host.appendChild(sec);
@@ -10149,19 +10519,29 @@ async function editSwitchTab(tab) {
       _editCadPreenchido = true;
     }
     bindEditCadastroAutoSave();
-    panR.style.display = 'none';
-    panC.style.display = 'block';
-    btnR.classList.remove('active');
-    btnC.classList.add('active');
+    if (panC) panC.style.display = 'block';
+    if (btnC) btnC.classList.add('active');
     if (modal) modal.classList.add('modal-wide-cad');
-  } else {
-    flushEditCadastroSave();
+  } else if (tab === 'mc00') {
     garantirFichaCadastralEmCasa();
-    panC.style.display = 'none';
-    panR.style.display = 'block';
-    btnC.classList.remove('active');
-    btnR.classList.add('active');
-    if (modal) modal.classList.remove('modal-wide-cad');
+    if (!_editMc00Preenchido) {
+      const st = document.getElementById('mc00-status');
+      if (st) st.innerHTML = '<span style="color:var(--muted)">A carregar MC00...</span>';
+      try { await mc00Preencher(window._editingRegisto); }
+      finally { if (st) st.innerHTML = ''; }
+      _editMc00Preenchido = true;
+    } else {
+      // Mantém Cond. Pagamento alinhada com a aba Dados Cadastrais
+      mc00SyncPrazoFromCadastro();
+    }
+    bindMc00AutoSave();
+    if (panM) panM.style.display = 'block';
+    if (btnM) btnM.classList.add('active');
+    if (modal) modal.classList.add('modal-wide-mc00');
+  } else {
+    garantirFichaCadastralEmCasa();
+    if (panR) panR.style.display = 'block';
+    if (btnR) btnR.classList.add('active');
   }
 }
 
@@ -10207,6 +10587,908 @@ function flushEditCadastroSave() {
     _editCadAutoSaveTimer = null;
     guardarCadastroCliente({ silent: true });
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MC00 — Condições especiais de fornecimento (aba Editar cliente)
+// ═══════════════════════════════════════════════════════════════
+const MC00_SB = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1';
+let _mc00Catalog = null;       // [{ean,sapCode,descricao,cat,subcat,preco}]
+let _mc00CatalogLoading = null;
+let _mc00Produtos = [];        // linhas do MC00 actual
+let _mc00PickSel = new Set();  // eans seleccionados no picker
+let _mc00AutoSaveBound = false;
+let _mc00AutoSaveTimer = null;
+
+function mc00Num(v) {
+  if (v == null || v === '') return 0;
+  let s = String(v).trim().replace(/[R$\s€]/gi, '');
+  if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (s.includes(',')) s = s.replace(',', '.');
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : 0;
+}
+function mc00Fmt(n, dec = 2) {
+  if (n == null || !Number.isFinite(n)) return '';
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+/** PLF = P.Tabela × (1-d1) × (1-d2) × (1-df) − Rappel R$/Kg */
+function mc00CalcPlf(row) {
+  const p = mc00Num(row.preco);
+  if (!p) return 0;
+  const f = (pct) => 1 - (mc00Num(pct) / 100);
+  return Math.max(0, p * f(row.desc1) * f(row.desc2) * f(row.descFin) - mc00Num(row.rappelRs));
+}
+
+/** Headers GET limpos (sem Prefer:return=minimal do HEADERS global). */
+function mc00ApiHeaders(extra) {
+  return {
+    apikey: SUPA_KEY,
+    Authorization: 'Bearer ' + SUPA_KEY,
+    ...(extra || {}),
+  };
+}
+
+async function mc00FetchAllOccParams() {
+  const headers = mc00ApiHeaders({ Prefer: 'count=exact' });
+  const page = 1000;
+  let offset = 0;
+  const all = [];
+  for (;;) {
+    const res = await fetch(
+      `${MC00_SB}/logistica_occ_params?select=ean,descricao,cat,subcat,descontinuado,notes&order=ean.asc&limit=${page}&offset=${offset}`,
+      { headers }
+    );
+    if (!res.ok) throw new Error('Erro ao carregar Cadastro de Artigos (' + res.status + ')');
+    const chunk = await res.json();
+    if (!Array.isArray(chunk) || !chunk.length) break;
+    all.push(...chunk);
+    if (chunk.length < page) break;
+    offset += page;
+  }
+  return all;
+}
+
+/** Stock SAP DFB (enrich). Falha → {} (catálogo continua com occ_params). */
+async function mc00FetchSapStockByEan() {
+  const eanMap = {};
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 90000);
+    const sRes = await fetch(`${MC00_SB}/logistica_stock?id=eq.DFB&select=sap_data,sap_rows`, {
+      headers: mc00ApiHeaders(),
+      signal: ctrl.signal,
+    });
+    clearTimeout(to);
+    if (!sRes.ok) return eanMap;
+    const rows = await sRes.json();
+    let raw = rows?.[0]?.sap_data;
+    if (typeof raw === 'string') {
+      try { raw = JSON.parse(raw); } catch (_) { raw = []; }
+    }
+    // Por vezes fica double-encoded
+    if (typeof raw === 'string') {
+      try { raw = JSON.parse(raw); } catch (_) { raw = []; }
+    }
+    const sapArr = Array.isArray(raw) ? raw : [];
+    sapArr.forEach(r => {
+      const ean = String(r.EAN_norm || r.ean || '').trim();
+      if (!ean) return;
+      const qt = Number(r.qt);
+      if (!eanMap[ean]) eanMap[ean] = { ean, desc: '', sapCodes: new Set(), preco: 0, qt: 0 };
+      if (Number.isFinite(qt) && qt > 0) eanMap[ean].qt += qt;
+      const desc = String(r.desc || r.Descricao || r.descricao || '').trim();
+      if (desc && (!eanMap[ean].desc || desc.length > eanMap[ean].desc.length)) eanMap[ean].desc = desc;
+      const mat = String(r.material || r.Material || '').trim();
+      if (mat) eanMap[ean].sapCodes.add(mat);
+      const preco = Number(r.preco);
+      if (Number.isFinite(preco) && preco > 0 && preco > eanMap[ean].preco) eanMap[ean].preco = preco;
+    });
+  } catch (e) {
+    console.warn('[MC00] stock SAP indisponível, uso só Cadastro occ_params:', e);
+  }
+  return eanMap;
+}
+
+/** Categorias do Cadastro (occ_params) — mesmas opções da aba Cadastro. */
+let _mc00CadCats = [];
+
+/**
+ * Catálogo MC00 = Cadastro de Artigos (occ_params) + enrich stock SAP.
+ * Sem código SAP = descontinuado / sem stock → excluído do picker.
+ */
+async function mc00LoadCatalog(force) {
+  if (_mc00Catalog && !force) return _mc00Catalog;
+  if (_mc00CatalogLoading) return _mc00CatalogLoading;
+  _mc00CatalogLoading = (async () => {
+    const params = await mc00FetchAllOccParams();
+    if (!params.length) {
+      throw new Error('Cadastro de Artigos vazio (logistica_occ_params). Abre o SAPxUnilog → Cadastro e confirma os artigos.');
+    }
+
+    const stockByEan = await mc00FetchSapStockByEan();
+    const seen = new Set();
+    const out = [];
+
+    // 1) Artigos do Cadastro (cat/subcat) — só com cód. SAP no stock
+    params.forEach(p => {
+      const ean = String(p.ean || '').trim();
+      if (!ean || seen.has(ean)) return;
+      if (p.descontinuado === true) return;
+      const st = stockByEan[ean];
+      const codes = st ? [...st.sapCodes].filter(Boolean) : [];
+      // Sem material SAP = fora de catálogo comercial (descontinuado / sem stock)
+      if (!codes.length) return;
+      seen.add(ean);
+      out.push({
+        ean,
+        sapCode: codes[0],
+        sapCodes: codes,
+        descricao: (st?.desc || p.descricao || '').trim(),
+        cat: String(p.cat || '').trim(),
+        subcat: String(p.subcat || '').trim(),
+        descontinuado: false,
+        preco: st?.preco || 0,
+        qt: st?.qt || 0,
+      });
+    });
+
+    // 2) EANs com stock>0 e cód. SAP ainda sem ficha no Cadastro
+    Object.values(stockByEan).forEach(st => {
+      if (!st.ean || seen.has(st.ean) || !(st.qt > 0)) return;
+      const codes = [...(st.sapCodes || [])].filter(Boolean);
+      if (!codes.length) return;
+      seen.add(st.ean);
+      out.push({
+        ean: st.ean,
+        sapCode: codes[0],
+        sapCodes: codes,
+        descricao: (st.desc || '').trim(),
+        cat: '',
+        subcat: '',
+        descontinuado: false,
+        preco: st.preco || 0,
+        qt: st.qt || 0,
+      });
+    });
+
+    out.sort((a, b) => {
+      const ca = (a.cat || 'zzz').localeCompare(b.cat || 'zzz', 'pt');
+      if (ca) return ca;
+      const sa = (a.subcat || '').localeCompare(b.subcat || '', 'pt');
+      if (sa) return sa;
+      return (a.descricao || '').localeCompare(b.descricao || '', 'pt');
+    });
+
+    if (!out.length) {
+      throw new Error('Nenhum artigo com código SAP no Cadastro. Confirma o stock DFB no SAPxUnilog.');
+    }
+
+    // Categorias só dos artigos activos (com cód. SAP)
+    _mc00CadCats = [...new Set(out.map(p => p.cat).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt'));
+
+    _mc00Catalog = out;
+    return _mc00Catalog;
+  })();
+  try { return await _mc00CatalogLoading; }
+  finally { _mc00CatalogLoading = null; }
+}
+
+function mc00EmptyRow() {
+  return { ean:'', sapCode:'', descricao:'', media:'', preco:'', desc1:'', desc2:'', descFin:'',
+    rappelPct:'', rappelRs:'', codAcucar:'', precoAcucar:'', codXic:'', precoXic:'', invKg:'' };
+}
+
+function mc00Set(id, v) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const val = v == null ? '' : String(v);
+  if (el.tagName === 'SELECT') {
+    // Se o valor guardado não existir nas options (ex.: canal 12 extinto), tenta match por código.
+    el.value = val;
+    if (el.value !== val) {
+      const codCanal = (val.match(/^(\d{2})\b/) || [])[1];
+      if (codCanal) {
+        const opt = [...el.options].find(o => o.value.startsWith(codCanal + ' ') || o.value === codCanal);
+        if (opt) { el.value = opt.value; return; }
+      }
+      // Cond. Pagamento: "BRD3 - 30 DIAS" ou só "BRD3"
+      const codPag = (val.match(/^(BR[A-Z0-9]+)/i) || [])[1];
+      if (codPag) {
+        const opt = [...el.options].find(o => o.value.startsWith(codPag + ' ') || o.value === codPag);
+        if (opt) el.value = opt.value;
+      }
+    }
+    return;
+  }
+  el.value = val;
+}
+function mc00Get(id) { return (document.getElementById(id)?.value || '').trim(); }
+
+/** Dropdown Cond. Pagamento do MC00 — mesmas opções do cadastro (por canal). */
+function mc00RefreshPagtoDropdown(canalCod, selectedPagto) {
+  const sel = document.getElementById('mc00-prazo');
+  if (!sel) return;
+  const codes = PRAZOS_POR_CANAL[canalCod] || PRAZOS_POR_CANAL['04'];
+  const pick = prosResolvePagtoForCanal(selectedPagto, canalCod);
+  sel.innerHTML = codes.map(c => {
+    const label = prazoPagtoLabel(c);
+    return `<option value="${label}">${label}</option>`;
+  }).join('');
+  for (const opt of sel.options) {
+    if (opt.value === pick) { sel.value = pick; return; }
+  }
+  if (sel.options.length) sel.selectedIndex = 0;
+}
+
+/** Lê Cond. Pagamento actual do cadastro (form ou cadastro_json). */
+function mc00PagtoFromCadastro(r) {
+  const live = (document.getElementById('pg-pagto')?.value || '').trim();
+  if (live) return live;
+  const cad = (r?.cadastro_json && typeof r.cadastro_json === 'object') ? r.cadastro_json : {};
+  if (cad.pagto) return String(cad.pagto).trim();
+  return '';
+}
+
+/** Reaplica cabeçalho + Cond. Pagamento a partir do cadastro (campos bloqueados). */
+function mc00SyncHeaderFromCadastro() {
+  const r = window._editingRegisto;
+  if (!r) return;
+  const cad = (r.cadastro_json && typeof r.cadastro_json === 'object') ? r.cadastro_json : {};
+  const sap = (getListaClientesActiva() || []).find(c => normCod(c.cod) === normCod(r.cod)) || {};
+  const live = (id) => (document.getElementById(id)?.value || '').trim();
+
+  const canal = mc00NormalizeCanal(live('pg-canal') || cad.canal || pgCanalFromSap?.(sap.canal) || mc00Get('mc00-canal'));
+  const canalCod = prosCanalCodFromSelect(canal);
+  const pagto = mc00PagtoFromCadastro(r);
+  const empresaCad = live('pg-empresa') || cad.empresa || '';
+  const endereco = [live('pg-rua') || cad.rua, live('pg-nro') || cad.nro].filter(Boolean).join(', ')
+    || [sap.rua, sap.nro].filter(Boolean).join(', ') || mc00Get('mc00-endereco');
+
+  mc00Set('mc00-departamento', 'Brasil');
+  mc00Set('mc00-empresa', mc00NormalizeEmpresa(empresaCad));
+  mc00Set('mc00-canal', canal);
+  mc00Set('mc00-cod', cad.cod || r.cod || sap.cod || '');
+  mc00Set('mc00-nome', live('pg-nome') || cad.nome || r.nome || sap.nome || '');
+  mc00Set('mc00-estabelecimento', live('pg-fantasia') || cad.fantasia || live('pg-nome') || cad.nome || r.nome || '');
+  mc00Set('mc00-cnpj', live('pg-cnpj') || cad.cnpj || (typeof fmtCnpjCadastro === 'function' ? fmtCnpjCadastro(sap.cnpj) : '') || '');
+  mc00Set('mc00-endereco', endereco);
+  mc00Set('mc00-cep', formatCep(live('pg-cep') || cad.cep || r.cep || sap.cep || ''));
+  mc00Set('mc00-cidade', live('pg-cidade') || cad.cidade || sap.cidade || 'São Paulo');
+  mc00Set('mc00-supervisor', 'FILIPE NEVES');
+  mc00Set('mc00-vendedor', (live('pg-vendedor') || r.vendedor || sap.vendedor || cad.vendedor || '').toUpperCase());
+  mc00RefreshPagtoDropdown(canalCod, pagto);
+  scheduleMc00Save(false);
+}
+
+function mc00SyncPrazoFromCadastro() {
+  mc00SyncHeaderFromCadastro();
+}
+
+/** Normaliza canal MC00: remove 12 (extinto), alinha nomes com o Excel. */
+function mc00NormalizeCanal(c) {
+  const s = String(c || '').trim();
+  if (!s) return '04 - Restauração';
+  if (/^12\b|Balc[aã]o\s+Geral/i.test(s)) return '01 - Retalho';
+  if (/^01\b|Retalh/i.test(s)) return '01 - Retalho';
+  if (/^03\b|Institucional|Delta\s*Office|Office/i.test(s)) return '03 - Institucional';
+  if (/^04\b|Restaura/i.test(s)) return '04 - Restauração';
+  if (/^13\b|Revendedor/i.test(s)) return '13 - Revendedores';
+  return s;
+}
+function mc00NormalizeDepartamento(_v) {
+  return 'Brasil';
+}
+function mc00NormalizeEmpresa(v) {
+  const s = String(v || '').trim().toUpperCase();
+  if (s === 'QB' || s.startsWith('GN53') || s.includes('Q-BRASIL') || s.includes('QBRASIL')) return 'QB';
+  return 'DFB';
+}
+function mc00NormalizeGrupo(v) {
+  const s = String(v || '').trim().toUpperCase();
+  if (s.includes('DISTR')) return 'DISTRIBUIDORES';
+  if (s.includes('RETAL')) return 'RETALHO';
+  if (s.includes('OFFICE') || s.includes('INSTIT')) return 'OFFICE';
+  return 'HORECA';
+}
+
+function mc00CollectHeader() {
+  return {
+    departamento: mc00NormalizeDepartamento(mc00Get('mc00-departamento')),
+    empresa: mc00NormalizeEmpresa(mc00Get('mc00-empresa')),
+    grupo: mc00NormalizeGrupo(mc00Get('mc00-grupo')),
+    canal: mc00NormalizeCanal(mc00Get('mc00-canal')),
+    cod: mc00Get('mc00-cod'),
+    nome: mc00Get('mc00-nome'),
+    estabelecimento: mc00Get('mc00-estabelecimento'),
+    cnpj: mc00Get('mc00-cnpj'),
+    endereco: mc00Get('mc00-endereco'),
+    cep: mc00Get('mc00-cep'),
+    cidade: mc00Get('mc00-cidade'),
+    supervisor: mc00Get('mc00-supervisor'),
+    vendedor: mc00Get('mc00-vendedor'),
+    prazo: mc00Get('mc00-prazo'),
+    processo: mc00Get('mc00-processo'),
+    info: (document.getElementById('mc00-info')?.value || '').trim(),
+  };
+}
+
+function mc00Collect() {
+  return { ...mc00CollectHeader(), produtos: _mc00Produtos.map(p => ({ ...p, plf: mc00CalcPlf(p) })) };
+}
+
+async function mc00Preencher(r) {
+  if (!r) return;
+  const saved = (r.mc00_json && typeof r.mc00_json === 'object') ? r.mc00_json : null;
+
+  // Cabeçalho + Cond. Pagamento = sempre do cadastro (campos bloqueados)
+  mc00SyncHeaderFromCadastro();
+
+  // Só Grupo / processo / info / produtos vêm do MC00 guardado
+  mc00Set('mc00-grupo', mc00NormalizeGrupo(saved?.grupo || 'HORECA'));
+  mc00Set('mc00-processo', saved?.processo || '');
+  const infoEl = document.getElementById('mc00-info');
+  if (infoEl) infoEl.value = saved?.info || '';
+
+  _mc00Produtos = Array.isArray(saved?.produtos) ? saved.produtos.map(p => ({ ...mc00EmptyRow(), ...p })) : [];
+  mc00RenderProdutos();
+  mc00LoadCatalog().catch(() => {});
+}
+
+function mc00RenderProdutos() {
+  const body = document.getElementById('mc00-prod-body');
+  if (!body) return;
+  if (!_mc00Produtos.length) {
+    body.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--muted);">Nenhum produto. Usa «Adicionar produtos do catálogo».</td></tr>`;
+    return;
+  }
+  // UI: Cód. SAP, P.Tabela (R$), Desc.1 (%), P. Final (R$) — resto só no Excel
+  body.innerHTML = _mc00Produtos.map((p, i) => {
+    const code = String(p.sapCode || '').trim() || '—';
+    const desc = String(p.descricao || '').trim();
+    const precoVal = String(p.preco ?? '').replace(/R\$\s*/gi, '').trim();
+    const desc1Val = String(p.desc1 ?? '').replace(/%/g, '').trim();
+    const plf = mc00CalcPlf(p);
+    return `<tr>
+      <td>
+        <div class="mc00-prod-code">${escHtml(code)}</div>
+        ${desc ? `<div class="mc00-prod-desc">${escHtml(desc)}</div>` : ''}
+      </td>
+      <td>
+        <div class="mc00-rs-wrap">
+          <span class="mc00-rs-pre">R$</span>
+          <input class="mc00-edit" data-i="${i}" data-f="preco" inputmode="decimal" placeholder="0,00" value="${escHtml(precoVal)}" oninput="mc00OnProdInput(this)">
+        </div>
+      </td>
+      <td>
+        <div class="mc00-pct-wrap">
+          <input class="mc00-edit" data-i="${i}" data-f="desc1" inputmode="decimal" placeholder="0" value="${escHtml(desc1Val)}" oninput="mc00OnProdInput(this)">
+          <span class="mc00-pct-suf">%</span>
+        </div>
+      </td>
+      <td class="mc00-plf" id="mc00-plf-${i}">${plf ? 'R$ ' + mc00Fmt(plf) : '—'}</td>
+      <td><button type="button" onclick="mc00RemoveRow(${i})" title="Remover" style="background:none;border:1px solid #fca5a5;border-radius:4px;color:#dc2626;cursor:pointer;font-size:11px;padding:2px 6px;">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function mc00OnProdInput(el) {
+  const i = +el.dataset.i;
+  const f = el.dataset.f;
+  if (f !== 'preco' && f !== 'desc1') return;
+  if (!_mc00Produtos[i]) return;
+  let v = el.value;
+  if (f === 'desc1') {
+    // Só o número — o % é visual; remove se o comercial digitar
+    v = String(v).replace(/%/g, '').trim();
+    if (el.value !== v) el.value = v;
+  }
+  if (f === 'preco') {
+    // Só o número — o R$ é visual
+    v = String(v).replace(/R\$\s*/gi, '').trim();
+    if (el.value !== v) el.value = v;
+  }
+  _mc00Produtos[i][f] = v;
+  const plfEl = document.getElementById('mc00-plf-' + i);
+  if (plfEl) {
+    const plf = mc00CalcPlf(_mc00Produtos[i]);
+    plfEl.textContent = plf ? 'R$ ' + mc00Fmt(plf) : '—';
+  }
+  scheduleMc00Save(false);
+}
+
+function mc00RemoveRow(i) {
+  _mc00Produtos.splice(i, 1);
+  mc00RenderProdutos();
+  scheduleMc00Save(true);
+}
+
+function mc00AddEmptyRow() {
+  _mc00Produtos.push(mc00EmptyRow());
+  mc00RenderProdutos();
+  scheduleMc00Save(true);
+}
+
+function bindMc00AutoSave() {
+  if (_mc00AutoSaveBound) return;
+  const pan = document.getElementById('edit-tab-mc00');
+  if (!pan) return;
+  pan.addEventListener('input', (e) => {
+    if (e.target?.closest?.('#mc00-prod-body')) return; // já tratado em mc00OnProdInput
+    scheduleMc00Save(false);
+  });
+  pan.addEventListener('change', () => scheduleMc00Save(true));
+  _mc00AutoSaveBound = true;
+}
+
+function scheduleMc00Save(immediate) {
+  if (!editingId) return;
+  const pan = document.getElementById('edit-tab-mc00');
+  if (!pan || pan.style.display === 'none') return;
+  clearTimeout(_mc00AutoSaveTimer);
+  const doSave = async () => {
+    const st = document.getElementById('mc00-status');
+    if (st) st.innerHTML = '<span style="color:var(--muted)">A guardar…</span>';
+    const ok = await guardarMc00Cliente({ silent: true });
+    if (st) st.innerHTML = ok
+      ? '<span style="color:#16a34a">✓ Guardado automaticamente</span>'
+      : '<span style="color:var(--danger)">Erro ao guardar MC00</span>';
+  };
+  if (immediate) doSave();
+  else _mc00AutoSaveTimer = setTimeout(doSave, 700);
+}
+
+function flushMc00Save() {
+  if (!editingId) return;
+  if (_mc00AutoSaveTimer) {
+    clearTimeout(_mc00AutoSaveTimer);
+    _mc00AutoSaveTimer = null;
+    guardarMc00Cliente({ silent: true });
+  }
+}
+
+async function guardarMc00Cliente(opts) {
+  opts = opts || {};
+  if (!editingId) return false;
+  const data = mc00Collect();
+  try {
+    const res = await fetch(`${SUPA_URL}?id=eq.${editingId}`, {
+      method: 'PATCH',
+      headers: { ...HEADERS, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ mc00_json: data })
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      if (/mc00_json/.test(txt) && /column|schema/i.test(txt)) {
+        throw new Error('Falta a coluna mc00_json. Corre o SQL supabase-add-registos-mc00-json.sql no Supabase.');
+      }
+      throw new Error('HTTP ' + res.status);
+    }
+    if (window._editingRegisto) window._editingRegisto.mc00_json = data;
+    const inAll = (allData || []).find(x => String(x.id) === String(editingId));
+    if (inAll) inAll.mc00_json = data;
+    try { setRegistosCache(allData); } catch (e) {}
+    if (!opts.silent) toast('✅ MC00 guardado.');
+    return true;
+  } catch (e) {
+    if (!opts.silent) toast('Erro ao guardar MC00: ' + e.message, 'error');
+    console.error(e);
+    return false;
+  }
+}
+
+// ── Picker de produtos (catálogo) ──
+async function mc00OpenPicker() {
+  const overlay = document.getElementById('mc00-picker-overlay');
+  const list = document.getElementById('mc00-picker-list');
+  if (!overlay || !list) return;
+  _mc00PickSel = new Set();
+  list.innerHTML = '<div style="padding:30px;text-align:center;color:var(--muted);">A carregar Cadastro de Artigos…</div>';
+  overlay.classList.add('open');
+  // Limpa filtros para mostrar o catálogo completo ao abrir
+  const srchEl = document.getElementById('mc00-pick-search');
+  if (srchEl) srchEl.value = '';
+  try {
+    const cat = await mc00LoadCatalog(true);
+    const subEl = document.getElementById('mc00-picker-subtitle');
+    if (subEl) subEl.textContent = `Cadastro de Artigos (SAPxUnilog) · ${cat.length} artigos · escolha múltipla`;
+    const cats = (_mc00CadCats && _mc00CadCats.length)
+      ? _mc00CadCats
+      : [...new Set(cat.map(p => p.cat).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt'));
+    const selCat = document.getElementById('mc00-pick-cat');
+    if (selCat) {
+      selCat.innerHTML = '<option value="">Todas as categorias</option>' +
+        '<option value="__sem__">— Sem categoria —</option>' +
+        cats.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
+      selCat.value = '';
+    }
+    const selSub = document.getElementById('mc00-pick-sub');
+    if (selSub) selSub.innerHTML = '<option value="">Todas as subcategorias</option>';
+    mc00OnPickCatChange();
+  } catch (e) {
+    list.innerHTML = `<div style="padding:24px;color:var(--danger);">Erro: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function mc00ClosePicker() {
+  document.getElementById('mc00-picker-overlay')?.classList.remove('open');
+}
+
+function mc00OnPickCatChange() {
+  const cat = document.getElementById('mc00-pick-cat')?.value || '';
+  const catalog = _mc00Catalog || [];
+  const base = cat === '__sem__' ? catalog.filter(p => !p.cat)
+    : cat ? catalog.filter(p => p.cat === cat)
+    : catalog;
+  const subs = [...new Set(base.map(p => p.subcat).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt'));
+  const selSub = document.getElementById('mc00-pick-sub');
+  if (selSub) {
+    selSub.innerHTML = '<option value="">Todas as subcategorias</option>' +
+      (cat !== '__sem__' ? '<option value="__sem__">— Sem subcategoria —</option>' : '') +
+      subs.map(s => `<option value="${escHtml(s)}">${escHtml(s)}</option>`).join('');
+  }
+  mc00RenderPickerList();
+}
+
+function mc00RenderPickerList() {
+  const list = document.getElementById('mc00-picker-list');
+  if (!list) return;
+  const srch = (document.getElementById('mc00-pick-search')?.value || '').trim().toLowerCase();
+  const cat = document.getElementById('mc00-pick-cat')?.value || '';
+  const sub = document.getElementById('mc00-pick-sub')?.value || '';
+  const already = new Set(_mc00Produtos.map(p => p.ean).filter(Boolean));
+  let rows = (_mc00Catalog || []).filter(p => {
+    if (cat === '__sem__') { if (p.cat) return false; }
+    else if (cat && p.cat !== cat) return false;
+    if (sub === '__sem__') { if (p.subcat) return false; }
+    else if (sub && p.subcat !== sub) return false;
+    if (srch) {
+      const blob = `${p.sapCode} ${p.sapCodes?.join(' ') || ''} ${p.ean} ${p.descricao} ${p.cat} ${p.subcat}`.toLowerCase();
+      if (!blob.includes(srch)) return false;
+    }
+    return true;
+  });
+  const total = rows.length;
+  const LIMIT = 800;
+  window._mc00PickVisible = rows.slice(0, LIMIT);
+  rows = window._mc00PickVisible;
+  if (!rows.length) {
+    list.innerHTML = '<div style="padding:28px;text-align:center;color:var(--muted);">Nenhum produto encontrado.</div>';
+  } else {
+    list.innerHTML = `<div style="padding:8px 12px;font-size:12px;color:var(--muted);">${total} artigo${total === 1 ? '' : 's'} (filtro actual)</div>` +
+      rows.map((p, idx) => {
+      const key = p.ean || ('sap:' + p.sapCode);
+      const sel = _mc00PickSel.has(key);
+      const inMc00 = p.ean && already.has(p.ean);
+      return `<div class="mc00-picker-row${sel ? ' sel' : ''}" onclick="mc00TogglePickIdx(${idx})">
+        <input type="checkbox" ${sel ? 'checked' : ''} onclick="event.stopPropagation();mc00TogglePickIdx(${idx})">
+        <div class="mc00-pick-info">
+          <div class="mc00-pick-title">${escHtml(p.descricao || '—')}</div>
+          <div class="mc00-pick-meta">
+            <span style="font-family:var(--font-mono);">${escHtml(p.sapCode || 'sem cód. SAP')}</span>
+            ${p.ean ? ' · EAN ' + escHtml(p.ean) : ''}
+            ${p.cat ? ' · ' + escHtml(p.cat) : ''}${p.subcat ? ' / ' + escHtml(p.subcat) : ''}
+            ${inMc00 ? ' · <span style="color:#16a34a;">já no MC00</span>' : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('') + (total > LIMIT ? `<div style="padding:10px;text-align:center;color:var(--muted);font-size:12px;">A mostrar ${LIMIT} de ${total} — usa pesquisa/filtros para refinar.</div>` : '');
+  }
+  const cnt = document.getElementById('mc00-pick-count');
+  if (cnt) cnt.textContent = _mc00PickSel.size + ' seleccionado' + (_mc00PickSel.size === 1 ? '' : 's');
+}
+
+function mc00TogglePickIdx(idx) {
+  const p = (window._mc00PickVisible || [])[idx];
+  if (!p) return;
+  const key = p.ean || ('sap:' + p.sapCode);
+  if (_mc00PickSel.has(key)) _mc00PickSel.delete(key);
+  else _mc00PickSel.add(key);
+  mc00RenderPickerList();
+}
+
+function mc00ConfirmPicker() {
+  const catalog = _mc00Catalog || [];
+  const byKey = new Map();
+  catalog.forEach(p => {
+    if (p.ean) byKey.set(p.ean, p);
+    byKey.set('sap:' + (p.sapCode || ''), p);
+  });
+  let n = 0;
+  _mc00PickSel.forEach(key => {
+    const p = byKey.get(key);
+    if (!p) return;
+    if (p.ean && _mc00Produtos.some(x => x.ean === p.ean)) return;
+    _mc00Produtos.push({
+      ...mc00EmptyRow(),
+      ean: p.ean,
+      sapCode: p.sapCode || '',
+      descricao: p.descricao || '',
+      // Preços (P.Tabela, etc.) preenchidos à mão no MC00
+    });
+    n++;
+  });
+  mc00ClosePicker();
+  mc00RenderProdutos();
+  scheduleMc00Save(true);
+  if (n) toast(`✅ ${n} produto(s) adicionado(s) ao MC00`);
+  else toast('Nenhum produto novo para adicionar.', 'error');
+}
+
+async function mc00Exportar() {
+  clearTimeout(_mc00AutoSaveTimer);
+  _mc00AutoSaveTimer = null;
+  const st = document.getElementById('mc00-status');
+  const data = mc00Collect();
+  if (!data.nome && !data.cod) {
+    toast('Preenche pelo menos o cliente (código/nome).', 'error');
+    return;
+  }
+  if (!data.produtos.length) {
+    toast('Adiciona pelo menos um produto ao MC00.', 'error');
+    return;
+  }
+  await guardarMc00Cliente({ silent: true });
+  if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar MC00…</span>';
+  try {
+    const excel = await mc00GerarExcel(data);
+    toast('✅ MC00 exportado!');
+    if (st) st.innerHTML = '<span style="color:#16a34a">MC00 exportado — a abrir email no Outlook...</span>';
+    await mc00AbrirEmail(data, excel?.blob, excel?.filename);
+  } catch (e) {
+    if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${escHtml(e.message)}</span>`;
+    toast('Erro: ' + e.message, 'error');
+  }
+}
+
+async function mc00GerarExcel(d) {
+  // Excel formatado Delta (ExcelJS) — cabeçalho + grelha completa do MC00
+  await prosEnsureExcelJS();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Delta Foods Brasil';
+  wb.created = new Date();
+  const ws = wb.addWorksheet('MC00', {
+    views: [{ state: 'frozen', ySplit: 10, showGridLines: false }],
+    properties: { defaultRowHeight: 16 },
+  });
+
+  const RED = 'C8102E';
+  const RED_DARK = '8B0A1E';
+  const GRAY = 'F3F4F6';
+  const GRAY_LAB = 'E5E7EB';
+  const GREEN = '166534';
+  const thin = { style: 'thin', color: { argb: 'FFD1D5DB' } };
+  const borderAll = { top: thin, left: thin, bottom: thin, right: thin };
+  const fontBase = { name: 'Calibri', size: 10, color: { argb: 'FF111827' } };
+  const fontLab = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF4B5563' } };
+  const fontVal = { name: 'Calibri', size: 10, color: { argb: 'FF111827' } };
+
+  const setLab = (row, col, text) => {
+    const c = ws.getCell(row, col);
+    c.value = text;
+    c.font = fontLab;
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + GRAY_LAB } };
+    c.border = borderAll;
+    c.alignment = { vertical: 'middle', horizontal: 'left' };
+  };
+  const setVal = (row, col, text, opts = {}) => {
+    const c = ws.getCell(row, col);
+    c.value = text == null ? '' : text;
+    c.font = opts.bold ? { ...fontVal, bold: true } : fontVal;
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
+    c.border = borderAll;
+    c.alignment = { vertical: 'middle', horizontal: opts.right ? 'right' : 'left', wrapText: !!opts.wrap };
+    if (opts.numFmt) c.numFmt = opts.numFmt;
+  };
+  const mergeVal = (r, c1, c2, text, opts) => {
+    ws.mergeCells(r, c1, r, c2);
+    setVal(r, c1, text, opts);
+  };
+
+  ws.columns = [
+    { width: 12 }, { width: 34 }, { width: 10 }, { width: 11 }, { width: 10 },
+    { width: 10 }, { width: 10 }, { width: 11 }, { width: 12 }, { width: 12 },
+    { width: 10 }, { width: 11 }, { width: 10 }, { width: 9 }, { width: 11 },
+  ];
+
+  ws.mergeCells(1, 1, 1, 15);
+  const title = ws.getCell(1, 1);
+  title.value = 'MC_00 — CONDIÇÕES ESPECIAIS DE FORNECIMENTO';
+  title.font = { name: 'Calibri', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+  title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + RED } };
+  title.alignment = { vertical: 'middle', horizontal: 'center' };
+  ws.getRow(1).height = 28;
+
+  ws.mergeCells(2, 1, 2, 15);
+  const sub = ws.getCell(2, 1);
+  sub.value = 'Delta Foods Brasil';
+  sub.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+  sub.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + RED_DARK } };
+  sub.alignment = { vertical: 'middle', horizontal: 'center' };
+  ws.getRow(2).height = 18;
+
+  setLab(4, 1, 'Departamento'); mergeVal(4, 2, 3, d.departamento || 'Brasil', { bold: true });
+  setLab(4, 4, 'Empresa'); mergeVal(4, 5, 6, d.empresa || 'DFB', { bold: true });
+  setLab(4, 7, 'Grupo'); mergeVal(4, 8, 9, d.grupo || 'HORECA', { bold: true });
+  setLab(4, 10, 'Canal'); mergeVal(4, 11, 15, d.canal || '', { bold: true });
+
+  setLab(5, 1, 'Cód. Cliente'); mergeVal(5, 2, 3, d.cod || '', { bold: true });
+  setLab(5, 4, 'Razão Social'); mergeVal(5, 5, 15, d.nome || '', { bold: true });
+
+  setLab(6, 1, 'Estabelecimento'); mergeVal(6, 2, 6, d.estabelecimento || '', { bold: true });
+  setLab(6, 7, 'CNPJ'); mergeVal(6, 8, 15, d.cnpj || '', { bold: true });
+
+  setLab(7, 1, 'Endereço'); mergeVal(7, 2, 9, d.endereco || '', { wrap: true });
+  setLab(7, 10, 'CEP'); mergeVal(7, 11, 12, d.cep || '');
+  setLab(7, 13, 'Cidade'); mergeVal(7, 14, 15, d.cidade || '');
+
+  setLab(8, 1, 'Supervisor'); mergeVal(8, 2, 4, d.supervisor || 'FILIPE NEVES');
+  setLab(8, 5, 'Vendedor'); mergeVal(8, 6, 9, d.vendedor || '');
+  setLab(8, 10, 'Prazo Pag.'); mergeVal(8, 11, 13, d.prazo || '', { bold: true });
+  setLab(8, 14, 'N.º processo'); setVal(8, 15, d.processo || '');
+
+  ws.mergeCells(9, 1, 9, 15);
+  const sec = ws.getCell(9, 1);
+  sec.value = 'Condições Especiais';
+  sec.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+  sec.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + RED_DARK } };
+  sec.alignment = { vertical: 'middle', horizontal: 'left' };
+  ws.getRow(9).height = 20;
+
+  const cols = [
+    'Cód. SAP', 'Descrição', 'Média/mês', 'P.Tabela', 'Desc.1 %', 'Desc.2 %', 'Desc.Fin %',
+    'Rappel %/Kg', 'Rappel R$/Kg', 'Cód.Açúcar', 'P.Açúcar', 'Cód.Xíc.', 'P.Xíc.', 'Inv.Kg', 'PLF',
+  ];
+  cols.forEach((h, i) => {
+    const c = ws.getCell(10, i + 1);
+    c.value = h;
+    c.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + RED } };
+    c.border = borderAll;
+    c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  });
+  ws.getRow(10).height = 28;
+
+  const toNum = (v) => {
+    const n = mc00Num(v);
+    return n ? n : (String(v ?? '').trim() === '' ? null : n);
+  };
+
+  (d.produtos || []).forEach((p, idx) => {
+    const r = 11 + idx;
+    const plf = mc00CalcPlf(p);
+    const vals = [
+      p.sapCode || '',
+      p.descricao || '',
+      toNum(p.media),
+      toNum(p.preco),
+      toNum(p.desc1),
+      toNum(p.desc2),
+      toNum(p.descFin),
+      toNum(p.rappelPct),
+      toNum(p.rappelRs),
+      p.codAcucar || '',
+      toNum(p.precoAcucar),
+      p.codXic || '',
+      toNum(p.precoXic),
+      toNum(p.invKg),
+      plf || null,
+    ];
+    const bg = idx % 2 === 0 ? 'FFFFFFFF' : 'FF' + GRAY;
+    vals.forEach((v, i) => {
+      const c = ws.getCell(r, i + 1);
+      c.value = v;
+      c.font = i === 14
+        ? { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF' + GREEN } }
+        : fontBase;
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+      c.border = borderAll;
+      c.alignment = {
+        vertical: 'middle',
+        horizontal: (i === 0 || i === 1 || i === 9 || i === 11) ? 'left' : 'right',
+      };
+      if ([2, 3, 8, 10, 12, 13, 14].includes(i) && typeof v === 'number') c.numFmt = '"R$"#,##0.00';
+      if ([4, 5, 6, 7].includes(i) && typeof v === 'number') c.numFmt = '0"%"';
+    });
+    ws.getRow(r).height = 18;
+  });
+
+  const footR = 11 + (d.produtos || []).length + 1;
+  ws.mergeCells(footR, 1, footR, 15);
+  const footLab = ws.getCell(footR, 1);
+  footLab.value = 'INFORMAÇÃO COMERCIAL';
+  footLab.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+  footLab.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + RED_DARK } };
+  footLab.alignment = { vertical: 'middle', horizontal: 'left' };
+
+  ws.mergeCells(footR + 1, 1, footR + 2, 15);
+  const footVal = ws.getCell(footR + 1, 1);
+  footVal.value = d.info || '';
+  footVal.font = fontBase;
+  footVal.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } };
+  footVal.border = borderAll;
+  footVal.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+  ws.getRow(footR + 1).height = 20;
+  ws.getRow(footR + 2).height = 20;
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const nome = (d.nome || d.cod || 'cliente').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 24);
+  const filename = `MC00_${nome}.xlsx`;
+  triggerBlobDownload(blob, filename);
+  return { blob, filename };
+}
+
+function mc00EmailEsc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function mc00ResumoProdutosEmailHtml(produtos) {
+  const rows = (produtos || []).filter(p => p && (p.sapCode || p.descricao));
+  if (!rows.length) {
+    return '<p style="color:#666">(sem produtos)</p>';
+  }
+  const td = 'border:1px solid #d1d5db;padding:6px 10px;font-family:Calibri,Arial,sans-serif;font-size:12px;';
+  const th = td + 'background:#c8102e;color:#ffffff;font-weight:700;';
+  const body = rows.map((p, i) => {
+    const bg = i % 2 ? '#f9fafb' : '#ffffff';
+    const cod = mc00EmailEsc(p.sapCode || '—');
+    const desc = mc00EmailEsc(p.descricao || '—');
+    const tab = 'R$&nbsp;' + mc00EmailEsc(mc00Fmt(mc00Num(p.preco)) || '0,00');
+    const d1 = mc00EmailEsc((String(p.desc1 ?? '').replace(/%/g, '').trim() || '0') + '%');
+    const fin = 'R$&nbsp;' + mc00EmailEsc(mc00Fmt(mc00CalcPlf(p)));
+    return `<tr style="background:${bg}">
+      <td style="${td}">${cod}</td>
+      <td style="${td}">${desc}</td>
+      <td style="${td}text-align:right;white-space:nowrap;">${tab}</td>
+      <td style="${td}text-align:right;white-space:nowrap;">${d1}</td>
+      <td style="${td}text-align:right;white-space:nowrap;font-weight:700;color:#166534;">${fin}</td>
+    </tr>`;
+  }).join('');
+  return `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8102e;min-width:560px;">
+  <thead><tr>
+    <th style="${th}text-align:left;">Cód.SAP</th>
+    <th style="${th}text-align:left;">Produto</th>
+    <th style="${th}text-align:right;">P.Tabela</th>
+    <th style="${th}text-align:right;">Desc.1</th>
+    <th style="${th}text-align:right;">P.Final</th>
+  </tr></thead>
+  <tbody>${body}</tbody>
+</table>`;
+}
+
+async function mc00AbrirEmail(d, excelBlob, excelFilename) {
+  const hora = new Date().getHours();
+  const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
+  const remetente = getUtilizadorAtual();
+  const tabela = mc00ResumoProdutosEmailHtml(d.produtos);
+  const html =
+`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
+<p>${mc00EmailEsc(saudacao)} Carlos,</p>
+<p>Peço o carregamento das condições especiais de fornecimento (MC00) em anexo no <strong>ZDAB</strong>
+para o cliente <strong>${mc00EmailEsc(d.nome || '')}</strong> (cód. ${mc00EmailEsc(d.cod || '')}).</p>
+<p style="margin:16px 0 8px;font-weight:700;">Resumo para validação:</p>
+${tabela}
+<p style="margin-top:18px;">Aguardo a vossa aprovação.</p>
+<p>Cumprimentos,<br>${mc00EmailEsc(remetente)}</p>
+</body></html>`;
+
+  await outlookAbrirRascunho({
+    to: 'carlos.castro@deltafoodsbrasil.com.br',
+    cc: typeof ccString === 'function' ? ccString([]) : 'filipe.neves@deltafoodsbrasil.com.br',
+    subject: `MC00 - Condições Especiais - ${d.nome || d.cod || 'Cliente'}`,
+    html,
+    attachments: excelBlob ? [{ blob: excelBlob, filename: excelFilename || 'MC00.xlsx' }] : [],
+    draftName: 'MC00_rascunho_Outlook.eml',
+    toastMsg: '📧 Outlook aberto com a tabela no corpo e Excel em anexo.',
+  });
 }
 
 // Preenche a ficha de cadastro a partir de um registo já existente (para alteração cadastral).
@@ -10338,10 +11620,14 @@ async function alteracaoCadastralExportar() {
   if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar ficha de alteração...</span>';
   const dados = prosCollectCadastroDados();
   try {
-    await prosGerarCadastroXlsx(dados);
+    const cadastro = await prosGerarCadastroXlsx(dados);
     toast('✅ Cadastro guardado e ficha exportada!');
     if (st) st.innerHTML = '<span style="color:#16a34a">Cadastro guardado · ficha exportada — email a abrir...</span>';
-    prosAbrirEmailCadastro(dados, { isCafe: false, propTexto: '' });
+    await prosAbrirEmailCadastro(dados, {
+      isCafe: false,
+      propTexto: '',
+      attachments: cadastro?.blob ? [{ blob: cadastro.blob, filename: cadastro.filename }] : [],
+    });
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
     toast('Erro: ' + e.message, 'error');
@@ -10413,14 +11699,18 @@ async function prosGanhoExportar() {
   const dados = prosCollectCadastroDados();
 
   try {
-    await prosGerarCadastroXlsx(dados);
+    const cadastro = await prosGerarCadastroXlsx(dados);
     toast('✅ Ficha de Cadastro exportada!');
 
     let propTexto = '';
+    const attachments = [];
+    if (cadastro?.blob) attachments.push({ blob: cadastro.blob, filename: cadastro.filename });
+
     if (isCafe) {
       try {
         await prosSleep(450);
-        await propGerarSimulador(dados.nome);
+        const proposta = await propGerarSimulador(dados.nome);
+        if (proposta?.blob) attachments.push({ blob: proposta.blob, filename: proposta.filename });
         toast('✅ Proposta de Negócio exportada!');
       } catch (e) {
         const msgProp = 'Erro na proposta de negócio: ' + e.message;
@@ -10433,7 +11723,7 @@ async function prosGanhoExportar() {
 
     if (st) st.innerHTML = '<span style="color:#16a34a">Documentos exportados — email a abrir...</span>';
 
-    prosAbrirEmailCadastro(dados, { isCafe, propTexto });
+    await prosAbrirEmailCadastro(dados, { isCafe, propTexto, attachments });
 
   } catch(e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
@@ -10498,7 +11788,11 @@ async function gerarCadastroXlsxLocal(d) {
   if (d.sector) set('AA23', d.sector);
 
   const nome = (d.nome || 'cadastro').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
-  window.XLSX.writeFile(wb, `Cadastro_${nome}.xlsx`, { bookType: 'xlsx', cellStyles: true, type: 'binary' });
+  const filename = `Cadastro_${nome}.xlsx`;
+  const out = window.XLSX.write(wb, { bookType: 'xlsx', cellStyles: true, type: 'array' });
+  const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  triggerBlobDownload(blob, filename);
+  return { blob, filename };
 }
 
 async function prosEliminar(id) {
@@ -11320,7 +12614,7 @@ async function ctGerar() {
     a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
     showToast('✅ Contrato gerado: ' + filename, 'success');
-    setTimeout(() => ctAbrirEmail(filename, data), 800);
+    setTimeout(() => ctAbrirEmail(filename, data, out), 800);
 
     // ─── Guardar contrato automaticamente no registo do cliente ───
     ctGuardarContratoSuapbase(data).catch(e => console.warn('Erro ao guardar contrato:', e));
@@ -11516,19 +12810,47 @@ async function ctGuardarContratoSuapbase(data) {
   }
 }
 
-function ctAbrirEmail(filename, data) {
-  const to = 'daniela.kucinski@deltafoodsbrasil.com.br';
-  const cc = ccString([]);
-  const subject = encodeURIComponent('Contrato de Comodato Delta Q - ' + data.COMOD_EMPRESA + ' - Para Assinatura');
-  const clientEmail = document.getElementById('ct_email').value;
-  const b1 = 'Daniela,%0A%0A';
-  const b2 = 'Segue em anexo o Contrato de Comodato Delta Q para o cliente ' + data.COMOD_EMPRESA + ' (' + data.COMOD_CNPJ + '),%0A';
-  const b3 = 'para assinatura digital por ' + data.ASSINA_NOME + ' (' + clientEmail + ').%0A%0A';
-  const b4 = 'Por favor tratar o envio para assinatura.%0A%0A';
-  const b5 = 'Com os melhores cumprimentos,%0ADelta Foods Brasil';
-  const mailto = 'mailto:' + to + '?cc=' + cc + '&subject=' + subject + '&body=' + b1+b2+b3+b4+b5;
-  window.open(mailto);
-  showToast('Email aberto - anexa ' + filename + ' e envia', 'info');
+async function ctAbrirEmail(filename, data, docBlob) {
+  const clientEmail = document.getElementById('ct_email')?.value || '';
+  const td = 'border:1px solid #d1d5db;padding:6px 10px;font-family:Calibri,Arial,sans-serif;font-size:12px;';
+  const th = td + 'background:#c8102e;color:#ffffff;font-weight:700;';
+  const rows = [
+    ['Cliente', data.COMOD_EMPRESA || '—'],
+    ['CNPJ', data.COMOD_CNPJ || '—'],
+    ['N.º Contrato', data.NUM_CONTRATO || '—'],
+    ['Assinante', data.ASSINA_NOME || '—'],
+    ['Email assinatura', clientEmail || '—'],
+  ];
+  const body = rows.map(([k, v], i) => {
+    const bg = i % 2 ? '#f9fafb' : '#ffffff';
+    return `<tr style="background:${bg}"><td style="${td}font-weight:600;width:150px;">${outlookEmailEsc(k)}</td><td style="${td}">${outlookEmailEsc(v)}</td></tr>`;
+  }).join('');
+  const html =
+`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
+<p>Daniela,</p>
+<p>Segue em anexo o <strong>Contrato de Comodato Delta Q</strong> para o cliente
+<strong>${outlookEmailEsc(data.COMOD_EMPRESA || '')}</strong> (${outlookEmailEsc(data.COMOD_CNPJ || '')}),
+para assinatura digital por <strong>${outlookEmailEsc(data.ASSINA_NOME || '')}</strong>
+(${outlookEmailEsc(clientEmail)}).</p>
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8102e;min-width:480px;margin:12px 0;">
+  <thead><tr><th style="${th}text-align:left;" colspan="2">Resumo</th></tr></thead>
+  <tbody>${body}</tbody>
+</table>
+<p>Por favor tratar o envio para assinatura.</p>
+<p>Com os melhores cumprimentos,<br>Delta Foods Brasil</p>
+</body></html>`;
+
+  await outlookAbrirRascunho({
+    to: 'daniela.kucinski@deltafoodsbrasil.com.br',
+    cc: ccString([]),
+    subject: 'Contrato de Comodato Delta Q - ' + (data.COMOD_EMPRESA || 'Cliente') + ' - Para Assinatura',
+    html,
+    attachments: docBlob ? [{ blob: docBlob, filename: filename || 'Contrato.docx' }] : [],
+    draftName: 'Contrato_rascunho_Outlook.eml',
+    toastMsg: '📧 Outlook aberto com o contrato em anexo.',
+  });
 }
 
 function loadCtScript(src) {
