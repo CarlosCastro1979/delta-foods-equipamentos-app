@@ -5592,8 +5592,8 @@ async function carregarListaSAP(event) {
   if (iNPess < 0) iNPess = findH(/pess/); // fallback genérico (export SAP clássico)
   // Evitar confundir "ID fiscal" com outras colunas; aceitar CNPJ/CPF.
   const iCNPJ    = findH(/id\s*fiscal|cnpj|cpf|fiscal\s*1|^nif$/);
-  // "Canal", "Canal de distribuição", "Canal Distrib."
-  const iCanal   = findH(/^canal\b|canal\s*de\s*distrib|canal\s*distrib/);
+  // "Canal", "Canal de distribuição", "Canal Distrib.", SAP BR: "CDst" (Canal de distribuição)
+  const iCanal   = findH(/^cdst$|^canal\b|canal\s*de\s*distrib|canal\s*distrib/);
 
   // Morada / contacto — cabeçalhos típicos do export SAP BR
   const iRua    = findH(/^(rua|logradouro)$|enderec|rua\s*\/|street/);
@@ -6397,18 +6397,35 @@ function showAnalise(sub) {
   if (sub === 'fora-sp') initForaSP();
 }
 
-function renderClientesContencioso() {
+function getDividaCliente(cod) {
+  if (!cod) return null;
+  const codStr = String(cod).trim();
+  return scDividasData[codStr] || scDividasData[normalizaCodSC(codStr)] || null;
+}
+
+async function renderClientesContencioso() {
   const el = document.getElementById('cc-content');
   const info = document.getElementById('cc-info');
   if (!el) return;
+  if (!scDividasLoaded) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:40px 0;text-align:center;">A carregar dívidas...</div>';
+    await scLoadDividasFromSupabase();
+  }
   const canalFilt = document.getElementById('cc-canal')?.value || '';
   const lista = getListaContenciosoActiva(canalFilt)
     .slice()
-    .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+    .map(c => {
+      const div = getDividaCliente(c.cod);
+      return { ...c, vencido: div ? (div.vencido || 0) : 0, _div: div };
+    })
+    .sort((a, b) => (b.vencido || 0) - (a.vencido || 0)
+      || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
   window._clientesContenciosoView = lista;
+  const totalDivida = lista.reduce((s, c) => s + (c.vencido || 0), 0);
   if (info) {
     info.innerHTML = lista.length
       ? `<span style="color:#7f1d1d;font-weight:600;">${lista.length} cliente${lista.length > 1 ? 's' : ''}</span> com vendedor <b>${CONTENCIOSO_VENDEDOR}</b> nos canais 03/04 — <b>não contam</b> nos registos activos.`
+        + (totalDivida > 0 ? ` · Dívida total: <b style="color:#7f1d1d;">${formatEur(totalDivida)}</b>` : '')
       : 'Nenhum cliente Contencioso (canais 03/04) na última carga SAP. Carrega a Lista SAP para actualizar.';
   }
   if (!lista.length) {
@@ -6422,13 +6439,13 @@ function renderClientesContencioso() {
     <td style="padding:8px 10px;font-size:12px;">${escHtml(c.cep || '—')}</td>
     <td style="padding:8px 10px;font-size:12px;">${escHtml(c.cidade || '—')}</td>
     <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(c.cnpj || '—')}</td>
-    <td style="padding:8px 10px;font-size:11px;color:#7f1d1d;font-weight:700;">${CONTENCIOSO_VENDEDOR}</td>
+    <td style="padding:8px 10px;font-size:12px;font-weight:700;color:${c.vencido > 0 ? '#7f1d1d' : 'var(--muted)'};text-align:right;white-space:nowrap;" data-sort="${c.vencido || 0}">${c.vencido > 0 ? formatEur(c.vencido) : '—'}</td>
   </tr>`).join('');
   el.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;">
     <div class="table-wrap">
       <table class="data-table" style="width:100%;">
         <thead><tr style="background:#fee2e2;">
-          <th>Cód.</th><th>Nome</th><th>Canal</th><th>CEP</th><th>Cidade</th><th>CNPJ</th><th>Vendedor SAP</th>
+          <th>Cód.</th><th>Nome</th><th>Canal</th><th>CEP</th><th>Cidade</th><th>CNPJ</th><th style="text-align:right;">Valor dívida</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -6441,10 +6458,15 @@ function exportClientesContenciosoExcel() {
   const lista = window._clientesContenciosoView || getListaContenciosoActiva(document.getElementById('cc-canal')?.value || '');
   if (!lista.length) { toast('Nada para exportar.', 'error'); return; }
   if (!window.XLSX) { toast('Biblioteca Excel não carregada.', 'error'); return; }
-  const rows = lista.map(c => ({
-    Codigo: c.cod, Nome: c.nome, Canal: c.canal, CEP: c.cep, Cidade: c.cidade,
-    CNPJ: c.cnpj, Email: c.email, Tel1: c.tel1, Vendedor_SAP: CONTENCIOSO_VENDEDOR,
-  }));
+  const rows = lista.map(c => {
+    const div = c._div || getDividaCliente(c.cod);
+    const vencido = c.vencido != null ? c.vencido : (div ? div.vencido : 0);
+    return {
+      Codigo: c.cod, Nome: c.nome, Canal: c.canal, CEP: c.cep, Cidade: c.cidade,
+      CNPJ: c.cnpj, Email: c.email, Tel1: c.tel1,
+      Valor_Divida: vencido || 0,
+    };
+  });
   const ws = window.XLSX.utils.json_to_sheet(rows);
   const wb = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(wb, ws, 'Contencioso');
