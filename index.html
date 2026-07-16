@@ -2122,6 +2122,7 @@ var _unused_placeholder = 1;
         </select>
 
         <button class="btn btn-primary btn-sm" onclick="prosOpenModal()" style="min-height:36px;">+ Novo Lead</button>
+        <button class="btn btn-secondary btn-sm" onclick="prosOpenAlteracaoCnpj()" style="min-height:36px;border-color:#c8102e;color:#c8102e;">Cliente Alteração CNPJ</button>
         <button class="btn btn-secondary btn-sm" onclick="exportProsExcel()" style="min-height:36px;">⬇ Excel</button>
       </div>
     </div>
@@ -2272,6 +2273,7 @@ var _unused_placeholder = 1;
             <select id="pg-motivo" class="form-input" style="width:100%;font-size:13px;">
               <option>Abertura de Cliente</option>
               <option>Alteração de Cliente</option>
+              <option>Alteração de CNPJ</option>
               <option>Cancelamento de Cliente</option>
             </select>
           </div>
@@ -2462,6 +2464,10 @@ var _unused_placeholder = 1;
         </div>
       </div>
       </div><!-- /pg-cadastro-section -->
+      <div id="pros-cnpj-export-wrap" style="margin-top:16px;display:none;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Cliente existente com novo contribuinte — preenche a ficha e envia para aprovação.</div>
+        <button type="button" class="btn" onclick="prosExportarAlteracaoCnpj()" style="width:100%;background:#16a34a;color:#fff;border-color:#16a34a;padding:10px 16px;">✉ Enviar email e exportar Excel</button>
+      </div>
       </div><!-- /pros-tab-cadastro -->
 
       <!-- TAB: Simulação de Negócio -->
@@ -9795,6 +9801,7 @@ async function prosCloseModal() {
   prosTeardownFieldSync();
   prosGanhoLeadId = null;
   document.getElementById('pros-modal-overlay').style.display = 'none';
+  if (_modoAlteracaoCnpj) resetModoAlteracaoUI();
 }
 
 async function prosSave(opts = {}) {
@@ -10260,8 +10267,13 @@ function prosCadastroApplyToForm(cad, p) {
 }
 
 function prosGanhoEmpresaChange() {
-  const empresa = document.getElementById('pg-empresa').value;
-  const gn = empresa.startsWith('GN52') ? 'GN52' : 'GN53';
+  const empresaEl = document.getElementById('pg-empresa');
+  // Sem empresa seleccionada → DFB (GN52), nunca Q-Brasil por omissão
+  if (empresaEl && !String(empresaEl.value || '').trim()) {
+    empresaEl.value = 'GN52 - Delta Foods Brasil';
+  }
+  const empresa = empresaEl?.value || 'GN52 - Delta Foods Brasil';
+  const gn = empresa.startsWith('GN53') ? 'GN53' : 'GN52';
   document.getElementById('pg-dept').textContent   = gn === 'GN52' ? 'DFSP - Delta Foods (São Paulo)' : 'QBSP - Q-Brasil (São Paulo)';
   document.getElementById('pg-org').textContent    = gn === 'GN52' ? 'DF01' : 'QB01';
   document.getElementById('pg-escrit').textContent = gn === 'GN52' ? 'DFSP' : 'QBSP';
@@ -10744,19 +10756,22 @@ async function prosAbrirEmailCadastro(dados, opts = {}) {
   const hora = new Date().getHours();
   const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
   const motivo = dados.motivo || 'Abertura de Cliente';
+  const isAltCnpj = /altera[cç][aã]o\s+de\s+cnpj/i.test(motivo);
   const anexosTxt = isCafe ? 'ficha de cadastro e a proposta de negócio' : 'ficha de cadastro';
   const remetente = getUtilizadorAtual();
   const remetenteEmail = getEmailUtilizador(remetente);
   const propHtml = propTexto
     ? `<p style="margin:16px 0 8px;font-weight:700;">Proposta de negócio:</p><pre style="font-family:Calibri,Arial,sans-serif;font-size:12px;background:#f9fafb;border:1px solid #e5e7eb;padding:12px;white-space:pre-wrap;">${outlookEmailEsc(String(propTexto).trim())}</pre>`
     : '';
+  const intro = isAltCnpj
+    ? `Segue em anexo a <strong>${outlookEmailEsc(anexosTxt)}</strong> do cliente <strong>${outlookEmailEsc(dados.nome || '')}</strong> para <strong>alteração de CNPJ</strong>.`
+    : `Segue em anexo a <strong>${outlookEmailEsc(anexosTxt)}</strong> do cliente <strong>${outlookEmailEsc(dados.nome || '')}</strong> para aprovação.`;
   const html =
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
 <p>${outlookEmailEsc(saudacao)},</p>
-<p>Segue em anexo a <strong>${outlookEmailEsc(anexosTxt)}</strong> do cliente
-<strong>${outlookEmailEsc(dados.nome || '')}</strong> para aprovação.</p>
+<p>${intro}</p>
 ${prosCadastroResumoEmailHtml(dados)}
 ${propHtml}
 <p style="margin-top:18px;">Aguardo aprovação.</p>
@@ -10773,6 +10788,8 @@ ${propHtml}
     toastMsg: '📧 Outlook aberto com cadastro em anexo.',
   });
 }
+
+let _modoAlteracaoCnpj = false;
 
 // ─── ALTERAÇÃO DE DADOS CADASTRAIS (a partir de um cliente já registado) ──────
 // Reutiliza a mesma Ficha de Cadastro da Prospeção, mas sem lead associado:
@@ -10855,16 +10872,127 @@ function garantirFichaCadastralEmCasa() {
 // Restaura a UI normal da Prospeção e devolve a ficha de cadastro ao seu lugar original.
 function resetModoAlteracaoUI() {
   _modoAlteracaoRegisto = null;
+  _modoAlteracaoCnpj = false;
   garantirFichaCadastralEmCasa();
+  const tabBar = document.getElementById('pros-tab-bar');
+  if (tabBar) tabBar.style.display = '';
   const tabLead = document.getElementById('pros-tab-btn-lead');
   if (tabLead) tabLead.style.display = '';
+  const tabCad = document.getElementById('pros-tab-btn-cadastro');
+  if (tabCad) tabCad.style.display = '';
   const tabSim = document.getElementById('pros-tab-btn-simulacao');
   if (tabSim) tabSim.style.display = '';
   const cafeHdr = document.getElementById('pros-modal-header-cafe');
   if (cafeHdr) cafeHdr.style.display = '';
   const hint = document.getElementById('pros-autosave-hint');
-  if (hint) hint.style.display = '';
+  if (hint) {
+    hint.style.display = '';
+    hint.textContent = 'Alterações guardadas automaticamente';
+  }
+  const cnpjWrap = document.getElementById('pros-cnpj-export-wrap');
+  if (cnpjWrap) cnpjWrap.style.display = 'none';
+  const motivo = document.getElementById('pg-motivo');
+  if (motivo) motivo.disabled = false;
   prosSetGanhoAutoSaveStatus();
+}
+
+/** Abre só a ficha de cadastro para cliente existente com novo CNPJ. */
+function prosOpenAlteracaoCnpj() {
+  resetModoAlteracaoUI();
+  _modoAlteracaoCnpj = true;
+  prosCadastroJsonUnavailable = true;
+  prosEditId = null;
+  prosGanhoLeadId = null;
+  teardownProsAutoSave();
+  teardownProsGanhoAutoSave();
+  prosTeardownFieldSync();
+
+  document.getElementById('pros-modal-title').textContent = 'Cliente Alteração CNPJ';
+  const hint = document.getElementById('pros-autosave-hint');
+  if (hint) {
+    hint.style.display = '';
+    hint.textContent = 'Preenche a ficha do novo contribuinte e envia por email';
+  }
+  const cafeHdr = document.getElementById('pros-modal-header-cafe');
+  if (cafeHdr) cafeHdr.style.display = 'none';
+  const tabBar = document.getElementById('pros-tab-bar');
+  if (tabBar) tabBar.style.display = 'none';
+  const tabLead = document.getElementById('pros-tab-btn-lead');
+  if (tabLead) tabLead.style.display = 'none';
+  const tabSim = document.getElementById('pros-tab-btn-simulacao');
+  if (tabSim) tabSim.style.display = 'none';
+
+  prosCadastroApplyToForm({});
+  const motivo = document.getElementById('pg-motivo');
+  if (motivo) {
+    motivo.value = 'Alteração de CNPJ';
+    motivo.disabled = true;
+  }
+  // Sempre DFB São Paulo (GN52) — não Q-Brasil
+  const empresa = document.getElementById('pg-empresa');
+  if (empresa) empresa.value = 'GN52 - Delta Foods Brasil';
+  const grupo = document.getElementById('pg-grupo');
+  if (grupo) grupo.value = 'BR01 - Clientes PJ';
+  document.getElementById('pg-cidade').value = 'SÃO PAULO';
+  prosGanhoEmpresaChange();
+  prosGanhoRegiaoChange();
+
+  const st = document.getElementById('pros-modal-status');
+  if (st) st.textContent = '';
+  const cnpjWrap = document.getElementById('pros-cnpj-export-wrap');
+  if (cnpjWrap) cnpjWrap.style.display = 'block';
+
+  prosSwitchTab('cadastro');
+  document.getElementById('pros-modal-overlay').style.display = 'block';
+  setTimeout(() => document.getElementById('pg-nome')?.focus(), 100);
+}
+
+async function prosExportarAlteracaoCnpj() {
+  const st = document.getElementById('pros-modal-status');
+  const motivoEl = document.getElementById('pg-motivo');
+  if (motivoEl) {
+    motivoEl.disabled = false;
+    motivoEl.value = 'Alteração de CNPJ';
+  }
+  const data = prosCadastroCollectFromForm();
+  data.motivo = 'Alteração de CNPJ';
+  const emFalta = prosValidarCadastroObrigatorio(data);
+  if (emFalta.length) {
+    const idMap = {
+      'Nome / Razão Social': 'pg-nome', 'CNPJ / CPF': 'pg-cnpj', 'CNPJ / CPF (14 dígitos)': 'pg-cnpj',
+      'Nome Fantasia': 'pg-fantasia', 'Email': 'pg-email', 'Tel. 1': 'pg-tel1', 'Rua': 'pg-rua',
+      'Nro.': 'pg-nro', 'Bairro': 'pg-bairro', 'CEP': 'pg-cep', 'Cidade': 'pg-cidade',
+      'Canal Distribuição': 'pg-canal', 'Região (Estado)': 'pg-regiao', 'Contrib. ICMS': 'pg-icms',
+      'Cond. Pagamento': 'pg-pagto', 'Rota': 'pg-rota', 'Vendedor': 'pg-vendedor',
+    };
+    const primeiro = document.getElementById(idMap[emFalta[0]] || 'pg-nome');
+    if (primeiro) { primeiro.focus(); primeiro.style.borderColor = 'var(--danger)'; }
+    const msg = `Preenche: ${emFalta.join(', ')}.`;
+    if (st) st.innerHTML = `<span style="color:var(--danger)">${msg}</span>`;
+    toast(msg, 'error');
+    if (motivoEl) motivoEl.disabled = true;
+    return;
+  }
+  PROS_CADASTRO_AUTOSAVE_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.style.borderColor = ''; });
+  if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar ficha e abrir Outlook...</span>';
+  const dados = prosCollectCadastroDados();
+  dados.motivo = 'Alteração de CNPJ';
+  try {
+    const cadastro = await prosGerarCadastroXlsx(dados, { skipDownload: true });
+    const ok = await prosAbrirEmailCadastro(dados, {
+      isCafe: false,
+      propTexto: '',
+      attachments: cadastro?.blob ? [{ blob: cadastro.blob, filename: cadastro.filename }] : [],
+    });
+    if (ok !== false && st) {
+      st.innerHTML = '<span style="color:#16a34a">Outlook aberto com alteração de CNPJ em anexo.</span>';
+    }
+  } catch (e) {
+    if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
+    toast('Erro: ' + e.message, 'error');
+  } finally {
+    if (motivoEl) motivoEl.disabled = true;
+  }
 }
 
 let _editCadPreenchido = false;
