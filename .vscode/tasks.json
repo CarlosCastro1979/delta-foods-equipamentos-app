@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Dev: Serve",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$env:PORT='8088'; & '${workspaceFolder}/serve.ps1'"
+      ],
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "close": false
+      }
+    },
+    {
+      "label": "Dev: Open Preview",
+      "dependsOn": ["Dev: Serve"],
+      "type": "shell",
+      "command": "Start-Process",
+      "args": [
+        "vscode://vscode.simple-browser/show?url=http://localhost:8088/delta-foods-equipamentos-app/"
+      ],
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}

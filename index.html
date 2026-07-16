@@ -367,6 +367,7 @@
   #toast.show { transform: translateY(0); opacity: 1; }
   #toast.success { border-left: 4px solid var(--accent2); }
   #toast.error { border-left: 4px solid var(--danger); }
+  #toast.warn { border-left: 4px solid #d97706; }
 
   /* TABLE */
   .table-toolbar, .pending-toolbar {
@@ -3104,6 +3105,28 @@ function deduplicarListaSAPPorCod(lista) {
   return Array.from(map.values());
 }
 
+// Se o Excel novo vier sem colunas de morada/contacto, não apagar o que já estava na lista.
+const SAP_CAMPOS_RICOS = ['cnpj', 'canal', 'rua', 'nro', 'bairro', 'supl', 'cidade', 'uf', 'email', 'tel1', 'tel2', 'ie'];
+function preservarCamposRicosListaSAP(novaLista, listaAnterior) {
+  const prev = {};
+  (listaAnterior || []).forEach(c => { prev[listaClienteKey(c)] = c; });
+  let kept = 0;
+  const out = (novaLista || []).map(c => {
+    const old = prev[listaClienteKey(c)];
+    if (!old) return c;
+    const merged = { ...c };
+    let hit = false;
+    for (const k of SAP_CAMPOS_RICOS) {
+      const nv = String(merged[k] == null ? '' : merged[k]).trim();
+      const ov = String(old[k] == null ? '' : old[k]).trim();
+      if (!nv && ov) { merged[k] = old[k]; hit = true; }
+    }
+    if (hit) kept++;
+    return merged;
+  });
+  return { lista: out, kept };
+}
+
 // Supabase devolve max 1000 linhas por pedido — paginar para não perder registos
 async function fetchRegistosPaginado(select = '*', order = 'criado_em.desc') {
   const pageSize = 1000;
@@ -5422,38 +5445,63 @@ async function carregarListaSAP(event) {
 
   const buf = await file.arrayBuffer();
   const wb  = window.XLSX.read(buf, {type:'array'});
-  const ws  = wb.Sheets[wb.SheetNames[0]];
-  const rows = window.XLSX.utils.sheet_to_json(ws, {header:1});
-  const headers = (rows[0]||[]).map(h => String(h||'').trim());
+  // Preferir a folha que tem coluna Cliente (nem sempre é a 1.ª).
+  let rows = null;
+  let headers = [];
+  for (const sn of wb.SheetNames) {
+    const ws = wb.Sheets[sn];
+    const candidate = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const hdr = (candidate[0] || []).map(h => String(h || '').trim());
+    if (hdr.some(h => /^cliente$/i.test(h)) && hdr.some(h => /nome/i.test(h))) {
+      rows = candidate; headers = hdr; break;
+    }
+  }
+  if (!rows) {
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    headers = (rows[0] || []).map(h => String(h || '').trim());
+  }
 
-  const iCliente = headers.indexOf('Cliente');
-  const iNome    = headers.findIndex(h => h.includes('Nome'));
-  const iCEP     = headers.indexOf('CEP');
-  const iNPess   = headers.findIndex(h => h.toLowerCase().includes('pess'));
-  const iCNPJ    = headers.findIndex(h => h.includes('ID fiscal') || h.includes('fiscal'));
-  const iCanal   = headers.findIndex(h => /^canal$/i.test(String(h || '').trim()));
-
-  // Colunas extra de morada/contacto — deteção tolerante a variações de nome de cabeçalho.
   const _hn = headers.map(h => String(h || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim());
-  const findH   = re => _hn.findIndex(h => re.test(h));
+  const findH = (re, excludeIdx = -1) => _hn.findIndex((h, idx) => idx !== excludeIdx && re.test(h));
   const findAll = re => _hn.map((h, idx) => re.test(h) ? idx : -1).filter(i => i >= 0);
-  const iRua    = findH(/(^|\b)(rua|logradouro|endereco)(\b|$)/);
-  const iNroCol = findH(/^(nro|numero|num)\.?$/);
-  const iBairro = findH(/bairro/);
-  const iCompl  = findH(/complement/);
-  const iCidade = findH(/(^cid|cidade|localidade|munic|^local$)/);
-  const iUF     = findH(/(^uf$|^regiao$|^estado$)/);
-  const iEmail  = findH(/mail/);
-  const _telIdx = findAll(/(tel|fone|celular)/);
+
+  const iCliente = findH(/^cliente$/);
+  const iNome    = findH(/^nome\b|nome\s*(1|do\s*cliente)?$/);
+  const iNomeFb  = iNome >= 0 ? iNome : findH(/nome/);
+  const iNomeFinal = iNome >= 0 ? iNome : iNomeFb;
+  const iCEP     = findH(/^cep$|codigo\s*postal|c[oó]digo\s*postal/);
+  let iNPess = findH(/n[ºo°]?\s*pess|pess\.?\s*resp|pessoa\s*resp|responsavel|^npess/);
+  if (iNPess < 0) iNPess = findH(/pess/); // fallback genérico (export SAP clássico)
+  // Evitar confundir "ID fiscal" com outras colunas; aceitar CNPJ/CPF.
+  const iCNPJ    = findH(/id\s*fiscal|cnpj|cpf|fiscal\s*1|^nif$/);
+  // "Canal", "Canal de distribuição", "Canal Distrib."
+  const iCanal   = findH(/^canal\b|canal\s*de\s*distrib|canal\s*distrib/);
+
+  // Morada / contacto — cabeçalhos típicos do export SAP BR
+  const iRua    = findH(/^(rua|logradouro)$|enderec|rua\s*\/|street/);
+  const iNroCol = findH(/^(nro|n[ºo°]|numero|n[uú]mero|num)\b|n[uú]mero\s*(da\s*)?(rua|porta)/);
+  const iBairro = findH(/bairro|distrito/);
+  const iCompl  = findH(/complement|supl/);
+  const iCidade = findH(/^(cid|cidade|localidade|municipio|local)\b/);
+  const iUF     = findH(/^(uf|regiao|estado|rg)\b/);
+  const iEmail  = findH(/e-?mail|mail|correo/);
+  const _telIdx = findAll(/tel|fone|celular|telefone|phone/);
   const iTel1   = _telIdx[0] != null ? _telIdx[0] : -1;
   const iTel2   = _telIdx[1] != null ? _telIdx[1] : -1;
-  const iIE     = findH(/(inscr.*estad|^ie$|insc\.?\s*est)/);
-  const getCell = (row, i) => i >= 0 ? String(row[i] || '').trim() : '';
+  const iIE     = findH(/inscr.*estad|^ie$|insc\.?\s*est|i\.?\s*e\.?$/);
+  const getCell = (row, i) => i >= 0 ? String(row[i] ?? '').trim() : '';
 
-  if (iCliente === -1 || iNome === -1) {
+  if (iCliente === -1 || iNomeFinal === -1) {
     toast('Colunas "Cliente" e "Nome" não encontradas. Verifica o ficheiro.', 'error');
     return;
   }
+
+  // Diagnóstico das colunas (aparece no ecrã de confirmação)
+  const colDiag = [
+    ['CNPJ/Fiscal', iCNPJ], ['Canal', iCanal], ['Rua', iRua], ['Nº', iNroCol],
+    ['Bairro', iBairro], ['Cidade', iCidade], ['Email', iEmail], ['Tel', iTel1], ['IE', iIE],
+  ];
 
   const NPESS_VENDEDOR = getVendedoresMap(); // apenas activos (não 999)
   let novaLista    = [];
@@ -5464,9 +5512,9 @@ async function carregarListaSAP(event) {
     const row = rows[i];
     if (!row || !row[iCliente]) continue;
     const cod   = formatSapCod(row[iCliente]);
-    const nome  = String(row[iNome]||'').trim().toUpperCase();
+    const nome  = String(row[iNomeFinal]||'').trim().toUpperCase();
     const cep   = iCEP  >= 0 ? String(row[iCEP] ||'').trim() : '';
-    const npess = iNPess >= 0 ? parseInt(row[iNPess]) : 0;
+    const npess = iNPess >= 0 ? parseInt(row[iNPess], 10) : 0;
     if (!cod || !nome) continue;
 
     if (String(npess).endsWith('999')) {
@@ -5523,12 +5571,28 @@ async function carregarListaSAP(event) {
   // → precisam de revisão (serão assinalados em Por Registar)
   // Calculado depois da confirmação em loadPendentes
 
-  _sapImportBuffer = { novaLista, codsAnulados, codsContencioso, fileName: file.name };
+  _sapImportBuffer = { novaLista, codsAnulados, codsContencioso, fileName: file.name, colDiag };
+
+  const nComRua = novaLista.filter(c => c.rua).length;
+  const nComCnpj = novaLista.filter(c => c.cnpj).length;
+  const nComEmail = novaLista.filter(c => c.email).length;
+  const nComTel = novaLista.filter(c => c.tel1).length;
+  const nComCanal = novaLista.filter(c => c.canal).length;
+  const colsOk = colDiag.filter(([, i]) => i >= 0).map(([n]) => n);
+  const colsMiss = colDiag.filter(([, i]) => i < 0).map(([n]) => n);
 
   let statusHtml = `<strong>${novaLista.length}</strong> clientes activos`;
   if (adicionados) statusHtml += ` &nbsp;·&nbsp; <span style="color:#2e7d32">+${adicionados} novos</span>`;
   if (removidos) statusHtml += ` &nbsp;·&nbsp; <span style="color:#c62828">-${removidos} removidos</span>`;
   if (codsContencioso.length) statusHtml += ` &nbsp;·&nbsp; <span style="color:#7f1d1d">${codsContencioso.length} em Contencioso (*13)</span>`;
+  statusHtml += `<br><span style="color:${nComRua && nComCnpj ? '#166534' : '#b45309'}">Dados ricos no ficheiro: `
+    + `morada ${nComRua}/${novaLista.length} · CNPJ ${nComCnpj} · email ${nComEmail} · tel ${nComTel} · canal ${nComCanal}</span>`;
+  statusHtml += `<br><span style="color:var(--muted);font-size:12px">Colunas OK: ${colsOk.join(', ') || '—'}`
+    + (colsMiss.length ? ` · <b style="color:#b45309">não encontradas: ${colsMiss.join(', ')}</b>` : '')
+    + `</span>`;
+  if (!nComRua && !nComCnpj && !nComEmail) {
+    statusHtml += `<br><span style="color:#b91c1c;font-weight:600">⚠ Este Excel não tem morada/CNPJ/email — o cadastro automático fica incompleto. Usa o export SAP com endereço e contactos.</span>`;
+  }
   if (codsAnulados.length) {
     statusHtml += `<br><span style="color:var(--muted)">${codsAnulados.length} anulado(s) no ficheiro SAP (vendedor 999)</span>`;
     statusHtml += `<br><span id="sap-anulados-registo" style="color:#c62828">A verificar quantos têm registo na app...</span>`;
@@ -5560,7 +5624,8 @@ async function carregarListaSAP(event) {
 
 // Aplica a um cadastro guardado os campos que vêm do SAP (SAP ganha nos seus campos).
 // Mantém intactos os campos que o SAP não fornece (preenchidos à mão). Devolve {cad, changed, campos}.
-function mesclarSapNoCadastro(cadOrig, sap) {
+function mesclarSapNoCadastro(cadOrig, sap, opts) {
+  const onlyEmpty = !!(opts && opts.onlyEmpty);
   const cad = { ...(cadOrig || {}) };
   const campos = [];
   const set = (k, v, label) => {
@@ -5568,6 +5633,7 @@ function mesclarSapNoCadastro(cadOrig, sap) {
     const nv = String(v).trim();
     if (nv === '') return;
     const atual = String(cad[k] == null ? '' : cad[k]).trim();
+    if (onlyEmpty && atual !== '') return;
     if (atual !== nv) { cad[k] = nv; campos.push(label || k); }
   };
   set('nome', sap.nome, 'Nome');
@@ -5617,7 +5683,11 @@ async function reconciliarCadastrosComSAP(novaLista) {
 async function confirmarCargaSAP() {
   if (!_sapImportBuffer) return;
   const { codsAnulados, fileName, codsContencioso = [] } = _sapImportBuffer;
-  const novaLista = deduplicarListaSAPPorCod(_sapImportBuffer.novaLista);
+  let novaLista = deduplicarListaSAPPorCod(_sapImportBuffer.novaLista);
+  // Evita “voltar atrás”: Excel sem morada/email não deve apagar dados ricos já publicados.
+  const listaAntes = getListaClientesActiva();
+  const preservados = preservarCamposRicosListaSAP(novaLista, listaAntes);
+  novaLista = preservados.lista;
 
   document.getElementById('sap-confirm-btn').disabled = true;
   document.getElementById('sap-confirm-btn').textContent = 'A processar...';
@@ -5632,7 +5702,8 @@ async function confirmarCargaSAP() {
     data: new Date().toISOString(), ficheiro: fileName, total: novaLista.length,
     anulados: codsAnulados.length,
     adicionados: _sapImportBuffer._adicionados || 0,
-    removidos: _sapImportBuffer._removidos || 0
+    removidos: _sapImportBuffer._removidos || 0,
+    ricosPreservados: preservados.kept || 0
   }));
   // Guardar códigos anulados com registo (lista curta) para o Por Registar os excluir da revisão
   const codsParaApagar = _sapImportBuffer.codsParaApagar
@@ -5687,9 +5758,12 @@ async function confirmarCargaSAP() {
   // 4b. Reconciliar cadastros já guardados com o SAP (SAP ganha nos campos que fornece)
   const nCad = await reconciliarCadastrosComSAP(novaLista);
   if (nCad) clearRegistosCache();
+  // Próxima abertura de "Dados Cadastrais" volta a preencher a partir da lista nova.
+  _editCadPreenchido = false;
 
   // 5. Resultado
   let msg = `✅ Lista actualizada com ${novaLista.length} clientes.`;
+  if (preservados.kept) msg += ` ${preservados.kept} cliente(s) mantiveram morada/contacto da lista anterior.`;
   if (apagados) msg += ` ${apagados} registo(s) anulado(s) apagado(s).`;
   if (atualizados) msg += ` ${atualizados} registo(s) manual(ais) validado(s) pelo SAP.`;
   if (nCad) msg += ` ${nCad} cadastro(s) actualizado(s) com dados SAP.`;
@@ -6111,7 +6185,8 @@ function toast(msg, type = 'success') {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = 'show ' + type;
-  setTimeout(() => { el.className = ''; }, 3500);
+  const ms = (type === 'warn' || String(msg || '').length > 80) ? 7000 : 3500;
+  setTimeout(() => { el.className = ''; }, ms);
 }
 
 // ─── TABS ────────────────────────────────────────────
@@ -7920,7 +7995,10 @@ async function outlookAbrirRascunho({ to, cc, subject, html, attachments = [], d
   }
   parts.push(`--${boundary}--`, '');
   const eml = parts.join('\r\n');
+  const emlBytes = new Blob([eml], { type: 'message/rfc822' });
 
+  // serve.ps1 grava o .eml e faz Start-Process → Outlook. Sem isso o browser não consegue
+  // abrir o Outlook com HTML+anexos (mailto não suporta).
   try {
     const endpoints = [
       '/api/open-outlook-draft',
@@ -7929,37 +8007,34 @@ async function outlookAbrirRascunho({ to, cc, subject, html, attachments = [], d
       '/delta-foods-equipamentos-app/api/open-mc00-email',
     ];
     for (const ep of endpoints) {
-      const r = await fetch(ep, {
-        method: 'POST',
-        headers: { 'Content-Type': 'message/rfc822; charset=utf-8' },
-        body: eml,
-      });
-      if (r.status === 204 || r.ok) {
-        toast(toastMsg || '📧 Outlook aberto com email e anexos.');
-        return true;
-      }
+      try {
+        const r = await fetch(ep, {
+          method: 'POST',
+          headers: { 'Content-Type': 'message/rfc822; charset=utf-8' },
+          body: eml,
+        });
+        if (r.status === 204 || r.ok) {
+          toast(toastMsg || '📧 Outlook aberto com email e anexos.');
+          return true;
+        }
+      } catch (_) { /* endpoint inexistente neste host */ }
     }
-  } catch (_) { /* GitHub Pages / sem serve.ps1 */ }
+  } catch (_) { /* GitHub Pages / servidor estático sem API */ }
 
-  const file = new File([eml], draftName, { type: 'message/rfc822' });
+  // Fallback: NÃO usar window.open(blob) — isso só navega para blob:… e não abre o Outlook.
+  const fileName = draftName || 'Delta_rascunho_Outlook.eml';
   if (navigator.msSaveOrOpenBlob) {
-    navigator.msSaveOrOpenBlob(file, file.name);
-  } else {
-    const url = URL.createObjectURL(file);
-    const opened = window.open(url, '_blank');
-    if (!opened) {
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    navigator.msSaveOrOpenBlob(emlBytes, fileName);
+    toast(toastMsg || '📧 Outlook a abrir com email e anexos.');
+    return true;
   }
-  toast(toastMsg || '📧 Outlook a abrir com email e anexos.');
-  return true;
+  triggerBlobDownload(emlBytes, fileName);
+  toast(
+    '📧 Ficheiro .eml descarregado — abre-o para ver o email no Outlook (com anexos). '
+    + 'Para abrir automaticamente: corre serve.ps1 e usa http://localhost:8080/delta-foods-equipamentos-app/',
+    'warn'
+  );
+  return false;
 }
 
 function isAdmin() {
@@ -9838,7 +9913,8 @@ async function prosSaveCadastroJson(opts = {}) {
 
 function prosCadastroApplyToForm(cad, p) {
   const c = cad || {};
-  const setVal = (id, v) => { const el = document.getElementById(id); if (el && v != null && v !== '') el.value = v; };
+  // Sempre aplica (inclui limpar): evita resíduos do cliente anterior na ficha partilhada.
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v != null && v !== '') ? v : ''; };
   const isCafe = c.cliente_cafe === true;
   document.getElementById('pg-cliente-cafe-sim').checked = isCafe;
   document.getElementById('pg-cliente-cafe-nao').checked = !isCafe;
@@ -11232,17 +11308,24 @@ async function mc00Exportar() {
   await guardarMc00Cliente({ silent: true });
   if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar MC00…</span>';
   try {
-    const excel = await mc00GerarExcel(data);
-    toast('✅ MC00 exportado!');
-    if (st) st.innerHTML = '<span style="color:#16a34a">MC00 exportado — a abrir email no Outlook...</span>';
-    await mc00AbrirEmail(data, excel?.blob, excel?.filename);
+    // Excel vai em anexo no Outlook — não forçar Save As do .xlsx (roubava o foco).
+    const excel = await mc00GerarExcel(data, { skipDownload: true });
+    toast('✅ MC00 gerado!');
+    if (st) st.innerHTML = '<span style="color:#16a34a">MC00 gerado — a abrir email no Outlook...</span>';
+    const ok = await mc00AbrirEmail(data, excel?.blob, excel?.filename);
+    if (st) {
+      st.innerHTML = ok
+        ? '<span style="color:#16a34a">Outlook aberto com MC00 em anexo.</span>'
+        : '<span style="color:#b45309">Email .eml descarregado — abre o ficheiro para o Outlook. Para abertura automática usa serve.ps1 (porta 8080).</span>';
+    }
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${escHtml(e.message)}</span>`;
     toast('Erro: ' + e.message, 'error');
   }
 }
 
-async function mc00GerarExcel(d) {
+async function mc00GerarExcel(d, opts) {
+  opts = opts || {};
   // Excel formatado Delta (ExcelJS) — cabeçalho + grelha completa do MC00
   await prosEnsureExcelJS();
   const wb = new ExcelJS.Workbook();
@@ -11416,7 +11499,7 @@ async function mc00GerarExcel(d) {
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const nome = (d.nome || d.cod || 'cliente').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 24);
   const filename = `MC00_${nome}.xlsx`;
-  triggerBlobDownload(blob, filename);
+  if (!opts.skipDownload) triggerBlobDownload(blob, filename);
   return { blob, filename };
 }
 
@@ -11480,7 +11563,7 @@ ${tabela}
 <p>Cumprimentos,<br>${mc00EmailEsc(remetente)}</p>
 </body></html>`;
 
-  await outlookAbrirRascunho({
+  return outlookAbrirRascunho({
     to: 'carlos.castro@deltafoodsbrasil.com.br',
     cc: typeof ccString === 'function' ? ccString([]) : 'filipe.neves@deltafoodsbrasil.com.br',
     subject: `MC00 - Condições Especiais - ${d.nome || d.cod || 'Cliente'}`,
@@ -11503,23 +11586,74 @@ async function preencherFichaCadastro(r) {
   prosGanhoLeadId = null;
   _modoAlteracaoRegisto = r;
 
-  // 1) Se este cliente já tem cadastro guardado, usa-o tal como está — já reflecte
-  //    as edições manuais e a última reconciliação com o SAP (feita na carga do ficheiro).
+  // Garante lista SAP actualizada (Supabase → localStorage) antes de preencher a ficha.
+  try { await sincronizarListaClientes(); } catch (_) {}
+  let sap = { ...((getListaClientesActiva() || []).find(c => normCod(c.cod) === normCod(r.cod)) || {}) };
+  // Fallback local de morada (MORADAS_DB) quando a lista publicada ainda só tem nome/CEP/vendedor.
+  if (!sap.rua && typeof getMorada === 'function') {
+    const m = getMorada(r.cod || sap.cod);
+    if (m && m.rua) {
+      let rua = String(m.rua).trim();
+      let nro = '';
+      const split = rua.match(/^(.*?)[,\s]+(\d+[A-Za-z]?)\s*$/);
+      if (split) { rua = split[1].trim().replace(/[,\s]+$/, ''); nro = split[2]; }
+      sap.rua = rua;
+      if (!sap.nro && nro) sap.nro = nro;
+      if (!sap.cep && m.cep) sap.cep = m.cep;
+    }
+  }
+  if (!sap.vendedor && r.vendedor) sap.vendedor = r.vendedor;
+  if (!sap.cep && r.cep) sap.cep = r.cep;
+  if (!sap.nome && r.nome) sap.nome = r.nome;
+  const sapRico = !!(sap.cnpj || sap.email || sap.tel1 || (sap.rua && sap.nro) || sap.canal);
+  const stCad = document.getElementById('edit-cadastro-status');
+  if (stCad && !sapRico) {
+    stCad.innerHTML = '<span style="color:#b45309">Lista SAP sem morada/contacto/CNPJ para este cliente. '
+      + 'Em Dados → <b>Carregar Lista SAP</b> com o Excel completo (colunas de endereço, email, telefone, ID fiscal, Canal).</span>';
+  }
+
+  // 1) Cadastro já guardado: mantém edições manuais e completa só os campos vazios
+  //    com lista SAP + ficha de Prospeção (se existir).
   if (r.cadastro_json && typeof r.cadastro_json === 'object' && Object.keys(r.cadastro_json).length) {
-    const cadSalvo = { ...r.cadastro_json };
+    let cadSalvo = { ...r.cadastro_json };
     if (!cadSalvo.motivo) cadSalvo.motivo = 'Alteração de Cliente';
     cadSalvo.cliente_cafe = false;
+    let sapFilled = false;
+    const rico = await prosBuscarCadastroPorNome(r.nome).catch(() => null);
+    if (rico && typeof rico === 'object') {
+      const fromPros = mesclarSapNoCadastro(cadSalvo, rico, { onlyEmpty: true });
+      cadSalvo = fromPros.cad;
+      if (fromPros.changed) sapFilled = true;
+    }
+    if (sap && (sap.cod || sap.nome || sap.cnpj || sap.rua || sap.email || sap.vendedor)) {
+      const merged = mesclarSapNoCadastro(cadSalvo, sap, { onlyEmpty: true });
+      cadSalvo = merged.cad;
+      if (merged.changed) sapFilled = true;
+      if (!cadSalvo.regiao && sap.uf) {
+        const _sel = document.getElementById('pg-regiao');
+        if (_sel) for (const o of _sel.options) {
+          if (o.value.toUpperCase().startsWith(String(sap.uf).toUpperCase() + ' ')) {
+            cadSalvo.regiao = o.value; sapFilled = true; break;
+          }
+        }
+      }
+    }
     prosCadastroApplyToForm(cadSalvo, null);
     const motS = document.getElementById('pg-motivo');
     if (motS && !r.cadastro_json.motivo) motS.value = 'Alteração de Cliente';
     const cafeNaoS = document.getElementById('pg-cliente-cafe-nao');
     if (cafeNaoS) cafeNaoS.checked = true;
+    if (sapFilled) {
+      r.cadastro_json = cadSalvo;
+      if (window._editingRegisto && window._editingRegisto.id === r.id) {
+        window._editingRegisto.cadastro_json = cadSalvo;
+      }
+      try { await guardarCadastroCliente({ silent: true }); } catch (_) {}
+    }
     return;
   }
 
   // 2) Primeira vez (sem cadastro guardado): constrói a partir da Prospeção + lista SAP.
-  const sap = (getListaClientesActiva() || []).find(c => normCod(c.cod) === normCod(r.cod)) || {};
-
   // Base: ficha da Prospeção (se existir, é a mais completa) sobreposta pelos dados da lista SAP.
   let cad = { cidade: 'SÃO PAULO' };
   const rico = await prosBuscarCadastroPorNome(r.nome).catch(() => null);
