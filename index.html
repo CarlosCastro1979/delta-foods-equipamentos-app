@@ -10661,39 +10661,41 @@ async function propGerarSimulador(nomeCliente, opts = {}) {
 
 // Recolhe os campos da Ficha de Cadastro (pg-*) no formato esperado pelo servidor de geração de Excel.
 function prosCollectCadastroDados() {
-  const empresa = document.getElementById('pg-empresa').value;
-  const gn      = empresa.startsWith('GN52') ? 'GN52' : 'GN53';
-  const regiao  = document.getElementById('pg-regiao').value;
+  let empresa = (document.getElementById('pg-empresa')?.value || '').trim();
+  // Omissão = DFB (nunca Q-Brasil)
+  if (!empresa) empresa = 'GN52 - Delta Foods Brasil';
+  const gn = empresa.startsWith('GN53') ? 'GN53' : 'GN52';
+  const regiao  = document.getElementById('pg-regiao')?.value || '';
   const isZF    = regiao.startsWith('ZF');
   return {
-    motivo:      document.getElementById('pg-motivo').value,
+    motivo:      document.getElementById('pg-motivo')?.value || 'Abertura de Cliente',
     empresa,
-    grupo:       document.getElementById('pg-grupo').value,
+    grupo:       document.getElementById('pg-grupo')?.value || 'BR01 - Clientes PJ',
     dept:        gn === 'GN52' ? 'DFSP - Delta Foods (São Paulo)' : 'QBSP - Q-Brasil (São Paulo)',
     orgVendas:   gn === 'GN52' ? 'DF01' : 'QB01',
     escritVendas: gn === 'GN52' ? 'DFSP' : 'QBSP',
     centro:      gn === 'GN52' ? 'DFSP' : 'QBES',
-    nome:        document.getElementById('pg-nome').value,
-    cnpj:        document.getElementById('pg-cnpj').value,
-    fantasia:    document.getElementById('pg-fantasia').value,
-    ie:          document.getElementById('pg-ie').value,
-    email:       document.getElementById('pg-email').value.trim().toLowerCase(),
-    tel1:        document.getElementById('pg-tel1').value,
-    tel2:        document.getElementById('pg-tel2').value,
-    rua:         document.getElementById('pg-rua').value,
-    nro:         document.getElementById('pg-nro').value,
-    supl:        document.getElementById('pg-supl').value,
-    bairro:      document.getElementById('pg-bairro').value,
-    cep:         document.getElementById('pg-cep').value,
-    cidade:      document.getElementById('pg-cidade').value,
-    canal:       document.getElementById('pg-canal').value,
+    nome:        document.getElementById('pg-nome')?.value || '',
+    cnpj:        document.getElementById('pg-cnpj')?.value || '',
+    fantasia:    document.getElementById('pg-fantasia')?.value || '',
+    ie:          document.getElementById('pg-ie')?.value || '',
+    email:       (document.getElementById('pg-email')?.value || '').trim().toLowerCase(),
+    tel1:        document.getElementById('pg-tel1')?.value || '',
+    tel2:        document.getElementById('pg-tel2')?.value || '',
+    rua:         document.getElementById('pg-rua')?.value || '',
+    nro:         document.getElementById('pg-nro')?.value || '',
+    supl:        document.getElementById('pg-supl')?.value || '',
+    bairro:      document.getElementById('pg-bairro')?.value || '',
+    cep:         document.getElementById('pg-cep')?.value || '',
+    cidade:      document.getElementById('pg-cidade')?.value || '',
+    canal:       document.getElementById('pg-canal')?.value || '',
     regiao,
-    icms:        document.getElementById('pg-icms').value,
-    pagto:       document.getElementById('pg-pagto').value,
-    rota:        document.getElementById('pg-rota').value,
-    equipe:      document.getElementById('pg-equipe').textContent,
-    vendedor:    document.getElementById('pg-vendedor').value,
-    sector:      document.getElementById('pg-sector').value,
+    icms:        document.getElementById('pg-icms')?.value || '',
+    pagto:       document.getElementById('pg-pagto')?.value || '',
+    rota:        document.getElementById('pg-rota')?.value || '',
+    equipe:      document.getElementById('pg-equipe')?.textContent || '',
+    vendedor:    document.getElementById('pg-vendedor')?.value || '',
+    sector:      document.getElementById('pg-sector')?.value || '',
     fiscal:      isZF ? '2 - Zona Franca - ICMS' : '1 - Sujeito a imposto',
   };
 }
@@ -10754,7 +10756,14 @@ function prosCadastroResumoEmailHtml(dados) {
 
 // Abre Outlook com HTML + Excel(s) já anexados (mesmo padrão do MC00).
 async function prosAbrirEmailCadastro(dados, opts = {}) {
-  const { isCafe = false, propTexto = '', attachments = [] } = opts;
+  const {
+    isCafe = false,
+    propTexto = '',
+    attachments = [],
+    // Lead ganho: Carlos + Daniela CC. Alteração CNPJ: Daniela + Carlos/Filipe CC.
+    to = 'carlos.castro@deltafoodsbrasil.com.br',
+    cc = ['daniela.kucinski@deltafoodsbrasil.com.br'],
+  } = opts;
   const hora = new Date().getHours();
   const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
   const motivo = dados.motivo || 'Abertura de Cliente';
@@ -10781,8 +10790,8 @@ ${propHtml}
 </body></html>`;
 
   return outlookAbrirRascunho({
-    to: 'carlos.castro@deltafoodsbrasil.com.br',
-    cc: ccString(['daniela.kucinski@deltafoodsbrasil.com.br']),
+    to,
+    cc: ccString(cc),
     subject: `${motivo} - ${dados.nome || 'Cliente'}`,
     html,
     attachments,
@@ -10977,6 +10986,7 @@ async function prosExportarAlteracaoCnpj() {
   }
   PROS_CADASTRO_AUTOSAVE_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.style.borderColor = ''; });
   if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar ficha e abrir Outlook...</span>';
+  // Mesmo recolha + gerador do lead ganho (Excel 100% igual)
   const dados = prosCollectCadastroDados();
   dados.motivo = 'Alteração de CNPJ';
   try {
@@ -10985,6 +10995,8 @@ async function prosExportarAlteracaoCnpj() {
       isCafe: false,
       propTexto: '',
       attachments: cadastro?.blob ? [{ blob: cadastro.blob, filename: cadastro.filename }] : [],
+      to: 'daniela.kucinski@deltafoodsbrasil.com.br',
+      cc: ['carlos.castro@deltafoodsbrasil.com.br'], // Filipe entra sempre via ccString
     });
     if (ok !== false && st) {
       st.innerHTML = '<span style="color:#16a34a">Outlook aberto com alteração de CNPJ em anexo.</span>';
@@ -12324,30 +12336,35 @@ async function prosGanhoExportar() {
 }
 
 // Fallback client-side: gera o Excel de cadastro no browser usando o template embutido.
-// Mapeamento de células idêntico ao servidor (server.py /gerar-cadastro) para garantir
-// que o ficheiro fica igual. Não fecha modais nem mostra toast — isso é da responsabilidade
-// de quem chama (via prosGerarCadastroXlsx).
+// ExcelJS (igual openpyxl no servidor) preserva dropdowns/formatação — SheetJS destruía o template.
+// Mapeamento de células idêntico a server.py /gerar-cadastro.
 async function gerarCadastroXlsxLocal(d, opts = {}) {
-  await ensureXLSX();
+  await prosEnsureExcelJS();
 
-  // Carregar template original (preserva formatação, dropdowns, fórmulas)
   const raw = atob(CADASTRO_TEMPLATE_B64);
   const arr = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-  const wb = window.XLSX.read(arr, { type: 'array', cellStyles: true, cellNF: true, cellDates: true, sheetStubs: true });
-  const ws = wb.Sheets['Cliente'];
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(arr.buffer);
+  const ws = wb.getWorksheet('Cliente') || wb.worksheets[0];
+  if (!ws) throw new Error('Folha "Cliente" não encontrada no template de cadastro.');
 
   const set = (ref, v) => {
-    if (!ws[ref]) ws[ref] = {};
-    ws[ref].v = (v == null ? '' : v);
-    ws[ref].t = 's';
-    delete ws[ref].f;
+    const cell = ws.getCell(ref);
+    const val = (v == null || v === '') ? null : String(v);
+    cell.value = val;
   };
 
-  const gn = String(d.empresa || '').startsWith('GN52') ? 'GN52' : 'GN53';
+  // Empresa vazia → DFB (nunca Q-Brasil)
+  const emp = String(d.empresa || '').trim() || 'GN52 - Delta Foods Brasil';
+  const gn = emp.startsWith('GN53') ? 'GN53' : 'GN52';
 
-  set('U7',  d.motivo || 'Abertura de Cliente');
-  set('AL10', d.empresa);
+  // Motivo no Excel: valores do dropdown do template SAP
+  let motivoXls = d.motivo || 'Abertura de Cliente';
+  if (/altera[cç][aã]o\s+de\s+cnpj/i.test(motivoXls)) motivoXls = 'Alteração de Cliente';
+
+  set('U7',  motivoXls);
+  set('AL10', emp);
   set('L10', d.grupo || 'BR01 - Clientes PJ');
   set('O13', gn === 'GN52' ? 'DFSP - Delta Foods (São Paulo)' : 'QBSP - Q-Brasil (São Paulo)');
   set('K15', gn === 'GN52' ? 'DF01' : 'QB01');
@@ -12382,8 +12399,8 @@ async function gerarCadastroXlsxLocal(d, opts = {}) {
 
   const nome = (d.nome || 'cadastro').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
   const filename = `Cadastro_${nome}.xlsx`;
-  const out = window.XLSX.write(wb, { bookType: 'xlsx', cellStyles: true, type: 'array' });
-  const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   if (!opts.skipDownload) triggerBlobDownload(blob, filename);
   return { blob, filename };
 }
