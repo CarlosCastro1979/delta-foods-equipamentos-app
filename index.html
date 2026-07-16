@@ -3107,6 +3107,32 @@ function deduplicarListaSAPPorCod(lista) {
 
 // Se o Excel novo vier sem colunas de morada/contacto, não apagar o que já estava na lista.
 const SAP_CAMPOS_RICOS = ['cnpj', 'canal', 'rua', 'nro', 'bairro', 'supl', 'cidade', 'uf', 'email', 'tel1', 'tel2', 'ie'];
+const SAP_DETALHE_KEY = 'delta_sap_detalhe';
+
+function acumularSapDetalhe(lista) {
+  let det = {};
+  try { det = JSON.parse(localStorage.getItem(SAP_DETALHE_KEY) || '{}') || {}; } catch (e) { det = {}; }
+  (lista || []).forEach(c => {
+    const k = normCod(c?.cod);
+    if (!k) return;
+    const prev = det[k] || {};
+    const merged = { ...prev, ...c };
+    for (const f of SAP_CAMPOS_RICOS) {
+      if (!String(merged[f] ?? '').trim() && String(prev[f] ?? '').trim()) merged[f] = prev[f];
+    }
+    det[k] = merged;
+  });
+  try { localStorage.setItem(SAP_DETALHE_KEY, JSON.stringify(det)); } catch (e) {}
+  return det;
+}
+
+function getSapDetalhe(cod) {
+  try {
+    const det = JSON.parse(localStorage.getItem(SAP_DETALHE_KEY) || '{}') || {};
+    return det[normCod(cod)] || null;
+  } catch (e) { return null; }
+}
+
 function preservarCamposRicosListaSAP(novaLista, listaAnterior) {
   const prev = {};
   (listaAnterior || []).forEach(c => { prev[listaClienteKey(c)] = c; });
@@ -3125,6 +3151,57 @@ function preservarCamposRicosListaSAP(novaLista, listaAnterior) {
     return merged;
   });
   return { lista: out, kept };
+}
+
+// Clientes já registados na app não devem desaparecer da lista só porque o Excel novo os omitiu.
+async function reporClientesRegistadosNaLista(novaLista, listaAnterior, codsAnulados) {
+  const anul = new Set((codsAnulados || []).map(normCod));
+  const novaKeys = new Set((novaLista || []).map(listaClienteKey));
+  const prevMap = {};
+  (listaAnterior || []).forEach(c => { prevMap[listaClienteKey(c)] = c; });
+  let det = {};
+  try { det = JSON.parse(localStorage.getItem(SAP_DETALHE_KEY) || '{}') || {}; } catch (e) { det = {}; }
+  let regs = [];
+  try { regs = await fetchRegistosPaginado('cod,nome,cep,vendedor', 'cod.asc'); } catch (e) { return { lista: novaLista, restored: 0 }; }
+  let restored = 0;
+  const out = [...(novaLista || [])];
+  for (const reg of regs) {
+    const k = normCod(reg.cod);
+    if (!k || anul.has(k) || novaKeys.has(k)) continue;
+    const prev = prevMap[k] || det[k];
+    if (prev) {
+      out.push(prev);
+    } else {
+      out.push({
+        cod: reg.cod, nome: reg.nome || '', cep: reg.cep || '', vendedor: reg.vendedor || '',
+        cnpj: '', canal: '', rua: '', nro: '', bairro: '', supl: '', cidade: '', uf: '', email: '', tel1: '', tel2: '', ie: '',
+      });
+    }
+    restored++;
+  }
+  return { lista: out, restored };
+}
+
+async function completarMoradaViaCep(target) {
+  const t = target || {};
+  const cepDig = String(t.cep || '').replace(/\D/g, '');
+  if (cepDig.length !== 8) return { target: t, filled: false };
+  if (String(t.rua || '').trim() && String(t.bairro || '').trim()) return { target: t, filled: false };
+  try {
+    const res = await fetch(`https://viacep.com.br/ws/${cepDig}/json/`);
+    if (!res.ok) return { target: t, filled: false };
+    const j = await res.json();
+    if (!j || j.erro) return { target: t, filled: false };
+    let filled = false;
+    if (!String(t.rua || '').trim() && j.logradouro) { t.rua = String(j.logradouro).toUpperCase(); filled = true; }
+    if (!String(t.bairro || '').trim() && j.bairro) { t.bairro = String(j.bairro).toUpperCase(); filled = true; }
+    if ((!String(t.cidade || '').trim() || t.cidade === 'SÃO PAULO') && j.localidade) {
+      t.cidade = String(j.localidade).toUpperCase(); filled = true;
+    }
+    if (!String(t.uf || '').trim() && j.uf) { t.uf = j.uf; filled = true; }
+    if (!String(t.supl || '').trim() && j.complemento) { t.supl = String(j.complemento).toUpperCase(); filled = true; }
+    return { target: t, filled };
+  } catch (e) { return { target: t, filled: false }; }
 }
 
 // Supabase devolve max 1000 linhas por pedido — paginar para não perder registos
@@ -5688,11 +5765,18 @@ async function confirmarCargaSAP() {
   const listaAntes = getListaClientesActiva();
   const preservados = preservarCamposRicosListaSAP(novaLista, listaAntes);
   novaLista = preservados.lista;
+  acumularSapDetalhe(listaAntes);
+  acumularSapDetalhe(novaLista);
 
   document.getElementById('sap-confirm-btn').disabled = true;
   document.getElementById('sap-confirm-btn').textContent = 'A processar...';
 
   try {
+
+  // Manter na lista clientes já registados na app mesmo que o Excel novo os tenha omitido.
+  const repostos = await reporClientesRegistadosNaLista(novaLista, listaAntes, codsAnulados);
+  novaLista = deduplicarListaSAPPorCod(repostos.lista);
+  acumularSapDetalhe(novaLista);
 
   // 1. Guardar nova lista activa
   const listaTs = Date.now();
@@ -5703,7 +5787,8 @@ async function confirmarCargaSAP() {
     anulados: codsAnulados.length,
     adicionados: _sapImportBuffer._adicionados || 0,
     removidos: _sapImportBuffer._removidos || 0,
-    ricosPreservados: preservados.kept || 0
+    ricosPreservados: preservados.kept || 0,
+    registadosRepostos: repostos.restored || 0
   }));
   // Guardar códigos anulados com registo (lista curta) para o Por Registar os excluir da revisão
   const codsParaApagar = _sapImportBuffer.codsParaApagar
@@ -5764,6 +5849,7 @@ async function confirmarCargaSAP() {
   // 5. Resultado
   let msg = `✅ Lista actualizada com ${novaLista.length} clientes.`;
   if (preservados.kept) msg += ` ${preservados.kept} cliente(s) mantiveram morada/contacto da lista anterior.`;
+  if (repostos.restored) msg += ` ${repostos.restored} cliente(s) registado(s) reposto(s) (omitidos no Excel).`;
   if (apagados) msg += ` ${apagados} registo(s) anulado(s) apagado(s).`;
   if (atualizados) msg += ` ${atualizados} registo(s) manual(ais) validado(s) pelo SAP.`;
   if (nCad) msg += ` ${nCad} cadastro(s) actualizado(s) com dados SAP.`;
@@ -5847,6 +5933,7 @@ async function sincronizarListaClientes() {
     if (changed) {
       localStorage.setItem('delta_clientes_sistema', remoteJson);
       localStorage.setItem('delta_clientes_ts', remoteTs.toString());
+      acumularSapDetalhe(remote);
       console.log('Lista de clientes sincronizada do Supabase:', remote.length, 'clientes');
       return true;
     }
@@ -10591,7 +10678,10 @@ async function editSwitchTab(tab) {
       const st = document.getElementById('edit-cadastro-status');
       if (st) st.innerHTML = '<span style="color:var(--muted)">A carregar dados do cliente...</span>';
       try { await preencherFichaCadastro(window._editingRegisto); }
-      finally { if (st) st.innerHTML = ''; }
+      finally {
+        // Manter aviso/diagnóstico do preenchimento (não ser apagado).
+        if (st) st.innerHTML = window._editCadastroStatusMsg || '';
+      }
       _editCadPreenchido = true;
     }
     bindEditCadastroAutoSave();
@@ -11588,7 +11678,9 @@ async function preencherFichaCadastro(r) {
 
   // Garante lista SAP actualizada (Supabase → localStorage) antes de preencher a ficha.
   try { await sincronizarListaClientes(); } catch (_) {}
-  let sap = { ...((getListaClientesActiva() || []).find(c => normCod(c.cod) === normCod(r.cod)) || {}) };
+  const naLista = (getListaClientesActiva() || []).find(c => normCod(c.cod) === normCod(r.cod));
+  const noArquivo = getSapDetalhe(r.cod);
+  let sap = { ...(noArquivo || {}), ...(naLista || {}) };
   // Fallback local de morada (MORADAS_DB) quando a lista publicada ainda só tem nome/CEP/vendedor.
   if (!sap.rua && typeof getMorada === 'function') {
     const m = getMorada(r.cod || sap.cod);
@@ -11605,12 +11697,23 @@ async function preencherFichaCadastro(r) {
   if (!sap.vendedor && r.vendedor) sap.vendedor = r.vendedor;
   if (!sap.cep && r.cep) sap.cep = r.cep;
   if (!sap.nome && r.nome) sap.nome = r.nome;
-  const sapRico = !!(sap.cnpj || sap.email || sap.tel1 || (sap.rua && sap.nro) || sap.canal);
+  // Morada via ViaCEP quando o SAP não trouxe rua/bairro (ex.: cliente omitido no Excel).
+  const via = await completarMoradaViaCep(sap);
+  sap = via.target;
+  const sapRico = !!(sap.cnpj || sap.email || sap.tel1 || sap.rua || sap.canal);
   const stCad = document.getElementById('edit-cadastro-status');
-  if (stCad && !sapRico) {
-    stCad.innerHTML = '<span style="color:#b45309">Lista SAP sem morada/contacto/CNPJ para este cliente. '
-      + 'Em Dados → <b>Carregar Lista SAP</b> com o Excel completo (colunas de endereço, email, telefone, ID fiscal, Canal).</span>';
+  let stMsg = '';
+  if (!naLista) {
+    stMsg = `<span style="color:#b45309">Código <b>${escHtml(String(r.cod || ''))}</b> não está na lista SAP actual (omitido no último Excel). `
+      + `Morada pode vir do CEP; CNPJ/email só com o cliente no export SAP.</span>`;
+  } else if (!sapRico) {
+    stMsg = '<span style="color:#b45309">Lista SAP sem morada/contacto/CNPJ para este cliente. '
+      + 'Em Dados → <b>Carregar Lista SAP</b> com o Excel completo.</span>';
+  } else if (via.filled) {
+    stMsg = '<span style="color:#166534">Morada completada via CEP (ViaCEP).</span>';
   }
+  if (stCad && stMsg) stCad.innerHTML = stMsg;
+  window._editCadastroStatusMsg = stMsg;
 
   // 1) Cadastro já guardado: mantém edições manuais e completa só os campos vazios
   //    com lista SAP + ficha de Prospeção (se existir).
