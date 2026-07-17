@@ -5693,12 +5693,26 @@ let pendingVendedorMap = {};
 // ─── CARREGAR LISTA SAP ──────────────────────────────
 let _sapImportBuffer = null; // { novaLista, codsAnulados }
 
-/** Normaliza rota SAP ("3 - Rota 3", "Rota 3", 3) → "3" */
+/** Normaliza rota/ZD SAP ("3 - Rota 3", "01", 3, "ZD1") → valor canónico */
 function normalizaRotaCliente(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return '';
-  const m = s.match(/(\d{1,2})/);
-  return m ? String(parseInt(m[1], 10)) : s;
+  // Excel por vezes devolve número; evita "1.0"
+  if (/^\d+(\.0+)?$/.test(s)) return String(parseInt(s, 10));
+  const m = s.match(/(\d{1,3})/);
+  return m ? String(parseInt(m[1], 10)) : s.toUpperCase();
+}
+
+/** Rota do cliente: campo rota/ZD na lista, senão detalhe SAP em cache */
+function getRotaCliente(c) {
+  let r = normalizaRotaCliente(c?.rota ?? c?.zd);
+  if (r) return r;
+  try {
+    const det = JSON.parse(localStorage.getItem(SAP_DETALHE_KEY) || '{}') || {};
+    const d = det[normCod(c?.cod)] || {};
+    r = normalizaRotaCliente(d.rota ?? d.zd);
+  } catch (e) {}
+  return r || '';
 }
 
 async function carregarListaSAP(event) {
@@ -5754,8 +5768,10 @@ async function carregarListaSAP(event) {
   const iCNPJ    = findH(/id\s*fiscal|cnpj|cpf|fiscal\s*1|^nif$/);
   // "Canal", "Canal de distribuição", "Canal Distrib.", SAP BR: "CDst" (Canal de distribuição)
   const iCanal   = findH(/^cdst$|^canal\b|canal\s*de\s*distrib|canal\s*distrib/);
-  // SAP usa frequentemente a coluna "ZD" para a rota do cliente
-  const iRota    = findH(/^zd$|^rota\b|itinerario|route/);
+  // SAP: coluna da rota chama-se tipicamente "ZD" (também "Rota")
+  let iRota = findH(/^z\.?d\.?$|^zd\b|zd\s*[-_/]|coluna\s*zd/);
+  if (iRota < 0) iRota = findH(/^rota\b|itinerario|route/);
+  if (iRota < 0) iRota = _hn.findIndex(h => h === 'zd' || h.replace(/\s+/g, '') === 'zd');
 
   // Morada / contacto — cabeçalhos típicos do export SAP BR
   const iRua    = findH(/^(rua|logradouro)$|enderec|rua\s*\/|street/);
@@ -5803,7 +5819,8 @@ async function carregarListaSAP(event) {
     }
     const cnpj = iCNPJ >= 0 ? String(row[iCNPJ]||'').trim() : '';
     const canal = iCanal >= 0 ? String(row[iCanal]||'').trim() : '';
-    const rota = iRota >= 0 ? normalizaRotaCliente(row[iRota]) : '';
+    const rotaRaw = iRota >= 0 ? String(row[iRota] ?? '').trim() : '';
+    const rota = rotaRaw ? normalizaRotaCliente(rotaRaw) : '';
     // Morada / contacto (só preenche o que existir no ficheiro)
     let rua = getCell(row, iRua);
     let nro = getCell(row, iNroCol);
@@ -5813,7 +5830,7 @@ async function carregarListaSAP(event) {
       if (m) { rua = m[1].trim().replace(/[,\s]+$/, ''); nro = m[2]; }
     }
     const rowObj = {
-      cod, nome, cep, cnpj, canal, rota,
+      cod, nome, cep, cnpj, canal, rota, zd: rotaRaw || rota,
       rua, nro,
       bairro: getCell(row, iBairro),
       supl:   getCell(row, iCompl),
@@ -8978,17 +8995,14 @@ function popularVisitasRotaSelect() {
   const vend = document.getElementById('visitas-vendedor')?.value || '';
   let lista = getListaClientesActiva();
   if (vend) lista = lista.filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vend));
-  const rotas = [...new Set(lista.map(c => normalizaRotaCliente(c.rota)).filter(Boolean))]
-    .sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || String(a).localeCompare(String(b)));
+  const rotas = [...new Set(lista.map(c => getRotaCliente(c)).filter(Boolean))]
+    .sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || String(a).localeCompare(String(b), 'pt'));
   const cur = sel.value;
-  sel.innerHTML = '<option value="">— Rota do dia —</option>' +
-    rotas.map(r => `<option value="${r}">Rota ${r}</option>`).join('');
-  if (!rotas.length) {
-    // fallback 0–9 se a lista ainda não tiver rota (antes de reimportar SAP)
-    sel.innerHTML = '<option value="">— Rota do dia —</option>' +
-      Array.from({ length: 10 }, (_, i) => `<option value="${i}">Rota ${i}</option>`).join('');
-  }
+  sel.innerHTML = '<option value="">— Rota do dia (ZD) —</option>' +
+    rotas.map(r => `<option value="${r}">ZD / Rota ${r}</option>`).join('');
+  // Sem fallback 0–9: só rotas reais da coluna ZD após carga SAP
   if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+  else sel.value = '';
 }
 
 function onVisitasFiltroChange() {
@@ -9023,30 +9037,45 @@ function renderVisitasDia() {
     cont.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">Selecciona o vendedor para ver a rota.</div>';
     return;
   }
+  const doVend = getListaClientesActiva()
+    .filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vend));
+  const comZd = doVend.filter(c => getRotaCliente(c));
+  const rotasDisp = [...new Set(comZd.map(c => getRotaCliente(c)))].sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || String(a).localeCompare(String(b)));
+
   if (!rota) {
-    if (info) info.textContent = 'Selecciona a rota do dia.';
-    cont.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">Escolhe a rota do dia para listar os clientes.</div>';
+    if (info) {
+      info.innerHTML = comZd.length
+        ? `<strong>${doVend.length}</strong> clientes · <strong>${comZd.length}</strong> com ZD · rotas: ${rotasDisp.join(', ') || '—'}`
+        : `<strong>${doVend.length}</strong> clientes · <span style="color:#c8102e">nenhum com coluna ZD</span> — recarrega a lista SAP em Gestão de Dados`;
+    }
+    cont.innerHTML = comZd.length
+      ? '<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">Escolhe a rota do dia (ZD) para listar os clientes.</div>'
+      : `<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">
+          Ainda não há rotas ZD neste vendedor.<br>
+          <span style="font-size:12px;">Na página inicial → <strong>Gestão de Dados</strong> → Carregar Lista SAP (o Excel deve ter a coluna <strong>ZD</strong>).</span>
+        </div>`;
     return;
   }
 
-  const clientes = getListaClientesActiva()
-    .filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vend))
-    .filter(c => normalizaRotaCliente(c.rota) === normalizaRotaCliente(rota))
+  const clientes = doVend
+    .filter(c => getRotaCliente(c) === normalizaRotaCliente(rota))
     .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
 
   const regs = getVisitasDoDia(data, canal, vend, rota);
   const feitos = [...regs.values()].filter(r => r.visita === 'S').length;
   if (info) {
-    info.innerHTML = `<strong>${clientes.length}</strong> clientes na rota ${rota}` +
+    info.innerHTML = `<strong>${clientes.length}</strong> clientes na ZD/rota ${rota}` +
       ` &nbsp;·&nbsp; <span style="color:#16a34a">${feitos} visitas S</span>` +
       ` &nbsp;·&nbsp; ${data.split('-').reverse().join('/')}` +
-      (clientes.length && !clientes.some(c => c.rota) ? '' : '');
+      ` &nbsp;·&nbsp; <span style="color:var(--muted)">${comZd.length}/${doVend.length} c/ ZD</span>`;
   }
 
   if (!clientes.length) {
     cont.innerHTML = `<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">
-      Nenhum cliente deste vendedor na rota ${rota}.<br>
-      <span style="font-size:12px;">Confirma que a lista SAP tem a coluna <strong>ZD</strong> (rota) e foi recarregada em Gestão de Dados.</span>
+      Nenhum cliente de ${vend} na ZD/rota <strong>${rota}</strong>.<br>
+      <span style="font-size:12px;">Este vendedor tem ${doVend.length} clientes · ${comZd.length} com ZD
+      ${rotasDisp.length ? ` · rotas disponíveis: <strong>${rotasDisp.join(', ')}</strong>` : ''}.</span><br>
+      <span style="font-size:12px;">Se estiver tudo a zero, recarrega a lista SAP com a coluna <strong>ZD</strong> em Gestão de Dados.</span>
     </div>`;
     return;
   }
