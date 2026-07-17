@@ -5754,7 +5754,8 @@ async function carregarListaSAP(event) {
   const iCNPJ    = findH(/id\s*fiscal|cnpj|cpf|fiscal\s*1|^nif$/);
   // "Canal", "Canal de distribuição", "Canal Distrib.", SAP BR: "CDst" (Canal de distribuição)
   const iCanal   = findH(/^cdst$|^canal\b|canal\s*de\s*distrib|canal\s*distrib/);
-  const iRota    = findH(/^rota\b|itinerario|route/);
+  // SAP usa frequentemente a coluna "ZD" para a rota do cliente
+  const iRota    = findH(/^zd$|^rota\b|itinerario|route/);
 
   // Morada / contacto — cabeçalhos típicos do export SAP BR
   const iRua    = findH(/^(rua|logradouro)$|enderec|rua\s*\/|street/);
@@ -5777,7 +5778,7 @@ async function carregarListaSAP(event) {
 
   // Diagnóstico das colunas (aparece no ecrã de confirmação)
   const colDiag = [
-    ['CNPJ/Fiscal', iCNPJ], ['Canal', iCanal], ['Rota', iRota], ['Rua', iRua], ['Nº', iNroCol],
+    ['CNPJ/Fiscal', iCNPJ], ['Canal', iCanal], ['Rota (ZD)', iRota], ['Rua', iRua], ['Nº', iNroCol],
     ['Bairro', iBairro], ['Cidade', iCidade], ['Email', iEmail], ['Tel', iTel1], ['IE', iIE],
   ];
 
@@ -9045,7 +9046,7 @@ function renderVisitasDia() {
   if (!clientes.length) {
     cont.innerHTML = `<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">
       Nenhum cliente deste vendedor na rota ${rota}.<br>
-      <span style="font-size:12px;">Confirma que a lista SAP tem a coluna <strong>Rota</strong> e foi recarregada em Gestão de Dados.</span>
+      <span style="font-size:12px;">Confirma que a lista SAP tem a coluna <strong>ZD</strong> (rota) e foi recarregada em Gestão de Dados.</span>
     </div>`;
     return;
   }
