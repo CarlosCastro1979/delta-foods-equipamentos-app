@@ -9093,16 +9093,23 @@ function renderVisitasDia() {
     return;
   }
 
-  const motivoOpts = VISITAS_MOTIVOS.map(m => `<option value="${m}">${m}</option>`).join('');
-  const TH = 'padding:8px 10px;font-size:11px;font-weight:700;background:#f5f5f5;border:1px solid #e5e5e5;text-align:left;';
-  const TD = 'padding:7px 10px;font-size:12px;border:1px solid #eee;vertical-align:middle;';
+  const TH = 'padding:6px 8px;font-size:11px;font-weight:700;background:#f5f5f5;border:1px solid #e5e5e5;text-align:left;white-space:nowrap;';
+  const TD = 'padding:6px 8px;font-size:12px;border:1px solid #eee;vertical-align:middle;';
+  const snRadio = (field, cod, val, checked, disabled) =>
+    `<label class="vis-sn" style="display:inline-flex;align-items:center;gap:3px;margin:0 5px;cursor:${disabled ? 'default' : 'pointer'};opacity:${disabled ? '.45' : '1'};font-size:12px;font-weight:600;">
+      <input type="radio" name="vis-${field}-${cod}" data-vis-field="${field}" data-cod="${cod}" value="${val}"
+        ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}
+        onchange="salvarVisitaLinha('${String(cod).replace(/'/g, "\\'")}')"
+        style="width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:inherit;">
+      ${val}
+    </label>`;
 
-  let html = `<div class="table-wrap"><table class="data-table" style="width:100%;border-collapse:collapse;">
+  let html = `<div class="table-wrap" style="overflow-x:auto;"><table class="data-table" style="width:auto;max-width:100%;border-collapse:collapse;table-layout:auto;">
     <thead><tr>
-      <th style="${TH}">Cód.</th>
+      <th style="${TH}width:1%;">Cód.</th>
       <th style="${TH}">Cliente</th>
-      <th style="${TH}text-align:center;width:90px;">Visita</th>
-      <th style="${TH}text-align:center;width:100px;">Comprou</th>
+      <th style="${TH}text-align:center;width:1%;">Visita</th>
+      <th style="${TH}text-align:center;width:1%;">Comprou</th>
       <th style="${TH}">Motivo (se não comprou)</th>
     </tr></thead><tbody>`;
 
@@ -9112,30 +9119,23 @@ function renderVisitasDia() {
     const comprou = reg.comprou || '';
     const motivo = reg.motivo || '';
     const motivoDis = comprou === 'N' ? '' : 'disabled';
+    const comprouDis = visita === 'N';
     const bg = i % 2 === 0 ? '#fff' : '#fafafa';
     const codEsc = String(c.cod).replace(/'/g, "\\'");
     html += `<tr style="background:${bg}">
-      <td style="${TD}color:var(--muted);">${c.cod}</td>
-      <td style="${TD}font-weight:500;">${c.nome || '—'}</td>
-      <td style="${TD}text-align:center;">
-        <select data-vis-field="visita" data-cod="${c.cod}" onchange="salvarVisitaLinha('${codEsc}')"
-          style="height:30px;font-size:12px;min-width:70px;">
-          <option value="">—</option>
-          <option value="S" ${visita === 'S' ? 'selected' : ''}>S</option>
-          <option value="N" ${visita === 'N' ? 'selected' : ''}>N</option>
-        </select>
+      <td style="${TD}color:var(--muted);font-family:var(--font-mono);white-space:nowrap;width:1%;">${c.cod}</td>
+      <td style="${TD}font-weight:500;white-space:nowrap;">${c.nome || '—'}</td>
+      <td style="${TD}text-align:center;white-space:nowrap;width:1%;">
+        ${snRadio('visita', c.cod, 'S', visita === 'S', false)}
+        ${snRadio('visita', c.cod, 'N', visita === 'N', false)}
       </td>
-      <td style="${TD}text-align:center;">
-        <select data-vis-field="comprou" data-cod="${c.cod}" onchange="salvarVisitaLinha('${codEsc}')"
-          style="height:30px;font-size:12px;min-width:70px;" ${visita === 'N' ? 'disabled' : ''}>
-          <option value="">—</option>
-          <option value="S" ${comprou === 'S' ? 'selected' : ''}>S</option>
-          <option value="N" ${comprou === 'N' ? 'selected' : ''}>N</option>
-        </select>
+      <td style="${TD}text-align:center;white-space:nowrap;width:1%;">
+        ${snRadio('comprou', c.cod, 'S', comprou === 'S', comprouDis)}
+        ${snRadio('comprou', c.cod, 'N', comprou === 'N', comprouDis)}
       </td>
-      <td style="${TD}">
+      <td style="${TD}white-space:nowrap;">
         <select data-vis-field="motivo" data-cod="${c.cod}" onchange="salvarVisitaLinha('${codEsc}')"
-          style="height:30px;font-size:12px;width:100%;max-width:280px;" ${motivoDis}>
+          style="height:30px;font-size:12px;min-width:12em;" ${motivoDis}>
           <option value="">— Selecionar —</option>
           ${VISITAS_MOTIVOS.map(m => `<option value="${m}" ${motivo === m ? 'selected' : ''}>${m}</option>`).join('')}
         </select>
@@ -9146,6 +9146,23 @@ function renderVisitasDia() {
   cont.innerHTML = html;
 }
 
+function visitasCampoValor(field, cod) {
+  const checked = document.querySelector(`input[type="radio"][data-vis-field="${field}"][data-cod="${cod}"]:checked`);
+  return checked ? checked.value : '';
+}
+
+function visitasSetRadiosDisabled(field, cod, disabled) {
+  document.querySelectorAll(`input[type="radio"][data-vis-field="${field}"][data-cod="${cod}"]`).forEach(el => {
+    el.disabled = !!disabled;
+    const lab = el.closest('label');
+    if (lab) {
+      lab.style.opacity = disabled ? '.45' : '1';
+      lab.style.cursor = disabled ? 'default' : 'pointer';
+    }
+    if (disabled) el.checked = false;
+  });
+}
+
 function salvarVisitaLinha(cod) {
   const data = document.getElementById('visitas-data')?.value || hojeISODate();
   const vend = document.getElementById('visitas-vendedor')?.value || '';
@@ -9153,22 +9170,18 @@ function salvarVisitaLinha(cod) {
   const canal = getCanalAtual();
   if (!vend || !rota || !cod) return;
 
-  const visitaSel = document.querySelector(`select[data-vis-field="visita"][data-cod="${cod}"]`);
-  const comprouSel = document.querySelector(`select[data-vis-field="comprou"][data-cod="${cod}"]`);
   const motivoSel = document.querySelector(`select[data-vis-field="motivo"][data-cod="${cod}"]`);
-  if (!visitaSel) return;
-
-  let visita = visitaSel.value;
-  let comprou = comprouSel?.value || '';
+  let visita = visitasCampoValor('visita', cod);
+  let comprou = visitasCampoValor('comprou', cod);
   let motivo = motivoSel?.value || '';
 
   if (visita === 'N') {
     comprou = '';
     motivo = '';
-    if (comprouSel) { comprouSel.value = ''; comprouSel.disabled = true; }
+    visitasSetRadiosDisabled('comprou', cod, true);
     if (motivoSel) { motivoSel.value = ''; motivoSel.disabled = true; }
   } else {
-    if (comprouSel) comprouSel.disabled = false;
+    visitasSetRadiosDisabled('comprou', cod, false);
     if (comprou === 'N') {
       if (motivoSel) motivoSel.disabled = false;
     } else {
