@@ -6461,10 +6461,15 @@ async function renderClientesContencioso() {
   try { if (typeof enableTableSort === 'function') enableTableSort(el.querySelector('table')); } catch (e) {}
 }
 
-function exportClientesContenciosoExcel() {
+async function exportClientesContenciosoExcel() {
   const lista = window._clientesContenciosoView || getListaContenciosoActiva(document.getElementById('cc-canal')?.value || '');
   if (!lista.length) { toast('Nada para exportar.', 'error'); return; }
-  if (!window.XLSX) { toast('Biblioteca Excel não carregada.', 'error'); return; }
+  try {
+    await ensureXLSX();
+  } catch (e) {
+    toast('Não foi possível carregar a biblioteca Excel. Verifica a rede e tenta de novo.', 'error');
+    return;
+  }
   const rows = lista.map(c => {
     const div = c._div || getDividaCliente(c.cod);
     const vencido = c.vencido != null ? c.vencido : (div ? div.vencido : 0);
@@ -6474,10 +6479,7 @@ function exportClientesContenciosoExcel() {
       Valor_Divida: vencido || 0,
     };
   });
-  const ws = window.XLSX.utils.json_to_sheet(rows);
-  const wb = window.XLSX.utils.book_new();
-  window.XLSX.utils.book_append_sheet(wb, ws, 'Contencioso');
-  window.XLSX.writeFile(wb, 'Clientes_no_Contencioso.xlsx');
+  writeXlsxJsonDownload(rows, 'Contencioso', 'Clientes_no_Contencioso.xlsx');
   toast('Excel exportado.');
 }
 
