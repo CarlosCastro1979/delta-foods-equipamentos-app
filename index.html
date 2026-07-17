@@ -1378,11 +1378,11 @@ var _unused_placeholder = 1;
   <div class="main-nav-inner">
     <button class="tab active" onclick="switchTab('registos')">Registo Clientes</button>
     <button class="tab" id="tab-analise" onclick="switchTab('analise')">Análise Clientes</button>
+    <button class="tab" onclick="switchTab('visitas')">Registro de visitas</button>
     <button class="tab" onclick="switchTab('at')">Pedido AT</button>
     <button class="tab" onclick="switchTab('contratos')">Contratos</button>
     <button class="tab" onclick="switchTab('historico-at')">Histórico AT</button>
     <button class="tab" onclick="switchTab('prospeccao')">Prospeção</button>
-    <button class="tab" onclick="switchTab('dados')">Dados</button>
   </div>
 </nav>
 
@@ -2605,7 +2605,46 @@ var _unused_placeholder = 1;
     </div>
   </div>
 
+  <!-- PANEL: REGISTRO DE VISITAS -->
+  <div class="panel" id="panel-visitas">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div style="font-size:15px;font-weight:600;">Registro de visitas</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">Escolhe a rota do dia e regista visita / compra por cliente.</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="date" id="visitas-data" class="form-input" style="height:36px;font-size:13px;" onchange="renderVisitasDia()">
+        <select id="visitas-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="onVisitasFiltroChange()">
+          <option value="">— Vendedor —</option>
+        </select>
+        <select id="visitas-rota" class="form-input" style="min-width:140px;height:36px;font-size:13px;" onchange="renderVisitasDia()">
+          <option value="">— Rota do dia —</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="exportVisitasExcel()" style="min-height:36px;">⬇ Excel</button>
+      </div>
+    </div>
+    <div id="visitas-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+    <div id="visitas-content"></div>
+
+    <div style="margin-top:28px;border-top:2px dashed #e0e0e0;padding-top:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+        <div style="font-size:15px;font-weight:600;">Quadro de análise</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="date" id="visitas-analise-de" class="form-input" style="height:34px;font-size:12px;" onchange="renderVisitasAnalise()">
+          <span style="font-size:12px;color:var(--muted);">até</span>
+          <input type="date" id="visitas-analise-ate" class="form-input" style="height:34px;font-size:12px;" onchange="renderVisitasAnalise()">
+          <button class="btn btn-secondary btn-sm" onclick="renderVisitasAnalise()">Actualizar</button>
+        </div>
+      </div>
+      <div id="visitas-analise"></div>
+    </div>
+  </div>
+
   <div class="panel" id="panel-dados">
+    <div id="dados-hub-banner" style="display:none;margin-bottom:16px;padding:12px 16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div style="font-size:13px;color:#1e40af;">⚙ Carregamento global — dados alimentam todos os canais conforme códigos de vendedor.</div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="logoutUtilizador()">← Voltar aos canais</button>
+    </div>
     <div id="dados-pin-gate" style="max-width:360px;margin:40px auto;text-align:center;">
       <div style="font-size:48px;margin-bottom:16px;">🔒</div>
       <h2 style="font-size:18px;font-weight:600;margin-bottom:8px;">Área de Carregamentos</h2>
@@ -3220,7 +3259,7 @@ function deduplicarListaSAPPorCod(lista) {
 }
 
 // Se o Excel novo vier sem colunas de morada/contacto, não apagar o que já estava na lista.
-const SAP_CAMPOS_RICOS = ['cnpj', 'canal', 'rua', 'nro', 'bairro', 'supl', 'cidade', 'uf', 'email', 'tel1', 'tel2', 'ie'];
+const SAP_CAMPOS_RICOS = ['cnpj', 'canal', 'rota', 'rua', 'nro', 'bairro', 'supl', 'cidade', 'uf', 'email', 'tel1', 'tel2', 'ie'];
 const SAP_DETALHE_KEY = 'delta_sap_detalhe';
 
 function acumularSapDetalhe(lista) {
@@ -5654,6 +5693,14 @@ let pendingVendedorMap = {};
 // ─── CARREGAR LISTA SAP ──────────────────────────────
 let _sapImportBuffer = null; // { novaLista, codsAnulados }
 
+/** Normaliza rota SAP ("3 - Rota 3", "Rota 3", 3) → "3" */
+function normalizaRotaCliente(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  const m = s.match(/(\d{1,2})/);
+  return m ? String(parseInt(m[1], 10)) : s;
+}
+
 async function carregarListaSAP(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -5707,6 +5754,7 @@ async function carregarListaSAP(event) {
   const iCNPJ    = findH(/id\s*fiscal|cnpj|cpf|fiscal\s*1|^nif$/);
   // "Canal", "Canal de distribuição", "Canal Distrib.", SAP BR: "CDst" (Canal de distribuição)
   const iCanal   = findH(/^cdst$|^canal\b|canal\s*de\s*distrib|canal\s*distrib/);
+  const iRota    = findH(/^rota\b|itinerario|route/);
 
   // Morada / contacto — cabeçalhos típicos do export SAP BR
   const iRua    = findH(/^(rua|logradouro)$|enderec|rua\s*\/|street/);
@@ -5729,7 +5777,7 @@ async function carregarListaSAP(event) {
 
   // Diagnóstico das colunas (aparece no ecrã de confirmação)
   const colDiag = [
-    ['CNPJ/Fiscal', iCNPJ], ['Canal', iCanal], ['Rua', iRua], ['Nº', iNroCol],
+    ['CNPJ/Fiscal', iCNPJ], ['Canal', iCanal], ['Rota', iRota], ['Rua', iRua], ['Nº', iNroCol],
     ['Bairro', iBairro], ['Cidade', iCidade], ['Email', iEmail], ['Tel', iTel1], ['IE', iIE],
   ];
 
@@ -5754,6 +5802,7 @@ async function carregarListaSAP(event) {
     }
     const cnpj = iCNPJ >= 0 ? String(row[iCNPJ]||'').trim() : '';
     const canal = iCanal >= 0 ? String(row[iCanal]||'').trim() : '';
+    const rota = iRota >= 0 ? normalizaRotaCliente(row[iRota]) : '';
     // Morada / contacto (só preenche o que existir no ficheiro)
     let rua = getCell(row, iRua);
     let nro = getCell(row, iNroCol);
@@ -5763,7 +5812,7 @@ async function carregarListaSAP(event) {
       if (m) { rua = m[1].trim().replace(/[,\s]+$/, ''); nro = m[2]; }
     }
     const rowObj = {
-      cod, nome, cep, cnpj, canal,
+      cod, nome, cep, cnpj, canal, rota,
       rua, nro,
       bairro: getCell(row, iBairro),
       supl:   getCell(row, iCompl),
@@ -6491,6 +6540,11 @@ function switchTab(tab) {
   }
   if (tab === 'historico-at') loadATHistorico();
   if (tab === 'prospeccao') initProsTab();
+  if (tab === 'visitas') initVisitasTab();
+  if (tab === 'dados') {
+    const banner = document.getElementById('dados-hub-banner');
+    if (banner) banner.style.display = _loginModoDados ? 'flex' : 'none';
+  }
 }
 
 // Sub-menu "Análise Clientes Horeca": Resumo / Sem Compras / Encerramento pendente / Fora SP
@@ -8749,11 +8803,9 @@ function abrirDadosDaHub() {
   _loginModoDados = true;
   esconderLoginModal();
   lockAppShell(false);
-  // Esconde tabs excepto Dados até voltar
-  document.querySelectorAll('.main-nav .tab').forEach(t => {
-    const isDados = (t.getAttribute('onclick') || '').includes("'dados'");
-    t.style.display = isDados ? '' : 'none';
-  });
+  // Dados só na hub — esconde o menu do canal
+  const nav = document.getElementById('main-nav');
+  if (nav) nav.classList.add('nav-hidden');
   const bar = document.getElementById('user-bar');
   if (bar) {
     bar.style.display = 'inline-flex';
@@ -8762,7 +8814,11 @@ function abrirDadosDaHub() {
     if (canalEl) canalEl.textContent = 'Dados';
     if (nameEl) nameEl.textContent = 'Carregamento global';
   }
-  switchTab('dados');
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById('panel-dados');
+  if (panel) panel.classList.add('active');
+  const banner = document.getElementById('dados-hub-banner');
+  if (banner) banner.style.display = 'flex';
 }
 
 function initLogin() {
@@ -8843,6 +8899,386 @@ function logoutUtilizador() {
 
 function getUtilizadorAtual() {
   return localStorage.getItem('dfb_utilizador') || '';
+}
+
+// ─── REGISTRO DE VISITAS ─────────────────────────────
+const VISITAS_STORE_KEY = 'dfb_visitas_registos';
+const VISITAS_MOTIVOS = [
+  'Preço elevado',
+  'Stock suficiente',
+  'Comprou à concorrência',
+  'Estabelecimento fechado / ausente',
+  'Sem decisão / adiou compra',
+  'Reclamação / qualidade',
+  'Crédito / financeiro',
+  'Mudança de gestão',
+  'Outro',
+];
+
+function getVisitasStore() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(VISITAS_STORE_KEY) || '[]');
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function saveVisitasStore(arr) {
+  localStorage.setItem(VISITAS_STORE_KEY, JSON.stringify(arr));
+}
+
+function visitaKey(data, canal, vendedor, cod) {
+  return [data, canal, normNomeUtilizador(vendedor), normCod(cod)].join('|');
+}
+
+function hojeISODate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function initVisitasTab() {
+  const dataEl = document.getElementById('visitas-data');
+  if (dataEl && !dataEl.value) dataEl.value = hojeISODate();
+  const de = document.getElementById('visitas-analise-de');
+  const ate = document.getElementById('visitas-analise-ate');
+  if (ate && !ate.value) ate.value = hojeISODate();
+  if (de && !de.value) {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    de.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  popularVisitasVendedorSelect();
+  popularVisitasRotaSelect();
+  renderVisitasDia();
+  renderVisitasAnalise();
+}
+
+function popularVisitasVendedorSelect() {
+  const sel = document.getElementById('visitas-vendedor');
+  if (!sel) return;
+  const nomes = nomesVendedoresCanalParaSelect();
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Vendedor —</option>' +
+    nomes.map(n => `<option value="${n}">${n}</option>`).join('');
+  const me = getUtilizadorAtual();
+  const meMatch = nomes.find(n => normNomeUtilizador(n) === normNomeUtilizador(me));
+  if (!isAdmin() && meMatch) {
+    sel.value = meMatch;
+    sel.disabled = true;
+  } else {
+    sel.disabled = false;
+    if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+    else if (meMatch) sel.value = meMatch;
+  }
+}
+
+function popularVisitasRotaSelect() {
+  const sel = document.getElementById('visitas-rota');
+  if (!sel) return;
+  const vend = document.getElementById('visitas-vendedor')?.value || '';
+  let lista = getListaClientesActiva();
+  if (vend) lista = lista.filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vend));
+  const rotas = [...new Set(lista.map(c => normalizaRotaCliente(c.rota)).filter(Boolean))]
+    .sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || String(a).localeCompare(String(b)));
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Rota do dia —</option>' +
+    rotas.map(r => `<option value="${r}">Rota ${r}</option>`).join('');
+  if (!rotas.length) {
+    // fallback 0–9 se a lista ainda não tiver rota (antes de reimportar SAP)
+    sel.innerHTML = '<option value="">— Rota do dia —</option>' +
+      Array.from({ length: 10 }, (_, i) => `<option value="${i}">Rota ${i}</option>`).join('');
+  }
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+
+function onVisitasFiltroChange() {
+  popularVisitasRotaSelect();
+  renderVisitasDia();
+}
+
+function getVisitasDoDia(data, canal, vendedor, rota) {
+  const store = getVisitasStore();
+  const map = new Map();
+  store.forEach(v => {
+    if (v.data !== data) return;
+    if (v.canal !== canal) return;
+    if (normNomeUtilizador(v.vendedor) !== normNomeUtilizador(vendedor)) return;
+    if (rota && normalizaRotaCliente(v.rota) !== normalizaRotaCliente(rota)) return;
+    map.set(normCod(v.cod), v);
+  });
+  return map;
+}
+
+function renderVisitasDia() {
+  const cont = document.getElementById('visitas-content');
+  const info = document.getElementById('visitas-info');
+  if (!cont) return;
+  const data = document.getElementById('visitas-data')?.value || hojeISODate();
+  const vend = document.getElementById('visitas-vendedor')?.value || '';
+  const rota = document.getElementById('visitas-rota')?.value || '';
+  const canal = getCanalAtual();
+
+  if (!vend) {
+    if (info) info.textContent = 'Selecciona o vendedor.';
+    cont.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">Selecciona o vendedor para ver a rota.</div>';
+    return;
+  }
+  if (!rota) {
+    if (info) info.textContent = 'Selecciona a rota do dia.';
+    cont.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">Escolhe a rota do dia para listar os clientes.</div>';
+    return;
+  }
+
+  const clientes = getListaClientesActiva()
+    .filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vend))
+    .filter(c => normalizaRotaCliente(c.rota) === normalizaRotaCliente(rota))
+    .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+
+  const regs = getVisitasDoDia(data, canal, vend, rota);
+  const feitos = [...regs.values()].filter(r => r.visita === 'S').length;
+  if (info) {
+    info.innerHTML = `<strong>${clientes.length}</strong> clientes na rota ${rota}` +
+      ` &nbsp;·&nbsp; <span style="color:#16a34a">${feitos} visitas S</span>` +
+      ` &nbsp;·&nbsp; ${data.split('-').reverse().join('/')}` +
+      (clientes.length && !clientes.some(c => c.rota) ? '' : '');
+  }
+
+  if (!clientes.length) {
+    cont.innerHTML = `<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">
+      Nenhum cliente deste vendedor na rota ${rota}.<br>
+      <span style="font-size:12px;">Confirma que a lista SAP tem a coluna <strong>Rota</strong> e foi recarregada em Gestão de Dados.</span>
+    </div>`;
+    return;
+  }
+
+  const motivoOpts = VISITAS_MOTIVOS.map(m => `<option value="${m}">${m}</option>`).join('');
+  const TH = 'padding:8px 10px;font-size:11px;font-weight:700;background:#f5f5f5;border:1px solid #e5e5e5;text-align:left;';
+  const TD = 'padding:7px 10px;font-size:12px;border:1px solid #eee;vertical-align:middle;';
+
+  let html = `<div class="table-wrap"><table class="data-table" style="width:100%;border-collapse:collapse;">
+    <thead><tr>
+      <th style="${TH}">Cód.</th>
+      <th style="${TH}">Cliente</th>
+      <th style="${TH}text-align:center;width:90px;">Visita</th>
+      <th style="${TH}text-align:center;width:100px;">Comprou</th>
+      <th style="${TH}">Motivo (se não comprou)</th>
+    </tr></thead><tbody>`;
+
+  clientes.forEach((c, i) => {
+    const reg = regs.get(normCod(c.cod)) || {};
+    const visita = reg.visita || '';
+    const comprou = reg.comprou || '';
+    const motivo = reg.motivo || '';
+    const motivoDis = comprou === 'N' ? '' : 'disabled';
+    const bg = i % 2 === 0 ? '#fff' : '#fafafa';
+    const codEsc = String(c.cod).replace(/'/g, "\\'");
+    html += `<tr style="background:${bg}">
+      <td style="${TD}color:var(--muted);">${c.cod}</td>
+      <td style="${TD}font-weight:500;">${c.nome || '—'}</td>
+      <td style="${TD}text-align:center;">
+        <select data-vis-field="visita" data-cod="${c.cod}" onchange="salvarVisitaLinha('${codEsc}')"
+          style="height:30px;font-size:12px;min-width:70px;">
+          <option value="">—</option>
+          <option value="S" ${visita === 'S' ? 'selected' : ''}>S</option>
+          <option value="N" ${visita === 'N' ? 'selected' : ''}>N</option>
+        </select>
+      </td>
+      <td style="${TD}text-align:center;">
+        <select data-vis-field="comprou" data-cod="${c.cod}" onchange="salvarVisitaLinha('${codEsc}')"
+          style="height:30px;font-size:12px;min-width:70px;" ${visita === 'N' ? 'disabled' : ''}>
+          <option value="">—</option>
+          <option value="S" ${comprou === 'S' ? 'selected' : ''}>S</option>
+          <option value="N" ${comprou === 'N' ? 'selected' : ''}>N</option>
+        </select>
+      </td>
+      <td style="${TD}">
+        <select data-vis-field="motivo" data-cod="${c.cod}" onchange="salvarVisitaLinha('${codEsc}')"
+          style="height:30px;font-size:12px;width:100%;max-width:280px;" ${motivoDis}>
+          <option value="">— Selecionar —</option>
+          ${VISITAS_MOTIVOS.map(m => `<option value="${m}" ${motivo === m ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  cont.innerHTML = html;
+}
+
+function salvarVisitaLinha(cod) {
+  const data = document.getElementById('visitas-data')?.value || hojeISODate();
+  const vend = document.getElementById('visitas-vendedor')?.value || '';
+  const rota = document.getElementById('visitas-rota')?.value || '';
+  const canal = getCanalAtual();
+  if (!vend || !rota || !cod) return;
+
+  const visitaSel = document.querySelector(`select[data-vis-field="visita"][data-cod="${cod}"]`);
+  const comprouSel = document.querySelector(`select[data-vis-field="comprou"][data-cod="${cod}"]`);
+  const motivoSel = document.querySelector(`select[data-vis-field="motivo"][data-cod="${cod}"]`);
+  if (!visitaSel) return;
+
+  let visita = visitaSel.value;
+  let comprou = comprouSel?.value || '';
+  let motivo = motivoSel?.value || '';
+
+  if (visita === 'N') {
+    comprou = '';
+    motivo = '';
+    if (comprouSel) { comprouSel.value = ''; comprouSel.disabled = true; }
+    if (motivoSel) { motivoSel.value = ''; motivoSel.disabled = true; }
+  } else {
+    if (comprouSel) comprouSel.disabled = false;
+    if (comprou === 'N') {
+      if (motivoSel) motivoSel.disabled = false;
+    } else {
+      motivo = '';
+      if (motivoSel) { motivoSel.value = ''; motivoSel.disabled = true; }
+    }
+  }
+
+  const cli = getListaClientesActiva().find(c => normCod(c.cod) === normCod(cod));
+  const store = getVisitasStore();
+  const key = visitaKey(data, canal, vend, cod);
+  const idx = store.findIndex(v => visitaKey(v.data, v.canal, v.vendedor, v.cod) === key);
+  const rec = {
+    data, canal, vendedor: vend, rota: normalizaRotaCliente(rota),
+    cod: String(cod), nome: cli?.nome || '',
+    visita, comprou, motivo,
+    atualizado_em: new Date().toISOString(),
+    registado_por: getUtilizadorAtual(),
+  };
+  if (!visita && !comprou && !motivo) {
+    if (idx >= 0) store.splice(idx, 1);
+  } else if (idx >= 0) store[idx] = rec;
+  else store.push(rec);
+  saveVisitasStore(store);
+  renderVisitasAnalise();
+}
+
+function renderVisitasAnalise() {
+  const el = document.getElementById('visitas-analise');
+  if (!el) return;
+  const de = document.getElementById('visitas-analise-de')?.value || '';
+  const ate = document.getElementById('visitas-analise-ate')?.value || '';
+  const canal = getCanalAtual();
+  let rows = getVisitasStore().filter(v => v.canal === canal);
+  if (de) rows = rows.filter(v => v.data >= de);
+  if (ate) rows = rows.filter(v => v.data <= ate);
+  // restringe aos vendedores do canal / próprio
+  const nomesCanal = getNomesVendedoresDoCanal();
+  if (nomesCanal?.size) rows = rows.filter(v => nomesCanal.has(normNomeUtilizador(v.vendedor)));
+  if (!isAdmin()) {
+    const me = normNomeUtilizador(getUtilizadorAtual());
+    rows = rows.filter(v => normNomeUtilizador(v.vendedor) === me);
+  }
+
+  if (!rows.length) {
+    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px;">Sem registos de visitas no período.</div>';
+    return;
+  }
+
+  const byVend = {};
+  rows.forEach(r => {
+    const v = r.vendedor || '—';
+    if (!byVend[v]) byVend[v] = { total: 0, visitasS: 0, visitasN: 0, comprouS: 0, comprouN: 0, motivos: {} };
+    const s = byVend[v];
+    s.total++;
+    if (r.visita === 'S') s.visitasS++;
+    if (r.visita === 'N') s.visitasN++;
+    if (r.visita === 'S' && r.comprou === 'S') s.comprouS++;
+    if (r.visita === 'S' && r.comprou === 'N') {
+      s.comprouN++;
+      if (r.motivo) s.motivos[r.motivo] = (s.motivos[r.motivo] || 0) + 1;
+    }
+  });
+
+  const pct = (n, d) => d > 0 ? Math.round((n / d) * 100) : null;
+  const TH = 'padding:8px 12px;font-size:11px;font-weight:700;background:#f5f5f5;border-bottom:2px solid var(--accent);text-align:left;';
+  const TD = 'padding:8px 12px;font-size:13px;border-bottom:1px solid #f0f0f0;';
+
+  let html = `<div style="overflow-x:auto;margin-bottom:20px;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:640px;">
+      <thead><tr>
+        <th style="${TH}">Vendedor</th>
+        <th style="${TH}text-align:center;">Registos</th>
+        <th style="${TH}text-align:center;">% Visitas feitas</th>
+        <th style="${TH}text-align:center;">% Compraram</th>
+        <th style="${TH}text-align:center;">% Não compraram</th>
+        <th style="${TH}">Principais motivos</th>
+      </tr></thead><tbody>`;
+
+  Object.entries(byVend).sort((a, b) => a[0].localeCompare(b[0], 'pt')).forEach(([vend, s], i) => {
+    const pVis = pct(s.visitasS, s.total);
+    const baseCompra = s.visitasS || 0;
+    const pComp = pct(s.comprouS, baseCompra);
+    const pNao = pct(s.comprouN, baseCompra);
+    const topMot = Object.entries(s.motivos).sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([m, n]) => `${m} (${n})`).join(' · ') || '—';
+    const badge = (p, goodHigh) => {
+      if (p === null) return '—';
+      const ok = goodHigh ? p >= 70 : p <= 30;
+      const mid = goodHigh ? p >= 40 : p <= 50;
+      const col = ok ? '#16a34a' : mid ? '#d97706' : '#c8102e';
+      const bg = ok ? '#F0FDF4' : mid ? '#FFFBEB' : '#FEF2F2';
+      return `<span style="background:${bg};color:${col};padding:2px 8px;border-radius:10px;font-weight:700;">${p}%</span>`;
+    };
+    html += `<tr style="background:${i % 2 ? '#fafafa' : '#fff'}">
+      <td style="${TD}font-weight:600;">${vend}</td>
+      <td style="${TD}text-align:center;">${s.total}</td>
+      <td style="${TD}text-align:center;">${badge(pVis, true)} <span style="font-size:11px;color:var(--muted);">${s.visitasS}/${s.total}</span></td>
+      <td style="${TD}text-align:center;">${badge(pComp, true)} <span style="font-size:11px;color:var(--muted);">${s.comprouS}/${baseCompra || 0}</span></td>
+      <td style="${TD}text-align:center;">${badge(pNao, false)} <span style="font-size:11px;color:var(--muted);">${s.comprouN}/${baseCompra || 0}</span></td>
+      <td style="${TD}font-size:12px;">${topMot}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+
+  // Totais de motivos no período
+  const motivosAll = {};
+  rows.forEach(r => {
+    if (r.visita === 'S' && r.comprou === 'N' && r.motivo) {
+      motivosAll[r.motivo] = (motivosAll[r.motivo] || 0) + 1;
+    }
+  });
+  const motivoRows = Object.entries(motivosAll).sort((a, b) => b[1] - a[1]);
+  if (motivoRows.length) {
+    const maxM = motivoRows[0][1];
+    html += `<div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Motivos de não compra (período)</div>
+      <div style="display:grid;gap:6px;max-width:520px;">`;
+    motivoRows.forEach(([m, n]) => {
+      const w = Math.round((n / maxM) * 100);
+      html += `<div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;">
+          <span>${m}</span><strong>${n}</strong>
+        </div>
+        <div style="height:6px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+          <div style="height:100%;width:${w}%;background:var(--accent);border-radius:4px;"></div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+async function exportVisitasExcel() {
+  await ensureXLSX();
+  const de = document.getElementById('visitas-analise-de')?.value || '';
+  const ate = document.getElementById('visitas-analise-ate')?.value || hojeISODate();
+  const canal = getCanalAtual();
+  let rows = getVisitasStore().filter(v => v.canal === canal);
+  if (de) rows = rows.filter(v => v.data >= de);
+  if (ate) rows = rows.filter(v => v.data <= ate);
+  if (!isAdmin()) {
+    const me = normNomeUtilizador(getUtilizadorAtual());
+    rows = rows.filter(v => normNomeUtilizador(v.vendedor) === me);
+  }
+  if (!rows.length) { toast('Sem dados de visitas para exportar.', 'error'); return; }
+  const aoa = [['Data', 'Canal', 'Vendedor', 'Rota', 'Cód.', 'Cliente', 'Visita', 'Comprou', 'Motivo', 'Registado por']];
+  rows.sort((a, b) => (b.data || '').localeCompare(a.data || '') || String(a.vendedor).localeCompare(String(b.vendedor)));
+  rows.forEach(r => {
+    aoa.push([r.data, r.canal, r.vendedor, r.rota, r.cod, r.nome, r.visita, r.comprou, r.motivo, r.registado_por || '']);
+  });
+  writeXlsxDownload(aoa, 'Visitas', 'registro_visitas.xlsx',
+    [{ wch: 12 }, { wch: 14 }, { wch: 20 }, { wch: 8 }, { wch: 10 }, { wch: 36 }, { wch: 8 }, { wch: 10 }, { wch: 28 }, { wch: 18 }]);
 }
 
 // ─── ENCERRAMENTO DE CLIENTE ─────────────────────────
