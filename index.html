@@ -3509,7 +3509,7 @@ function codClienteAindaActivo(cod) {
   const k = normCod(cod);
   if (!k) return false;
   if (getAnuladosSet().has(k)) return false;
-  return getListaClientesActiva().some(c => normCod(c.cod) === k);
+  return getListaClientesCompleta().some(c => normCod(c.cod) === k);
 }
 
 let scEncerramentosPendentes = new Map();
@@ -5794,8 +5794,8 @@ async function carregarListaSAP(event) {
   // Remover linhas duplicadas do mesmo código no ficheiro (mantém a última)
   novaLista = deduplicarListaSAPPorCod(novaLista);
 
-  // Calcular diferenças em relação à lista actual
-  const listaAtual = getListaClientesActiva();
+  // Calcular diferenças em relação à lista completa (todos os canais)
+  const listaAtual = getListaClientesCompleta();
   const codAtual   = new Set(listaAtual.map(c => String(c.cod)));
   const codNova    = new Set(novaLista.map(c => String(c.cod)));
   const adicionados = novaLista.filter(c => !codAtual.has(c.cod)).length;
@@ -5923,7 +5923,7 @@ async function confirmarCargaSAP() {
   const { codsAnulados, fileName, codsContencioso = [] } = _sapImportBuffer;
   let novaLista = deduplicarListaSAPPorCod(_sapImportBuffer.novaLista);
   // Evita “voltar atrás”: Excel sem morada/email não deve apagar dados ricos já publicados.
-  const listaAntes = getListaClientesActiva();
+  const listaAntes = getListaClientesCompleta();
   const preservados = preservarCamposRicosListaSAP(novaLista, listaAntes);
   novaLista = preservados.lista;
   acumularSapDetalhe(listaAntes);
@@ -6075,11 +6075,16 @@ function renderUltimaCargaSAP() {
   } catch(e) { el.textContent = '—'; }
 }
 
-function getListaClientesActiva() {
+function getListaClientesCompleta() {
   try {
     const s = localStorage.getItem('delta_clientes_sistema');
     return s ? JSON.parse(s) : CLIENTES_SISTEMA;
   } catch(e) { return CLIENTES_SISTEMA; }
+}
+
+/** Lista SAP visível no canal/utilizador actual (Dados / sem canal = completa). */
+function getListaClientesActiva() {
+  return filtrarPorEscopoCanal(getListaClientesCompleta());
 }
 
 // Sincronizar lista de clientes do Supabase para localStorage
@@ -7397,6 +7402,7 @@ async function loadContratosTab(forceRefresh = false) {
 
     // Filter only those with contratos array
     registos = registos.filter(r => Array.isArray(r.contratos) && r.contratos.length > 0);
+    registos = filtrarPorEscopoCanal(registos);
 
     // Apply vendedor filter if active
     const vendFiltContr = window._contratosFiltro || '';
@@ -8445,7 +8451,6 @@ const CANAIS = {
       { nome: 'Diogo Oliveira', codigos: [99520004, 99520018, 99530001, 99530005],
         detalhe: 'DFB: 99520004 · 99520018 · QB: 99530001 · 99530005' },
       { nome: 'Carlos Castro', codigos: [], admin: true },
-      { nome: 'Filipe Neves', codigos: [99520010], admin: true },
     ],
   },
   distribuidores: {
@@ -8456,7 +8461,6 @@ const CANAIS = {
       { nome: 'Massimo Bottello', codigos: [99520003] },
       { nome: 'Eduardo Madeira', codigos: [99520020] },
       { nome: 'Carlos Castro', codigos: [], admin: true },
-      { nome: 'Filipe Neves', codigos: [99520010], admin: true },
     ],
   },
   ecommerce: {
@@ -8467,7 +8471,6 @@ const CANAIS = {
       { nome: 'Márcio Gorga', codigos: [99520001, 99520008, 99520009, 99530003],
         detalhe: 'DFB: 99520001 · 99520008 · 99520009 · QB: 99530003' },
       { nome: 'Carlos Castro', codigos: [], admin: true },
-      { nome: 'Filipe Neves', codigos: [99520010], admin: true },
     ],
   },
 };
@@ -8520,9 +8523,80 @@ function getCodigosUtilizadorAtual() {
   return getUtilizadorMeta()?.codigos || [];
 }
 
+/** Nomes de vendedor (normalizados) com códigos SAP neste canal — exclui admins sem código. */
+function getNomesVendedoresDoCanal(canalId) {
+  const meta = getCanalMeta(canalId);
+  if (!meta) return null;
+  const map = Object.assign({}, NPESS_VENDEDOR_SC, getVendedoresMap());
+  const names = new Set();
+  meta.users.forEach(u => {
+    const cods = u.codigos || [];
+    if (!cods.length) return;
+    names.add(normNomeUtilizador(u.nome));
+    cods.forEach(cod => {
+      const n = map[cod] || map[parseInt(cod, 10)];
+      if (n) names.add(normNomeUtilizador(n));
+    });
+  });
+  return names;
+}
+
+function getCodigosDoCanal(canalId) {
+  const meta = getCanalMeta(canalId);
+  if (!meta) return [];
+  const out = [];
+  meta.users.forEach(u => (u.codigos || []).forEach(c => out.push(parseInt(c, 10))));
+  return [...new Set(out)];
+}
+
+/** Filtra listas por canal (e, se não-admin, só o próprio vendedor). */
+function filtrarPorEscopoCanal(items, getVend) {
+  if (!items || !items.length) return items || [];
+  if (_loginModoDados || !getCanalAtual()) return items;
+  const names = getNomesVendedoresDoCanal();
+  if (!names || !names.size) return [];
+  const vendOf = typeof getVend === 'function' ? getVend : (x => x.vendedor);
+  let out = items.filter(x => names.has(normNomeUtilizador(vendOf(x))));
+  if (!isAdmin()) {
+    const me = normNomeUtilizador(getUtilizadorAtual());
+    out = out.filter(x => normNomeUtilizador(vendOf(x)) === me);
+  }
+  return out;
+}
+
+function nomesVendedoresCanalParaSelect() {
+  const names = getNomesVendedoresDoCanal();
+  if (!names) return [];
+  // Preferir forma canónica do cadastro SAP
+  const map = Object.assign({}, NPESS_VENDEDOR_SC, getVendedoresMap());
+  const byNorm = new Map();
+  getCodigosDoCanal().forEach(cod => {
+    const n = map[cod];
+    if (n) byNorm.set(normNomeUtilizador(n), n);
+  });
+  getCanalMeta()?.users.forEach(u => {
+    if ((u.codigos || []).length && !byNorm.has(normNomeUtilizador(u.nome))) {
+      byNorm.set(normNomeUtilizador(u.nome), u.nome.toUpperCase());
+    }
+  });
+  return [...byNorm.values()].sort((a, b) => a.localeCompare(b, 'pt'));
+}
+
+function popularSelectsVendedorCanal() {
+  const nomes = nomesVendedoresCanalParaSelect();
+  const opts = '<option value="">— Selecionar —</option>' +
+    nomes.map(n => `<option value="${n}">${n}</option>`).join('');
+  ['f-vendedor', 'e-vendedor'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = opts;
+    if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
+  });
+}
+
 function isAdmin() {
-  const atual = normNomeUtilizador(getUtilizadorAtual());
-  if (ADMINS.some(a => normNomeUtilizador(a) === atual)) return true;
+  // Admin só no canal onde está marcado (Filipe = só Horeca; Carlos nos canais onde entra)
   return !!getUtilizadorMeta()?.admin;
 }
 
@@ -8658,12 +8732,16 @@ function confirmarPinLogin() {
 function entrarNaApp() {
   const nome = getUtilizadorAtual();
   const canal = getCanalAtual();
+  popularSelectsVendedorCanal();
   aplicarUtilizador(nome);
   esconderLoginModal();
   lockAppShell(false);
   const tabAnalise = document.getElementById('tab-analise');
   const meta = getCanalMeta(canal);
   if (tabAnalise && meta) tabAnalise.textContent = meta.analiseLabel;
+  if (typeof clearContratosCache === 'function') clearContratosCache();
+  if (typeof clearRegistosCache === 'function') clearRegistosCache();
+  foraSPCache = null;
   switchTab('registos');
 }
 
@@ -8691,6 +8769,15 @@ function initLogin() {
   const nome = localStorage.getItem('dfb_utilizador');
   const canal = localStorage.getItem('dfb_canal');
   if (nome && canal && CANAIS[canal] && userTemPin(canal, nome)) {
+    // Filipe só existe em Horeca — sessão antiga noutro canal é invalidada
+    const metaUser = CANAIS[canal].users.find(u => normNomeUtilizador(u.nome) === normNomeUtilizador(nome));
+    if (!metaUser) {
+      localStorage.removeItem('dfb_utilizador');
+      localStorage.removeItem('dfb_canal');
+      mostrarLoginModal();
+      return;
+    }
+    popularSelectsVendedorCanal();
     aplicarUtilizador(nome);
     lockAppShell(false);
     esconderLoginModal();
@@ -8970,12 +9057,12 @@ function isCodContencioso(cod) {
   return getCodsContenciosoSet().has(normCod(cod));
 }
 
-/** Registos activos = exclui clientes no Contencioso (deixam de ser contabilizados). */
+/** Registos activos = exclui Contencioso + restringe ao canal/utilizador. */
 function getRegistosActivos(data) {
-  const src = data || allData || [];
+  let src = data || allData || [];
   const cont = getCodsContenciosoSet();
-  if (!cont.size) return src;
-  return src.filter(r => !cont.has(normCod(r.cod)));
+  if (cont.size) src = src.filter(r => !cont.has(normCod(r.cod)));
+  return filtrarPorEscopoCanal(src);
 }
 
 function guardarListaContencioso(lista) {
