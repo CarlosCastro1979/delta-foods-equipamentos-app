@@ -1505,12 +1505,8 @@ var _unused_placeholder = 1;
       </table>
     </div>
   </div>
-
-</div>
-
-  <!-- CLIENTES POR REGISTAR -->
-
     </div>
+
     <div id="sub-panel-pendentes" style="display:none;">
 <div id="panel-pendentes">
     <div class="pending-toolbar">
@@ -1546,9 +1542,8 @@ var _unused_placeholder = 1;
       </table>
     </div>
 
-  </div>
-</div>
-</div>
+  </div><!-- /panel-pendentes -->
+  </div><!-- /sub-panel-pendentes -->
 
   <!-- SUB-PANEL: VENDEDORES -->
   <div id="sub-panel-vendedores" style="display:none;">
@@ -1617,6 +1612,7 @@ var _unused_placeholder = 1;
       </div>
     </div>
   </div>
+  </div><!-- /panel-registos -->
 
 <div class="panel" id="panel-resumo">
     <div class="sub-nav">
@@ -5879,6 +5875,7 @@ async function carregarListaSAP(event) {
   const nComEmail = novaLista.filter(c => c.email).length;
   const nComTel = novaLista.filter(c => c.tel1).length;
   const nComCanal = novaLista.filter(c => c.canal).length;
+  const nComRota = novaLista.filter(c => c.rota).length;
   const colsOk = colDiag.filter(([, i]) => i >= 0).map(([n]) => n);
   const colsMiss = colDiag.filter(([, i]) => i < 0).map(([n]) => n);
 
@@ -5891,10 +5888,14 @@ async function carregarListaSAP(event) {
       + (nHoreca ? ` · ${nHoreca} nos canais 03/04` : '') + `</span>`;
   }
   statusHtml += `<br><span style="color:${nComRua && nComCnpj ? '#166534' : '#b45309'}">Dados ricos no ficheiro: `
-    + `morada ${nComRua}/${novaLista.length} · CNPJ ${nComCnpj} · email ${nComEmail} · tel ${nComTel} · canal ${nComCanal}</span>`;
+    + `morada ${nComRua}/${novaLista.length} · CNPJ ${nComCnpj} · email ${nComEmail} · tel ${nComTel} · canal ${nComCanal}`
+    + ` · <b style="color:${nComRota ? '#166534' : '#b91c1c'}">ZD/rota ${nComRota}/${novaLista.length}</b></span>`;
   statusHtml += `<br><span style="color:var(--muted);font-size:12px">Colunas OK: ${colsOk.join(', ') || '—'}`
     + (colsMiss.length ? ` · <b style="color:#b45309">não encontradas: ${colsMiss.join(', ')}</b>` : '')
     + `</span>`;
+  if (!nComRota) {
+    statusHtml += `<br><span style="color:#b91c1c;font-weight:600">⚠ Coluna ZD (rota) não encontrada ou vazia — o Registro de visitas fica sem rotas.</span>`;
+  }
   if (!nComRua && !nComCnpj && !nComEmail) {
     statusHtml += `<br><span style="color:#b91c1c;font-weight:600">⚠ Este Excel não tem morada/CNPJ/email — o cadastro automático fica incompleto. Usa o export SAP com endereço e contactos.</span>`;
   }
@@ -6556,9 +6557,9 @@ function switchTab(tab) {
   if (tab === 'contratos') {
     switchSubTab('contratos', window._contratosSubTab || 'registados');
   }
-  if (tab === 'historico-at') loadATHistorico();
-  if (tab === 'prospeccao') initProsTab();
-  if (tab === 'visitas') initVisitasTab();
+  if (tab === 'historico-at') { try { loadATHistorico(); } catch (e) { console.warn(e); } }
+  if (tab === 'prospeccao') { try { initProsTab(); } catch (e) { console.warn(e); } }
+  if (tab === 'visitas') { try { initVisitasTab(); } catch (e) { console.warn('initVisitasTab', e); } }
   if (tab === 'dados') {
     const banner = document.getElementById('dados-hub-banner');
     if (banner) banner.style.display = _loginModoDados ? 'flex' : 'none';
@@ -6714,12 +6715,17 @@ function loadAtTab() {
 
   // Init sub-aba chamado
   atSwitchSub('chamado');
-  // Reset instalação
-  document.getElementById('inst-cod').value = '';
-  document.getElementById('inst-data').value = '';
-  document.getElementById('inst-obs').value = '';
-  document.getElementById('inst-equip-list').innerHTML = '';
-  document.getElementById('inst-cliente-info').style.display = 'none';
+  // Reset instalação (null-safe)
+  const instCod = document.getElementById('inst-cod');
+  const instData = document.getElementById('inst-data');
+  const instObs = document.getElementById('inst-obs');
+  const instList = document.getElementById('inst-equip-list');
+  const instInfo = document.getElementById('inst-cliente-info');
+  if (instCod) instCod.value = '';
+  if (instData) instData.value = '';
+  if (instObs) instObs.value = '';
+  if (instList) instList.innerHTML = '';
+  if (instInfo) instInfo.style.display = 'none';
 }
 
 function atSetDisabled(id, disabled, placeholder) {
@@ -8696,7 +8702,12 @@ function mostrarLoginModal() {
   _loginCanal = null;
   _loginUserNome = null;
   const lo = document.getElementById('login-overlay');
-  if (lo) { lo.style.display = 'flex'; lo.classList.add('open'); }
+  if (lo) {
+    lo.style.display = 'flex';
+    lo.style.pointerEvents = 'auto';
+    lo.classList.add('open');
+    lo.setAttribute('aria-hidden', 'false');
+  }
   setLoginStep('canal');
   lockAppShell(true);
   const err = document.getElementById('login-erro');
@@ -8710,6 +8721,8 @@ function esconderLoginModal() {
   if (!lo) return;
   lo.classList.remove('open');
   lo.style.display = 'none';
+  lo.style.pointerEvents = 'none';
+  lo.setAttribute('aria-hidden', 'true');
 }
 
 function voltarLoginStep(step) {
