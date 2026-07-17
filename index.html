@@ -4066,8 +4066,11 @@ function scGuardarVendaData(cod, dt) {
 
 async function scLoadFromSupabase() {
   try {
-    document.getElementById('sc-info').innerHTML =
-      '<span style="color:var(--muted);font-size:12px;">⏳ A carregar histórico...</span>';
+    const scInfo = document.getElementById('sc-info');
+    if (scInfo) {
+      scInfo.innerHTML =
+        '<span style="color:var(--muted);font-size:12px;">⏳ A carregar histórico...</span>';
+    }
 
     scVendasData = {};
     let lastUpdate = '';
@@ -4100,8 +4103,10 @@ async function scLoadFromSupabase() {
 
     const nClientes = new Set(Object.keys(scVendasData).map(k => normalizaCodSC(k))).size;
     const dtUpdate = lastUpdate ? new Date(lastUpdate).toLocaleDateString('pt-BR') : '—';
-    document.getElementById('sc-info').innerHTML =
-      `<span style="color:var(--muted);font-size:12px;">📦 Histórico: <strong>${nClientes}</strong> clientes · Última actualização: <strong>${dtUpdate}</strong></span>`;
+    if (scInfo) {
+      scInfo.innerHTML =
+        `<span style="color:var(--muted);font-size:12px;">📦 Histórico: <strong>${nClientes}</strong> clientes · Última actualização: <strong>${dtUpdate}</strong></span>`;
+    }
     return true;
   } catch(e) {
     console.error('scLoadFromSupabase error:', e);
@@ -8966,12 +8971,29 @@ function hojeISODate() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Dias anteriores ao de hoje: consulta apenas (não editável). Cada novo dia começa limpo. */
+function isVisitasDiaBloqueado(dataISO) {
+  const d = String(dataISO || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return true;
+  return d < hojeISODate();
+}
+
+function formatUltimaCompraVisitas(cod) {
+  const dt = getUltimaCompraFamilia(cod);
+  if (!dt || !(dt instanceof Date) || isNaN(dt)) return '—';
+  return dt.toLocaleDateString('pt-BR');
+}
+
 function initVisitasTab() {
   const dataEl = document.getElementById('visitas-data');
-  if (dataEl && !dataEl.value) dataEl.value = hojeISODate();
+  const hoje = hojeISODate();
+  if (dataEl) {
+    dataEl.max = hoje;
+    if (!dataEl.value || dataEl.value > hoje) dataEl.value = hoje;
+  }
   const de = document.getElementById('visitas-analise-de');
   const ate = document.getElementById('visitas-analise-ate');
-  if (ate && !ate.value) ate.value = hojeISODate();
+  if (ate && !ate.value) ate.value = hoje;
   if (de && !de.value) {
     const d = new Date();
     d.setDate(d.getDate() - 30);
@@ -8981,6 +9003,9 @@ function initVisitasTab() {
   popularVisitasRotaSelect();
   renderVisitasDia();
   renderVisitasAnalise();
+  if (!scLoaded) {
+    scLoadFromSupabase().then(ok => { if (ok) renderVisitasDia(); }).catch(() => {});
+  }
 }
 
 function popularVisitasVendedorSelect() {
@@ -9076,11 +9101,17 @@ function renderVisitasDia() {
 
   const regs = getVisitasDoDia(data, canal, vend, rota);
   const feitos = [...regs.values()].filter(r => r.visita === 'S').length;
+  const bloqueado = isVisitasDiaBloqueado(data);
+  const dataEl = document.getElementById('visitas-data');
+  if (dataEl) dataEl.max = hojeISODate();
   if (info) {
     info.innerHTML = `<strong>${clientes.length}</strong> clientes na ZD/rota ${rota}` +
       ` &nbsp;·&nbsp; <span style="color:#16a34a">${feitos} visitas S</span>` +
       ` &nbsp;·&nbsp; ${data.split('-').reverse().join('/')}` +
-      ` &nbsp;·&nbsp; <span style="color:var(--muted)">${comZd.length}/${doVend.length} c/ ZD</span>`;
+      ` &nbsp;·&nbsp; <span style="color:var(--muted)">${comZd.length}/${doVend.length} c/ ZD</span>` +
+      (bloqueado
+        ? ` &nbsp;·&nbsp; <span style="color:#b45309;font-weight:600;">🔒 Dia bloqueado (só consulta)</span>`
+        : ` &nbsp;·&nbsp; <span style="color:var(--muted);">editável até ao fim do dia</span>`);
   }
 
   if (!clientes.length) {
@@ -9104,10 +9135,19 @@ function renderVisitasDia() {
       ${val}
     </label>`;
 
-  let html = `<div class="table-wrap" style="overflow-x:auto;"><table class="data-table" style="width:auto;max-width:100%;border-collapse:collapse;table-layout:auto;">
+  let html = '';
+  if (bloqueado) {
+    html += `<div style="margin-bottom:10px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;">
+      🔒 Registo de <strong>${data.split('-').reverse().join('/')}</strong> bloqueado — só consulta.
+      No dia de hoje a mesma rota começa <strong>limpa</strong> para novo preenchimento.
+    </div>`;
+  }
+
+  html += `<div class="table-wrap" style="overflow-x:auto;"><table class="data-table" style="width:auto;max-width:100%;border-collapse:collapse;table-layout:auto;">
     <thead><tr>
       <th style="${TH}width:1%;">Cód.</th>
       <th style="${TH}">Cliente</th>
+      <th style="${TH}width:1%;">Última compra</th>
       <th style="${TH}text-align:center;width:1%;">Visita</th>
       <th style="${TH}text-align:center;width:1%;">Comprou</th>
       <th style="${TH}">Motivo (se não comprou)</th>
@@ -9118,16 +9158,19 @@ function renderVisitasDia() {
     const visita = reg.visita || '';
     const comprou = reg.comprou || '';
     const motivo = reg.motivo || '';
-    const motivoDis = comprou === 'N' ? '' : 'disabled';
-    const comprouDis = visita === 'N';
+    const motivoDis = bloqueado || comprou !== 'N' ? 'disabled' : '';
+    const comprouDis = bloqueado || visita === 'N';
+    const visitaDis = bloqueado;
     const bg = i % 2 === 0 ? '#fff' : '#fafafa';
     const codEsc = String(c.cod).replace(/'/g, "\\'");
+    const ultCompra = formatUltimaCompraVisitas(c.cod);
     html += `<tr style="background:${bg}">
       <td style="${TD}color:var(--muted);font-family:var(--font-mono);white-space:nowrap;width:1%;">${c.cod}</td>
       <td style="${TD}font-weight:500;white-space:nowrap;">${c.nome || '—'}</td>
+      <td style="${TD}white-space:nowrap;width:1%;font-family:var(--font-mono);color:${ultCompra === '—' ? 'var(--muted)' : 'var(--text)'};">${ultCompra}</td>
       <td style="${TD}text-align:center;white-space:nowrap;width:1%;">
-        ${snRadio('visita', c.cod, 'S', visita === 'S', false)}
-        ${snRadio('visita', c.cod, 'N', visita === 'N', false)}
+        ${snRadio('visita', c.cod, 'S', visita === 'S', visitaDis)}
+        ${snRadio('visita', c.cod, 'N', visita === 'N', visitaDis)}
       </td>
       <td style="${TD}text-align:center;white-space:nowrap;width:1%;">
         ${snRadio('comprou', c.cod, 'S', comprou === 'S', comprouDis)}
@@ -9169,6 +9212,11 @@ function salvarVisitaLinha(cod) {
   const rota = document.getElementById('visitas-rota')?.value || '';
   const canal = getCanalAtual();
   if (!vend || !rota || !cod) return;
+  if (isVisitasDiaBloqueado(data)) {
+    toast('Este dia já está bloqueado — só é possível consultar.', 'warn');
+    renderVisitasDia();
+    return;
+  }
 
   const motivoSel = document.querySelector(`select[data-vis-field="motivo"][data-cod="${cod}"]`);
   let visita = visitasCampoValor('visita', cod);
