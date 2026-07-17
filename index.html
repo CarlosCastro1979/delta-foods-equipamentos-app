@@ -8807,6 +8807,23 @@ async function cancelarPedidoContencioso(cod, id) {
   }
 }
 
+/** CNPJ + email do cadastro do cliente (cadastro_json); fallback lista SAP. */
+function getContactoCadastroCliente(cod) {
+  const k = normCod(cod);
+  const reg = (allData || []).find(r => normCod(r.cod) === k)
+    || ((typeof getRegistosCache === 'function' ? getRegistosCache() : null) || []).find(r => normCod(r.cod) === k)
+    || null;
+  const cad = (reg?.cadastro_json && typeof reg.cadastro_json === 'object') ? reg.cadastro_json : {};
+  const sap = (typeof getListaClientesActiva === 'function'
+    ? (getListaClientesActiva() || []).find(c => normCod(c.cod) === k)
+    : null) || getSapDetalhe(cod) || {};
+  const cnpjRaw = cad.cnpj || reg?.cnpj || sap.cnpj || '';
+  const emailRaw = cad.email || reg?.email || sap.email || '';
+  const cnpj = (typeof fmtCnpjCadastro === 'function' ? fmtCnpjCadastro(cnpjRaw) : String(cnpjRaw || '').trim()) || '';
+  const email = String(emailRaw || '').trim().toLowerCase();
+  return { cnpj, email };
+}
+
 function abrirContencioso(cod, nome, vendedor) {
   const div = scDividasData[cod] || scDividasData[normalizaCodSC(cod)];
   if (!div || !(div.a120 > 0)) {
@@ -8821,8 +8838,11 @@ function abrirContencioso(cod, nome, vendedor) {
   const ultimaTxt = ultima ? ultima.toLocaleDateString('pt-BR') : '—';
   const diasAtraso = calcDiasAtrasoDesdeVencimento(div);
   const diasTxt = diasAtraso != null ? String(diasAtraso) : '—';
+  const contacto = getContactoCadastroCliente(cod);
   _contenciosoCliente = {
     cod, nome, vendedor,
+    cnpj: contacto.cnpj,
+    email: contacto.email,
     vencido: div.vencido || 0,
     diasAtraso: diasTxt,
     ultimaCompra: ultimaTxt
@@ -8830,6 +8850,7 @@ function abrirContencioso(cod, nome, vendedor) {
   document.getElementById('contencioso-info').innerHTML =
     `<strong>${nome || '—'}</strong><br>
      <span style="color:var(--muted);">Cód. SAP: ${cod || '—'} &nbsp;|&nbsp; Vendedor: ${vendedor || '—'} &nbsp;|&nbsp; Últ. compra: ${ultimaTxt}</span><br>
+     <span style="color:var(--muted);">CNPJ: ${contacto.cnpj || '—'} &nbsp;|&nbsp; Email: ${contacto.email || '—'}</span><br>
      <span style="color:#7f1d1d;font-weight:600;">Dívida: ${formatEur(div.vencido)} &nbsp;|&nbsp; Dias em atraso: ${diasTxt}</span><br>
      <span style="color:var(--muted);font-size:12px;">Passar para vendedor Contencioso: ${CONTENCIOSO_VENDEDOR}</span>`;
   document.getElementById('contencioso-obs').value = '';
@@ -8854,6 +8875,9 @@ async function enviarContencioso() {
   const hora = new Date().getHours();
   const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
 
+  const contacto = getContactoCadastroCliente(c.cod);
+  const cnpj = c.cnpj || contacto.cnpj || '—';
+  const emailCli = c.email || contacto.email || '—';
   const assunto = encodeURIComponent(`Pedido Contencioso - ${c.nome} (${c.cod})`);
   const corpo = encodeURIComponent(
 `${saudacao},
@@ -8862,6 +8886,8 @@ Solicito a passagem do cliente abaixo para o código de vendedor Contencioso ${C
 
   • Nome: ${c.nome || '—'}
   • Código SAP: ${c.cod || '—'}
+  • CNPJ: ${cnpj}
+  • Email: ${emailCli}
   • Vendedor actual: ${c.vendedor || '—'}
   • Data da última compra: ${c.ultimaCompra || '—'}
   • Dias em atraso: ${diasTxt}
