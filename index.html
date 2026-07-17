@@ -8201,23 +8201,36 @@ function outlookGuessMime(filename) {
   return 'application/octet-stream';
 }
 
-/** Endpoints da API local (serve.ps1) que abrem o .eml no Outlook. */
+/** Endpoints da API local (serve.ps1) que abrem o rascunho no Outlook. */
 function outlookDraftApiUrls() {
-  const urls = [
-    // Mesmo host (app via serve.ps1)
+  const local = [];
+  for (const port of [8088, 8080, 8090, 5505]) {
+    local.push(`http://127.0.0.1:${port}/api/open-outlook-draft`);
+    local.push(`http://localhost:${port}/api/open-outlook-draft`);
+  }
+  const host = String(location.hostname || '').toLowerCase();
+  const isLocal = host === 'localhost' || host === '127.0.0.1';
+  // Em GitHub Pages NÃO usar paths relativos — um 200 HTML dava falso "Outlook aberto"
+  // e o browser descarregava .eml em vez de abrir o email.
+  if (!isLocal) return local;
+  return [
     '/api/open-outlook-draft',
     '/delta-foods-equipamentos-app/api/open-outlook-draft',
+    ...local,
   ];
-  // Portas locais — também a partir do GitHub Pages (CORS no serve.ps1)
-  for (const port of [8088, 8080, 8090, 5505]) {
-    urls.push(`http://127.0.0.1:${port}/api/open-outlook-draft`);
-    urls.push(`http://localhost:${port}/api/open-outlook-draft`);
-  }
-  return urls;
 }
 
-/** Abre rascunho no Outlook com corpo HTML e anexos já incluídos. */
-async function outlookAbrirRascunho({ to, cc, subject, html, attachments = [], draftName = 'Delta_rascunho_Outlook.eml', toastMsg } = {}) {
+/**
+ * Abre rascunho no Outlook com corpo HTML e anexos.
+ * Só status 204 da API local conta como sucesso (serve.ps1).
+ * Se mailtoFallback for passado e a API falhar → abre mailto + descarrega os Excel.
+ */
+async function outlookAbrirRascunho({
+  to, cc, subject, html, attachments = [],
+  draftName = 'Delta_rascunho_Outlook.eml',
+  toastMsg,
+  mailtoFallback = null,
+} = {}) {
   const boundary = `DELTA_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   // Headers RFC: vírgulas entre endereços (não ponto-e-vírgula)
   let ccVal = (cc == null || cc === '')
@@ -8256,9 +8269,8 @@ async function outlookAbrirRascunho({ to, cc, subject, html, attachments = [], d
   }
   parts.push(`--${boundary}--`, '');
   const eml = parts.join('\r\n');
-  const emlBytes = new Blob([eml], { type: 'message/rfc822' });
 
-  // serve.ps1 grava o .eml e faz Start-Process → Outlook (fluxo principal que desenvolvemos).
+  // serve.ps1: só 204 = Outlook aberto com anexos (ignorar outros 200/HTML)
   for (const ep of outlookDraftApiUrls()) {
     try {
       const r = await fetch(ep, {
@@ -8266,24 +8278,38 @@ async function outlookAbrirRascunho({ to, cc, subject, html, attachments = [], d
         headers: { 'Content-Type': 'message/rfc822; charset=utf-8' },
         body: eml,
       });
-      if (r.status === 204 || r.ok) {
+      if (r.status === 204) {
         toast(toastMsg || '📧 Outlook aberto com email e anexos.');
         return true;
       }
     } catch (_) { /* porta/host sem API */ }
   }
 
-  // Fallback só se serve.ps1 não estiver a correr
-  const fileName = draftName || 'Delta_rascunho_Outlook.eml';
-  if (navigator.msSaveOrOpenBlob) {
-    navigator.msSaveOrOpenBlob(emlBytes, fileName);
-    toast(toastMsg || '📧 Outlook a abrir com email e anexos.');
+  // Sem serve.ps1: abrir email real via mailto (+ Excel em download para anexar)
+  if (mailtoFallback && to) {
+    for (const att of (attachments || [])) {
+      if (att?.blob) triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx');
+    }
+    const bodyTxt = mailtoFallback.body
+      || String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
+    const ccList = ccVal.split(',').map(s => s.trim()).filter(Boolean);
+    const mailto =
+      `mailto:${mailtoAddr(to)}?` +
+      ccMailtoParam(ccList) +
+      '&subject=' + encodeURIComponent(subject || '') +
+      '&body=' + encodeURIComponent(bodyTxt);
+    window.location.href = mailto;
+    toast(mailtoFallback.toastMsg || '📧 Outlook aberto. Anexa o Excel descarregado ao email.');
     return true;
   }
+
+  // Último recurso: .eml (não fingir que o Outlook abriu)
+  const fileName = draftName || 'Delta_rascunho_Outlook.eml';
+  const emlBytes = new Blob([eml], { type: 'message/rfc822' });
   triggerBlobDownload(emlBytes, fileName);
   toast(
-    '📧 Corre serve.ps1 e tenta de novo — o Outlook deve abrir com o Excel em anexo. '
-    + '(URL: http://localhost:8088/delta-foods-equipamentos-app/)',
+    '📧 Foi descarregado um ficheiro .eml — abre-o, ou corre serve.ps1 '
+    + '(http://localhost:8088/delta-foods-equipamentos-app/) para abrir o Outlook automaticamente.',
     'warn'
   );
   return false;
@@ -10753,8 +10779,8 @@ async function prosGerarCadastroXlsx(dados, opts = {}) {
   return await gerarCadastroXlsxLocal(dados, opts);
 }
 
-function prosCadastroResumoEmailHtml(dados) {
-  const rows = [
+function prosCadastroResumoRows(dados) {
+  return [
     ['Motivo', dados.motivo || 'Abertura de Cliente'],
     ['Empresa', dados.empresa || '—'],
     ['Nome / Razão Social', dados.nome || '—'],
@@ -10769,6 +10795,10 @@ function prosCadastroResumoEmailHtml(dados) {
     ['Cond. Pagamento', dados.pagto || '—'],
     ['Vendedor', dados.vendedor || '—'],
   ];
+}
+
+function prosCadastroResumoEmailHtml(dados) {
+  const rows = prosCadastroResumoRows(dados);
   const td = 'border:1px solid #d1d5db;padding:6px 10px;font-family:Calibri,Arial,sans-serif;font-size:12px;';
   const th = td + 'background:#c8102e;color:#ffffff;font-weight:700;';
   const body = rows.map(([k, v], i) => {
@@ -10778,6 +10808,12 @@ function prosCadastroResumoEmailHtml(dados) {
   return `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8102e;min-width:480px;">
   <thead><tr><th style="${th}text-align:left;" colspan="2">Resumo do cadastro</th></tr></thead>
   <tbody>${body}</tbody></table>`;
+}
+
+function prosCadastroResumoEmailText(dados) {
+  return prosCadastroResumoRows(dados)
+    .map(([k, v]) => `  • ${k}: ${v}`)
+    .join('\n');
 }
 
 // Abre Outlook com HTML + Excel(s) já anexados (mesmo padrão do MC00).
@@ -10803,6 +10839,9 @@ async function prosAbrirEmailCadastro(dados, opts = {}) {
   const intro = isAltCnpj
     ? `Segue em anexo a <strong>${outlookEmailEsc(anexosTxt)}</strong> do cliente <strong>${outlookEmailEsc(dados.nome || '')}</strong> para <strong>alteração de CNPJ</strong>.`
     : `Segue em anexo a <strong>${outlookEmailEsc(anexosTxt)}</strong> do cliente <strong>${outlookEmailEsc(dados.nome || '')}</strong> para aprovação.`;
+  const introTxt = isAltCnpj
+    ? `Segue em anexo a ${anexosTxt} do cliente ${dados.nome || ''} para alteração de CNPJ.`
+    : `Segue em anexo a ${anexosTxt} do cliente ${dados.nome || ''} para aprovação.`;
   const html =
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
@@ -10815,6 +10854,18 @@ ${propHtml}
 <p>Cumprimentos,<br>${outlookEmailEsc(remetente)}${remetenteEmail ? '<br>' + outlookEmailEsc(remetenteEmail) : ''}</p>
 </body></html>`;
 
+  const bodyTxt =
+`${saudacao},
+
+${introTxt}
+
+${prosCadastroResumoEmailText(dados)}
+${propTexto ? `\nProposta de negócio:\n${String(propTexto).trim()}\n` : ''}
+Aguardo aprovação.
+
+Cumprimentos,
+${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`;
+
   return outlookAbrirRascunho({
     to,
     cc: ccString(cc),
@@ -10823,6 +10874,13 @@ ${propHtml}
     attachments,
     draftName: 'Cadastro_rascunho_Outlook.eml',
     toastMsg: '📧 Outlook aberto com cadastro em anexo.',
+    // Sem serve.ps1: abre o email (mailto) em vez de descarregar .eml
+    mailtoFallback: {
+      body: bodyTxt,
+      toastMsg: isAltCnpj
+        ? '📧 Outlook aberto. Anexa o Excel de alteração de CNPJ descarregado.'
+        : '📧 Outlook aberto. Anexa o Excel de cadastro descarregado.',
+    },
   });
 }
 
@@ -11024,8 +11082,10 @@ async function prosExportarAlteracaoCnpj() {
       to: 'daniela.kucinski@deltafoodsbrasil.com.br',
       cc: ['carlos.castro@deltafoodsbrasil.com.br'], // Filipe entra sempre via ccString
     });
-    if (ok !== false && st) {
-      st.innerHTML = '<span style="color:#16a34a">Outlook aberto com alteração de CNPJ em anexo.</span>';
+    if (st) {
+      st.innerHTML = ok !== false
+        ? '<span style="color:#16a34a">Outlook aberto com alteração de CNPJ.</span>'
+        : '<span style="color:#b45309">Email .eml descarregado — abre o ficheiro, ou usa serve.ps1 para abertura automática.</span>';
     }
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
