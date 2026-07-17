@@ -795,12 +795,40 @@
     background: var(--surface); border-radius: 18px; padding: 36px 32px; width: 100%; max-width: 380px;
     text-align: center; box-shadow: var(--shadow-lg);
   }
+  .login-card.login-card--wide { max-width: 560px; }
   .login-icon { font-size: 40px; margin-bottom: 16px; }
   .login-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
   .login-desc { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
   .login-select { margin-bottom: 16px; }
   .login-btn { width: 100%; justify-content: center; }
   .login-erro { color: var(--danger); font-size: 12px; margin-top: 12px; display: none; }
+  .login-step { display: none; }
+  .login-step.active { display: block; }
+  .canal-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px;
+  }
+  .canal-btn {
+    appearance: none; border: 1px solid var(--border); background: var(--surface2, #f8fafc);
+    border-radius: 12px; padding: 18px 12px; cursor: pointer; font-family: var(--font-main);
+    transition: var(--transition, .15s ease); text-align: center;
+  }
+  .canal-btn:hover { border-color: var(--accent); background: #fff5f6; }
+  .canal-btn-title { display: block; font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .canal-btn-sub { display: block; font-size: 11px; color: var(--muted); line-height: 1.3; }
+  .login-dados-btn {
+    width: 100%; justify-content: center; margin-top: 4px;
+  }
+  .login-back {
+    background: none; border: none; color: var(--muted); font-size: 12px; cursor: pointer;
+    margin-bottom: 12px; font-family: var(--font-main); text-decoration: underline;
+  }
+  .login-back:hover { color: var(--text); }
+  .login-pin-input {
+    text-align: center; font-size: 22px; letter-spacing: 10px; width: 160px;
+    margin: 0 auto 16px; display: block;
+  }
+  .main-nav.nav-hidden { display: none !important; }
+  .app-content.app-locked { display: none !important; }
   .main-nav {
     background: var(--surface); border-bottom: 1px solid var(--border);
     position: sticky; top: var(--header-h); z-index: 150; box-shadow: var(--shadow-xs);
@@ -1278,34 +1306,78 @@ var _unused_placeholder = 1;
       <span id="record-count">—</span>
     </div>
     <div id="user-bar" class="user-pill" style="display:none">
-      <span class="user-pill-label"><span class="user-pill-prefix">Utilizador:</span> <strong id="user-bar-name"></strong></span>
+      <span class="user-pill-label">
+        <span class="user-pill-prefix">Canal:</span> <strong id="user-bar-canal"></strong>
+        <span class="status-sep">·</span>
+        <span class="user-pill-prefix">Utilizador:</span> <strong id="user-bar-name"></strong>
+      </span>
       <button type="button" class="user-pill-change" onclick="logoutUtilizador()">Mudar</button>
     </div>
   </div>
 </header>
 
-<div id="login-overlay" class="login-overlay" style="display:none">
-  <div class="login-card">
-    <div class="login-icon">👤</div>
-    <h2 class="login-title">Quem és tu?</h2>
-    <p class="login-desc">Seleciona o teu nome para continuar.</p>
-    <select id="login-select" class="form-input login-select">
-      <option value="">— Selecionar —</option>
-      <option value="Hélcio Grégio">Hélcio Grégio</option>
-      <option value="Paulo Fontes">Paulo Fontes</option>
-      <option value="Daniela Santos">Daniela Santos</option>
-      <option value="Filipe Neves">Filipe Neves</option>
-      <option value="Carlos Castro">Carlos Castro</option>
-    </select>
-    <button class="btn btn-primary login-btn" onclick="if(typeof confirmarLogin==='function')confirmarLogin()">Entrar</button>
-    <div id="login-erro" class="login-erro">Seleciona um nome para continuar.</div>
+<div id="login-overlay" class="login-overlay open" style="display:flex">
+  <div class="login-card login-card--wide">
+    <!-- STEP: escolher canal -->
+    <div id="login-step-canal" class="login-step active">
+      <h2 class="login-title">Delta Foods Brasil</h2>
+      <p class="login-desc">Escolhe a área para entrar. Os dados são carregados uma vez e alimentam todos os canais.</p>
+      <div class="canal-grid">
+        <button type="button" class="canal-btn" onclick="selecionarCanal('horeca')">
+          <span class="canal-btn-title">Horeca</span>
+          <span class="canal-btn-sub">Restauração · equip. profissional</span>
+        </button>
+        <button type="button" class="canal-btn" onclick="selecionarCanal('retalho')">
+          <span class="canal-btn-title">Retalho</span>
+          <span class="canal-btn-sub">DFB · QB · Diogo Oliveira</span>
+        </button>
+        <button type="button" class="canal-btn" onclick="selecionarCanal('distribuidores')">
+          <span class="canal-btn-title">Distribuidores Horeca</span>
+          <span class="canal-btn-sub">Massimo · Eduardo</span>
+        </button>
+        <button type="button" class="canal-btn" onclick="selecionarCanal('ecommerce')">
+          <span class="canal-btn-title">Ecommerce</span>
+          <span class="canal-btn-sub">DFB · QB · Márcio Gorga</span>
+        </button>
+      </div>
+      <button type="button" class="btn btn-secondary login-dados-btn" onclick="abrirDadosDaHub()">⚙ Gestão de Dados</button>
+      <p style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.4;">Carrega vendas, lista SAP e dívidas para todos os canais de uma só vez.</p>
+    </div>
+
+    <!-- STEP: escolher utilizador -->
+    <div id="login-step-user" class="login-step">
+      <button type="button" class="login-back" onclick="voltarLoginStep('canal')">← Voltar aos canais</button>
+      <h2 class="login-title" id="login-user-title">Quem és tu?</h2>
+      <p class="login-desc" id="login-user-desc">Seleciona o teu nome para continuar.</p>
+      <select id="login-select" class="form-input login-select">
+        <option value="">— Selecionar —</option>
+      </select>
+      <button class="btn btn-primary login-btn" onclick="confirmarUtilizadorCanal()">Continuar</button>
+      <div id="login-erro" class="login-erro">Seleciona um nome para continuar.</div>
+    </div>
+
+    <!-- STEP: PIN (criar ou entrar) -->
+    <div id="login-step-pin" class="login-step">
+      <button type="button" class="login-back" onclick="voltarLoginStep('user')">← Voltar</button>
+      <h2 class="login-title" id="login-pin-title">PIN de acesso</h2>
+      <p class="login-desc" id="login-pin-desc">Introduz o teu PIN de 4 dígitos.</p>
+      <input type="password" id="login-pin-input" class="form-input login-pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
+        onkeydown="if(event.key==='Enter')confirmarPinLogin()">
+      <div id="login-pin-confirm-wrap" style="display:none;">
+        <p class="login-desc" style="margin-bottom:12px;">Confirma o PIN</p>
+        <input type="password" id="login-pin-confirm" class="form-input login-pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
+          onkeydown="if(event.key==='Enter')confirmarPinLogin()">
+      </div>
+      <button class="btn btn-primary login-btn" onclick="confirmarPinLogin()">Entrar</button>
+      <div id="login-pin-erro" class="login-erro">PIN inválido.</div>
+    </div>
   </div>
 </div>
 
-<nav class="main-nav">
+<nav class="main-nav nav-hidden" id="main-nav">
   <div class="main-nav-inner">
-<button class="tab active" onclick="switchTab('registos')">Registo Clientes</button>
-    <button class="tab" onclick="switchTab('analise')">Análise Clientes Horeca</button>
+    <button class="tab active" onclick="switchTab('registos')">Registo Clientes</button>
+    <button class="tab" id="tab-analise" onclick="switchTab('analise')">Análise Clientes</button>
     <button class="tab" onclick="switchTab('at')">Pedido AT</button>
     <button class="tab" onclick="switchTab('contratos')">Contratos</button>
     <button class="tab" onclick="switchTab('historico-at')">Histórico AT</button>
@@ -1314,7 +1386,7 @@ var _unused_placeholder = 1;
   </div>
 </nav>
 
-<div class="app-content">
+<div class="app-content app-locked" id="app-content">
 
   <!-- NOVO REGISTO -->
   <!-- PANEL: REGISTO CLIENTES (com sub-abas) -->
@@ -3282,20 +3354,44 @@ async function findRegistoByCod(cod) {
 const VEND_STORE_KEY = 'delta_vendedores_cadastro';
 
 const VENDEDORES_DEFAULT = [
-  { cod: 99520002, nome: 'HÉLCIO GRÉGIO' },
-  { cod: 99520006, nome: 'DANIELA SANTOS' },
-  { cod: 99520007, nome: 'PAULO FONTES' },
-  { cod: 99520010, nome: 'FILIPE NEVES' },
-  { cod: 99520015, nome: 'HÉLCIO GRÉGIO' },
-  { cod: 99520016, nome: 'DANIELA SANTOS' },
-  { cod: 99520017, nome: 'PAULO FONTES' },
+  // Horeca DFB
+  { cod: 99520002, nome: 'HÉLCIO GRÉGIO', canal: 'horeca' },
+  { cod: 99520006, nome: 'DANIELA SANTOS', canal: 'horeca' },
+  { cod: 99520007, nome: 'PAULO FONTES', canal: 'horeca' },
+  { cod: 99520010, nome: 'FILIPE NEVES', canal: 'horeca' },
+  { cod: 99520015, nome: 'HÉLCIO GRÉGIO', canal: 'horeca' },
+  { cod: 99520016, nome: 'DANIELA SANTOS', canal: 'horeca' },
+  { cod: 99520017, nome: 'PAULO FONTES', canal: 'horeca' },
+  // Distribuidores Horeca
+  { cod: 99520003, nome: 'MASSIMO BOTTELLO', canal: 'distribuidores' },
+  { cod: 99520020, nome: 'EDUARDO MADEIRA', canal: 'distribuidores' },
+  // Retalho DFB
+  { cod: 99520004, nome: 'DIOGO OLIVEIRA', canal: 'retalho' },
+  { cod: 99520018, nome: 'DIOGO OLIVEIRA', canal: 'retalho' },
+  // Retalho QB
+  { cod: 99530001, nome: 'DIOGO OLIVEIRA', canal: 'retalho' },
+  { cod: 99530005, nome: 'DIOGO OLIVEIRA', canal: 'retalho' },
+  // Ecommerce DFB
+  { cod: 99520001, nome: 'MARCIO GORGA', canal: 'ecommerce' },
+  { cod: 99520008, nome: 'MARCIO GORGA', canal: 'ecommerce' },
+  { cod: 99520009, nome: 'MARCIO GORGA', canal: 'ecommerce' },
+  // Ecommerce QB
+  { cod: 99530003, nome: 'MARCIO GORGA', canal: 'ecommerce' },
 ];
 
 function getVendedoresCadastro() {
   try {
     const s = localStorage.getItem(VEND_STORE_KEY);
-    return s ? JSON.parse(s) : VENDEDORES_DEFAULT;
-  } catch(e) { return VENDEDORES_DEFAULT; }
+    if (!s) return VENDEDORES_DEFAULT.slice();
+    const saved = JSON.parse(s);
+    if (!Array.isArray(saved)) return VENDEDORES_DEFAULT.slice();
+    // Garante códigos novos dos outros canais mesmo com cadastro antigo em localStorage
+    const byCod = new Map(saved.map(v => [parseInt(v.cod), v]));
+    VENDEDORES_DEFAULT.forEach(v => {
+      if (!byCod.has(parseInt(v.cod))) byCod.set(parseInt(v.cod), v);
+    });
+    return [...byCod.values()].sort((a, b) => parseInt(a.cod) - parseInt(b.cod));
+  } catch(e) { return VENDEDORES_DEFAULT.slice(); }
 }
 
 function saveVendedoresCadastro(list) {
@@ -3857,6 +3953,16 @@ const NPESS_VENDEDOR_SC = {
   99520010: 'FILIPE NEVES',
   99520016: 'DANIELA SANTOS',
   99520017: 'PAULO FONTES',
+  99520003: 'MASSIMO BOTTELLO',
+  99520020: 'EDUARDO MADEIRA',
+  99520004: 'DIOGO OLIVEIRA',
+  99520018: 'DIOGO OLIVEIRA',
+  99530001: 'DIOGO OLIVEIRA',
+  99530005: 'DIOGO OLIVEIRA',
+  99520001: 'MARCIO GORGA',
+  99520008: 'MARCIO GORGA',
+  99520009: 'MARCIO GORGA',
+  99530003: 'MARCIO GORGA',
 };
 
 // Normaliza código de cliente (remove espaços e zeros à esquerda)
@@ -8317,70 +8423,335 @@ async function outlookAbrirRascunho({
   return false;
 }
 
+// ─── CANAIS / ACESSO MULTI-ÁREA ──────────────────────
+const CANAIS = {
+  horeca: {
+    id: 'horeca',
+    label: 'Horeca',
+    analiseLabel: 'Análise Clientes Horeca',
+    users: [
+      { nome: 'Hélcio Grégio', codigos: [99520002, 99520015] },
+      { nome: 'Paulo Fontes', codigos: [99520007, 99520017] },
+      { nome: 'Daniela Santos', codigos: [99520006, 99520016] },
+      { nome: 'Filipe Neves', codigos: [99520010], admin: true },
+      { nome: 'Carlos Castro', codigos: [], admin: true },
+    ],
+  },
+  retalho: {
+    id: 'retalho',
+    label: 'Retalho',
+    analiseLabel: 'Análise Clientes Retalho',
+    users: [
+      { nome: 'Diogo Oliveira', codigos: [99520004, 99520018, 99530001, 99530005],
+        detalhe: 'DFB: 99520004 · 99520018 · QB: 99530001 · 99530005' },
+      { nome: 'Carlos Castro', codigos: [], admin: true },
+      { nome: 'Filipe Neves', codigos: [99520010], admin: true },
+    ],
+  },
+  distribuidores: {
+    id: 'distribuidores',
+    label: 'Distribuidores Horeca',
+    analiseLabel: 'Análise Distribuidores Horeca',
+    users: [
+      { nome: 'Massimo Bottello', codigos: [99520003] },
+      { nome: 'Eduardo Madeira', codigos: [99520020] },
+      { nome: 'Carlos Castro', codigos: [], admin: true },
+      { nome: 'Filipe Neves', codigos: [99520010], admin: true },
+    ],
+  },
+  ecommerce: {
+    id: 'ecommerce',
+    label: 'Ecommerce',
+    analiseLabel: 'Análise Clientes Ecommerce',
+    users: [
+      { nome: 'Márcio Gorga', codigos: [99520001, 99520008, 99520009, 99530003],
+        detalhe: 'DFB: 99520001 · 99520008 · 99520009 · QB: 99530003' },
+      { nome: 'Carlos Castro', codigos: [], admin: true },
+      { nome: 'Filipe Neves', codigos: [99520010], admin: true },
+    ],
+  },
+};
+
+const PIN_STORE_KEY = 'dfb_user_pins';
+let _loginCanal = null;
+let _loginUserNome = null;
+let _loginModoDados = false;
+
+function getCanalAtual() {
+  return localStorage.getItem('dfb_canal') || '';
+}
+
+function getCanalMeta(id) {
+  return CANAIS[id || getCanalAtual()] || null;
+}
+
+function pinKey(canal, nome) {
+  return `${canal}|${normNomeUtilizador(nome)}`;
+}
+
+function getUserPins() {
+  try { return JSON.parse(localStorage.getItem(PIN_STORE_KEY) || '{}') || {}; }
+  catch(e) { return {}; }
+}
+
+function setUserPin(canal, nome, pin) {
+  const map = getUserPins();
+  map[pinKey(canal, nome)] = String(pin);
+  localStorage.setItem(PIN_STORE_KEY, JSON.stringify(map));
+}
+
+function getUserPin(canal, nome) {
+  return getUserPins()[pinKey(canal, nome)] || '';
+}
+
+function userTemPin(canal, nome) {
+  return /^\d{4}$/.test(getUserPin(canal, nome));
+}
+
+function getUtilizadorMeta() {
+  const canal = getCanalAtual();
+  const nome = getUtilizadorAtual();
+  const meta = getCanalMeta(canal);
+  if (!meta || !nome) return null;
+  return meta.users.find(u => normNomeUtilizador(u.nome) === normNomeUtilizador(nome)) || null;
+}
+
+function getCodigosUtilizadorAtual() {
+  return getUtilizadorMeta()?.codigos || [];
+}
+
 function isAdmin() {
-  const norm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  const atual = norm(getUtilizadorAtual());
-  return ADMINS.some(a => norm(a) === atual);
+  const atual = normNomeUtilizador(getUtilizadorAtual());
+  if (ADMINS.some(a => normNomeUtilizador(a) === atual)) return true;
+  return !!getUtilizadorMeta()?.admin;
 }
 
 function podeEditarRegisto(vendedor) {
   if (isAdmin()) return true;
-  // Comparação insensível a maiúsculas/acentos: login guarda "Daniela Santos",
-  // mas os registos têm "DANIELA SANTOS"
-  const norm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  return norm(getUtilizadorAtual()) === norm(vendedor);
+  return normNomeUtilizador(getUtilizadorAtual()) === normNomeUtilizador(vendedor);
+}
+
+function setLoginStep(step) {
+  ['canal', 'user', 'pin'].forEach(s => {
+    const el = document.getElementById('login-step-' + s);
+    if (el) el.classList.toggle('active', s === step);
+  });
+}
+
+function lockAppShell(locked) {
+  const nav = document.getElementById('main-nav');
+  const content = document.getElementById('app-content');
+  if (nav) nav.classList.toggle('nav-hidden', !!locked);
+  if (content) content.classList.toggle('app-locked', !!locked);
+}
+
+function mostrarLoginModal() {
+  _loginModoDados = false;
+  _loginCanal = null;
+  _loginUserNome = null;
+  const lo = document.getElementById('login-overlay');
+  if (lo) { lo.style.display = 'flex'; lo.classList.add('open'); }
+  setLoginStep('canal');
+  lockAppShell(true);
+  const err = document.getElementById('login-erro');
+  if (err) err.style.display = 'none';
+  const pinErr = document.getElementById('login-pin-erro');
+  if (pinErr) pinErr.style.display = 'none';
+}
+
+function esconderLoginModal() {
+  const lo = document.getElementById('login-overlay');
+  if (!lo) return;
+  lo.classList.remove('open');
+  lo.style.display = 'none';
+}
+
+function voltarLoginStep(step) {
+  if (step === 'canal') {
+    _loginCanal = null;
+    _loginUserNome = null;
+  }
+  if (step === 'user') _loginUserNome = null;
+  setLoginStep(step);
+  const err = document.getElementById('login-erro');
+  if (err) err.style.display = 'none';
+  const pinErr = document.getElementById('login-pin-erro');
+  if (pinErr) pinErr.style.display = 'none';
+}
+
+function selecionarCanal(canalId) {
+  const meta = CANAIS[canalId];
+  if (!meta) return;
+  _loginCanal = canalId;
+  _loginUserNome = null;
+  const title = document.getElementById('login-user-title');
+  const desc = document.getElementById('login-user-desc');
+  if (title) title.textContent = meta.label;
+  if (desc) desc.textContent = 'Seleciona o teu nome para continuar neste canal.';
+  const sel = document.getElementById('login-select');
+  if (sel) {
+    sel.innerHTML = '<option value="">— Selecionar —</option>' +
+      meta.users.map(u => `<option value="${u.nome}">${u.nome}${u.admin ? ' (admin)' : ''}</option>`).join('');
+  }
+  setLoginStep('user');
+}
+
+function confirmarUtilizadorCanal() {
+  const sel = document.getElementById('login-select');
+  const nome = (sel?.value || '').trim();
+  const err = document.getElementById('login-erro');
+  if (!nome || !_loginCanal) {
+    if (err) err.style.display = 'block';
+    return;
+  }
+  if (err) err.style.display = 'none';
+  _loginUserNome = nome;
+  const temPin = userTemPin(_loginCanal, nome);
+  const pinTitle = document.getElementById('login-pin-title');
+  const pinDesc = document.getElementById('login-pin-desc');
+  const wrapConfirm = document.getElementById('login-pin-confirm-wrap');
+  const pinIn = document.getElementById('login-pin-input');
+  const pinConf = document.getElementById('login-pin-confirm');
+  if (pinIn) pinIn.value = '';
+  if (pinConf) pinConf.value = '';
+  if (temPin) {
+    if (pinTitle) pinTitle.textContent = 'PIN de acesso';
+    if (pinDesc) pinDesc.textContent = `Olá, ${nome}. Introduz o teu PIN de 4 dígitos.`;
+    if (wrapConfirm) wrapConfirm.style.display = 'none';
+  } else {
+    if (pinTitle) pinTitle.textContent = 'Cria o teu PIN';
+    if (pinDesc) pinDesc.textContent = `Primeiro acesso — escolhe um PIN de 4 dígitos só teu (${nome}).`;
+    if (wrapConfirm) wrapConfirm.style.display = 'block';
+  }
+  const pinErr = document.getElementById('login-pin-erro');
+  if (pinErr) pinErr.style.display = 'none';
+  setLoginStep('pin');
+  setTimeout(() => pinIn?.focus(), 50);
+}
+
+function confirmarPinLogin() {
+  const pin = (document.getElementById('login-pin-input')?.value || '').trim();
+  const pinErr = document.getElementById('login-pin-erro');
+  if (!/^\d{4}$/.test(pin)) {
+    if (pinErr) { pinErr.textContent = 'O PIN deve ter exactamente 4 dígitos.'; pinErr.style.display = 'block'; }
+    return;
+  }
+  const temPin = userTemPin(_loginCanal, _loginUserNome);
+  if (!temPin) {
+    const conf = (document.getElementById('login-pin-confirm')?.value || '').trim();
+    if (pin !== conf) {
+      if (pinErr) { pinErr.textContent = 'Os PINs não coincidem.'; pinErr.style.display = 'block'; }
+      return;
+    }
+    setUserPin(_loginCanal, _loginUserNome, pin);
+  } else if (getUserPin(_loginCanal, _loginUserNome) !== pin) {
+    if (pinErr) { pinErr.textContent = 'PIN incorrecto.'; pinErr.style.display = 'block'; }
+    document.getElementById('login-pin-input').value = '';
+    return;
+  }
+  if (pinErr) pinErr.style.display = 'none';
+  localStorage.setItem('dfb_canal', _loginCanal);
+  localStorage.setItem('dfb_utilizador', _loginUserNome);
+  entrarNaApp();
+}
+
+function entrarNaApp() {
+  const nome = getUtilizadorAtual();
+  const canal = getCanalAtual();
+  aplicarUtilizador(nome);
+  esconderLoginModal();
+  lockAppShell(false);
+  const tabAnalise = document.getElementById('tab-analise');
+  const meta = getCanalMeta(canal);
+  if (tabAnalise && meta) tabAnalise.textContent = meta.analiseLabel;
+  switchTab('registos');
+}
+
+function abrirDadosDaHub() {
+  _loginModoDados = true;
+  esconderLoginModal();
+  lockAppShell(false);
+  // Esconde tabs excepto Dados até voltar
+  document.querySelectorAll('.main-nav .tab').forEach(t => {
+    const isDados = (t.getAttribute('onclick') || '').includes("'dados'");
+    t.style.display = isDados ? '' : 'none';
+  });
+  const bar = document.getElementById('user-bar');
+  if (bar) {
+    bar.style.display = 'inline-flex';
+    const canalEl = document.getElementById('user-bar-canal');
+    const nameEl = document.getElementById('user-bar-name');
+    if (canalEl) canalEl.textContent = 'Dados';
+    if (nameEl) nameEl.textContent = 'Carregamento global';
+  }
+  switchTab('dados');
 }
 
 function initLogin() {
   const nome = localStorage.getItem('dfb_utilizador');
-  if (nome) {
+  const canal = localStorage.getItem('dfb_canal');
+  if (nome && canal && CANAIS[canal] && userTemPin(canal, nome)) {
     aplicarUtilizador(nome);
+    lockAppShell(false);
+    esconderLoginModal();
+    const tabAnalise = document.getElementById('tab-analise');
+    const meta = getCanalMeta(canal);
+    if (tabAnalise && meta) tabAnalise.textContent = meta.analiseLabel;
   } else {
     mostrarLoginModal();
   }
 }
 
-function mostrarLoginModal() {
-  const lo = document.getElementById('login-overlay'); lo.style.display = 'flex'; lo.classList.add('open');
-}
-
-function confirmarLogin() {
-  const sel = document.getElementById('login-select');
-  const nome = sel.value.trim();
-  if (!nome) {
-    document.getElementById('login-erro').style.display = 'block';
-    return;
-  }
-  localStorage.setItem('dfb_utilizador', nome);
-  aplicarUtilizador(nome);
-  const lo = document.getElementById('login-overlay');
-  lo.classList.remove('open');
-  lo.style.display = 'none';
-}
+// Compat: antigo confirmarLogin
+function confirmarLogin() { confirmarUtilizadorCanal(); }
 
 function aplicarUtilizador(nome) {
-  // Barra de utilizador
   const bar = document.getElementById('user-bar');
-  if (bar) { bar.style.display = 'inline-flex'; document.getElementById('user-bar-name').textContent = nome; }
-  // Pré-selecionar vendedor nos formulários se for um dos 4
-  const vendedores = ['Hélcio Grégio','Paulo Fontes','Daniela Santos','Filipe Neves'];
-  // Normalizar para comparar (o select usa maiúsculas parciais)
-  const nomeUpper = nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  ['f-vendedor','e-vendedor','at-vendedor'].forEach(id => {
+  const canal = getCanalAtual();
+  const meta = getCanalMeta(canal);
+  if (bar) {
+    bar.style.display = 'inline-flex';
+    const nameEl = document.getElementById('user-bar-name');
+    const canalEl = document.getElementById('user-bar-canal');
+    if (nameEl) nameEl.textContent = nome;
+    if (canalEl) canalEl.textContent = meta?.label || canal || '—';
+  }
+  document.querySelectorAll('.main-nav .tab').forEach(t => { t.style.display = ''; });
+  const nomeUpper = normNomeUtilizador(nome);
+  ['f-vendedor','e-vendedor','at-vendedor','sc-vendedor','contratos-vendedor','pros-filtro-vendedor'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     for (const opt of el.options) {
-      const optUpper = opt.value.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      if (optUpper === nomeUpper) { el.value = opt.value; break; }
+      if (normNomeUtilizador(opt.value) === nomeUpper) { el.value = opt.value; break; }
+    }
+    // Não-admin: trava o filtro ao próprio vendedor
+    if (!isAdmin() && el.tagName === 'SELECT' && ['sc-vendedor','contratos-vendedor','pros-filtro-vendedor','f-vendedor'].includes(id)) {
+      el.disabled = true;
+    } else if (el.tagName === 'SELECT') {
+      el.disabled = false;
     }
   });
 }
 
 function logoutUtilizador() {
+  if (_loginModoDados) {
+    _loginModoDados = false;
+    // reset dados pin gate
+    const gate = document.getElementById('dados-pin-gate');
+    const content = document.getElementById('dados-content');
+    if (gate) gate.style.display = '';
+    if (content) content.style.display = 'none';
+  }
   localStorage.removeItem('dfb_utilizador');
+  localStorage.removeItem('dfb_canal');
+  document.querySelectorAll('.main-nav .tab').forEach(t => { t.style.display = ''; });
+  const bar = document.getElementById('user-bar');
+  if (bar) bar.style.display = 'none';
   mostrarLoginModal();
-  document.getElementById('login-select').value = '';
-  document.getElementById('login-erro').style.display = 'none';
+  const sel = document.getElementById('login-select');
+  if (sel) sel.value = '';
+  const err = document.getElementById('login-erro');
+  if (err) err.style.display = 'none';
 }
 
 function getUtilizadorAtual() {
@@ -12788,7 +13159,10 @@ async function exportATHistoricoExcel() {
 window.addEventListener('DOMContentLoaded', async () => {
   initLogin();
   await sincronizarListaClientes();
-  switchTab('registos');
+  // Só entra na app se já houver sessão canal+utilizador com PIN
+  if (getUtilizadorAtual() && getCanalAtual() && !document.getElementById('login-overlay')?.classList.contains('open')) {
+    switchTab('registos');
+  }
   try {
     const res = await fetch(SUPA_URL + '?select=id&limit=1', { headers: HEADERS });
     const data = await res.json();
