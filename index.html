@@ -795,12 +795,40 @@
     background: var(--surface); border-radius: 18px; padding: 36px 32px; width: 100%; max-width: 380px;
     text-align: center; box-shadow: var(--shadow-lg);
   }
+  .login-card.login-card--wide { max-width: 560px; }
   .login-icon { font-size: 40px; margin-bottom: 16px; }
   .login-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
   .login-desc { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
   .login-select { margin-bottom: 16px; }
   .login-btn { width: 100%; justify-content: center; }
   .login-erro { color: var(--danger); font-size: 12px; margin-top: 12px; display: none; }
+  .login-step { display: none; }
+  .login-step.active { display: block; }
+  .canal-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px;
+  }
+  .canal-btn {
+    appearance: none; border: 1px solid var(--border); background: var(--surface2, #f8fafc);
+    border-radius: 12px; padding: 18px 12px; cursor: pointer; font-family: var(--font-main);
+    transition: var(--transition, .15s ease); text-align: center;
+  }
+  .canal-btn:hover { border-color: var(--accent); background: #fff5f6; }
+  .canal-btn-title { display: block; font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .canal-btn-sub { display: block; font-size: 11px; color: var(--muted); line-height: 1.3; }
+  .login-dados-btn {
+    width: 100%; justify-content: center; margin-top: 4px;
+  }
+  .login-back {
+    background: none; border: none; color: var(--muted); font-size: 12px; cursor: pointer;
+    margin-bottom: 12px; font-family: var(--font-main); text-decoration: underline;
+  }
+  .login-back:hover { color: var(--text); }
+  .login-pin-input {
+    text-align: center; font-size: 22px; letter-spacing: 10px; width: 160px;
+    margin: 0 auto 16px; display: block;
+  }
+  .main-nav.nav-hidden { display: none !important; }
+  .app-content.app-locked { display: none !important; }
   .main-nav {
     background: var(--surface); border-bottom: 1px solid var(--border);
     position: sticky; top: var(--header-h); z-index: 150; box-shadow: var(--shadow-xs);
@@ -1278,43 +1306,87 @@ var _unused_placeholder = 1;
       <span id="record-count">—</span>
     </div>
     <div id="user-bar" class="user-pill" style="display:none">
-      <span class="user-pill-label"><span class="user-pill-prefix">Utilizador:</span> <strong id="user-bar-name"></strong></span>
+      <span class="user-pill-label">
+        <span class="user-pill-prefix">Canal:</span> <strong id="user-bar-canal"></strong>
+        <span class="status-sep">·</span>
+        <span class="user-pill-prefix">Utilizador:</span> <strong id="user-bar-name"></strong>
+      </span>
       <button type="button" class="user-pill-change" onclick="logoutUtilizador()">Mudar</button>
     </div>
   </div>
 </header>
 
-<div id="login-overlay" class="login-overlay" style="display:none">
-  <div class="login-card">
-    <div class="login-icon">👤</div>
-    <h2 class="login-title">Quem és tu?</h2>
-    <p class="login-desc">Seleciona o teu nome para continuar.</p>
-    <select id="login-select" class="form-input login-select">
-      <option value="">— Selecionar —</option>
-      <option value="Hélcio Grégio">Hélcio Grégio</option>
-      <option value="Paulo Fontes">Paulo Fontes</option>
-      <option value="Daniela Santos">Daniela Santos</option>
-      <option value="Filipe Neves">Filipe Neves</option>
-      <option value="Carlos Castro">Carlos Castro</option>
-    </select>
-    <button class="btn btn-primary login-btn" onclick="if(typeof confirmarLogin==='function')confirmarLogin()">Entrar</button>
-    <div id="login-erro" class="login-erro">Seleciona um nome para continuar.</div>
+<div id="login-overlay" class="login-overlay open" style="display:flex">
+  <div class="login-card login-card--wide">
+    <!-- STEP: escolher canal -->
+    <div id="login-step-canal" class="login-step active">
+      <h2 class="login-title">Delta Foods Brasil</h2>
+      <p class="login-desc">Escolhe a área para entrar. Os dados são carregados uma vez e alimentam todos os canais.</p>
+      <div class="canal-grid">
+        <button type="button" class="canal-btn" onclick="selecionarCanal('horeca')">
+          <span class="canal-btn-title">Horeca</span>
+          <span class="canal-btn-sub">Restauração · equip. profissional</span>
+        </button>
+        <button type="button" class="canal-btn" onclick="selecionarCanal('retalho')">
+          <span class="canal-btn-title">Retalho</span>
+          <span class="canal-btn-sub">DFB · QB · Diogo Oliveira</span>
+        </button>
+        <button type="button" class="canal-btn" onclick="selecionarCanal('distribuidores')">
+          <span class="canal-btn-title">Distribuidores Horeca</span>
+          <span class="canal-btn-sub">Massimo · Eduardo</span>
+        </button>
+        <button type="button" class="canal-btn" onclick="selecionarCanal('ecommerce')">
+          <span class="canal-btn-title">Ecommerce</span>
+          <span class="canal-btn-sub">DFB · QB · Márcio Gorga</span>
+        </button>
+      </div>
+      <button type="button" class="btn btn-secondary login-dados-btn" onclick="abrirDadosDaHub()">⚙ Gestão de Dados</button>
+      <p style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.4;">Carrega vendas, lista SAP e dívidas para todos os canais de uma só vez.</p>
+    </div>
+
+    <!-- STEP: escolher utilizador -->
+    <div id="login-step-user" class="login-step">
+      <button type="button" class="login-back" onclick="voltarLoginStep('canal')">← Voltar aos canais</button>
+      <h2 class="login-title" id="login-user-title">Quem és tu?</h2>
+      <p class="login-desc" id="login-user-desc">Seleciona o teu nome para continuar.</p>
+      <select id="login-select" class="form-input login-select">
+        <option value="">— Selecionar —</option>
+      </select>
+      <button class="btn btn-primary login-btn" onclick="confirmarUtilizadorCanal()">Continuar</button>
+      <div id="login-erro" class="login-erro">Seleciona um nome para continuar.</div>
+    </div>
+
+    <!-- STEP: PIN (criar ou entrar) -->
+    <div id="login-step-pin" class="login-step">
+      <button type="button" class="login-back" onclick="voltarLoginStep('user')">← Voltar</button>
+      <h2 class="login-title" id="login-pin-title">PIN de acesso</h2>
+      <p class="login-desc" id="login-pin-desc">Introduz o teu PIN de 4 dígitos.</p>
+      <input type="password" id="login-pin-input" class="form-input login-pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
+        onkeydown="if(event.key==='Enter')confirmarPinLogin()">
+      <div id="login-pin-confirm-wrap" style="display:none;">
+        <p class="login-desc" style="margin-bottom:12px;">Confirma o PIN</p>
+        <input type="password" id="login-pin-confirm" class="form-input login-pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
+          onkeydown="if(event.key==='Enter')confirmarPinLogin()">
+      </div>
+      <button class="btn btn-primary login-btn" onclick="confirmarPinLogin()">Entrar</button>
+      <div id="login-pin-erro" class="login-erro">PIN inválido.</div>
+    </div>
   </div>
 </div>
 
-<nav class="main-nav">
+<nav class="main-nav nav-hidden" id="main-nav">
   <div class="main-nav-inner">
-<button class="tab active" onclick="switchTab('registos')">Registo Clientes</button>
-    <button class="tab" onclick="switchTab('analise')">Análise Clientes Horeca</button>
+    <button class="tab active" onclick="switchTab('registos')">Registo Clientes</button>
+    <button class="tab" id="tab-analise" onclick="switchTab('analise')">Análise Clientes</button>
+    <button class="tab" onclick="switchTab('visitas')">Registro de visitas</button>
     <button class="tab" onclick="switchTab('at')">Pedido AT</button>
     <button class="tab" onclick="switchTab('contratos')">Contratos</button>
     <button class="tab" onclick="switchTab('historico-at')">Histórico AT</button>
     <button class="tab" onclick="switchTab('prospeccao')">Prospeção</button>
-    <button class="tab" onclick="switchTab('dados')">Dados</button>
   </div>
 </nav>
 
-<div class="app-content">
+<div class="app-content app-locked" id="app-content">
 
   <!-- NOVO REGISTO -->
   <!-- PANEL: REGISTO CLIENTES (com sub-abas) -->
@@ -1433,12 +1505,8 @@ var _unused_placeholder = 1;
       </table>
     </div>
   </div>
-
-</div>
-
-  <!-- CLIENTES POR REGISTAR -->
-
     </div>
+
     <div id="sub-panel-pendentes" style="display:none;">
 <div id="panel-pendentes">
     <div class="pending-toolbar">
@@ -1474,9 +1542,8 @@ var _unused_placeholder = 1;
       </table>
     </div>
 
-  </div>
-</div>
-</div>
+  </div><!-- /panel-pendentes -->
+  </div><!-- /sub-panel-pendentes -->
 
   <!-- SUB-PANEL: VENDEDORES -->
   <div id="sub-panel-vendedores" style="display:none;">
@@ -1545,6 +1612,7 @@ var _unused_placeholder = 1;
       </div>
     </div>
   </div>
+  </div><!-- /panel-registos -->
 
 <div class="panel" id="panel-resumo">
     <div class="sub-nav">
@@ -2533,7 +2601,46 @@ var _unused_placeholder = 1;
     </div>
   </div>
 
+  <!-- PANEL: REGISTRO DE VISITAS -->
+  <div class="panel" id="panel-visitas">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div style="font-size:15px;font-weight:600;">Registro de visitas</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px;">Escolhe a rota do dia e regista visita / compra por cliente.</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="date" id="visitas-data" class="form-input" style="height:36px;font-size:13px;" onchange="renderVisitasDia()">
+        <select id="visitas-vendedor" class="form-input" style="min-width:180px;height:36px;font-size:13px;" onchange="onVisitasFiltroChange()">
+          <option value="">— Vendedor —</option>
+        </select>
+        <select id="visitas-rota" class="form-input" style="min-width:140px;height:36px;font-size:13px;" onchange="renderVisitasDia()">
+          <option value="">— Rota do dia —</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="exportVisitasExcel()" style="min-height:36px;">⬇ Excel</button>
+      </div>
+    </div>
+    <div id="visitas-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+    <div id="visitas-content"></div>
+
+    <div style="margin-top:28px;border-top:2px dashed #e0e0e0;padding-top:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+        <div style="font-size:15px;font-weight:600;">Quadro de análise</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="date" id="visitas-analise-de" class="form-input" style="height:34px;font-size:12px;" onchange="renderVisitasAnalise()">
+          <span style="font-size:12px;color:var(--muted);">até</span>
+          <input type="date" id="visitas-analise-ate" class="form-input" style="height:34px;font-size:12px;" onchange="renderVisitasAnalise()">
+          <button class="btn btn-secondary btn-sm" onclick="renderVisitasAnalise()">Actualizar</button>
+        </div>
+      </div>
+      <div id="visitas-analise"></div>
+    </div>
+  </div>
+
   <div class="panel" id="panel-dados">
+    <div id="dados-hub-banner" style="display:none;margin-bottom:16px;padding:12px 16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div style="font-size:13px;color:#1e40af;">⚙ Carregamento global — dados alimentam todos os canais conforme códigos de vendedor.</div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="logoutUtilizador()">← Voltar aos canais</button>
+    </div>
     <div id="dados-pin-gate" style="max-width:360px;margin:40px auto;text-align:center;">
       <div style="font-size:48px;margin-bottom:16px;">🔒</div>
       <h2 style="font-size:18px;font-weight:600;margin-bottom:8px;">Área de Carregamentos</h2>
@@ -3148,7 +3255,7 @@ function deduplicarListaSAPPorCod(lista) {
 }
 
 // Se o Excel novo vier sem colunas de morada/contacto, não apagar o que já estava na lista.
-const SAP_CAMPOS_RICOS = ['cnpj', 'canal', 'rua', 'nro', 'bairro', 'supl', 'cidade', 'uf', 'email', 'tel1', 'tel2', 'ie'];
+const SAP_CAMPOS_RICOS = ['cnpj', 'canal', 'rota', 'rua', 'nro', 'bairro', 'supl', 'cidade', 'uf', 'email', 'tel1', 'tel2', 'ie'];
 const SAP_DETALHE_KEY = 'delta_sap_detalhe';
 
 function acumularSapDetalhe(lista) {
@@ -3282,20 +3389,44 @@ async function findRegistoByCod(cod) {
 const VEND_STORE_KEY = 'delta_vendedores_cadastro';
 
 const VENDEDORES_DEFAULT = [
-  { cod: 99520002, nome: 'HÉLCIO GRÉGIO' },
-  { cod: 99520006, nome: 'DANIELA SANTOS' },
-  { cod: 99520007, nome: 'PAULO FONTES' },
-  { cod: 99520010, nome: 'FILIPE NEVES' },
-  { cod: 99520015, nome: 'HÉLCIO GRÉGIO' },
-  { cod: 99520016, nome: 'DANIELA SANTOS' },
-  { cod: 99520017, nome: 'PAULO FONTES' },
+  // Horeca DFB
+  { cod: 99520002, nome: 'HÉLCIO GRÉGIO', canal: 'horeca' },
+  { cod: 99520006, nome: 'DANIELA SANTOS', canal: 'horeca' },
+  { cod: 99520007, nome: 'PAULO FONTES', canal: 'horeca' },
+  { cod: 99520010, nome: 'FILIPE NEVES', canal: 'horeca' },
+  { cod: 99520015, nome: 'HÉLCIO GRÉGIO', canal: 'horeca' },
+  { cod: 99520016, nome: 'DANIELA SANTOS', canal: 'horeca' },
+  { cod: 99520017, nome: 'PAULO FONTES', canal: 'horeca' },
+  // Distribuidores Horeca
+  { cod: 99520003, nome: 'MASSIMO BOTTELLO', canal: 'distribuidores' },
+  { cod: 99520020, nome: 'EDUARDO MADEIRA', canal: 'distribuidores' },
+  // Retalho DFB
+  { cod: 99520004, nome: 'DIOGO OLIVEIRA', canal: 'retalho' },
+  { cod: 99520018, nome: 'DIOGO OLIVEIRA', canal: 'retalho' },
+  // Retalho QB
+  { cod: 99530001, nome: 'DIOGO OLIVEIRA', canal: 'retalho' },
+  { cod: 99530005, nome: 'DIOGO OLIVEIRA', canal: 'retalho' },
+  // Ecommerce DFB
+  { cod: 99520001, nome: 'MARCIO GORGA', canal: 'ecommerce' },
+  { cod: 99520008, nome: 'MARCIO GORGA', canal: 'ecommerce' },
+  { cod: 99520009, nome: 'MARCIO GORGA', canal: 'ecommerce' },
+  // Ecommerce QB
+  { cod: 99530003, nome: 'MARCIO GORGA', canal: 'ecommerce' },
 ];
 
 function getVendedoresCadastro() {
   try {
     const s = localStorage.getItem(VEND_STORE_KEY);
-    return s ? JSON.parse(s) : VENDEDORES_DEFAULT;
-  } catch(e) { return VENDEDORES_DEFAULT; }
+    if (!s) return VENDEDORES_DEFAULT.slice();
+    const saved = JSON.parse(s);
+    if (!Array.isArray(saved)) return VENDEDORES_DEFAULT.slice();
+    // Garante códigos novos dos outros canais mesmo com cadastro antigo em localStorage
+    const byCod = new Map(saved.map(v => [parseInt(v.cod), v]));
+    VENDEDORES_DEFAULT.forEach(v => {
+      if (!byCod.has(parseInt(v.cod))) byCod.set(parseInt(v.cod), v);
+    });
+    return [...byCod.values()].sort((a, b) => parseInt(a.cod) - parseInt(b.cod));
+  } catch(e) { return VENDEDORES_DEFAULT.slice(); }
 }
 
 function saveVendedoresCadastro(list) {
@@ -3413,7 +3544,7 @@ function codClienteAindaActivo(cod) {
   const k = normCod(cod);
   if (!k) return false;
   if (getAnuladosSet().has(k)) return false;
-  return getListaClientesActiva().some(c => normCod(c.cod) === k);
+  return getListaClientesCompleta().some(c => normCod(c.cod) === k);
 }
 
 let scEncerramentosPendentes = new Map();
@@ -3857,6 +3988,16 @@ const NPESS_VENDEDOR_SC = {
   99520010: 'FILIPE NEVES',
   99520016: 'DANIELA SANTOS',
   99520017: 'PAULO FONTES',
+  99520003: 'MASSIMO BOTTELLO',
+  99520020: 'EDUARDO MADEIRA',
+  99520004: 'DIOGO OLIVEIRA',
+  99520018: 'DIOGO OLIVEIRA',
+  99530001: 'DIOGO OLIVEIRA',
+  99530005: 'DIOGO OLIVEIRA',
+  99520001: 'MARCIO GORGA',
+  99520008: 'MARCIO GORGA',
+  99520009: 'MARCIO GORGA',
+  99530003: 'MARCIO GORGA',
 };
 
 // Normaliza código de cliente (remove espaços e zeros à esquerda)
@@ -3925,8 +4066,11 @@ function scGuardarVendaData(cod, dt) {
 
 async function scLoadFromSupabase() {
   try {
-    document.getElementById('sc-info').innerHTML =
-      '<span style="color:var(--muted);font-size:12px;">⏳ A carregar histórico...</span>';
+    const scInfo = document.getElementById('sc-info');
+    if (scInfo) {
+      scInfo.innerHTML =
+        '<span style="color:var(--muted);font-size:12px;">⏳ A carregar histórico...</span>';
+    }
 
     scVendasData = {};
     let lastUpdate = '';
@@ -3959,8 +4103,10 @@ async function scLoadFromSupabase() {
 
     const nClientes = new Set(Object.keys(scVendasData).map(k => normalizaCodSC(k))).size;
     const dtUpdate = lastUpdate ? new Date(lastUpdate).toLocaleDateString('pt-BR') : '—';
-    document.getElementById('sc-info').innerHTML =
-      `<span style="color:var(--muted);font-size:12px;">📦 Histórico: <strong>${nClientes}</strong> clientes · Última actualização: <strong>${dtUpdate}</strong></span>`;
+    if (scInfo) {
+      scInfo.innerHTML =
+        `<span style="color:var(--muted);font-size:12px;">📦 Histórico: <strong>${nClientes}</strong> clientes · Última actualização: <strong>${dtUpdate}</strong></span>`;
+    }
     return true;
   } catch(e) {
     console.error('scLoadFromSupabase error:', e);
@@ -5548,6 +5694,28 @@ let pendingVendedorMap = {};
 // ─── CARREGAR LISTA SAP ──────────────────────────────
 let _sapImportBuffer = null; // { novaLista, codsAnulados }
 
+/** Normaliza rota/ZD SAP ("3 - Rota 3", "01", 3, "ZD1") → valor canónico */
+function normalizaRotaCliente(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  // Excel por vezes devolve número; evita "1.0"
+  if (/^\d+(\.0+)?$/.test(s)) return String(parseInt(s, 10));
+  const m = s.match(/(\d{1,3})/);
+  return m ? String(parseInt(m[1], 10)) : s.toUpperCase();
+}
+
+/** Rota do cliente: campo rota/ZD na lista, senão detalhe SAP em cache */
+function getRotaCliente(c) {
+  let r = normalizaRotaCliente(c?.rota ?? c?.zd);
+  if (r) return r;
+  try {
+    const det = JSON.parse(localStorage.getItem(SAP_DETALHE_KEY) || '{}') || {};
+    const d = det[normCod(c?.cod)] || {};
+    r = normalizaRotaCliente(d.rota ?? d.zd);
+  } catch (e) {}
+  return r || '';
+}
+
 async function carregarListaSAP(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -5601,6 +5769,10 @@ async function carregarListaSAP(event) {
   const iCNPJ    = findH(/id\s*fiscal|cnpj|cpf|fiscal\s*1|^nif$/);
   // "Canal", "Canal de distribuição", "Canal Distrib.", SAP BR: "CDst" (Canal de distribuição)
   const iCanal   = findH(/^cdst$|^canal\b|canal\s*de\s*distrib|canal\s*distrib/);
+  // SAP: coluna da rota chama-se tipicamente "ZD" (também "Rota")
+  let iRota = findH(/^z\.?d\.?$|^zd\b|zd\s*[-_/]|coluna\s*zd/);
+  if (iRota < 0) iRota = findH(/^rota\b|itinerario|route/);
+  if (iRota < 0) iRota = _hn.findIndex(h => h === 'zd' || h.replace(/\s+/g, '') === 'zd');
 
   // Morada / contacto — cabeçalhos típicos do export SAP BR
   const iRua    = findH(/^(rua|logradouro)$|enderec|rua\s*\/|street/);
@@ -5623,7 +5795,7 @@ async function carregarListaSAP(event) {
 
   // Diagnóstico das colunas (aparece no ecrã de confirmação)
   const colDiag = [
-    ['CNPJ/Fiscal', iCNPJ], ['Canal', iCanal], ['Rua', iRua], ['Nº', iNroCol],
+    ['CNPJ/Fiscal', iCNPJ], ['Canal', iCanal], ['Rota (ZD)', iRota], ['Rua', iRua], ['Nº', iNroCol],
     ['Bairro', iBairro], ['Cidade', iCidade], ['Email', iEmail], ['Tel', iTel1], ['IE', iIE],
   ];
 
@@ -5648,6 +5820,8 @@ async function carregarListaSAP(event) {
     }
     const cnpj = iCNPJ >= 0 ? String(row[iCNPJ]||'').trim() : '';
     const canal = iCanal >= 0 ? String(row[iCanal]||'').trim() : '';
+    const rotaRaw = iRota >= 0 ? String(row[iRota] ?? '').trim() : '';
+    const rota = rotaRaw ? normalizaRotaCliente(rotaRaw) : '';
     // Morada / contacto (só preenche o que existir no ficheiro)
     let rua = getCell(row, iRua);
     let nro = getCell(row, iNroCol);
@@ -5657,7 +5831,7 @@ async function carregarListaSAP(event) {
       if (m) { rua = m[1].trim().replace(/[,\s]+$/, ''); nro = m[2]; }
     }
     const rowObj = {
-      cod, nome, cep, cnpj, canal,
+      cod, nome, cep, cnpj, canal, rota, zd: rotaRaw || rota,
       rua, nro,
       bairro: getCell(row, iBairro),
       supl:   getCell(row, iCompl),
@@ -5688,8 +5862,8 @@ async function carregarListaSAP(event) {
   // Remover linhas duplicadas do mesmo código no ficheiro (mantém a última)
   novaLista = deduplicarListaSAPPorCod(novaLista);
 
-  // Calcular diferenças em relação à lista actual
-  const listaAtual = getListaClientesActiva();
+  // Calcular diferenças em relação à lista completa (todos os canais)
+  const listaAtual = getListaClientesCompleta();
   const codAtual   = new Set(listaAtual.map(c => String(c.cod)));
   const codNova    = new Set(novaLista.map(c => String(c.cod)));
   const adicionados = novaLista.filter(c => !codAtual.has(c.cod)).length;
@@ -5706,6 +5880,7 @@ async function carregarListaSAP(event) {
   const nComEmail = novaLista.filter(c => c.email).length;
   const nComTel = novaLista.filter(c => c.tel1).length;
   const nComCanal = novaLista.filter(c => c.canal).length;
+  const nComRota = novaLista.filter(c => c.rota).length;
   const colsOk = colDiag.filter(([, i]) => i >= 0).map(([n]) => n);
   const colsMiss = colDiag.filter(([, i]) => i < 0).map(([n]) => n);
 
@@ -5718,10 +5893,14 @@ async function carregarListaSAP(event) {
       + (nHoreca ? ` · ${nHoreca} nos canais 03/04` : '') + `</span>`;
   }
   statusHtml += `<br><span style="color:${nComRua && nComCnpj ? '#166534' : '#b45309'}">Dados ricos no ficheiro: `
-    + `morada ${nComRua}/${novaLista.length} · CNPJ ${nComCnpj} · email ${nComEmail} · tel ${nComTel} · canal ${nComCanal}</span>`;
+    + `morada ${nComRua}/${novaLista.length} · CNPJ ${nComCnpj} · email ${nComEmail} · tel ${nComTel} · canal ${nComCanal}`
+    + ` · <b style="color:${nComRota ? '#166534' : '#b91c1c'}">ZD/rota ${nComRota}/${novaLista.length}</b></span>`;
   statusHtml += `<br><span style="color:var(--muted);font-size:12px">Colunas OK: ${colsOk.join(', ') || '—'}`
     + (colsMiss.length ? ` · <b style="color:#b45309">não encontradas: ${colsMiss.join(', ')}</b>` : '')
     + `</span>`;
+  if (!nComRota) {
+    statusHtml += `<br><span style="color:#b91c1c;font-weight:600">⚠ Coluna ZD (rota) não encontrada ou vazia — o Registro de visitas fica sem rotas.</span>`;
+  }
   if (!nComRua && !nComCnpj && !nComEmail) {
     statusHtml += `<br><span style="color:#b91c1c;font-weight:600">⚠ Este Excel não tem morada/CNPJ/email — o cadastro automático fica incompleto. Usa o export SAP com endereço e contactos.</span>`;
   }
@@ -5817,7 +5996,7 @@ async function confirmarCargaSAP() {
   const { codsAnulados, fileName, codsContencioso = [] } = _sapImportBuffer;
   let novaLista = deduplicarListaSAPPorCod(_sapImportBuffer.novaLista);
   // Evita “voltar atrás”: Excel sem morada/email não deve apagar dados ricos já publicados.
-  const listaAntes = getListaClientesActiva();
+  const listaAntes = getListaClientesCompleta();
   const preservados = preservarCamposRicosListaSAP(novaLista, listaAntes);
   novaLista = preservados.lista;
   acumularSapDetalhe(listaAntes);
@@ -5969,11 +6148,16 @@ function renderUltimaCargaSAP() {
   } catch(e) { el.textContent = '—'; }
 }
 
-function getListaClientesActiva() {
+function getListaClientesCompleta() {
   try {
     const s = localStorage.getItem('delta_clientes_sistema');
     return s ? JSON.parse(s) : CLIENTES_SISTEMA;
   } catch(e) { return CLIENTES_SISTEMA; }
+}
+
+/** Lista SAP visível no canal/utilizador actual (Dados / sem canal = completa). */
+function getListaClientesActiva() {
+  return filtrarPorEscopoCanal(getListaClientesCompleta());
 }
 
 // Sincronizar lista de clientes do Supabase para localStorage
@@ -6378,8 +6562,13 @@ function switchTab(tab) {
   if (tab === 'contratos') {
     switchSubTab('contratos', window._contratosSubTab || 'registados');
   }
-  if (tab === 'historico-at') loadATHistorico();
-  if (tab === 'prospeccao') initProsTab();
+  if (tab === 'historico-at') { try { loadATHistorico(); } catch (e) { console.warn(e); } }
+  if (tab === 'prospeccao') { try { initProsTab(); } catch (e) { console.warn(e); } }
+  if (tab === 'visitas') { try { initVisitasTab(); } catch (e) { console.warn('initVisitasTab', e); } }
+  if (tab === 'dados') {
+    const banner = document.getElementById('dados-hub-banner');
+    if (banner) banner.style.display = _loginModoDados ? 'flex' : 'none';
+  }
 }
 
 // Sub-menu "Análise Clientes Horeca": Resumo / Sem Compras / Encerramento pendente / Fora SP
@@ -6531,12 +6720,17 @@ function loadAtTab() {
 
   // Init sub-aba chamado
   atSwitchSub('chamado');
-  // Reset instalação
-  document.getElementById('inst-cod').value = '';
-  document.getElementById('inst-data').value = '';
-  document.getElementById('inst-obs').value = '';
-  document.getElementById('inst-equip-list').innerHTML = '';
-  document.getElementById('inst-cliente-info').style.display = 'none';
+  // Reset instalação (null-safe)
+  const instCod = document.getElementById('inst-cod');
+  const instData = document.getElementById('inst-data');
+  const instObs = document.getElementById('inst-obs');
+  const instList = document.getElementById('inst-equip-list');
+  const instInfo = document.getElementById('inst-cliente-info');
+  if (instCod) instCod.value = '';
+  if (instData) instData.value = '';
+  if (instObs) instObs.value = '';
+  if (instList) instList.innerHTML = '';
+  if (instInfo) instInfo.style.display = 'none';
 }
 
 function atSetDisabled(id, disabled, placeholder) {
@@ -7291,6 +7485,7 @@ async function loadContratosTab(forceRefresh = false) {
 
     // Filter only those with contratos array
     registos = registos.filter(r => Array.isArray(r.contratos) && r.contratos.length > 0);
+    registos = filtrarPorEscopoCanal(registos);
 
     // Apply vendedor filter if active
     const vendFiltContr = window._contratosFiltro || '';
@@ -8317,74 +8512,877 @@ async function outlookAbrirRascunho({
   return false;
 }
 
+// ─── CANAIS / ACESSO MULTI-ÁREA ──────────────────────
+const CANAIS = {
+  horeca: {
+    id: 'horeca',
+    label: 'Horeca',
+    analiseLabel: 'Análise Clientes Horeca',
+    users: [
+      { nome: 'Hélcio Grégio', codigos: [99520002, 99520015] },
+      { nome: 'Paulo Fontes', codigos: [99520007, 99520017] },
+      { nome: 'Daniela Santos', codigos: [99520006, 99520016] },
+      { nome: 'Filipe Neves', codigos: [99520010], admin: true },
+      { nome: 'Carlos Castro', codigos: [], admin: true },
+    ],
+  },
+  retalho: {
+    id: 'retalho',
+    label: 'Retalho',
+    analiseLabel: 'Análise Clientes Retalho',
+    users: [
+      { nome: 'Diogo Oliveira', codigos: [99520004, 99520018, 99530001, 99530005],
+        detalhe: 'DFB: 99520004 · 99520018 · QB: 99530001 · 99530005' },
+      { nome: 'Carlos Castro', codigos: [], admin: true },
+    ],
+  },
+  distribuidores: {
+    id: 'distribuidores',
+    label: 'Distribuidores Horeca',
+    analiseLabel: 'Análise Distribuidores Horeca',
+    users: [
+      { nome: 'Massimo Bottello', codigos: [99520003] },
+      { nome: 'Eduardo Madeira', codigos: [99520020] },
+      { nome: 'Carlos Castro', codigos: [], admin: true },
+    ],
+  },
+  ecommerce: {
+    id: 'ecommerce',
+    label: 'Ecommerce',
+    analiseLabel: 'Análise Clientes Ecommerce',
+    users: [
+      { nome: 'Márcio Gorga', codigos: [99520001, 99520008, 99520009, 99530003],
+        detalhe: 'DFB: 99520001 · 99520008 · 99520009 · QB: 99530003' },
+      { nome: 'Carlos Castro', codigos: [], admin: true },
+    ],
+  },
+};
+
+const PIN_STORE_KEY = 'dfb_user_pins';
+let _loginCanal = null;
+let _loginUserNome = null;
+let _loginModoDados = false;
+
+function getCanalAtual() {
+  return localStorage.getItem('dfb_canal') || '';
+}
+
+function getCanalMeta(id) {
+  return CANAIS[id || getCanalAtual()] || null;
+}
+
+function pinKey(canal, nome) {
+  return `${canal}|${normNomeUtilizador(nome)}`;
+}
+
+function getUserPins() {
+  try { return JSON.parse(localStorage.getItem(PIN_STORE_KEY) || '{}') || {}; }
+  catch(e) { return {}; }
+}
+
+function setUserPin(canal, nome, pin) {
+  const map = getUserPins();
+  map[pinKey(canal, nome)] = String(pin);
+  localStorage.setItem(PIN_STORE_KEY, JSON.stringify(map));
+}
+
+function getUserPin(canal, nome) {
+  return getUserPins()[pinKey(canal, nome)] || '';
+}
+
+function userTemPin(canal, nome) {
+  return /^\d{4}$/.test(getUserPin(canal, nome));
+}
+
+function getUtilizadorMeta() {
+  const canal = getCanalAtual();
+  const nome = getUtilizadorAtual();
+  const meta = getCanalMeta(canal);
+  if (!meta || !nome) return null;
+  return meta.users.find(u => normNomeUtilizador(u.nome) === normNomeUtilizador(nome)) || null;
+}
+
+function getCodigosUtilizadorAtual() {
+  return getUtilizadorMeta()?.codigos || [];
+}
+
+/** Nomes de vendedor (normalizados) com códigos SAP neste canal — exclui admins sem código. */
+function getNomesVendedoresDoCanal(canalId) {
+  const meta = getCanalMeta(canalId);
+  if (!meta) return null;
+  const map = Object.assign({}, NPESS_VENDEDOR_SC, getVendedoresMap());
+  const names = new Set();
+  meta.users.forEach(u => {
+    const cods = u.codigos || [];
+    if (!cods.length) return;
+    names.add(normNomeUtilizador(u.nome));
+    cods.forEach(cod => {
+      const n = map[cod] || map[parseInt(cod, 10)];
+      if (n) names.add(normNomeUtilizador(n));
+    });
+  });
+  return names;
+}
+
+function getCodigosDoCanal(canalId) {
+  const meta = getCanalMeta(canalId);
+  if (!meta) return [];
+  const out = [];
+  meta.users.forEach(u => (u.codigos || []).forEach(c => out.push(parseInt(c, 10))));
+  return [...new Set(out)];
+}
+
+/** Filtra listas por canal (e, se não-admin, só o próprio vendedor). */
+function filtrarPorEscopoCanal(items, getVend) {
+  if (!items || !items.length) return items || [];
+  if (_loginModoDados || !getCanalAtual()) return items;
+  const names = getNomesVendedoresDoCanal();
+  if (!names || !names.size) return [];
+  const vendOf = typeof getVend === 'function' ? getVend : (x => x.vendedor);
+  let out = items.filter(x => names.has(normNomeUtilizador(vendOf(x))));
+  if (!isAdmin()) {
+    const me = normNomeUtilizador(getUtilizadorAtual());
+    out = out.filter(x => normNomeUtilizador(vendOf(x)) === me);
+  }
+  return out;
+}
+
+function nomesVendedoresCanalParaSelect() {
+  const names = getNomesVendedoresDoCanal();
+  if (!names) return [];
+  // Preferir forma canónica do cadastro SAP
+  const map = Object.assign({}, NPESS_VENDEDOR_SC, getVendedoresMap());
+  const byNorm = new Map();
+  getCodigosDoCanal().forEach(cod => {
+    const n = map[cod];
+    if (n) byNorm.set(normNomeUtilizador(n), n);
+  });
+  getCanalMeta()?.users.forEach(u => {
+    if ((u.codigos || []).length && !byNorm.has(normNomeUtilizador(u.nome))) {
+      byNorm.set(normNomeUtilizador(u.nome), u.nome.toUpperCase());
+    }
+  });
+  return [...byNorm.values()].sort((a, b) => a.localeCompare(b, 'pt'));
+}
+
+function popularSelectsVendedorCanal() {
+  const nomes = nomesVendedoresCanalParaSelect();
+  const opts = '<option value="">— Selecionar —</option>' +
+    nomes.map(n => `<option value="${n}">${n}</option>`).join('');
+  ['f-vendedor', 'e-vendedor'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = opts;
+    if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
+  });
+}
+
 function isAdmin() {
-  const norm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  const atual = norm(getUtilizadorAtual());
-  return ADMINS.some(a => norm(a) === atual);
+  // Admin só no canal onde está marcado (Filipe = só Horeca; Carlos nos canais onde entra)
+  return !!getUtilizadorMeta()?.admin;
 }
 
 function podeEditarRegisto(vendedor) {
   if (isAdmin()) return true;
-  // Comparação insensível a maiúsculas/acentos: login guarda "Daniela Santos",
-  // mas os registos têm "DANIELA SANTOS"
-  const norm = s => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  return norm(getUtilizadorAtual()) === norm(vendedor);
+  return normNomeUtilizador(getUtilizadorAtual()) === normNomeUtilizador(vendedor);
+}
+
+function setLoginStep(step) {
+  ['canal', 'user', 'pin'].forEach(s => {
+    const el = document.getElementById('login-step-' + s);
+    if (el) el.classList.toggle('active', s === step);
+  });
+}
+
+function lockAppShell(locked) {
+  const nav = document.getElementById('main-nav');
+  const content = document.getElementById('app-content');
+  if (nav) nav.classList.toggle('nav-hidden', !!locked);
+  if (content) content.classList.toggle('app-locked', !!locked);
+}
+
+function mostrarLoginModal() {
+  _loginModoDados = false;
+  _loginCanal = null;
+  _loginUserNome = null;
+  const lo = document.getElementById('login-overlay');
+  if (lo) {
+    lo.style.display = 'flex';
+    lo.style.pointerEvents = 'auto';
+    lo.classList.add('open');
+    lo.setAttribute('aria-hidden', 'false');
+  }
+  setLoginStep('canal');
+  lockAppShell(true);
+  const err = document.getElementById('login-erro');
+  if (err) err.style.display = 'none';
+  const pinErr = document.getElementById('login-pin-erro');
+  if (pinErr) pinErr.style.display = 'none';
+}
+
+function esconderLoginModal() {
+  const lo = document.getElementById('login-overlay');
+  if (!lo) return;
+  lo.classList.remove('open');
+  lo.style.display = 'none';
+  lo.style.pointerEvents = 'none';
+  lo.setAttribute('aria-hidden', 'true');
+}
+
+function voltarLoginStep(step) {
+  if (step === 'canal') {
+    _loginCanal = null;
+    _loginUserNome = null;
+  }
+  if (step === 'user') _loginUserNome = null;
+  setLoginStep(step);
+  const err = document.getElementById('login-erro');
+  if (err) err.style.display = 'none';
+  const pinErr = document.getElementById('login-pin-erro');
+  if (pinErr) pinErr.style.display = 'none';
+}
+
+function selecionarCanal(canalId) {
+  const meta = CANAIS[canalId];
+  if (!meta) return;
+  _loginCanal = canalId;
+  _loginUserNome = null;
+  const title = document.getElementById('login-user-title');
+  const desc = document.getElementById('login-user-desc');
+  if (title) title.textContent = meta.label;
+  if (desc) desc.textContent = 'Seleciona o teu nome para continuar neste canal.';
+  const sel = document.getElementById('login-select');
+  if (sel) {
+    sel.innerHTML = '<option value="">— Selecionar —</option>' +
+      meta.users.map(u => `<option value="${u.nome}">${u.nome}${u.admin ? ' (admin)' : ''}</option>`).join('');
+  }
+  setLoginStep('user');
+}
+
+function confirmarUtilizadorCanal() {
+  const sel = document.getElementById('login-select');
+  const nome = (sel?.value || '').trim();
+  const err = document.getElementById('login-erro');
+  if (!nome || !_loginCanal) {
+    if (err) err.style.display = 'block';
+    return;
+  }
+  if (err) err.style.display = 'none';
+  _loginUserNome = nome;
+  const temPin = userTemPin(_loginCanal, nome);
+  const pinTitle = document.getElementById('login-pin-title');
+  const pinDesc = document.getElementById('login-pin-desc');
+  const wrapConfirm = document.getElementById('login-pin-confirm-wrap');
+  const pinIn = document.getElementById('login-pin-input');
+  const pinConf = document.getElementById('login-pin-confirm');
+  if (pinIn) pinIn.value = '';
+  if (pinConf) pinConf.value = '';
+  if (temPin) {
+    if (pinTitle) pinTitle.textContent = 'PIN de acesso';
+    if (pinDesc) pinDesc.textContent = `Olá, ${nome}. Introduz o teu PIN de 4 dígitos.`;
+    if (wrapConfirm) wrapConfirm.style.display = 'none';
+  } else {
+    if (pinTitle) pinTitle.textContent = 'Cria o teu PIN';
+    if (pinDesc) pinDesc.textContent = `Primeiro acesso — escolhe um PIN de 4 dígitos só teu (${nome}).`;
+    if (wrapConfirm) wrapConfirm.style.display = 'block';
+  }
+  const pinErr = document.getElementById('login-pin-erro');
+  if (pinErr) pinErr.style.display = 'none';
+  setLoginStep('pin');
+  setTimeout(() => pinIn?.focus(), 50);
+}
+
+function confirmarPinLogin() {
+  const pin = (document.getElementById('login-pin-input')?.value || '').trim();
+  const pinErr = document.getElementById('login-pin-erro');
+  if (!/^\d{4}$/.test(pin)) {
+    if (pinErr) { pinErr.textContent = 'O PIN deve ter exactamente 4 dígitos.'; pinErr.style.display = 'block'; }
+    return;
+  }
+  const temPin = userTemPin(_loginCanal, _loginUserNome);
+  if (!temPin) {
+    const conf = (document.getElementById('login-pin-confirm')?.value || '').trim();
+    if (pin !== conf) {
+      if (pinErr) { pinErr.textContent = 'Os PINs não coincidem.'; pinErr.style.display = 'block'; }
+      return;
+    }
+    setUserPin(_loginCanal, _loginUserNome, pin);
+  } else if (getUserPin(_loginCanal, _loginUserNome) !== pin) {
+    if (pinErr) { pinErr.textContent = 'PIN incorrecto.'; pinErr.style.display = 'block'; }
+    document.getElementById('login-pin-input').value = '';
+    return;
+  }
+  if (pinErr) pinErr.style.display = 'none';
+  localStorage.setItem('dfb_canal', _loginCanal);
+  localStorage.setItem('dfb_utilizador', _loginUserNome);
+  entrarNaApp();
+}
+
+function entrarNaApp() {
+  const nome = getUtilizadorAtual();
+  const canal = getCanalAtual();
+  popularSelectsVendedorCanal();
+  aplicarUtilizador(nome);
+  esconderLoginModal();
+  lockAppShell(false);
+  const tabAnalise = document.getElementById('tab-analise');
+  const meta = getCanalMeta(canal);
+  if (tabAnalise && meta) tabAnalise.textContent = meta.analiseLabel;
+  if (typeof clearContratosCache === 'function') clearContratosCache();
+  if (typeof clearRegistosCache === 'function') clearRegistosCache();
+  foraSPCache = null;
+  switchTab('registos');
+}
+
+function abrirDadosDaHub() {
+  _loginModoDados = true;
+  esconderLoginModal();
+  lockAppShell(false);
+  // Dados só na hub — esconde o menu do canal
+  const nav = document.getElementById('main-nav');
+  if (nav) nav.classList.add('nav-hidden');
+  const bar = document.getElementById('user-bar');
+  if (bar) {
+    bar.style.display = 'inline-flex';
+    const canalEl = document.getElementById('user-bar-canal');
+    const nameEl = document.getElementById('user-bar-name');
+    if (canalEl) canalEl.textContent = 'Dados';
+    if (nameEl) nameEl.textContent = 'Carregamento global';
+  }
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById('panel-dados');
+  if (panel) panel.classList.add('active');
+  const banner = document.getElementById('dados-hub-banner');
+  if (banner) banner.style.display = 'flex';
 }
 
 function initLogin() {
   const nome = localStorage.getItem('dfb_utilizador');
-  if (nome) {
+  const canal = localStorage.getItem('dfb_canal');
+  if (nome && canal && CANAIS[canal] && userTemPin(canal, nome)) {
+    // Filipe só existe em Horeca — sessão antiga noutro canal é invalidada
+    const metaUser = CANAIS[canal].users.find(u => normNomeUtilizador(u.nome) === normNomeUtilizador(nome));
+    if (!metaUser) {
+      localStorage.removeItem('dfb_utilizador');
+      localStorage.removeItem('dfb_canal');
+      mostrarLoginModal();
+      return;
+    }
+    popularSelectsVendedorCanal();
     aplicarUtilizador(nome);
+    lockAppShell(false);
+    esconderLoginModal();
+    const tabAnalise = document.getElementById('tab-analise');
+    const meta = getCanalMeta(canal);
+    if (tabAnalise && meta) tabAnalise.textContent = meta.analiseLabel;
   } else {
     mostrarLoginModal();
   }
 }
 
-function mostrarLoginModal() {
-  const lo = document.getElementById('login-overlay'); lo.style.display = 'flex'; lo.classList.add('open');
-}
-
-function confirmarLogin() {
-  const sel = document.getElementById('login-select');
-  const nome = sel.value.trim();
-  if (!nome) {
-    document.getElementById('login-erro').style.display = 'block';
-    return;
-  }
-  localStorage.setItem('dfb_utilizador', nome);
-  aplicarUtilizador(nome);
-  const lo = document.getElementById('login-overlay');
-  lo.classList.remove('open');
-  lo.style.display = 'none';
-}
+// Compat: antigo confirmarLogin
+function confirmarLogin() { confirmarUtilizadorCanal(); }
 
 function aplicarUtilizador(nome) {
-  // Barra de utilizador
   const bar = document.getElementById('user-bar');
-  if (bar) { bar.style.display = 'inline-flex'; document.getElementById('user-bar-name').textContent = nome; }
-  // Pré-selecionar vendedor nos formulários se for um dos 4
-  const vendedores = ['Hélcio Grégio','Paulo Fontes','Daniela Santos','Filipe Neves'];
-  // Normalizar para comparar (o select usa maiúsculas parciais)
-  const nomeUpper = nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  ['f-vendedor','e-vendedor','at-vendedor'].forEach(id => {
+  const canal = getCanalAtual();
+  const meta = getCanalMeta(canal);
+  if (bar) {
+    bar.style.display = 'inline-flex';
+    const nameEl = document.getElementById('user-bar-name');
+    const canalEl = document.getElementById('user-bar-canal');
+    if (nameEl) nameEl.textContent = nome;
+    if (canalEl) canalEl.textContent = meta?.label || canal || '—';
+  }
+  document.querySelectorAll('.main-nav .tab').forEach(t => { t.style.display = ''; });
+  const nomeUpper = normNomeUtilizador(nome);
+  ['f-vendedor','e-vendedor','at-vendedor','sc-vendedor','contratos-vendedor','pros-filtro-vendedor'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     for (const opt of el.options) {
-      const optUpper = opt.value.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      if (optUpper === nomeUpper) { el.value = opt.value; break; }
+      if (normNomeUtilizador(opt.value) === nomeUpper) { el.value = opt.value; break; }
+    }
+    // Não-admin: trava o filtro ao próprio vendedor
+    if (!isAdmin() && el.tagName === 'SELECT' && ['sc-vendedor','contratos-vendedor','pros-filtro-vendedor','f-vendedor'].includes(id)) {
+      el.disabled = true;
+    } else if (el.tagName === 'SELECT') {
+      el.disabled = false;
     }
   });
 }
 
 function logoutUtilizador() {
+  if (_loginModoDados) {
+    _loginModoDados = false;
+    // reset dados pin gate
+    const gate = document.getElementById('dados-pin-gate');
+    const content = document.getElementById('dados-content');
+    if (gate) gate.style.display = '';
+    if (content) content.style.display = 'none';
+  }
   localStorage.removeItem('dfb_utilizador');
+  localStorage.removeItem('dfb_canal');
+  document.querySelectorAll('.main-nav .tab').forEach(t => { t.style.display = ''; });
+  const bar = document.getElementById('user-bar');
+  if (bar) bar.style.display = 'none';
   mostrarLoginModal();
-  document.getElementById('login-select').value = '';
-  document.getElementById('login-erro').style.display = 'none';
+  const sel = document.getElementById('login-select');
+  if (sel) sel.value = '';
+  const err = document.getElementById('login-erro');
+  if (err) err.style.display = 'none';
 }
 
 function getUtilizadorAtual() {
   return localStorage.getItem('dfb_utilizador') || '';
+}
+
+// ─── REGISTRO DE VISITAS ─────────────────────────────
+const VISITAS_STORE_KEY = 'dfb_visitas_registos';
+const VISITAS_MOTIVOS = [
+  'Preço elevado',
+  'Stock suficiente',
+  'Comprou à concorrência',
+  'Estabelecimento fechado / ausente',
+  'Sem decisão / adiou compra',
+  'Reclamação / qualidade',
+  'Crédito / financeiro',
+  'Mudança de gestão',
+  'Outro',
+];
+
+function getVisitasStore() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(VISITAS_STORE_KEY) || '[]');
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
+function saveVisitasStore(arr) {
+  localStorage.setItem(VISITAS_STORE_KEY, JSON.stringify(arr));
+}
+
+function visitaKey(data, canal, vendedor, cod) {
+  return [data, canal, normNomeUtilizador(vendedor), normCod(cod)].join('|');
+}
+
+function hojeISODate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Dias anteriores ao de hoje: consulta apenas (não editável). Cada novo dia começa limpo. */
+function isVisitasDiaBloqueado(dataISO) {
+  const d = String(dataISO || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return true;
+  return d < hojeISODate();
+}
+
+function formatUltimaCompraVisitas(cod) {
+  const dt = getUltimaCompraFamilia(cod);
+  if (!dt || !(dt instanceof Date) || isNaN(dt)) return '—';
+  return dt.toLocaleDateString('pt-BR');
+}
+
+function initVisitasTab() {
+  const dataEl = document.getElementById('visitas-data');
+  const hoje = hojeISODate();
+  if (dataEl) {
+    dataEl.max = hoje;
+    if (!dataEl.value || dataEl.value > hoje) dataEl.value = hoje;
+  }
+  const de = document.getElementById('visitas-analise-de');
+  const ate = document.getElementById('visitas-analise-ate');
+  if (ate && !ate.value) ate.value = hoje;
+  if (de && !de.value) {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    de.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  popularVisitasVendedorSelect();
+  popularVisitasRotaSelect();
+  renderVisitasDia();
+  renderVisitasAnalise();
+  if (!scLoaded) {
+    scLoadFromSupabase().then(ok => { if (ok) renderVisitasDia(); }).catch(() => {});
+  }
+}
+
+function popularVisitasVendedorSelect() {
+  const sel = document.getElementById('visitas-vendedor');
+  if (!sel) return;
+  const nomes = nomesVendedoresCanalParaSelect();
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Vendedor —</option>' +
+    nomes.map(n => `<option value="${n}">${n}</option>`).join('');
+  const me = getUtilizadorAtual();
+  const meMatch = nomes.find(n => normNomeUtilizador(n) === normNomeUtilizador(me));
+  if (!isAdmin() && meMatch) {
+    sel.value = meMatch;
+    sel.disabled = true;
+  } else {
+    sel.disabled = false;
+    if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+    else if (meMatch) sel.value = meMatch;
+  }
+}
+
+function popularVisitasRotaSelect() {
+  const sel = document.getElementById('visitas-rota');
+  if (!sel) return;
+  const vend = document.getElementById('visitas-vendedor')?.value || '';
+  let lista = getListaClientesActiva();
+  if (vend) lista = lista.filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vend));
+  const rotas = [...new Set(lista.map(c => getRotaCliente(c)).filter(Boolean))]
+    .sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || String(a).localeCompare(String(b), 'pt'));
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Rota do dia (ZD) —</option>' +
+    rotas.map(r => `<option value="${r}">ZD / Rota ${r}</option>`).join('');
+  // Sem fallback 0–9: só rotas reais da coluna ZD após carga SAP
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+  else sel.value = '';
+}
+
+function onVisitasFiltroChange() {
+  popularVisitasRotaSelect();
+  renderVisitasDia();
+}
+
+function getVisitasDoDia(data, canal, vendedor, rota) {
+  const store = getVisitasStore();
+  const map = new Map();
+  store.forEach(v => {
+    if (v.data !== data) return;
+    if (v.canal !== canal) return;
+    if (normNomeUtilizador(v.vendedor) !== normNomeUtilizador(vendedor)) return;
+    if (rota && normalizaRotaCliente(v.rota) !== normalizaRotaCliente(rota)) return;
+    map.set(normCod(v.cod), v);
+  });
+  return map;
+}
+
+function renderVisitasDia() {
+  const cont = document.getElementById('visitas-content');
+  const info = document.getElementById('visitas-info');
+  if (!cont) return;
+  const data = document.getElementById('visitas-data')?.value || hojeISODate();
+  const vend = document.getElementById('visitas-vendedor')?.value || '';
+  const rota = document.getElementById('visitas-rota')?.value || '';
+  const canal = getCanalAtual();
+
+  if (!vend) {
+    if (info) info.textContent = 'Selecciona o vendedor.';
+    cont.innerHTML = '<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">Selecciona o vendedor para ver a rota.</div>';
+    return;
+  }
+  const doVend = getListaClientesActiva()
+    .filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vend));
+  const comZd = doVend.filter(c => getRotaCliente(c));
+  const rotasDisp = [...new Set(comZd.map(c => getRotaCliente(c)))].sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || String(a).localeCompare(String(b)));
+
+  if (!rota) {
+    if (info) {
+      info.innerHTML = comZd.length
+        ? `<strong>${doVend.length}</strong> clientes · <strong>${comZd.length}</strong> com ZD · rotas: ${rotasDisp.join(', ') || '—'}`
+        : `<strong>${doVend.length}</strong> clientes · <span style="color:#c8102e">nenhum com coluna ZD</span> — recarrega a lista SAP em Gestão de Dados`;
+    }
+    cont.innerHTML = comZd.length
+      ? '<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">Escolhe a rota do dia (ZD) para listar os clientes.</div>'
+      : `<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">
+          Ainda não há rotas ZD neste vendedor.<br>
+          <span style="font-size:12px;">Na página inicial → <strong>Gestão de Dados</strong> → Carregar Lista SAP (o Excel deve ter a coluna <strong>ZD</strong>).</span>
+        </div>`;
+    return;
+  }
+
+  const clientes = doVend
+    .filter(c => getRotaCliente(c) === normalizaRotaCliente(rota))
+    .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+
+  const regs = getVisitasDoDia(data, canal, vend, rota);
+  const feitos = [...regs.values()].filter(r => r.visita === 'S').length;
+  const bloqueado = isVisitasDiaBloqueado(data);
+  const dataEl = document.getElementById('visitas-data');
+  if (dataEl) dataEl.max = hojeISODate();
+  if (info) {
+    info.innerHTML = `<strong>${clientes.length}</strong> clientes na ZD/rota ${rota}` +
+      ` &nbsp;·&nbsp; <span style="color:#16a34a">${feitos} visitas S</span>` +
+      ` &nbsp;·&nbsp; ${data.split('-').reverse().join('/')}` +
+      ` &nbsp;·&nbsp; <span style="color:var(--muted)">${comZd.length}/${doVend.length} c/ ZD</span>` +
+      (bloqueado
+        ? ` &nbsp;·&nbsp; <span style="color:#b45309;font-weight:600;">🔒 Dia bloqueado (só consulta)</span>`
+        : ` &nbsp;·&nbsp; <span style="color:var(--muted);">editável até ao fim do dia</span>`);
+  }
+
+  if (!clientes.length) {
+    cont.innerHTML = `<div style="padding:32px;text-align:center;color:var(--muted);font-size:13px;">
+      Nenhum cliente de ${vend} na ZD/rota <strong>${rota}</strong>.<br>
+      <span style="font-size:12px;">Este vendedor tem ${doVend.length} clientes · ${comZd.length} com ZD
+      ${rotasDisp.length ? ` · rotas disponíveis: <strong>${rotasDisp.join(', ')}</strong>` : ''}.</span><br>
+      <span style="font-size:12px;">Se estiver tudo a zero, recarrega a lista SAP com a coluna <strong>ZD</strong> em Gestão de Dados.</span>
+    </div>`;
+    return;
+  }
+
+  const TH = 'padding:6px 8px;font-size:11px;font-weight:700;background:#f5f5f5;border:1px solid #e5e5e5;text-align:left;white-space:nowrap;';
+  const TD = 'padding:6px 8px;font-size:12px;border:1px solid #eee;vertical-align:middle;';
+  const snRadio = (field, cod, val, checked, disabled) =>
+    `<label class="vis-sn" style="display:inline-flex;align-items:center;gap:3px;margin:0 5px;cursor:${disabled ? 'default' : 'pointer'};opacity:${disabled ? '.45' : '1'};font-size:12px;font-weight:600;">
+      <input type="radio" name="vis-${field}-${cod}" data-vis-field="${field}" data-cod="${cod}" value="${val}"
+        ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}
+        onchange="salvarVisitaLinha('${String(cod).replace(/'/g, "\\'")}')"
+        style="width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:inherit;">
+      ${val}
+    </label>`;
+
+  let html = '';
+  if (bloqueado) {
+    html += `<div style="margin-bottom:10px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;">
+      🔒 Registo de <strong>${data.split('-').reverse().join('/')}</strong> bloqueado — só consulta.
+      No dia de hoje a mesma rota começa <strong>limpa</strong> para novo preenchimento.
+    </div>`;
+  }
+
+  html += `<div class="table-wrap" style="overflow-x:auto;"><table class="data-table" style="width:auto;max-width:100%;border-collapse:collapse;table-layout:auto;">
+    <thead><tr>
+      <th style="${TH}width:1%;">Cód.</th>
+      <th style="${TH}">Cliente</th>
+      <th style="${TH}width:1%;">Última compra</th>
+      <th style="${TH}text-align:center;width:1%;">Visita</th>
+      <th style="${TH}text-align:center;width:1%;">Comprou</th>
+      <th style="${TH}">Motivo (se não comprou)</th>
+    </tr></thead><tbody>`;
+
+  clientes.forEach((c, i) => {
+    const reg = regs.get(normCod(c.cod)) || {};
+    const visita = reg.visita || '';
+    const comprou = reg.comprou || '';
+    const motivo = reg.motivo || '';
+    const motivoDis = bloqueado || comprou !== 'N' ? 'disabled' : '';
+    const comprouDis = bloqueado || visita === 'N';
+    const visitaDis = bloqueado;
+    const bg = i % 2 === 0 ? '#fff' : '#fafafa';
+    const codEsc = String(c.cod).replace(/'/g, "\\'");
+    const ultCompra = formatUltimaCompraVisitas(c.cod);
+    html += `<tr style="background:${bg}">
+      <td style="${TD}color:var(--muted);font-family:var(--font-mono);white-space:nowrap;width:1%;">${c.cod}</td>
+      <td style="${TD}font-weight:500;white-space:nowrap;">${c.nome || '—'}</td>
+      <td style="${TD}white-space:nowrap;width:1%;font-family:var(--font-mono);color:${ultCompra === '—' ? 'var(--muted)' : 'var(--text)'};">${ultCompra}</td>
+      <td style="${TD}text-align:center;white-space:nowrap;width:1%;">
+        ${snRadio('visita', c.cod, 'S', visita === 'S', visitaDis)}
+        ${snRadio('visita', c.cod, 'N', visita === 'N', visitaDis)}
+      </td>
+      <td style="${TD}text-align:center;white-space:nowrap;width:1%;">
+        ${snRadio('comprou', c.cod, 'S', comprou === 'S', comprouDis)}
+        ${snRadio('comprou', c.cod, 'N', comprou === 'N', comprouDis)}
+      </td>
+      <td style="${TD}white-space:nowrap;">
+        <select data-vis-field="motivo" data-cod="${c.cod}" onchange="salvarVisitaLinha('${codEsc}')"
+          style="height:30px;font-size:12px;min-width:12em;" ${motivoDis}>
+          <option value="">— Selecionar —</option>
+          ${VISITAS_MOTIVOS.map(m => `<option value="${m}" ${motivo === m ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  cont.innerHTML = html;
+}
+
+function visitasCampoValor(field, cod) {
+  const checked = document.querySelector(`input[type="radio"][data-vis-field="${field}"][data-cod="${cod}"]:checked`);
+  return checked ? checked.value : '';
+}
+
+function visitasSetRadiosDisabled(field, cod, disabled) {
+  document.querySelectorAll(`input[type="radio"][data-vis-field="${field}"][data-cod="${cod}"]`).forEach(el => {
+    el.disabled = !!disabled;
+    const lab = el.closest('label');
+    if (lab) {
+      lab.style.opacity = disabled ? '.45' : '1';
+      lab.style.cursor = disabled ? 'default' : 'pointer';
+    }
+    if (disabled) el.checked = false;
+  });
+}
+
+function salvarVisitaLinha(cod) {
+  const data = document.getElementById('visitas-data')?.value || hojeISODate();
+  const vend = document.getElementById('visitas-vendedor')?.value || '';
+  const rota = document.getElementById('visitas-rota')?.value || '';
+  const canal = getCanalAtual();
+  if (!vend || !rota || !cod) return;
+  if (isVisitasDiaBloqueado(data)) {
+    toast('Este dia já está bloqueado — só é possível consultar.', 'warn');
+    renderVisitasDia();
+    return;
+  }
+
+  const motivoSel = document.querySelector(`select[data-vis-field="motivo"][data-cod="${cod}"]`);
+  let visita = visitasCampoValor('visita', cod);
+  let comprou = visitasCampoValor('comprou', cod);
+  let motivo = motivoSel?.value || '';
+
+  if (visita === 'N') {
+    comprou = '';
+    motivo = '';
+    visitasSetRadiosDisabled('comprou', cod, true);
+    if (motivoSel) { motivoSel.value = ''; motivoSel.disabled = true; }
+  } else {
+    visitasSetRadiosDisabled('comprou', cod, false);
+    if (comprou === 'N') {
+      if (motivoSel) motivoSel.disabled = false;
+    } else {
+      motivo = '';
+      if (motivoSel) { motivoSel.value = ''; motivoSel.disabled = true; }
+    }
+  }
+
+  const cli = getListaClientesActiva().find(c => normCod(c.cod) === normCod(cod));
+  const store = getVisitasStore();
+  const key = visitaKey(data, canal, vend, cod);
+  const idx = store.findIndex(v => visitaKey(v.data, v.canal, v.vendedor, v.cod) === key);
+  const rec = {
+    data, canal, vendedor: vend, rota: normalizaRotaCliente(rota),
+    cod: String(cod), nome: cli?.nome || '',
+    visita, comprou, motivo,
+    atualizado_em: new Date().toISOString(),
+    registado_por: getUtilizadorAtual(),
+  };
+  if (!visita && !comprou && !motivo) {
+    if (idx >= 0) store.splice(idx, 1);
+  } else if (idx >= 0) store[idx] = rec;
+  else store.push(rec);
+  saveVisitasStore(store);
+  renderVisitasAnalise();
+}
+
+function renderVisitasAnalise() {
+  const el = document.getElementById('visitas-analise');
+  if (!el) return;
+  const de = document.getElementById('visitas-analise-de')?.value || '';
+  const ate = document.getElementById('visitas-analise-ate')?.value || '';
+  const canal = getCanalAtual();
+  let rows = getVisitasStore().filter(v => v.canal === canal);
+  if (de) rows = rows.filter(v => v.data >= de);
+  if (ate) rows = rows.filter(v => v.data <= ate);
+  // restringe aos vendedores do canal / próprio
+  const nomesCanal = getNomesVendedoresDoCanal();
+  if (nomesCanal?.size) rows = rows.filter(v => nomesCanal.has(normNomeUtilizador(v.vendedor)));
+  if (!isAdmin()) {
+    const me = normNomeUtilizador(getUtilizadorAtual());
+    rows = rows.filter(v => normNomeUtilizador(v.vendedor) === me);
+  }
+
+  if (!rows.length) {
+    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px;">Sem registos de visitas no período.</div>';
+    return;
+  }
+
+  const byVend = {};
+  rows.forEach(r => {
+    const v = r.vendedor || '—';
+    if (!byVend[v]) byVend[v] = { total: 0, visitasS: 0, visitasN: 0, comprouS: 0, comprouN: 0, motivos: {} };
+    const s = byVend[v];
+    s.total++;
+    if (r.visita === 'S') s.visitasS++;
+    if (r.visita === 'N') s.visitasN++;
+    if (r.visita === 'S' && r.comprou === 'S') s.comprouS++;
+    if (r.visita === 'S' && r.comprou === 'N') {
+      s.comprouN++;
+      if (r.motivo) s.motivos[r.motivo] = (s.motivos[r.motivo] || 0) + 1;
+    }
+  });
+
+  const pct = (n, d) => d > 0 ? Math.round((n / d) * 100) : null;
+  const TH = 'padding:8px 12px;font-size:11px;font-weight:700;background:#f5f5f5;border-bottom:2px solid var(--accent);text-align:left;';
+  const TD = 'padding:8px 12px;font-size:13px;border-bottom:1px solid #f0f0f0;';
+
+  let html = `<div style="overflow-x:auto;margin-bottom:20px;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:640px;">
+      <thead><tr>
+        <th style="${TH}">Vendedor</th>
+        <th style="${TH}text-align:center;">Registos</th>
+        <th style="${TH}text-align:center;">% Visitas feitas</th>
+        <th style="${TH}text-align:center;">% Compraram</th>
+        <th style="${TH}text-align:center;">% Não compraram</th>
+        <th style="${TH}">Principais motivos</th>
+      </tr></thead><tbody>`;
+
+  Object.entries(byVend).sort((a, b) => a[0].localeCompare(b[0], 'pt')).forEach(([vend, s], i) => {
+    const pVis = pct(s.visitasS, s.total);
+    const baseCompra = s.visitasS || 0;
+    const pComp = pct(s.comprouS, baseCompra);
+    const pNao = pct(s.comprouN, baseCompra);
+    const topMot = Object.entries(s.motivos).sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([m, n]) => `${m} (${n})`).join(' · ') || '—';
+    const badge = (p, goodHigh) => {
+      if (p === null) return '—';
+      const ok = goodHigh ? p >= 70 : p <= 30;
+      const mid = goodHigh ? p >= 40 : p <= 50;
+      const col = ok ? '#16a34a' : mid ? '#d97706' : '#c8102e';
+      const bg = ok ? '#F0FDF4' : mid ? '#FFFBEB' : '#FEF2F2';
+      return `<span style="background:${bg};color:${col};padding:2px 8px;border-radius:10px;font-weight:700;">${p}%</span>`;
+    };
+    html += `<tr style="background:${i % 2 ? '#fafafa' : '#fff'}">
+      <td style="${TD}font-weight:600;">${vend}</td>
+      <td style="${TD}text-align:center;">${s.total}</td>
+      <td style="${TD}text-align:center;">${badge(pVis, true)} <span style="font-size:11px;color:var(--muted);">${s.visitasS}/${s.total}</span></td>
+      <td style="${TD}text-align:center;">${badge(pComp, true)} <span style="font-size:11px;color:var(--muted);">${s.comprouS}/${baseCompra || 0}</span></td>
+      <td style="${TD}text-align:center;">${badge(pNao, false)} <span style="font-size:11px;color:var(--muted);">${s.comprouN}/${baseCompra || 0}</span></td>
+      <td style="${TD}font-size:12px;">${topMot}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+
+  // Totais de motivos no período
+  const motivosAll = {};
+  rows.forEach(r => {
+    if (r.visita === 'S' && r.comprou === 'N' && r.motivo) {
+      motivosAll[r.motivo] = (motivosAll[r.motivo] || 0) + 1;
+    }
+  });
+  const motivoRows = Object.entries(motivosAll).sort((a, b) => b[1] - a[1]);
+  if (motivoRows.length) {
+    const maxM = motivoRows[0][1];
+    html += `<div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Motivos de não compra (período)</div>
+      <div style="display:grid;gap:6px;max-width:520px;">`;
+    motivoRows.forEach(([m, n]) => {
+      const w = Math.round((n / maxM) * 100);
+      html += `<div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;">
+          <span>${m}</span><strong>${n}</strong>
+        </div>
+        <div style="height:6px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+          <div style="height:100%;width:${w}%;background:var(--accent);border-radius:4px;"></div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+async function exportVisitasExcel() {
+  await ensureXLSX();
+  const de = document.getElementById('visitas-analise-de')?.value || '';
+  const ate = document.getElementById('visitas-analise-ate')?.value || hojeISODate();
+  const canal = getCanalAtual();
+  let rows = getVisitasStore().filter(v => v.canal === canal);
+  if (de) rows = rows.filter(v => v.data >= de);
+  if (ate) rows = rows.filter(v => v.data <= ate);
+  if (!isAdmin()) {
+    const me = normNomeUtilizador(getUtilizadorAtual());
+    rows = rows.filter(v => normNomeUtilizador(v.vendedor) === me);
+  }
+  if (!rows.length) { toast('Sem dados de visitas para exportar.', 'error'); return; }
+  const aoa = [['Data', 'Canal', 'Vendedor', 'Rota', 'Cód.', 'Cliente', 'Visita', 'Comprou', 'Motivo', 'Registado por']];
+  rows.sort((a, b) => (b.data || '').localeCompare(a.data || '') || String(a.vendedor).localeCompare(String(b.vendedor)));
+  rows.forEach(r => {
+    aoa.push([r.data, r.canal, r.vendedor, r.rota, r.cod, r.nome, r.visita, r.comprou, r.motivo, r.registado_por || '']);
+  });
+  writeXlsxDownload(aoa, 'Visitas', 'registro_visitas.xlsx',
+    [{ wch: 12 }, { wch: 14 }, { wch: 20 }, { wch: 8 }, { wch: 10 }, { wch: 36 }, { wch: 8 }, { wch: 10 }, { wch: 28 }, { wch: 18 }]);
 }
 
 // ─── ENCERRAMENTO DE CLIENTE ─────────────────────────
@@ -8599,12 +9597,12 @@ function isCodContencioso(cod) {
   return getCodsContenciosoSet().has(normCod(cod));
 }
 
-/** Registos activos = exclui clientes no Contencioso (deixam de ser contabilizados). */
+/** Registos activos = exclui Contencioso + restringe ao canal/utilizador. */
 function getRegistosActivos(data) {
-  const src = data || allData || [];
+  let src = data || allData || [];
   const cont = getCodsContenciosoSet();
-  if (!cont.size) return src;
-  return src.filter(r => !cont.has(normCod(r.cod)));
+  if (cont.size) src = src.filter(r => !cont.has(normCod(r.cod)));
+  return filtrarPorEscopoCanal(src);
 }
 
 function guardarListaContencioso(lista) {
@@ -12788,7 +13786,10 @@ async function exportATHistoricoExcel() {
 window.addEventListener('DOMContentLoaded', async () => {
   initLogin();
   await sincronizarListaClientes();
-  switchTab('registos');
+  // Só entra na app se já houver sessão canal+utilizador com PIN
+  if (getUtilizadorAtual() && getCanalAtual() && !document.getElementById('login-overlay')?.classList.contains('open')) {
+    switchTab('registos');
+  }
   try {
     const res = await fetch(SUPA_URL + '?select=id&limit=1', { headers: HEADERS });
     const data = await res.json();
