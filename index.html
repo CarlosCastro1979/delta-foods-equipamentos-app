@@ -365,6 +365,61 @@
     color: var(--muted);
     margin-bottom: 8px;
   }
+  .dist-carga-banner {
+    font-size: 12px;
+    color: #166534;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+  }
+  .dist-carga-list { display: flex; flex-direction: column; gap: 6px; }
+  .dist-carga-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+  }
+  .dist-carga-item.exhausted { opacity: 0.45; }
+  .dist-carga-qty {
+    min-width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e3a8a;
+    font-weight: 700;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+  }
+  .dist-carga-info { flex: 1; min-width: 0; }
+  .dist-carga-desc {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.3;
+  }
+  .dist-carga-meta {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .dist-catalog-fallback {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .dist-catalog-fallback summary {
+    cursor: pointer;
+    color: var(--muted);
+  }
   .dist-pool-chip {
     display: inline-flex;
     align-items: center;
@@ -1791,8 +1846,12 @@ var _unused_placeholder = 1;
         </div>
         <div id="dist-contratos-ui" style="display:none">
           <div class="dist-equip-pool" id="f-dist-equip-pool">
-            <div class="dist-equip-pool-title">Máquinas disponíveis (carga Excel NF) — clica para associar ao contrato activo</div>
-            <div id="f-dist-pool-chips"><span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo abaixo.</span></div>
+            <div class="dist-equip-pool-title">Equipamentos da carga (Excel NF) — associa ao contrato activo</div>
+            <div id="f-dist-pool-chips"><span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo em cada contrato.</span></div>
+            <details class="dist-catalog-fallback" id="f-dist-catalog-fallback">
+              <summary>Equipamento fora da carga?</summary>
+              Usa «+ Adicionar equipamento» em cada contrato (catálogo manual).
+            </details>
           </div>
           <div id="f-dist-contratos-list"></div>
           <button type="button" class="btn-add-equip" onclick="distAddContrato('f')" style="margin-top:6px">+ Adicionar contrato</button>
@@ -3588,8 +3647,12 @@ var _unused_placeholder = 1;
         </div>
         <div id="edit-dist-contratos-ui" style="display:none">
           <div class="dist-equip-pool">
-            <div class="dist-equip-pool-title">Máquinas disponíveis (carga Excel NF)</div>
-            <div id="e-dist-pool-chips"><span style="font-size:12px;color:var(--muted)">Sem carga para este cliente.</span></div>
+            <div class="dist-equip-pool-title">Equipamentos da carga (Excel NF) — associa ao contrato activo</div>
+            <div id="e-dist-pool-chips"><span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo em cada contrato.</span></div>
+            <details class="dist-catalog-fallback" id="e-dist-catalog-fallback">
+              <summary>Equipamento fora da carga?</summary>
+              Usa «+ Adicionar equipamento» em cada contrato (catálogo manual).
+            </details>
           </div>
           <div id="e-dist-contratos-list"></div>
           <button type="button" class="btn-add-equip" onclick="distAddContrato('e')" style="margin-top:6px">+ Adicionar contrato</button>
@@ -6817,6 +6880,11 @@ async function loadPendentes() {
     emptyLabel: 'Todos os vendedores',
     keepExtra: false,
   });
+  // Dist: pré-carregar carga para badges "pronto a associar"
+  if (typeof isCanalDistribuidores === 'function' && isCanalDistribuidores() && typeof distCargaLoadAll === 'function') {
+    distCargaLoadAll(false).then(() => renderPendentes()).catch(() => renderPendentes());
+    return;
+  }
   renderPendentes();
 }
 
@@ -6828,11 +6896,16 @@ function renderPendentes() {
   if (search) filtered = filtered.filter(c => c.nome.toLowerCase().includes(search) || c.cod.toLowerCase().includes(search) || (c.vendedor||'').toLowerCase().includes(search));
   if (vendFilt) filtered = filtered.filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vendFilt));
 
+  const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
+  const hasCargaFn = (cod) => isDist && typeof distCargaByCliente === 'function' && distCargaByCliente(cod).length > 0;
+
   const revisao = filtered.filter(c => c._revisao);
   const normais  = filtered.filter(c => !c._revisao);
+  const comCarga = isDist ? normais.filter(c => hasCargaFn(c.cod)).length : 0;
   const countEl = document.getElementById('pending-count-badge');
   if (countEl) {
     let txt = `${normais.length} por registar`;
+    if (comCarga) txt += ` · ${comCarga} com carga`;
     if (revisao.length) txt += ` · ⚠ ${revisao.length} precisam revisão`;
     countEl.textContent = txt;
   }
@@ -6861,13 +6934,20 @@ function renderPendentes() {
             onclick="abrirEditCod('${c.cod}')">✏ Corrigir código</button>
         </td>
       </tr>`
-    : `<tr>
+    : (() => {
+        const ready = hasCargaFn(c.cod);
+        const badge = ready
+          ? ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">carga pronta</span>'
+          : '';
+        const btnLabel = ready ? '→ Associar contratos' : '→ Registar';
+        return `<tr>
         <td>${c.cod}</td>
-        <td>${c.nome}</td>
+        <td>${c.nome}${badge}</td>
         <td>${c.cep||'—'}</td>
         <td><span class="vendedor-badge">${c.vendedor||'—'}</span></td>
-        <td><button class="btn-edit" data-cod="${c.cod}" data-nome="${c.nome.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" data-cep="${c.cep||''}" data-vend="${c.vendedor||''}">→ Registar</button></td>
+        <td><button class="btn-edit" data-cod="${c.cod}" data-nome="${c.nome.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" data-cep="${c.cep||''}" data-vend="${c.vendedor||''}">${btnLabel}</button></td>
       </tr>`;
+      })();
 
   pendingBody.innerHTML = filtered.length
     ? filtered.map(renderRow).join('')
@@ -6941,7 +7021,7 @@ function preencherNovo(cod, nome, cep, vendedor) {
   switchTab('registos');
   switchSubTab('registos', 'novo');
   // Preenche o formulário
-  setTimeout(() => {
+  setTimeout(async () => {
     const fCod = document.getElementById('f-cod');
     const fNome = document.getElementById('f-nome');
     const fCep = document.getElementById('f-cep');
@@ -6951,12 +7031,17 @@ function preencherNovo(cod, nome, cep, vendedor) {
     if (fCep) fCep.value = formatCep(cep);
     if (fVend) fVend.value = vendedor;
     if (typeof adaptarFormRegistoCanal === 'function') adaptarFormRegistoCanal();
-    if (typeof distRefreshPoolForCod === 'function') distRefreshPoolForCod('f', cod);
-    if (fCod) fCod.focus();
     const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
-    toast(isDist
-      ? 'Cliente pré-preenchido. Indica se tem contratos de comodato.'
-      : 'Cliente pré-preenchido. Adiciona os equipamentos e guarda.');
+    if (isDist && typeof distPrepareFormForCod === 'function') {
+      await distPrepareFormForCod('f', cod);
+      const hasCarga = _distUi.f && _distUi.f.hasCarga;
+      toast(hasCarga
+        ? 'Carga encontrada — indica o nº de contrato e associa as máquinas.'
+        : 'Cliente pré-preenchido. Indica se tem contratos de comodato.');
+    } else {
+      toast('Cliente pré-preenchido. Adiciona os equipamentos e guarda.');
+    }
+    if (fCod) fCod.focus();
   }, 50);
 }
 
@@ -19371,17 +19456,32 @@ function adaptarFormRegistoCanal() {
   }
 }
 
+function distPerguntaEl(prefix) {
+  return document.getElementById(prefix === 'e' ? 'edit-dist-comodato-pergunta' : 'dist-comodato-pergunta');
+}
+
+function distSetComodatoPerguntaVisible(prefix, visible) {
+  const el = distPerguntaEl(prefix);
+  if (el) el.style.display = visible ? '' : 'none';
+}
+
 function distResetFormUi(prefix) {
   const st = _distUi[prefix] || (_distUi[prefix] = {});
   st.temComodato = null;
   st.activeContratoIdx = 0;
+  st.hasCarga = false;
   const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
   const list = document.getElementById(listId);
   if (list) list.innerHTML = '';
+  distSetComodatoPerguntaVisible(prefix, true);
   distApplyComodatoUi(prefix);
   const poolId = prefix === 'e' ? 'e-dist-pool-chips' : 'f-dist-pool-chips';
   const pool = document.getElementById(poolId);
-  if (pool) pool.innerHTML = '<span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo abaixo.</span>';
+  if (pool) {
+    pool.innerHTML = '<span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo em cada contrato.</span>';
+    pool._groups = null;
+    pool._used = null;
+  }
 }
 
 function distApplyComodatoUi(prefix) {
@@ -19403,6 +19503,62 @@ function distApplyComodatoUi(prefix) {
   if (ctUi) ctUi.style.display = st.temComodato === true ? 'block' : 'none';
 }
 
+/**
+ * Abre o fluxo Dist para um código: se há carga Excel para o cliente,
+ * máquinas ⇒ comodato (salta a pergunta Sim/Não) e mostra a lista com qtys.
+ * Regra: carga sozinha desbloqueia a UI de associação; o cliente só fica
+ * "registado" ao guardar com tem_comodato + contrato(s)/equip (ou sem comodato).
+ */
+async function distPrepareFormForCod(prefix, cod, opts) {
+  prefix = prefix || 'f';
+  opts = opts || {};
+  if (!isCanalDistribuidores()) return;
+  const st = _distUi[prefix] || (_distUi[prefix] = {});
+  await distCargaLoadAll(false);
+  const rows = distCargaByCliente(cod);
+  const hasCarga = rows.length > 0;
+  st.hasCarga = hasCarga;
+
+  if (hasCarga) {
+    distSetComodatoPerguntaVisible(prefix, false);
+    st.temComodato = true;
+    distApplyComodatoUi(prefix);
+    const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
+    const list = document.getElementById(listId);
+    if (opts.fromRegisto) {
+      const n = distNormalizeRegisto(opts.fromRegisto);
+      if (list) list.innerHTML = '';
+      if (n.dist_contratos && n.dist_contratos.length) {
+        n.dist_contratos.forEach(c => distAddContrato(prefix, c));
+      } else if (list && !list.children.length) {
+        distAddContrato(prefix, { skipEmptyEquip: true });
+      }
+    } else if (list && !list.children.length) {
+      distAddContrato(prefix, { skipEmptyEquip: true });
+    }
+    await distRefreshPoolForCod(prefix, cod);
+    return;
+  }
+
+  // Sem carga: pergunta Sim/Não (excepto se já há resposta / registo carregado)
+  distSetComodatoPerguntaVisible(prefix, true);
+  if (opts.fromRegisto) {
+    const n = distNormalizeRegisto(opts.fromRegisto);
+    st.temComodato = n.tem_comodato;
+    distApplyComodatoUi(prefix);
+    const list = document.getElementById(prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list');
+    if (list) list.innerHTML = '';
+    if (n.tem_comodato === true) {
+      (n.dist_contratos || []).forEach(c => distAddContrato(prefix, c));
+      if (!(n.dist_contratos || []).length) distAddContrato(prefix);
+      await distRefreshPoolForCod(prefix, cod);
+    }
+    return;
+  }
+
+  await distRefreshPoolForCod(prefix, cod);
+}
+
 async function distResponderComodato(sim, prefix) {
   prefix = prefix || 'f';
   const st = _distUi[prefix] || (_distUi[prefix] = {});
@@ -19412,9 +19568,15 @@ async function distResponderComodato(sim, prefix) {
   if (sim) {
     const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
     const list = document.getElementById(listId);
-    if (list && !list.children.length) distAddContrato(prefix);
     const codEl = document.getElementById(prefix === 'e' ? 'e-cod' : 'f-cod');
-    distRefreshPoolForCod(prefix, codEl?.value || '');
+    const cod = codEl?.value || '';
+    await distCargaLoadAll(false);
+    const hasCarga = distCargaByCliente(cod).length > 0;
+    st.hasCarga = hasCarga;
+    if (list && !list.children.length) {
+      distAddContrato(prefix, hasCarga ? { skipEmptyEquip: true } : {});
+    }
+    await distRefreshPoolForCod(prefix, cod);
     return;
   }
 
@@ -19466,9 +19628,8 @@ function distAddContrato(prefix, data) {
     <button type="button" class="btn-add-equip" style="margin-top:6px"
       onclick="distAddEquipRow(this.closest('.dist-contrato-card'), '')">+ Adicionar equipamento</button>`;
   list.appendChild(card);
-  const eqList = card.querySelector('.dist-ct-equips');
   if (equips.length) equips.forEach(eq => distAddEquipRow(card, eq));
-  else distAddEquipRow(card, {});
+  else if (!data.skipEmptyEquip) distAddEquipRow(card, {});
   _distUi[prefix].activeContratoIdx = idx;
 }
 
@@ -19608,16 +19769,9 @@ function distNormalizeRegisto(r) {
 
 function distLoadEditFromRegisto(r) {
   if (!isCanalDistribuidores() || !r) return;
-  const n = distNormalizeRegisto(r);
-  _distUi.e.temComodato = n.tem_comodato;
-  distApplyComodatoUi('e');
   const list = document.getElementById('e-dist-contratos-list');
   if (list) list.innerHTML = '';
-  if (n.tem_comodato === true) {
-    (n.dist_contratos || []).forEach(c => distAddContrato('e', c));
-    if (!(n.dist_contratos || []).length) distAddContrato('e');
-    distRefreshPoolForCod('e', r.cod || '');
-  }
+  distPrepareFormForCod('e', r.cod || '', { fromRegisto: r });
 }
 
 // ─── Carga Excel / pool de máquinas ───────────────────
@@ -19715,11 +19869,24 @@ function distCargaSetLocal(rows) {
   _distCargaLoaded = false;
 }
 
+/** Normaliza código cliente para match carga ↔ formulário (zeros, "cod NOME", 1234.0). */
+function distNormCodCliente(cod) {
+  let s = String(cod ?? '').trim();
+  if (!s) return '';
+  if (typeof formatSapCod === 'function') s = formatSapCod(s);
+  // "749285 NOME…" ou científico residual → dígitos iniciais
+  const m = s.match(/^(\d+)/);
+  if (m) s = m[1];
+  else s = s.replace(/[^\d]/g, '');
+  if (!s) return '';
+  return (typeof normCod === 'function' ? normCod(s) : s.replace(/^0+/, '')) || '';
+}
+
 /** Une local + remoto; local primeiro (import recente neste browser). */
 function distCargaMergeRows(local, remote) {
   const keyOf = (r) => {
     if (r && r.id && !String(r.id).startsWith('local-')) return 'id:' + r.id;
-    const cod = (typeof normCod === 'function' ? normCod(r && r.cod_cliente) : String((r && r.cod_cliente) || '').replace(/^0+/, '')) || '';
+    const cod = distNormCodCliente(r && r.cod_cliente);
     return 'k:' + [r && r.nf || '', cod, r && r.codigo_sap || '', r && r.descricao || '', r && r.qty || ''].join('|');
   };
   const out = [];
@@ -19755,14 +19922,101 @@ async function distCargaLoadAll(force) {
 }
 
 function distCargaByCliente(cod) {
-  const n = (typeof normCod === 'function' ? normCod(cod) : String(cod || '').replace(/^0+/, '')) || '';
-  const all = (Array.isArray(_distCargaCache) && _distCargaCache.length)
-    ? _distCargaCache
-    : distCargaGetLocal();
+  const n = distNormCodCliente(cod);
   if (!n || n === '0') return [];
-  return all.filter(r => {
-    const c = (typeof normCod === 'function' ? normCod(r.cod_cliente) : String(r.cod_cliente || '').replace(/^0+/, ''));
-    return c === n;
+  // Sempre misturar cache + localStorage: evita pool vazio se o cache remoto
+  // ficou desactualizado face a um import recente neste browser.
+  const local = distCargaGetLocal();
+  const cached = Array.isArray(_distCargaCache) ? _distCargaCache : [];
+  const all = distCargaMergeRows(local, cached);
+  return all.filter(r => distNormCodCliente(r.cod_cliente) === n);
+}
+
+/** Agrega linhas da carga por material+descrição, com unidades expandíveis. */
+function distAggregateCargaRows(rows) {
+  const map = new Map();
+  (rows || []).forEach(r => {
+    const codigo = String(r.codigo_sap || '').trim();
+    const descricao = String(r.descricao || codigo || 'Equipamento').trim();
+    const key = codigo + '||' + descricao;
+    const q = Math.max(1, parseInt(r.qty, 10) || 1);
+    if (!map.has(key)) {
+      map.set(key, { codigo, descricao, qty: 0, nfs: [], units: [] });
+    }
+    const g = map.get(key);
+    g.qty += q;
+    if (r.nf && !g.nfs.includes(r.nf)) g.nfs.push(r.nf);
+    for (let i = 0; i < q; i++) {
+      g.units.push({
+        id: String(r.id || 'row') + ':' + i + ':' + g.units.length,
+        carga_id: r.id || '',
+        codigo,
+        descricao,
+        nf: r.nf || '',
+        tag: r.tag || '',
+      });
+    }
+  });
+  return [...map.values()];
+}
+
+function distPoolRenderGroups(prefix, pool) {
+  const groups = pool._groups || [];
+  const used = pool._used || new Set();
+  if (!groups.length) {
+    pool.innerHTML = '<span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo em cada contrato.</span>';
+    return;
+  }
+  const total = groups.reduce((s, g) => s + g.qty, 0);
+  const left = groups.reduce((s, g) => s + g.units.filter(u => !used.has(u.id)).length, 0);
+  pool.innerHTML = `
+    <div class="dist-carga-banner">Carga Excel: <strong>${total}</strong> máquina(s) · ${left} por associar — indica o nº de contrato e clica em Associar.</div>
+    <div class="dist-carga-list">
+      ${groups.map((g, gi) => {
+        const remain = g.units.filter(u => !used.has(u.id)).length;
+        const nfs = g.nfs.length ? ' · NF ' + g.nfs.join(', ') : '';
+        const cod = g.codigo ? g.codigo + ' · ' : '';
+        return `<div class="dist-carga-item${remain ? '' : ' exhausted'}" data-g="${gi}">
+          <span class="dist-carga-qty" title="Quantidade na carga">${remain}/${g.qty}</span>
+          <div class="dist-carga-info">
+            <div class="dist-carga-desc">${g.descricao.replace(/</g, '&lt;')}</div>
+            <div class="dist-carga-meta">${cod}${nfs || '—'}</div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" ${remain ? '' : 'disabled'}
+            onclick="distPoolPickGroup('${prefix}', ${gi})">${remain ? 'Associar' : 'Esgotado'}</button>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+/** Marca unidades da carga já ligadas aos contratos do formulário. */
+function distPoolMarkUsedFromForm(prefix, pool) {
+  if (!pool || !pool._groups) return;
+  const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
+  const list = document.getElementById(listId);
+  if (!list) return;
+  const usedKeys = [];
+  list.querySelectorAll('.dist-equip-row').forEach(row => {
+    const tipo = row.querySelector('.equip-select')?.value || '';
+    usedKeys.push({
+      carga_id: row.dataset.cargaId || '',
+      codigo: row.dataset.codigo || '',
+      tipo,
+      nf: row.dataset.nf || '',
+    });
+  });
+  pool._used = new Set();
+  usedKeys.forEach(k => {
+    for (const g of pool._groups) {
+      const unit = g.units.find(u => {
+        if (pool._used.has(u.id)) return false;
+        if (k.carga_id && u.carga_id && k.carga_id === u.carga_id) return true;
+        if (k.codigo && u.codigo && k.codigo === u.codigo && (!k.tipo || k.tipo === u.descricao)) return true;
+        if (k.tipo && k.tipo === u.descricao && (!k.codigo || k.codigo === u.codigo)) return true;
+        return false;
+      });
+      if (unit) { pool._used.add(unit.id); break; }
+    }
   });
 }
 
@@ -19772,57 +20026,76 @@ async function distRefreshPoolForCod(prefix, cod) {
   const pool = document.getElementById(poolId);
   if (!pool) return;
   const rows = distCargaByCliente(cod);
+  const fallback = document.getElementById(prefix === 'e' ? 'e-dist-catalog-fallback' : 'f-dist-catalog-fallback');
   if (!rows.length) {
-    pool.innerHTML = '<span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo abaixo.</span>';
+    pool.innerHTML = '<span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo em cada contrato.</span>';
+    pool._groups = [];
+    pool._used = new Set();
+    if (fallback) fallback.style.display = '';
     return;
   }
-  // Expandir qty > 1 em chips
-  const chips = [];
-  rows.forEach(r => {
-    const q = Math.max(1, parseInt(r.qty, 10) || 1);
-    for (let i = 0; i < q; i++) {
-      chips.push({
-        id: (r.id || '') + ':' + i,
-        carga_id: r.id || '',
-        codigo: r.codigo_sap || '',
-        descricao: r.descricao || r.codigo_sap || 'Equipamento',
-        nf: r.nf || '',
-        tag: r.tag || '',
-      });
-    }
-  });
-  pool.innerHTML = chips.map((c, i) =>
-    `<span class="dist-pool-chip" data-idx="${i}" title="NF ${c.nf || '—'} · ${c.codigo || ''}"
-      onclick="distPoolPick('${prefix}', ${i})">${c.descricao}${c.nf ? ' · NF ' + c.nf : ''}</span>`
-  ).join('');
-  pool._chips = chips;
+  pool._groups = distAggregateCargaRows(rows);
+  pool._used = new Set();
+  distPoolMarkUsedFromForm(prefix, pool);
+  if (fallback) fallback.style.display = '';
+  distPoolRenderGroups(prefix, pool);
 }
 
-function distPoolPick(prefix, idx) {
-  const poolId = prefix === 'e' ? 'e-dist-pool-chips' : 'f-dist-pool-chips';
-  const pool = document.getElementById(poolId);
-  const chips = pool && pool._chips;
-  if (!chips || !chips[idx]) return;
-  const c = chips[idx];
+function distPoolAssociateUnit(prefix, unit) {
+  if (!unit) return;
   const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
   const list = document.getElementById(listId);
   if (!list || !list.children.length) {
     toast('Adiciona um contrato primeiro.', 'error');
-    return;
+    return false;
   }
   let ctIdx = (_distUi[prefix] && _distUi[prefix].activeContratoIdx) || 0;
   if (ctIdx < 0 || ctIdx >= list.children.length) ctIdx = list.children.length - 1;
   const card = list.children[ctIdx];
   distAddEquipRow(card, {
-    tipo: c.descricao,
-    tag: c.tag || '',
-    codigo: c.codigo,
-    nf: c.nf,
-    carga_id: c.carga_id,
+    tipo: unit.descricao,
+    tag: unit.tag || '',
+    codigo: unit.codigo,
+    nf: unit.nf,
+    carga_id: unit.carga_id,
   });
-  const chipEl = pool.querySelector(`[data-idx="${idx}"]`);
-  if (chipEl) chipEl.classList.add('used');
   toast('Máquina associada ao Contrato ' + (ctIdx + 1));
+  return true;
+}
+
+function distPoolPickGroup(prefix, gi) {
+  const poolId = prefix === 'e' ? 'e-dist-pool-chips' : 'f-dist-pool-chips';
+  const pool = document.getElementById(poolId);
+  const groups = pool && pool._groups;
+  if (!groups || !groups[gi]) return;
+  if (!pool._used) pool._used = new Set();
+  const unit = groups[gi].units.find(u => !pool._used.has(u.id));
+  if (!unit) {
+    toast('Todas as unidades deste equipamento já foram associadas.', 'error');
+    return;
+  }
+  if (!distPoolAssociateUnit(prefix, unit)) return;
+  pool._used.add(unit.id);
+  distPoolRenderGroups(prefix, pool);
+}
+
+/** Compat: chips antigos / chamadas externas. */
+function distPoolPick(prefix, idx) {
+  const poolId = prefix === 'e' ? 'e-dist-pool-chips' : 'f-dist-pool-chips';
+  const pool = document.getElementById(poolId);
+  const groups = pool && pool._groups;
+  if (!groups || !groups.length) return;
+  // idx = índice linear nas unidades
+  let flat = 0;
+  for (let gi = 0; gi < groups.length; gi++) {
+    for (let ui = 0; ui < groups[gi].units.length; ui++) {
+      if (flat === idx) {
+        distPoolPickGroup(prefix, gi);
+        return;
+      }
+      flat++;
+    }
+  }
 }
 
 async function distCargaEquipFile(event) {
@@ -19931,11 +20204,10 @@ async function distCargaEquipConfirmMap() {
   rows.forEach((row, ri) => {
     if (!row || !row.length) return;
     const cell = (idx) => (idx >= 0 && row[idx] != null ? String(row[idx]).trim() : '');
-    const cod = cell(map.cod_cliente);
-    if (!cod) return;
-    // Extrair código se vier "749285 NOME…"
-    const codMatch = cod.match(/^(\d+)/);
-    const cod_cliente = codMatch ? codMatch[1] : cod;
+    const codRaw = cell(map.cod_cliente);
+    if (!codRaw) return;
+    // Extrair/normalizar código se vier "749285 NOME…", "001234", "1234.0"
+    const cod_cliente = distNormCodCliente(codRaw) || codRaw;
     let data_nf = null;
     if (map.data_nf >= 0 && row[map.data_nf] != null && row[map.data_nf] !== '') {
       if (typeof parseExcelDateFlexible === 'function') data_nf = parseExcelDateFlexible(row[map.data_nf]);
@@ -19968,8 +20240,8 @@ async function distCargaEquipConfirmMap() {
   // Guardar local sempre
   const prev = distCargaGetLocal();
   // Substituir por cliente: remover códigos presentes no novo import, depois append
-  const newCods = new Set(parsed.map(p => (typeof normCod === 'function' ? normCod(p.cod_cliente) : p.cod_cliente)));
-  const kept = prev.filter(p => !newCods.has(typeof normCod === 'function' ? normCod(p.cod_cliente) : p.cod_cliente));
+  const newCods = new Set(parsed.map(p => distNormCodCliente(p.cod_cliente)));
+  const kept = prev.filter(p => !newCods.has(distNormCodCliente(p.cod_cliente)));
   const merged = kept.concat(parsed);
   distCargaSetLocal(merged);
 
@@ -19994,6 +20266,13 @@ async function distCargaEquipConfirmMap() {
   const box = document.getElementById('dados-dist-equip-map');
   if (box) box.style.display = 'none';
   distCargaEquipRefreshStats();
+  // Se o form Dist estiver aberto com um destes códigos, actualizar UI (salta pergunta)
+  ['f', 'e'].forEach(prefix => {
+    const el = document.getElementById(prefix === 'e' ? 'e-cod' : 'f-cod');
+    if (el && el.value && newCods.has(distNormCodCliente(el.value))) {
+      distPrepareFormForCod(prefix, el.value);
+    }
+  });
   toast(`✅ ${parsed.length} linhas importadas da aba "${sheetName}"` + (remoteOk ? ' (Supabase + local)' : ' (só local — corre o SQL de migration)'));
 }
 
@@ -20022,7 +20301,7 @@ function distCargaEquipRefreshStats() {
   // Não escrever _distCargaCache = [] aqui: isso impedia ler dist_equip_carga no Supabase.
 }
 
-// Refresh pool ao mudar código no form Dist
+// Refresh pool / fluxo comodato ao mudar código no form Dist
 function distBindCodPoolListeners() {
   ['f-cod', 'e-cod'].forEach(id => {
     const el = document.getElementById(id);
@@ -20031,7 +20310,21 @@ function distBindCodPoolListeners() {
     el.addEventListener('blur', () => {
       if (!isCanalDistribuidores()) return;
       const prefix = id.startsWith('e') ? 'e' : 'f';
-      distRefreshPoolForCod(prefix, el.value);
+      // Em edição, preservar contratos já no form; só actualizar pool/pergunta
+      if (prefix === 'e' && document.getElementById('e-dist-contratos-list')?.children?.length) {
+        distCargaLoadAll(false).then(() => {
+          const has = distCargaByCliente(el.value).length > 0;
+          _distUi.e.hasCarga = has;
+          if (has) {
+            distSetComodatoPerguntaVisible('e', false);
+            _distUi.e.temComodato = true;
+            distApplyComodatoUi('e');
+          }
+          distRefreshPoolForCod('e', el.value);
+        });
+        return;
+      }
+      distPrepareFormForCod(prefix, el.value);
     });
   });
 }
