@@ -4886,12 +4886,17 @@ function renderTable() {
 
 function _applyRegistosToListaUI(rows) {
   allData = rows;
-  const vendedores = [...new Set(allData.map(r => r.vendedor).filter(Boolean))].sort();
-  const selVend = document.getElementById('filtro-vendedor-lista');
-  if (selVend) {
-    const cur = selVend.value;
-    selVend.innerHTML = '<option value="">Todos os vendedores</option>' +
-      vendedores.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+  // Dropdown = só vendedores do canal activo (não misturar Horeca em Dist, etc.)
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('filtro-vendedor-lista', { emptyLabel: 'Todos os vendedores' });
+  } else {
+    const vendedores = [...new Set(filterByCanalActivoVendedor(allData).map(r => r.vendedor).filter(Boolean))].sort();
+    const selVend = document.getElementById('filtro-vendedor-lista');
+    if (selVend) {
+      const cur = selVend.value;
+      selVend.innerHTML = '<option value="">Todos os vendedores</option>' +
+        vendedores.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+    }
   }
   renderTable();
 }
@@ -5293,6 +5298,10 @@ async function scLoadFromSupabase(forceRefresh = false) {
 }
 
 function fillSCVendedorSelect() {
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('sc-vendedor', { emptyLabel: 'Todos os vendedores' });
+    return;
+  }
   const sel = document.getElementById('sc-vendedor');
   if (!sel) return;
   const cur = sel.value;
@@ -5363,11 +5372,15 @@ async function initSemCompras() {
 }
 
 async function initEncerramentoPendente() {
-  const sel = document.getElementById('ep-vendedor');
-  if (sel && sel.options.length <= 1) {
-    const vendedores = [...new Set(getListaClientesActiva().map(c => c.vendedor).filter(Boolean))].sort();
-    sel.innerHTML = '<option value="">Todos os vendedores</option>' +
-      vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('ep-vendedor', { emptyLabel: 'Todos os vendedores' });
+  } else {
+    const sel = document.getElementById('ep-vendedor');
+    if (sel && sel.options.length <= 1) {
+      const vendedores = [...new Set(getListaClientesActiva().map(c => c.vendedor).filter(Boolean))].sort();
+      sel.innerHTML = '<option value="">Todos os vendedores</option>' +
+        vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+    }
   }
   await renderEncerramentoPendente();
 }
@@ -5437,12 +5450,9 @@ async function handleSCFileImport(event) {
   const nClientes = Object.keys(scVendasData).length;
   toast(`✅ ${totalLinhas} linhas processadas · ${nClientes} clientes no histórico`);
 
-  // Actualiza filtro de vendedores
-  const sel = document.getElementById('sc-vendedor');
-  if (sel && sel.options.length <= 1) {
-    const vendedores = [...new Set(getListaClientesActiva().map(c => c.vendedor).filter(Boolean))].sort();
-    sel.innerHTML = '<option value="">Todos os vendedores</option>' +
-      vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+  // Actualiza filtro de vendedores do canal activo
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('sc-vendedor', { emptyLabel: 'Todos os vendedores' });
   }
 
   renderSemCompras();
@@ -6480,12 +6490,16 @@ function initForaSP() {
 
   foraSPCache.sort((a, b) => a.estado.localeCompare(b.estado) || (a.vendedor||'').localeCompare(b.vendedor||''));
 
-  // Popula filtros
-  const vendedores = [...new Set(foraSPCache.map(c => c.vendedor).filter(Boolean))].sort();
-  const selV = document.getElementById('fsp-vendedor');
-  if (selV) {
-    selV.innerHTML = '<option value="">Todos os vendedores</option>' +
-      vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+  // Popula filtros (vendedores = canal activo)
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('fsp-vendedor', { emptyLabel: 'Todos os vendedores' });
+  } else {
+    const vendedores = [...new Set(foraSPCache.map(c => c.vendedor).filter(Boolean))].sort();
+    const selV = document.getElementById('fsp-vendedor');
+    if (selV) {
+      selV.innerHTML = '<option value="">Todos os vendedores</option>' +
+        vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+    }
   }
   const estados = [...new Set(foraSPCache.map(c => c.estado))].sort();
   const selE = document.getElementById('fsp-estado');
@@ -6691,6 +6705,8 @@ async function loadContratosPorRegistar() {
 
     const porRegistar = [];
     for (const r of registos) {
+      // Só clientes/vendedores do canal activo (Dist → Massimo/Eduardo; Horeca → …)
+      if (typeof vendedorPertenceAoCanalActivo === 'function' && !vendedorPertenceAoCanalActivo(r.vendedor)) continue;
       if (codsComContrato.has(normCod(r.cod))) continue;
       const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
       const equipsProfissionais = equips.filter(e => isEquipamentoProfissionalNosso(e.tipo));
@@ -6702,12 +6718,16 @@ async function loadContratosPorRegistar() {
       }
     }
 
-    // Popula filtro vendedor
-    const vendedores = [...new Set(porRegistar.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
-    const selV = document.getElementById('contratos-pr-vendedor');
-    if (selV) {
-      selV.innerHTML = '<option value="">Todos os vendedores</option>' +
-        vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+    // Popula filtro vendedor = só os do canal activo
+    if (typeof fillVendedorSelectCanal === 'function') {
+      fillVendedorSelectCanal('contratos-pr-vendedor', { emptyLabel: 'Todos os vendedores' });
+    } else {
+      const vendedores = [...new Set(porRegistar.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
+      const selV = document.getElementById('contratos-pr-vendedor');
+      if (selV) {
+        selV.innerHTML = '<option value="">Todos os vendedores</option>' +
+          vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+      }
     }
 
     window._contratosPorRegistar = porRegistar;
@@ -6723,7 +6743,12 @@ function renderContratosPorRegistar() {
 
   const vendFilt = document.getElementById('contratos-pr-vendedor')?.value || '';
   let lista = window._contratosPorRegistar;
-  if (vendFilt) lista = lista.filter(r => r.vendedor === vendFilt);
+  if (vendFilt) {
+    const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vendFilt) : vendFilt;
+    lista = lista.filter(r =>
+      (typeof normNomeUtilizador === 'function' ? normNomeUtilizador(r.vendedor) : r.vendedor) === vn
+    );
+  }
 
   lista.sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'') || (a.nome||'').localeCompare(b.nome||''));
 
@@ -6787,7 +6812,12 @@ async function exportContratosPorRegistarExcel() {
   await ensureXLSX();
   const vendFilt = document.getElementById('contratos-pr-vendedor')?.value || '';
   let lista = window._contratosPorRegistar;
-  if (vendFilt) lista = lista.filter(r => r.vendedor === vendFilt);
+  if (vendFilt) {
+    const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vendFilt) : vendFilt;
+    lista = lista.filter(r =>
+      (typeof normNomeUtilizador === 'function' ? normNomeUtilizador(r.vendedor) : r.vendedor) === vn
+    );
+  }
 
   const rows = [['Vendedor','Cód.','Cliente','Equipamentos']];
   lista.forEach(r => rows.push([
@@ -6973,7 +7003,7 @@ async function distBuildRegistosIndex() {
   }
   const map = new Map();
   (data || []).forEach(r => {
-    if (resolveCanalActivoId() === 'distribuidores' && !vendedorPertenceAoCanalActivo(r.vendedor)) return;
+    if (typeof vendedorPertenceAoCanalActivo === 'function' && !vendedorPertenceAoCanalActivo(r.vendedor)) return;
     const k = normCod(r.cod);
     if (!map.has(k)) map.set(k, r);
   });
@@ -8211,7 +8241,8 @@ const CANAIS_APP = {
   ecommerce: {
     id: 'ecommerce',
     nome: 'Ecommerce',
-    sapCanais: [], // a definir
+    // Retalho / Institucional / Sellers (NPess Marcio) — descoberta alarga via clientes
+    sapCanais: ['01', '03'],
     // Acesso login: Marcio; NPess Online/Institucional → display Marcio Gorga
     vendedores: ['Marcio Gorga'],
     vendedorCods: [99520001, 99520009, 99520008, 99520011, 99520012],
@@ -8219,7 +8250,8 @@ const CANAIS_APP = {
   varejo: {
     id: 'varejo',
     nome: 'Varejo e Distr. Varejo',
-    sapCanais: [], // a definir
+    // Retalho + Distr. Varejo (Diogo) — descoberta alarga via clientes
+    sapCanais: ['01', '13'],
     vendedores: ['Diogo Oliveira'],
     // NPess: Varejo + Distr. Varejo
     vendedorCods: [99520018, 99520004, 99530001, 99530005],
@@ -8227,7 +8259,8 @@ const CANAIS_APP = {
   distribuidores: {
     id: 'distribuidores',
     nome: 'Distribuidores',
-    sapCanais: [], // a definir
+    // Revendedores — Massimo / Eduardo
+    sapCanais: ['13'],
     vendedores: ['Eduardo Moreira', 'Massimo Bottello'],
     vendedorCods: [99520003, 99520020],
   },
@@ -8330,6 +8363,32 @@ function fillVendedorSelectCanal(selOrId, { emptyLabel, selected, keepExtra } = 
     const match = [...sel.options].find(o => o.value === cur || normNomeUtilizador(o.value) === normNomeUtilizador(cur));
     if (match) sel.value = match.value;
   }
+}
+
+/** Filtra linhas pelo vendedor do canal activo (Horeca/Ecommerce/Varejo/Dist). */
+function filterByCanalActivoVendedor(rows, getVend = r => r && r.vendedor) {
+  if (!rows || !rows.length) return [];
+  const canalId = typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : null;
+  if (!canalId || !CANAIS_APP[canalId]) return rows.slice();
+  return rows.filter(r => vendedorPertenceAoCanalActivo(getVend(r)));
+}
+
+/** Extrai código NPess do valor SAP do dropdown (ex.: "99520003 - BOTTELLO…"). */
+function pgVendedorCodFromOption(val) {
+  const m = String(val || '').trim().match(/^(\d{5,})/);
+  return m ? parseInt(m[1], 10) : NaN;
+}
+
+/** Mantém só opções SAP de vendedor cujos NPess pertencem ao canal da app. */
+function filterPgVendedoresPorCanalApp(vendedoresSap, canalId) {
+  const list = Array.isArray(vendedoresSap) ? vendedoresSap : [];
+  const id = canalId || (typeof prosCanalActivoId === 'function' ? prosCanalActivoId() : resolveCanalActivoId());
+  const cods = typeof getVendedorCodsDoCanal === 'function' ? getVendedorCodsDoCanal(id) : new Set();
+  if (!cods.size) return list.slice();
+  return list.filter(v => {
+    const n = pgVendedorCodFromOption(v);
+    return !isNaN(n) && cods.has(n);
+  });
 }
 
 /** Cliente pertence ao canal? NPess é autoridade exclusiva; senão nome do vendedor do canal. */
@@ -8518,6 +8577,13 @@ function abrirCanalConfirmado(canalId) {
     fillVendedorSelectCanal('e-vendedor', { emptyLabel: '— Selecionar vendedor —', keepExtra: true });
     fillVendedorSelectCanal('filtro-vendedor-lista', { emptyLabel: 'Todos os vendedores' });
     fillVendedorSelectCanal('pending-filter-vendedor', { emptyLabel: 'Todos os vendedores' });
+    fillVendedorSelectCanal('dist-falta-filter-vendedor', { emptyLabel: 'Todos os vendedores' });
+    fillVendedorSelectCanal('contratos-vendedor', { emptyLabel: 'Todos os vendedores' });
+    fillVendedorSelectCanal('contratos-pr-vendedor', { emptyLabel: 'Todos os vendedores' });
+    fillVendedorSelectCanal('sc-vendedor', { emptyLabel: 'Todos os vendedores' });
+    fillVendedorSelectCanal('ep-vendedor', { emptyLabel: 'Todos os vendedores' });
+    fillVendedorSelectCanal('cp-vendedor', { emptyLabel: 'Todos os vendedores' });
+    fillVendedorSelectCanal('at-hist-vendedor', { emptyLabel: 'Todos os vendedores' });
   } catch (eFill) { console.warn('fillVendedorSelectCanal:', eFill); }
   try {
     if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal();
@@ -9791,11 +9857,15 @@ function loadAtTab() {
     return;
   }
 
-  const lista = getListaClientesActiva();
-  const vendedores = [...new Set(lista.map(c => c.vendedor).filter(Boolean))].sort();
-  const sel = document.getElementById('at-vendedor');
-  if (sel) sel.innerHTML = '<option value="">— Selecionar —</option>' +
-    vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('at-vendedor', { emptyLabel: '— Selecionar —' });
+  } else {
+    const lista = getListaClientesActiva();
+    const vendedores = [...new Set(lista.map(c => c.vendedor).filter(Boolean))].sort();
+    const sel = document.getElementById('at-vendedor');
+    if (sel) sel.innerHTML = '<option value="">— Selecionar —</option>' +
+      vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+  }
 
   // Reset campos — todos visíveis mas disabled
   atTipoEquip = ''; atListaAtiva = [];
@@ -11587,9 +11657,21 @@ async function loadContratosTab(forceRefresh = false) {
     // Filter only those with contratos array
     registos = registos.filter(r => Array.isArray(r.contratos) && r.contratos.length > 0);
 
+    // Canal activo: só vendedores desse canal (Dist → Massimo/Eduardo, …)
+    if (typeof filterByCanalActivoVendedor === 'function') {
+      registos = filterByCanalActivoVendedor(registos);
+    } else if (typeof vendedorPertenceAoCanalActivo === 'function') {
+      registos = registos.filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+    }
+
     // Apply vendedor filter if active
     const vendFiltContr = window._contratosFiltro || '';
-    if (vendFiltContr) registos = registos.filter(r => r.vendedor === vendFiltContr);
+    if (vendFiltContr) {
+      const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vendFiltContr) : vendFiltContr;
+      registos = registos.filter(r =>
+        (typeof normNomeUtilizador === 'function' ? normNomeUtilizador(r.vendedor) : r.vendedor) === vn
+      );
+    }
 
     if (!registos.length) {
       cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Nenhum contrato registado ainda.<br>Adiciona contratos no formulário de Novo Registo.</div>';
@@ -11779,13 +11861,17 @@ async function loadContratosTab(forceRefresh = false) {
     });
     html += `</tbody></table></div>`;
   
-    // Popula filtro de vendedores
-    const vendedoresContr = [...new Set(rows.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
-    const selVC = document.getElementById('contratos-vendedor');
-    if (selVC) {
-      const cur = selVC.value;
-      selVC.innerHTML = '<option value="">Todos os vendedores</option>' +
-        vendedoresContr.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+    // Popula filtro de vendedores = canal activo
+    if (typeof fillVendedorSelectCanal === 'function') {
+      fillVendedorSelectCanal('contratos-vendedor', { emptyLabel: 'Todos os vendedores' });
+    } else {
+      const vendedoresContr = [...new Set(rows.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
+      const selVC = document.getElementById('contratos-vendedor');
+      if (selVC) {
+        const cur = selVC.value;
+        selVC.innerHTML = '<option value="">Todos os vendedores</option>' +
+          vendedoresContr.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+      }
     }
     // Construir mapa de docs para marcar botões
     const docsMap = {};
@@ -11899,7 +11985,13 @@ function filtrarContratosVendedor() {
   const nomeFilt = (document.getElementById('contratos-search-nome')?.value||'').trim().toLowerCase();
   const numFilt  = (document.getElementById('contratos-search-num')?.value||'').trim().toLowerCase();
 
-  let scopeRows = vendFilt ? allRows.filter(r => r.vendedor === vendFilt) : allRows;
+  let scopeRows = allRows;
+  if (vendFilt) {
+    const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vendFilt) : vendFilt;
+    scopeRows = allRows.filter(r =>
+      (typeof normNomeUtilizador === 'function' ? normNomeUtilizador(r.vendedor) : r.vendedor) === vn
+    );
+  }
   if (codFilt)  scopeRows = scopeRows.filter(r => String(r.cod||'').toLowerCase().includes(codFilt));
   if (nomeFilt) scopeRows = scopeRows.filter(r => String(r.nome||'').toLowerCase().includes(nomeFilt));
   if (numFilt)  scopeRows = scopeRows.filter(r => String(r.contrato||'').toLowerCase().includes(numFilt));
@@ -13050,8 +13142,11 @@ function getSapCanaisDosVendedoresDoCanal(canalId) {
     const ch = canalCodFromSap(cli.canal);
     if (ch && ch !== '00') set.add(ch);
   });
-  // Horeca: se a lista ainda não tiver canais, garantir 03/04
+  // Fallbacks se a lista ainda não tiver canais observados
   if (id === 'horeca' && !set.size) { set.add('03'); set.add('04'); }
+  if (id === 'distribuidores' && !set.size) set.add('13');
+  if (id === 'ecommerce' && !set.size) { set.add('01'); set.add('03'); }
+  if (id === 'varejo' && !set.size) { set.add('01'); set.add('13'); }
   return set;
 }
 
@@ -13295,11 +13390,15 @@ async function removerPedidosContenciosoPorCods(cods) {
 }
 
 async function initContenciosoPendente() {
-  const sel = document.getElementById('cp-vendedor');
-  if (sel && sel.options.length <= 1) {
-    const vendedores = [...new Set(getListaClientesActiva().map(c => c.vendedor).filter(Boolean))].sort();
-    sel.innerHTML = '<option value="">Todos os vendedores</option>' +
-      vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('cp-vendedor', { emptyLabel: 'Todos os vendedores' });
+  } else {
+    const sel = document.getElementById('cp-vendedor');
+    if (sel && sel.options.length <= 1) {
+      const vendedores = [...new Set(getListaClientesActiva().map(c => c.vendedor).filter(Boolean))].sort();
+      sel.innerHTML = '<option value="">Todos os vendedores</option>' +
+        vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+    }
   }
   await renderContenciosoPendente();
 }
@@ -13684,6 +13783,9 @@ function prosApplyCadastroDefaultsForCanal(opts = {}) {
   setIf('pg-motivo', d.motivo);
   setIf('pg-empresa', d.empresa);
   setIf('pg-grupo', d.grupo);
+  if (typeof prosRefreshPgCanalSelect === 'function') {
+    prosRefreshPgCanalSelect(force ? d.canal : (document.getElementById('pg-canal')?.value || d.canal));
+  }
   setIf('pg-canal', d.canal);
   setIf('pg-sector', d.sector);
   setIf('pg-rota', d.rota);
@@ -13727,6 +13829,12 @@ function prosPopulateCanalUI() {
   prosFillSelectOptions(document.getElementById('pros-f-segmento'), segs, {
     emptyLabel: 'Selecionar...',
   });
+  // Cadastro SAP: canal distribuição + vendedores só do canal app
+  if (typeof prosRefreshPgCanalSelect === 'function') {
+    const defCanal = (typeof prosCadastroDefaults === 'function' ? prosCadastroDefaults(canalId) : {}).canal;
+    prosRefreshPgCanalSelect(document.getElementById('pg-canal')?.value || defCanal || '');
+  }
+  if (typeof prosGanhoEmpresaChange === 'function') prosGanhoEmpresaChange();
 }
 
 function prosApplyCanalScope() {
@@ -14831,6 +14939,57 @@ function prosCanalCodFromSelect(val) {
   return String(val || '').substring(0, 2);
 }
 
+/** Opções canónicas do dropdown Canal Distribuição (cadastro / alteração CNPJ). */
+const PG_CANAL_OPTIONS = [
+  { cod: '00', label: '00 - Grupo Nabeiro' },
+  { cod: '01', label: '01 - Retalhista' },
+  { cod: '03', label: '03 - Delta Office' },
+  { cod: '04', label: '04 - Restauração' },
+  { cod: '13', label: '13 - Revendedores' },
+];
+
+/**
+ * Popula #pg-canal só com canais SAP do canal da app
+ * (config + canais onde os vendedores desse canal têm clientes).
+ */
+function prosRefreshPgCanalSelect(selected) {
+  const sel = document.getElementById('pg-canal');
+  if (!sel) return;
+  const canalAppId = typeof prosCanalActivoId === 'function' ? prosCanalActivoId() : null;
+  const allowed = (typeof getSapCanaisDosVendedoresDoCanal === 'function')
+    ? getSapCanaisDosVendedoresDoCanal(canalAppId)
+    : new Set();
+  // Garantir default do canal (ex. Dist → 13) mesmo se a lista de clientes ainda não carregou
+  try {
+    const defCod = prosCanalCodFromSelect((typeof prosCadastroDefaults === 'function' ? prosCadastroDefaults(canalAppId) : {}).canal);
+    if (defCod && defCod !== '00') allowed.add(defCod);
+  } catch (_) {}
+  // Fallbacks estáveis por canal app
+  if (canalAppId === 'horeca') { allowed.add('03'); allowed.add('04'); }
+  if (canalAppId === 'distribuidores') allowed.add('13');
+  if (canalAppId === 'ecommerce') { allowed.add('01'); allowed.add('03'); }
+  if (canalAppId === 'varejo') { allowed.add('01'); allowed.add('13'); }
+
+  const cur = selected !== undefined ? selected : sel.value;
+  const curCod = prosCanalCodFromSelect(cur);
+  let opts = PG_CANAL_OPTIONS.filter(o => allowed.has(o.cod));
+  if (!opts.length) opts = PG_CANAL_OPTIONS.slice();
+  // Se o valor actual (ex. ficha antiga) não está na lista, manter temporariamente
+  if (curCod && !opts.some(o => o.cod === curCod)) {
+    const keep = PG_CANAL_OPTIONS.find(o => o.cod === curCod);
+    if (keep) opts = opts.concat([keep]);
+    else if (cur) opts = opts.concat([{ cod: curCod, label: cur }]);
+  }
+  sel.innerHTML = opts.map(o => `<option value="${o.label}">${o.label}</option>`).join('');
+  if (cur && [...sel.options].some(o => o.value === cur)) {
+    sel.value = cur;
+  } else if (curCod && [...sel.options].some(o => prosCanalCodFromSelect(o.value) === curCod)) {
+    sel.value = [...sel.options].find(o => prosCanalCodFromSelect(o.value) === curCod).value;
+  } else if (sel.options.length) {
+    sel.selectedIndex = 0;
+  }
+}
+
 function prosMigrarCanalLegacy(canalVal) {
   const cod = prosCanalCodFromSelect(canalVal);
   if (cod === '09') return '01 - Retalhista';
@@ -15099,6 +15258,7 @@ function prosCadastroApplyToForm(cad, p) {
   setVal('pg-supl', c.supl); setVal('pg-bairro', c.bairro); setVal('pg-cep', c.cep);
   document.getElementById('pg-cidade').value = c.cidade || 'SÃO PAULO';
   const canalMigrado = prosMigrarCanalLegacy(c.canal || '') || def.canal;
+  if (typeof prosRefreshPgCanalSelect === 'function') prosRefreshPgCanalSelect(canalMigrado);
   setVal('pg-canal', canalMigrado);
   setVal('pg-regiao', c.regiao || def.regiao);
   setVal('pg-icms', c.icms);
@@ -15144,9 +15304,16 @@ function prosGanhoCanalChange() {
   const gn      = empresa.startsWith('GN52') ? 'GN52' : 'GN53';
   const canalCod = canal.substring(0,2);
   const key = `${gn}_${canalCod}`;
-  const vendedores = PG_VENDEDORES[key] || [];
+  // PG_VENDEDORES tem todos os NPess do canal SAP (ex. 13 mistura Dist+Diogo+Marcio);
+  // restringir aos vendedores do canal da app (Dist → Massimo/Eduardo, …).
+  const canalAppId = typeof prosCanalActivoId === 'function' ? prosCanalActivoId() : null;
+  const vendedores = (typeof filterPgVendedoresPorCanalApp === 'function')
+    ? filterPgVendedoresPorCanalApp(PG_VENDEDORES[key] || [], canalAppId)
+    : (PG_VENDEDORES[key] || []);
   const sel = document.getElementById('pg-vendedor');
+  const prev = sel ? sel.value : '';
   sel.innerHTML = vendedores.map(v => `<option value="${v}">${v}</option>`).join('') || '<option value="">— Sem vendedores para este canal —</option>';
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
   document.getElementById('pg-equipe').textContent = PG_EQUIPE_CANAL[canalCod] || '';
   prosRefreshPagtoDropdown(canalCod, document.getElementById('pg-pagto')?.value || '');
 }
@@ -17467,18 +17634,24 @@ async function eliminarChamadosATMes(monthKey) {
   const months = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const label = monthKey === '0000-00' ? 'Sem data'
     : `${months[parseInt(monthKey.split('-')[1], 10) - 1] || ''} ${monthKey.split('-')[0]}`;
-  // Mesmo universo que a lista visível (canal Dist + filtro vendedor)
+  // Mesmo universo que a lista visível (canal activo + filtro vendedor)
   const vendFilt = document.getElementById('at-hist-vendedor')?.value || '';
-  const isDist = _canalActivo === 'distribuidores';
-  const canalVends = isDist ? new Set((getCanalActivo()?.vendedores || []).map(normNomeUtilizador)) : null;
+  const canalId = typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : _canalActivo;
+  const isDist = canalId === 'distribuidores';
+  const canalVends = (canalId && typeof getVendedoresNomesDoCanal === 'function')
+    ? new Set(getVendedoresNomesDoCanal(canalId))
+    : null;
   let pool = atHistData;
-  if (isDist && canalVends?.size) {
+  if (canalVends?.size) {
     pool = atHistData.filter(c =>
       canalVends.has(normNomeUtilizador(c.vendedor)) ||
-      String(c.tipo_equip || '').startsWith('dist_')
+      (isDist && String(c.tipo_equip || '').startsWith('dist_'))
     );
   }
-  if (vendFilt) pool = pool.filter(c => c.vendedor === vendFilt);
+  if (vendFilt) {
+    const vn = normNomeUtilizador(vendFilt);
+    pool = pool.filter(c => normNomeUtilizador(c.vendedor) === vn);
+  }
   const ids = pool
     .filter(c => parseMonthKey(c.data) === monthKey && podeEliminarChamadoAT(c))
     .map(c => c.id);
@@ -18523,28 +18696,38 @@ function renderATHistorico() {
   if (!cont || !atHistData) return;
 
   const vendFilt = document.getElementById('at-hist-vendedor')?.value || '';
-  const isDist = _canalActivo === 'distribuidores';
-  const canalVends = isDist ? new Set((getCanalActivo()?.vendedores || []).map(normNomeUtilizador)) : null;
+  const canalId = typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : _canalActivo;
+  const isDist = canalId === 'distribuidores';
+  const canalVends = (canalId && typeof getVendedoresNomesDoCanal === 'function')
+    ? new Set(getVendedoresNomesDoCanal(canalId))
+    : null;
 
-  // Em Distribuidores: mostrar pedidos da equipa (Massimo/Eduardo) + tipos dist_*
+  // Em qualquer canal: só pedidos dos vendedores desse canal; Dist mantém tipos dist_*
   let pool = atHistData;
-  if (isDist && canalVends?.size) {
+  if (canalVends?.size) {
     pool = atHistData.filter(c =>
       canalVends.has(normNomeUtilizador(c.vendedor)) ||
-      String(c.tipo_equip || '').startsWith('dist_')
+      (isDist && String(c.tipo_equip || '').startsWith('dist_'))
     );
   }
 
   let data = pool;
-  if (vendFilt) data = data.filter(c => c.vendedor === vendFilt);
+  if (vendFilt) {
+    const vn = normNomeUtilizador(vendFilt);
+    data = data.filter(c => normNomeUtilizador(c.vendedor) === vn);
+  }
 
-  // Update vendedor filter
-  const vendedores = [...new Set(pool.map(c => c.vendedor).filter(Boolean))].sort();
-  const sel = document.getElementById('at-hist-vendedor');
-  if (sel) {
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">Todos os vendedores</option>' +
-      vendedores.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+  // Update vendedor filter = canal activo
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('at-hist-vendedor', { emptyLabel: 'Todos os vendedores' });
+  } else {
+    const vendedores = [...new Set(pool.map(c => c.vendedor).filter(Boolean))].sort();
+    const sel = document.getElementById('at-hist-vendedor');
+    if (sel) {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Todos os vendedores</option>' +
+        vendedores.map(v => `<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+    }
   }
 
   if (!data.length) {
