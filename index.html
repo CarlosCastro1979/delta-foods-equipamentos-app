@@ -1759,19 +1759,23 @@ var _unused_placeholder = 1;
   </div>
 
   <div class="panel active" id="panel-registos">
-    <!-- Sub-tab buttons -->
+    <!-- Sub-tab buttons (Dist: sem Novo; Por registar / Contratos em falta / Registos OK) -->
     <div class="sub-nav">
       <button id="sub-novo" onclick="switchSubTab('registos','novo')"
         class="sub-tab active">
         Novo Registo
       </button>
-      <button id="sub-lista" onclick="switchSubTab('registos','lista')"
-        class="sub-tab">
-        Todos os Registos
-      </button>
       <button id="sub-pendentes" onclick="switchSubTab('registos','pendentes')"
         class="sub-tab">
         Por Registar
+      </button>
+      <button id="sub-contratos-falta" onclick="switchSubTab('registos','contratos-falta')"
+        class="sub-tab" style="display:none">
+        Contratos em falta
+      </button>
+      <button id="sub-lista" onclick="switchSubTab('registos','lista')"
+        class="sub-tab">
+        Todos os Registos
       </button>
       <button id="sub-vendedores" onclick="switchSubTab('registos','vendedores')"
         class="sub-tab">
@@ -1937,6 +1941,39 @@ var _unused_placeholder = 1;
       </table>
     </div>
 
+  </div>
+    </div>
+
+  <!-- DIST: CONTRATOS EM FALTA (carga por associar) -->
+    <div id="sub-panel-contratos-falta" style="display:none;">
+<div id="panel-contratos-falta">
+    <div class="pending-toolbar">
+      <input type="text" id="dist-falta-search" placeholder="🔍 Pesquisar cliente, código ou vendedor…" oninput="renderDistContratosFalta()">
+      <select id="dist-falta-filter-vendedor" onchange="renderDistContratosFalta()">
+        <option value="">Todos os vendedores</option>
+      </select>
+      <span class="count-badge" id="dist-falta-count-badge"></span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">
+      Clientes com equipamentos da carga (Excel NF) ainda por associar a contratos de comodato.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Cód.</th>
+            <th>Nome Cliente</th>
+            <th>Carga</th>
+            <th>Associado</th>
+            <th>Vendedor</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="dist-falta-body">
+          <tr class="loading-row"><td colspan="6"><span class="spinner"></span>A carregar...</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
     </div>
 
@@ -4018,7 +4055,15 @@ async function salvarRegisto(opts = {}) {
     clearRegistosCache();
     limparForm();
     loadPendentes();
-    if (opts.goLista || tem_comodato === false) {
+    if (isDist) {
+      const cls = typeof distClassifyCliente === 'function'
+        ? distClassifyCliente({ cod, nome }, { tem_comodato, dist_contratos, equipamentos, contrato })
+        : (tem_comodato === false ? 'ok' : 'contratos_falta');
+      const dest = cls === 'ok' ? 'lista' : (cls === 'contratos_falta' ? 'contratos-falta' : 'pendentes');
+      switchSubTab('registos', dest);
+      if (dest === 'lista') loadData(true);
+      else if (dest === 'contratos-falta') loadDistContratosFalta();
+    } else if (opts.goLista) {
       switchSubTab('registos', 'lista');
       loadData(true);
     }
@@ -4748,6 +4793,12 @@ function renderTable() {
   if (codFilt) filtered = filtered.filter(r => (r.cod||'').toLowerCase().includes(codFilt));
   if (nomeFilt) filtered = filtered.filter(r => (r.nome||'').toLowerCase().includes(nomeFilt));
 
+  // Dist "Registos OK": sem comodato OU 100% carga associada
+  if (typeof isCanalDistribuidores === 'function' && isCanalDistribuidores()
+      && typeof distClassifyCliente === 'function') {
+    filtered = filtered.filter(r => distClassifyCliente({ cod: r.cod, nome: r.nome }, r) === 'ok');
+  }
+
   const badgeEl = document.getElementById('invalidos-badge');
 
   // Detetar códigos duplicados (só nos activos)
@@ -4787,7 +4838,12 @@ function renderTable() {
   }
 
   const countEl = document.getElementById('record-count');
-  if (countEl) countEl.textContent = `${filtered.length} de ${activos.length} registos`;
+  if (countEl) {
+    const isDistLista = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
+    countEl.textContent = isDistLista
+      ? `${filtered.length} registos OK`
+      : `${filtered.length} de ${activos.length} registos`;
+  }
   setStatus(true, activos.length);
 
   if (!filtered.length) {
@@ -4851,6 +4907,11 @@ async function _fetchRegistosFresh() {
 
 async function loadData(forceRefresh = false) {
   const tabelaBody = document.getElementById('table-body');
+  // Dist Registos OK precisa da carga para classificar cobertura
+  if (typeof isCanalDistribuidores === 'function' && isCanalDistribuidores()
+      && typeof distCargaLoadAll === 'function') {
+    try { await distCargaLoadAll(false); } catch (_) {}
+  }
 
   // Memória fresca → pintar já (SWR em background se a TTL estiver a expirar)
   if (!forceRefresh && allData?.length && sessionCacheFresh('registos')) {
@@ -6547,8 +6608,13 @@ async function exportForaSPExcel() {
 
 function switchSubTab(group, sub) {
   if (group === 'registos') {
+    // Dist: não há "Novo Registo" — redireccionar para Por registar
+    if (sub === 'novo' && typeof isCanalDistribuidores === 'function' && isCanalDistribuidores()
+        && !window._distAllowNovoForm) {
+      sub = 'pendentes';
+    }
     window._registosSubTab = sub;
-    ['novo','lista','pendentes','vendedores','carga-sap'].forEach(s => {
+    ['novo','lista','pendentes','contratos-falta','vendedores','carga-sap'].forEach(s => {
       const btn = document.getElementById('sub-' + s);
       const panel = document.getElementById('sub-panel-' + s);
       const active = s === sub;
@@ -6578,6 +6644,7 @@ function switchSubTab(group, sub) {
     }
     if (sub === 'lista') loadData(false);
     if (sub === 'pendentes') loadPendentes();
+    if (sub === 'contratos-falta') loadDistContratosFalta();
     if (sub === 'vendedores') renderVendedoresTable();
     if (sub === 'carga-sap') renderUltimaCargaSAP();
   }
@@ -6829,6 +6896,10 @@ async function salvarEdicao() {
     closeEdit();
     loadData(true);
     loadPendentes();
+    if (typeof isCanalDistribuidores === 'function' && isCanalDistribuidores()
+        && typeof loadDistContratosFalta === 'function') {
+      loadDistContratosFalta();
+    }
   } catch(e) {
     toast('Erro: ' + e.message, 'error');
   }
@@ -6836,8 +6907,97 @@ async function salvarEdicao() {
 
 // excluirRegisto moved to confirmarExclusao above
 
-// ─── PENDENTES ───────────────────────────────────────
+// ─── PENDENTES / DIST CLASSIFICAÇÃO ───────────────────
 let pendentesData = [];
+let distContratosFaltaData = [];
+let _distRegistosIndex = null; // Map normCod → registo (Dist)
+
+function distAssocQtyFromRegisto(r) {
+  if (!r) return 0;
+  const n = typeof distNormalizeRegisto === 'function' ? distNormalizeRegisto(r) : null;
+  if (!n) return 0;
+  let qty = 0;
+  (n.dist_contratos || []).forEach(c => {
+    (c.equipamentos || []).forEach(() => { qty += 1; });
+  });
+  if (!qty && Array.isArray(r.equipamentos)) qty = r.equipamentos.filter(e => e && e.tipo).length;
+  return qty;
+}
+
+function distCargaQtyForCliente(cod, opts) {
+  const rows = typeof distCargaByCliente === 'function' ? distCargaByCliente(cod, opts) : [];
+  return rows.reduce((s, r) => s + Math.max(1, parseInt(r.qty, 10) || 1), 0);
+}
+
+/**
+ * Classifica cliente Dist no universo SAP:
+ * - por_registar: sem decisão (sem registo / tem_comodato null) E sem carga
+ * - contratos_falta: tem carga com associação incompleta (mesmo sem registo), ou tem_comodato true incompleto
+ * - ok: sem comodato, OU 100% da carga associada
+ */
+function distClassifyCliente(cliente, registo) {
+  const cod = cliente?.cod || registo?.cod || '';
+  const nome = cliente?.nome || registo?.nome || '';
+  const cargaQty = distCargaQtyForCliente(cod, { nome });
+  const hasCarga = cargaQty > 0;
+  const n = registo && typeof distNormalizeRegisto === 'function'
+    ? distNormalizeRegisto(registo)
+    : { tem_comodato: null, dist_contratos: [] };
+  const assocQty = distAssocQtyFromRegisto(registo);
+
+  if (n.tem_comodato === false) return 'ok';
+
+  if (hasCarga) {
+    if (assocQty >= cargaQty) return 'ok';
+    return 'contratos_falta';
+  }
+
+  // Sem carga
+  if (!registo || n.tem_comodato == null || n.tem_comodato === undefined) return 'por_registar';
+  if (n.tem_comodato === true) {
+    const hasCt = (n.dist_contratos || []).some(c => c.numero && (c.equipamentos || []).length);
+    return hasCt ? 'ok' : 'contratos_falta';
+  }
+  return 'por_registar';
+}
+
+async function distBuildRegistosIndex() {
+  let data = [];
+  try {
+    data = await fetchRegistosPaginado(
+      'id,cod,nome,vendedor,cep,contrato,equipamentos,tem_comodato,dist_contratos,manual',
+      'cod.asc'
+    );
+  } catch (_) {
+    data = await fetchRegistosPaginado('id,cod,nome,vendedor,cep,contrato,equipamentos,manual', 'cod.asc');
+  }
+  const map = new Map();
+  (data || []).forEach(r => {
+    if (resolveCanalActivoId() === 'distribuidores' && !vendedorPertenceAoCanalActivo(r.vendedor)) return;
+    const k = normCod(r.cod);
+    if (!map.has(k)) map.set(k, r);
+  });
+  _distRegistosIndex = map;
+  return map;
+}
+
+function distFindRegistoForCliente(cliente, index) {
+  const idx = index || _distRegistosIndex;
+  if (!idx || !cliente) return null;
+  const byCod = idx.get(normCod(cliente.cod));
+  if (byCod) return byCod;
+  const nn = typeof distNormNomeCliente === 'function'
+    ? distNormNomeCliente(cliente.nome)
+    : String(cliente.nome || '').toUpperCase();
+  if (!nn) return null;
+  for (const r of idx.values()) {
+    const rn = typeof distNormNomeCliente === 'function'
+      ? distNormNomeCliente(r.nome)
+      : String(r.nome || '').toUpperCase();
+    if (rn && rn === nn) return r;
+  }
+  return null;
+}
 
 async function loadPendentes() {
   await sincronizarListaClientes();
@@ -6848,28 +7008,30 @@ async function loadPendentes() {
   );
 
   try {
-    // Validação exclusivamente por código SAP — CNPJ/nome podem repetir em códigos diferentes
-    const data = await fetchRegistosPaginado('cod,nome,vendedor,manual', 'cod.asc');
+    const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
 
-    const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
+    if (isDist) {
+      await distCargaLoadAll(false);
+      const index = await distBuildRegistosIndex();
+      pendentesData = listaAtiva.filter(c => {
+        const reg = distFindRegistoForCliente(c, index);
+        return distClassifyCliente(c, reg) === 'por_registar';
+      });
+    } else {
+      // Validação exclusivamente por código SAP — CNPJ/nome podem repetir em códigos diferentes
+      const data = await fetchRegistosPaginado('cod,nome,vendedor,manual', 'cod.asc');
 
-    // Fallback por NOME: o SAP tem por vezes o MESMO cliente sob dois códigos
-    // diferentes (ex.: SPI 444090 e 754434; WAJ 452047 e 428078). Se já existe um
-    // registo com o mesmo nome, o cliente já foi tratado e NÃO deve reaparecer em
-    // "Por Registar", mesmo que o segundo código do SAP ainda não tenha registo
-    // próprio (ou que o código tenha mudado / haja gralha).
-    const normNome = s => String(s || '').toUpperCase().normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]/g, '');
-    const nomesRegistados = new Set((data || []).map(r => normNome(r.nome)).filter(Boolean));
+      const codRegistados = new Set((data || []).map(r => normCod(r.cod)));
 
-    // "Por registar" = cliente da lista SAP sem registo pelo código E sem registo
-    // com o mesmo nome. Assim, duplicados do SAP e clientes já preenchidos sob
-    // outro código deixam de reaparecer a cada recarga.
-    const porRegistar = listaAtiva.filter(c =>
-      !codRegistados.has(normCod(c.cod)) && !nomesRegistados.has(normNome(c.nome))
-    );
+      // Fallback por NOME: o SAP tem por vezes o MESMO cliente sob dois códigos
+      const normNome = s => String(s || '').toUpperCase().normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]/g, '');
+      const nomesRegistados = new Set((data || []).map(r => normNome(r.nome)).filter(Boolean));
 
-    pendentesData = porRegistar;
+      pendentesData = listaAtiva.filter(c =>
+        !codRegistados.has(normCod(c.cod)) && !nomesRegistados.has(normNome(c.nome))
+      );
+    }
   } catch(e) {
     console.error('loadPendentes error:', e);
     toast('Erro ao carregar pendentes — tenta novamente.', 'error');
@@ -6880,12 +7042,85 @@ async function loadPendentes() {
     emptyLabel: 'Todos os vendedores',
     keepExtra: false,
   });
-  // Dist: pré-carregar carga para badges "pronto a associar"
-  if (typeof isCanalDistribuidores === 'function' && isCanalDistribuidores() && typeof distCargaLoadAll === 'function') {
-    distCargaLoadAll(false).then(() => renderPendentes()).catch(() => renderPendentes());
-    return;
-  }
   renderPendentes();
+}
+
+async function loadDistContratosFalta() {
+  const body = document.getElementById('dist-falta-body');
+  if (body) body.innerHTML = '<tr class="loading-row"><td colspan="6"><span class="spinner"></span>A carregar...</td></tr>';
+  await sincronizarListaClientes();
+  const canalId = 'distribuidores';
+  const listaAtiva = getListaClientesActiva().filter(c => clientePertenceAoCanal(c, canalId));
+  try {
+    await distCargaLoadAll(false);
+    const index = await distBuildRegistosIndex();
+    distContratosFaltaData = listaAtiva.map(c => {
+      const reg = distFindRegistoForCliente(c, index);
+      if (distClassifyCliente(c, reg) !== 'contratos_falta') return null;
+      const cargaQty = distCargaQtyForCliente(c.cod, { nome: c.nome });
+      const assocQty = distAssocQtyFromRegisto(reg);
+      return { ...c, _registo: reg, _cargaQty: cargaQty, _assocQty: assocQty };
+    }).filter(Boolean);
+  } catch (e) {
+    console.error('loadDistContratosFalta:', e);
+    distContratosFaltaData = [];
+    toast('Erro ao carregar contratos em falta.', 'error');
+  }
+  fillVendedorSelectCanal('dist-falta-filter-vendedor', {
+    emptyLabel: 'Todos os vendedores',
+    keepExtra: false,
+  });
+  renderDistContratosFalta();
+}
+
+function renderDistContratosFalta() {
+  const search = document.getElementById('dist-falta-search')?.value?.trim()?.toLowerCase() || '';
+  const vendFilt = document.getElementById('dist-falta-filter-vendedor')?.value || '';
+  let filtered = distContratosFaltaData.slice();
+  if (search) {
+    filtered = filtered.filter(c =>
+      (c.nome || '').toLowerCase().includes(search)
+      || (c.cod || '').toLowerCase().includes(search)
+      || (c.vendedor || '').toLowerCase().includes(search)
+    );
+  }
+  if (vendFilt) filtered = filtered.filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vendFilt));
+
+  const badge = document.getElementById('dist-falta-count-badge');
+  if (badge) badge.textContent = `${filtered.length} com contratos em falta`;
+
+  const tbody = document.getElementById('dist-falta-body');
+  if (!tbody) return;
+  tbody.innerHTML = filtered.length
+    ? filtered.map(c => {
+        const carga = c._cargaQty || 0;
+        const assoc = c._assocQty || 0;
+        const regId = c._registo?.id || '';
+        return `<tr>
+          <td>${c.cod}</td>
+          <td>${c.nome || '—'}</td>
+          <td>${carga || '—'}</td>
+          <td>${carga ? `${assoc}/${carga}` : (assoc || '—')}</td>
+          <td><span class="vendedor-badge">${c.vendedor || '—'}</span></td>
+          <td><button class="btn-edit" data-dist-falta="1" data-reg-id="${regId}"
+            data-cod="${c.cod}" data-nome="${(c.nome || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;')}"
+            data-cep="${c.cep || ''}" data-vend="${c.vendedor || ''}">→ Associar</button></td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente com contratos em falta.</td></tr>';
+
+  if (!tbody._hasFaltaListener) {
+    tbody._hasFaltaListener = true;
+    tbody.addEventListener('click', function(e) {
+      const btn = e.target.closest('[data-dist-falta]');
+      if (!btn) return;
+      if (btn.dataset.regId) {
+        openEdit(btn.dataset.regId);
+      } else {
+        preencherNovo(btn.dataset.cod, btn.dataset.nome, btn.dataset.cep, btn.dataset.vend);
+      }
+    });
+  }
 }
 
 function renderPendentes() {
@@ -6897,11 +7132,12 @@ function renderPendentes() {
   if (vendFilt) filtered = filtered.filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vendFilt));
 
   const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
-  const hasCargaFn = (cod) => isDist && typeof distCargaByCliente === 'function' && distCargaByCliente(cod).length > 0;
+  const hasCargaFn = (c) => isDist && typeof distCargaByCliente === 'function'
+    && distCargaByCliente(c.cod, { nome: c.nome }).length > 0;
 
   const revisao = filtered.filter(c => c._revisao);
   const normais  = filtered.filter(c => !c._revisao);
-  const comCarga = isDist ? normais.filter(c => hasCargaFn(c.cod)).length : 0;
+  const comCarga = isDist ? normais.filter(c => hasCargaFn(c)).length : 0;
   const countEl = document.getElementById('pending-count-badge');
   if (countEl) {
     let txt = `${normais.length} por registar`;
@@ -6935,11 +7171,11 @@ function renderPendentes() {
         </td>
       </tr>`
     : (() => {
-        const ready = hasCargaFn(c.cod);
+        const ready = hasCargaFn(c);
         const badge = ready
           ? ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">carga pronta</span>'
           : '';
-        const btnLabel = ready ? '→ Associar contratos' : '→ Registar';
+        const btnLabel = isDist ? (ready ? '→ Associar contratos' : '→ Indicar comodato') : '→ Registar';
         return `<tr>
         <td>${c.cod}</td>
         <td>${c.nome}${badge}</td>
@@ -7017,9 +7253,12 @@ async function corrigirCodRevisao(codOrig) {
 }
 
 function preencherNovo(cod, nome, cep, vendedor) {
-  // Navega para a aba Registo Clientes → sub-aba Novo Registo
+  // Dist: form sem tab "Novo Registo" — abrir painel via flag temporária
   switchTab('registos');
+  const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
+  if (isDist) window._distAllowNovoForm = true;
   switchSubTab('registos', 'novo');
+  window._distAllowNovoForm = false;
   // Preenche o formulário
   setTimeout(async () => {
     const fCod = document.getElementById('f-cod');
@@ -7031,13 +7270,14 @@ function preencherNovo(cod, nome, cep, vendedor) {
     if (fCep) fCep.value = formatCep(cep);
     if (fVend) fVend.value = vendedor;
     if (typeof adaptarFormRegistoCanal === 'function') adaptarFormRegistoCanal();
-    const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
+    if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal();
     if (isDist && typeof distPrepareFormForCod === 'function') {
-      await distPrepareFormForCod('f', cod);
+      await distCargaLoadAll(true);
+      await distPrepareFormForCod('f', cod, { nome });
       const hasCarga = _distUi.f && _distUi.f.hasCarga;
       toast(hasCarga
         ? 'Carga encontrada — indica o nº de contrato e associa as máquinas.'
-        : 'Cliente pré-preenchido. Indica se tem contratos de comodato.');
+        : 'Cliente pré-preenchido. Indica se tem contratos de comodato (ou aguarda carga).');
     } else {
       toast('Cliente pré-preenchido. Adiciona os equipamentos e guarda.');
     }
@@ -8280,16 +8520,19 @@ function abrirCanalConfirmado(canalId) {
     fillVendedorSelectCanal('pending-filter-vendedor', { emptyLabel: 'Todos os vendedores' });
   } catch (eFill) { console.warn('fillVendedorSelectCanal:', eFill); }
   try {
-    window._registosSubTab = 'novo';
-    switchSubTab('registos', 'novo');
+    if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal();
+    const distStart = (canalId === 'distribuidores') ? 'pendentes' : 'novo';
+    window._registosSubTab = distStart;
+    switchSubTab('registos', distStart);
   } catch (e2) {
     console.warn('switchSubTab:', e2);
-    const sub = document.getElementById('sub-panel-novo');
+    const sub = document.getElementById(canalId === 'distribuidores' ? 'sub-panel-pendentes' : 'sub-panel-novo');
     if (sub) sub.style.display = 'block';
   }
   setTimeout(() => {
     try { aplicarUtilizador(getUtilizadorAtual()); } catch (_) {}
     try { if (typeof adaptarFormRegistoCanal === 'function') adaptarFormRegistoCanal(); } catch (_) {}
+    try { if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal(); } catch (_) {}
   }, 50);
 }
 
@@ -8530,7 +8773,7 @@ function switchTab(tab) {
   } catch(e) {}
 
   // Esconder sempre todos os sub-panels de registos quando mudamos de menu
-  ['novo','lista','pendentes','vendedores','carga-sap'].forEach(s => {
+  ['novo','lista','pendentes','contratos-falta','vendedores','carga-sap'].forEach(s => {
     const p = document.getElementById('sub-panel-' + s);
     if (p) p.style.display = 'none';
   });
@@ -8539,9 +8782,12 @@ function switchTab(tab) {
   if (tab === 'analise') showAnalise(window._analiseSub || 'resumo');
   if (tab === 'at') loadAtTab();
   if (tab === 'registos') {
-    // sempre reset para 'novo' ao entrar no menu principal
-    window._registosSubTab = 'novo';
-    switchSubTab('registos', 'novo');
+    try { if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal(); } catch (_) {}
+    // Dist: Por registar; outros canais: Novo Registo
+    const dist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
+    const start = dist ? 'pendentes' : 'novo';
+    window._registosSubTab = start;
+    switchSubTab('registos', start);
     // Pré-selecionar vendedor pelo utilizador logado
     setTimeout(() => aplicarUtilizador(getUtilizadorAtual()), 50);
   }
@@ -19454,6 +19700,24 @@ function adaptarFormRegistoCanal() {
     distApplyComodatoUi('f');
     distApplyComodatoUi('e');
   }
+  if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal();
+}
+
+/** Dist: esconde Novo Registo; mostra Contratos em falta; renomeia lista → Registos OK. */
+function adaptarRegistoTabsCanal() {
+  const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
+  const btnNovo = document.getElementById('sub-novo');
+  const btnFalta = document.getElementById('sub-contratos-falta');
+  const btnLista = document.getElementById('sub-lista');
+  const btnPend = document.getElementById('sub-pendentes');
+  if (btnNovo) btnNovo.style.display = isDist ? 'none' : '';
+  if (btnFalta) btnFalta.style.display = isDist ? '' : 'none';
+  if (btnLista) btnLista.textContent = isDist ? 'Registos OK' : 'Todos os Registos';
+  if (btnPend) btnPend.textContent = isDist ? 'Por registar' : 'Por Registar';
+  if (!isDist) {
+    const panelFalta = document.getElementById('sub-panel-contratos-falta');
+    if (panelFalta) panelFalta.style.display = 'none';
+  }
 }
 
 function distPerguntaEl(prefix) {
@@ -19515,7 +19779,9 @@ async function distPrepareFormForCod(prefix, cod, opts) {
   if (!isCanalDistribuidores()) return;
   const st = _distUi[prefix] || (_distUi[prefix] = {});
   await distCargaLoadAll(false);
-  const rows = distCargaByCliente(cod);
+  const nomeEl = document.getElementById(prefix === 'e' ? 'e-nome' : 'f-nome');
+  const nome = opts.nome || (opts.fromRegisto && opts.fromRegisto.nome) || nomeEl?.value || '';
+  const rows = distCargaByCliente(cod, { nome });
   const hasCarga = rows.length > 0;
   st.hasCarga = hasCarga;
 
@@ -19536,7 +19802,7 @@ async function distPrepareFormForCod(prefix, cod, opts) {
     } else if (list && !list.children.length) {
       distAddContrato(prefix, { skipEmptyEquip: true });
     }
-    await distRefreshPoolForCod(prefix, cod);
+    await distRefreshPoolForCod(prefix, cod, { nome });
     return;
   }
 
@@ -19551,12 +19817,12 @@ async function distPrepareFormForCod(prefix, cod, opts) {
     if (n.tem_comodato === true) {
       (n.dist_contratos || []).forEach(c => distAddContrato(prefix, c));
       if (!(n.dist_contratos || []).length) distAddContrato(prefix);
-      await distRefreshPoolForCod(prefix, cod);
+      await distRefreshPoolForCod(prefix, cod, { nome });
     }
     return;
   }
 
-  await distRefreshPoolForCod(prefix, cod);
+  await distRefreshPoolForCod(prefix, cod, { nome });
 }
 
 async function distResponderComodato(sim, prefix) {
@@ -19571,12 +19837,13 @@ async function distResponderComodato(sim, prefix) {
     const codEl = document.getElementById(prefix === 'e' ? 'e-cod' : 'f-cod');
     const cod = codEl?.value || '';
     await distCargaLoadAll(false);
-    const hasCarga = distCargaByCliente(cod).length > 0;
+    const nome = document.getElementById(prefix === 'e' ? 'e-nome' : 'f-nome')?.value || '';
+    const hasCarga = distCargaByCliente(cod, { nome }).length > 0;
     st.hasCarga = hasCarga;
     if (list && !list.children.length) {
       distAddContrato(prefix, hasCarga ? { skipEmptyEquip: true } : {});
     }
-    await distRefreshPoolForCod(prefix, cod);
+    await distRefreshPoolForCod(prefix, cod, { nome });
     return;
   }
 
@@ -19767,11 +20034,11 @@ function distNormalizeRegisto(r) {
   return { tem_comodato: null, dist_contratos: [], equipamentos: [] };
 }
 
-function distLoadEditFromRegisto(r) {
+async function distLoadEditFromRegisto(r) {
   if (!isCanalDistribuidores() || !r) return;
   const list = document.getElementById('e-dist-contratos-list');
   if (list) list.innerHTML = '';
-  distPrepareFormForCod('e', r.cod || '', { fromRegisto: r });
+  await distPrepareFormForCod('e', r.cod || '', { fromRegisto: r, nome: r.nome || '' });
 }
 
 // ─── Carga Excel / pool de máquinas ───────────────────
@@ -19789,9 +20056,10 @@ const DIST_COL_ALIASES = {
     'numero documento', 'nº documento', 'doc fatura', 'fatura',
   ],
   cod_cliente: [
-    'cod cliente', 'codigo cliente', 'cód cliente', 'código cliente', 'cliente',
+    'cod cliente', 'codigo cliente', 'cód cliente', 'código cliente',
     'emissor', 'emissor da ordem', 'sold to', 'sold to party', 'n cliente',
     'nº cliente', 'numero cliente', 'cod', 'codigo',
+    // NÃO usar alias curto "cliente" — faz match em "Nome cliente" via includes()
   ],
   nome_cliente: [
     'nome cliente', 'nome', 'razao social', 'razão social', 'name 1', 'name1',
@@ -19817,18 +20085,32 @@ const DIST_COL_ALIASES = {
 function distAutoMapHeaders(headers) {
   const norms = headers.map(distNormHeader);
   const map = {};
+  const used = new Set();
+  const scoreHeader = (field, h, alias) => {
+    if (!h || !alias) return 0;
+    if (h === alias) return 100;
+    // Evitar: alias "cliente" / "cod" a apanhar "nome cliente"
+    if (field === 'cod_cliente' && /\b(nome|razao|denomin|name)\b/.test(h)) return 0;
+    if (field === 'nome_cliente' && /\b(cod|codigo|emissor|sold)\b/.test(h) && !/\bnome\b/.test(h)) return 0;
+    if (h.startsWith(alias + ' ') || h.endsWith(' ' + alias)) return 80;
+    if (h.includes(alias) && alias.length >= 4) return 60;
+    if (alias.includes(h) && h.length >= 4) return 40;
+    return 0;
+  };
   Object.keys(DIST_COL_ALIASES).forEach(field => {
     const aliases = DIST_COL_ALIASES[field];
     let best = -1;
+    let bestScore = 0;
     for (let i = 0; i < norms.length; i++) {
+      if (used.has(i)) continue;
       const h = norms[i];
-      if (!h) continue;
-      if (aliases.some(a => h === a || h.includes(a) || a.includes(h))) {
-        best = i;
-        break;
+      for (const a of aliases) {
+        const sc = scoreHeader(field, h, a);
+        if (sc > bestScore) { bestScore = sc; best = i; }
       }
     }
-    map[field] = best;
+    map[field] = bestScore > 0 ? best : -1;
+    if (map[field] >= 0) used.add(map[field]);
   });
   return map;
 }
@@ -19848,10 +20130,26 @@ function distPickSheetName(wb) {
   };
 }
 
+/** Corrige códigos científicos / "7" truncados quando o raw ainda tem E+… */
+function distRepairCargaRow(r) {
+  if (!r) return r;
+  const raw = String(r.cod_cliente ?? '').trim();
+  if (!raw) return r;
+  if (/e[+\-]?\d+/i.test(raw) || /^\d+\.\d+$/.test(raw)) {
+    const n = distNormCodCliente(raw);
+    if (n && n !== distNormCodCliente(String(r.cod_cliente))) {
+      return { ...r, cod_cliente: n };
+    }
+    if (n) return { ...r, cod_cliente: n };
+  }
+  return r;
+}
+
 function distCargaGetLocal() {
   try {
     const raw = localStorage.getItem(DIST_CARGA_LOCAL_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const rows = raw ? JSON.parse(raw) : [];
+    return Array.isArray(rows) ? rows.map(distRepairCargaRow) : [];
   } catch (e) { return []; }
 }
 
@@ -19869,15 +20167,33 @@ function distCargaSetLocal(rows) {
   _distCargaLoaded = false;
 }
 
-/** Normaliza código cliente para match carga ↔ formulário (zeros, "cod NOME", 1234.0). */
+function distNormNomeCliente(s) {
+  return String(s || '').toUpperCase().normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]/g, '');
+}
+
+/** Normaliza código cliente para match carga ↔ formulário (zeros, científico Excel, "cod NOME"). */
 function distNormCodCliente(cod) {
   let s = String(cod ?? '').trim();
   if (!s) return '';
+  // Excel: 7.79538E+5 → 779538 (ANTES de apanhar só o 1.º dígito com /^(\d+)/)
+  if (/^\d+(\.\d+)?e[+\-]?\d+$/i.test(s)) {
+    const n = Number(s);
+    if (Number.isFinite(n)) s = String(Math.round(n));
+  }
   if (typeof formatSapCod === 'function') s = formatSapCod(s);
-  // "749285 NOME…" ou científico residual → dígitos iniciais
-  const m = s.match(/^(\d+)/);
+  if (/^\d+(\.\d+)?e[+\-]?\d+$/i.test(s)) {
+    const n = Number(s);
+    if (Number.isFinite(n)) s = String(Math.round(n));
+  }
+  // "749285 NOME…" → dígitos iniciais; se for só nome, fica vazio
+  const m = s.match(/^(\d{3,})/);
   if (m) s = m[1];
-  else s = s.replace(/[^\d]/g, '');
+  else if (/^\d+$/.test(s)) { /* ok */ }
+  else {
+    // Não é código numérico útil (provavelmente nome guardado por erro de map)
+    return '';
+  }
   if (!s) return '';
   return (typeof normCod === 'function' ? normCod(s) : s.replace(/^0+/, '')) || '';
 }
@@ -19916,20 +20232,42 @@ async function distCargaLoadAll(force) {
       if (Array.isArray(data)) remote = data;
     }
   } catch (e) { /* fallback local */ }
-  _distCargaCache = distCargaMergeRows(local, remote);
+  _distCargaCache = distCargaMergeRows(local, remote).map(distRepairCargaRow);
   _distCargaLoaded = true;
   return _distCargaCache;
 }
 
-function distCargaByCliente(cod) {
-  const n = distNormCodCliente(cod);
-  if (!n || n === '0') return [];
-  // Sempre misturar cache + localStorage: evita pool vazio se o cache remoto
-  // ficou desactualizado face a um import recente neste browser.
+function distCargaAllRows() {
   const local = distCargaGetLocal();
   const cached = Array.isArray(_distCargaCache) ? _distCargaCache : [];
-  const all = distCargaMergeRows(local, cached);
-  return all.filter(r => distNormCodCliente(r.cod_cliente) === n);
+  return distCargaMergeRows(local, cached);
+}
+
+/**
+ * Linhas da carga para um cliente. Match por código; fallback por nome
+ * (útil se o import guardou nome em cod_cliente por bug de auto-map).
+ * opts: { nome }
+ */
+function distCargaByCliente(cod, opts) {
+  opts = opts || {};
+  const all = distCargaAllRows();
+  const n = distNormCodCliente(cod);
+  let rows = [];
+  if (n && n !== '0') {
+    rows = all.filter(r => distNormCodCliente(r.cod_cliente) === n);
+  }
+  if (!rows.length && opts.nome) {
+    const nn = distNormNomeCliente(opts.nome);
+    if (nn && nn.length >= 5) {
+      rows = all.filter(r => {
+        const byNome = distNormNomeCliente(r.nome_cliente);
+        const byCodAsNome = distNormNomeCliente(r.cod_cliente); // map bug: nome no campo código
+        return (byNome && (byNome === nn || byNome.includes(nn) || nn.includes(byNome)))
+          || (byCodAsNome && byCodAsNome.length >= 5 && (byCodAsNome === nn || byCodAsNome.includes(nn) || nn.includes(byCodAsNome)));
+      });
+    }
+  }
+  return rows;
 }
 
 /** Agrega linhas da carga por material+descrição, com unidades expandíveis. */
@@ -20020,15 +20358,21 @@ function distPoolMarkUsedFromForm(prefix, pool) {
   });
 }
 
-async function distRefreshPoolForCod(prefix, cod) {
+async function distRefreshPoolForCod(prefix, cod, opts) {
+  opts = opts || {};
   await distCargaLoadAll(false);
   const poolId = prefix === 'e' ? 'e-dist-pool-chips' : 'f-dist-pool-chips';
   const pool = document.getElementById(poolId);
   if (!pool) return;
-  const rows = distCargaByCliente(cod);
+  const nomeEl = document.getElementById(prefix === 'e' ? 'e-nome' : 'f-nome');
+  const nome = opts.nome || nomeEl?.value || '';
+  const rows = distCargaByCliente(cod, { nome });
+  const all = distCargaAllRows();
+  const codN = distNormCodCliente(cod) || String(cod || '').trim() || '?';
+  const debugLine = `<div style="font-size:11px;color:var(--muted);margin:0 0 6px;">carga para código ${codN}: ${rows.length} linhas / total carga ${all.length}</div>`;
   const fallback = document.getElementById(prefix === 'e' ? 'e-dist-catalog-fallback' : 'f-dist-catalog-fallback');
   if (!rows.length) {
-    pool.innerHTML = '<span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo em cada contrato.</span>';
+    pool.innerHTML = debugLine + '<span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo em cada contrato.</span>';
     pool._groups = [];
     pool._used = new Set();
     if (fallback) fallback.style.display = '';
@@ -20039,6 +20383,12 @@ async function distRefreshPoolForCod(prefix, cod) {
   distPoolMarkUsedFromForm(prefix, pool);
   if (fallback) fallback.style.display = '';
   distPoolRenderGroups(prefix, pool);
+  // Prefixo debug muted acima da lista
+  if (pool.firstChild) {
+    const dbg = document.createElement('div');
+    dbg.innerHTML = debugLine;
+    pool.insertBefore(dbg.firstChild, pool.firstChild);
+  }
 }
 
 function distPoolAssociateUnit(prefix, unit) {
@@ -20206,8 +20556,11 @@ async function distCargaEquipConfirmMap() {
     const cell = (idx) => (idx >= 0 && row[idx] != null ? String(row[idx]).trim() : '');
     const codRaw = cell(map.cod_cliente);
     if (!codRaw) return;
-    // Extrair/normalizar código se vier "749285 NOME…", "001234", "1234.0"
-    const cod_cliente = distNormCodCliente(codRaw) || codRaw;
+    // Extrair/normalizar código (científico Excel 7.79538E+5, zeros, "cod NOME")
+    // Se o map apontou para coluna de nome, distNormCodCliente devolve '' → guardar raw
+    // para fallback por nome_cliente no match.
+    const codNorm = distNormCodCliente(codRaw);
+    const cod_cliente = codNorm || codRaw;
     let data_nf = null;
     if (map.data_nf >= 0 && row[map.data_nf] != null && row[map.data_nf] !== '') {
       if (typeof parseExcelDateFlexible === 'function') data_nf = parseExcelDateFlexible(row[map.data_nf]);
@@ -20284,21 +20637,34 @@ function distCargaEquipClearLocal() {
   toast('Carga local limpa.');
 }
 
-function distCargaEquipRefreshStats() {
+async function distCargaEquipRefreshStats() {
   const el = document.getElementById('dados-dist-equip-ultima');
   const status = document.getElementById('dados-dist-equip-status');
-  const rows = distCargaGetLocal();
+  const listEl = document.getElementById('dados-dist-equip-clientes-list');
+  // Sempre merge Supabase ∪ local — não depender só de localStorage
+  let rows = [];
+  try { rows = await distCargaLoadAll(true); } catch (_) { rows = distCargaAllRows(); }
   let meta = null;
   try { meta = JSON.parse(localStorage.getItem(DIST_CARGA_META_KEY) || 'null'); } catch (e) {}
-  const clientes = new Set(rows.map(r => r.cod_cliente).filter(Boolean));
+  const byCli = new Map();
+  rows.forEach(r => {
+    const k = distNormCodCliente(r.cod_cliente) || distNormNomeCliente(r.nome_cliente || r.cod_cliente) || '?';
+    if (!byCli.has(k)) byCli.set(k, { cod: distNormCodCliente(r.cod_cliente) || r.cod_cliente, nome: r.nome_cliente || '', n: 0 });
+    byCli.get(k).n += Math.max(1, parseInt(r.qty, 10) || 1);
+  });
   const txt = rows.length
-    ? `${rows.length} máquinas/linhas · ${clientes.size} clientes` +
-      (meta?.em ? ` · última carga ${new Date(meta.em).toLocaleString('pt-BR')}` : '') +
+    ? `${rows.length} linhas · ${byCli.size} clientes (local ∪ Supabase)` +
+      (meta?.em ? ` · última carga local ${new Date(meta.em).toLocaleString('pt-BR')}` : '') +
       ' · fonte: aba <code>base</code> (SAP)'
-    : 'Nenhuma carga local. Importa um Excel com a aba <strong>base</strong> (export SAP).';
+    : 'Nenhuma carga. Importa um Excel com a aba <strong>base</strong> (export SAP).';
   if (el) el.innerHTML = txt;
+  if (listEl) {
+    const arr = [...byCli.values()].sort((a, b) => String(a.nome || a.cod).localeCompare(String(b.nome || b.cod)));
+    listEl.innerHTML = arr.length
+      ? arr.map(c => `<div><code>${String(c.cod || '—').replace(/</g, '')}</code> — ${(c.nome || '').replace(/</g, '')} · ${c.n} un.</div>`).join('')
+      : '<div>Sem clientes na carga.</div>';
+  }
   if (status && !status.innerHTML.includes('Folha lida')) status.innerHTML = '';
-  // Não escrever _distCargaCache = [] aqui: isso impedia ler dist_equip_carga no Supabase.
 }
 
 // Refresh pool / fluxo comodato ao mudar código no form Dist
@@ -20307,24 +20673,39 @@ function distBindCodPoolListeners() {
     const el = document.getElementById(id);
     if (!el || el._distPoolBound) return;
     el._distPoolBound = true;
-    el.addEventListener('blur', () => {
+    const refresh = () => {
       if (!isCanalDistribuidores()) return;
       const prefix = id.startsWith('e') ? 'e' : 'f';
+      const nome = document.getElementById(prefix === 'e' ? 'e-nome' : 'f-nome')?.value || '';
       // Em edição, preservar contratos já no form; só actualizar pool/pergunta
       if (prefix === 'e' && document.getElementById('e-dist-contratos-list')?.children?.length) {
         distCargaLoadAll(false).then(() => {
-          const has = distCargaByCliente(el.value).length > 0;
+          const has = distCargaByCliente(el.value, { nome }).length > 0;
           _distUi.e.hasCarga = has;
           if (has) {
             distSetComodatoPerguntaVisible('e', false);
             _distUi.e.temComodato = true;
             distApplyComodatoUi('e');
           }
-          distRefreshPoolForCod('e', el.value);
+          distRefreshPoolForCod('e', el.value, { nome });
         });
         return;
       }
-      distPrepareFormForCod(prefix, el.value);
+      distPrepareFormForCod(prefix, el.value, { nome });
+    };
+    el.addEventListener('blur', refresh);
+    el.addEventListener('change', refresh);
+  });
+  // Nome também pode desbloquear fallback de match
+  ['f-nome', 'e-nome'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || el._distPoolNomeBound) return;
+    el._distPoolNomeBound = true;
+    el.addEventListener('blur', () => {
+      if (!isCanalDistribuidores()) return;
+      const prefix = id.startsWith('e') ? 'e' : 'f';
+      const cod = document.getElementById(prefix === 'e' ? 'e-cod' : 'f-cod')?.value || '';
+      if (cod) distRefreshPoolForCod(prefix, cod, { nome: el.value });
     });
   });
 }
