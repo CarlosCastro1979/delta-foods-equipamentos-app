@@ -19336,7 +19336,8 @@ const _distUi = {
 };
 
 let _distCargaMapPending = null; // { headers, rows, fileName, sheetName }
-let _distCargaCache = null; // linhas em memória após load
+let _distCargaCache = null; // linhas em memória após load (local ∪ Supabase)
+let _distCargaLoaded = false; // true só depois de distCargaLoadAll (evita [] bloquear fetch)
 
 function isCanalDistribuidores() {
   const id = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : _canalActivo) || null;
@@ -19710,30 +19711,54 @@ function distCargaSetLocal(rows) {
     }));
   } catch (e) {}
   _distCargaCache = rows || [];
+  // Próximo loadAll volta a misturar com Supabase (local pode ter linhas que o POST falhou)
+  _distCargaLoaded = false;
+}
+
+/** Une local + remoto; local primeiro (import recente neste browser). */
+function distCargaMergeRows(local, remote) {
+  const keyOf = (r) => {
+    if (r && r.id && !String(r.id).startsWith('local-')) return 'id:' + r.id;
+    const cod = (typeof normCod === 'function' ? normCod(r && r.cod_cliente) : String((r && r.cod_cliente) || '').replace(/^0+/, '')) || '';
+    return 'k:' + [r && r.nf || '', cod, r && r.codigo_sap || '', r && r.descricao || '', r && r.qty || ''].join('|');
+  };
+  const out = [];
+  const seen = new Set();
+  [...(local || []), ...(remote || [])].forEach(r => {
+    if (!r) return;
+    const k = keyOf(r);
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(r);
+  });
+  return out;
 }
 
 async function distCargaLoadAll(force) {
-  if (_distCargaCache && !force) return _distCargaCache;
+  // Antes: `if (_distCargaCache && !force)` — [] é truthy e bloqueava o fetch Supabase
+  // quando a carga só existia na cloud (outro browser / local limpo).
+  if (!force && _distCargaLoaded && Array.isArray(_distCargaCache)) return _distCargaCache;
   const local = distCargaGetLocal();
+  let remote = [];
   try {
     const res = await fetch(SUPA_DIST_EQUIP_CARGA + '?select=*&order=importado_em.desc&limit=50000', {
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY },
     });
     if (res.ok) {
-      const remote = await res.json();
-      if (Array.isArray(remote) && remote.length) {
-        _distCargaCache = remote;
-        return remote;
-      }
+      const data = await res.json();
+      if (Array.isArray(data)) remote = data;
     }
   } catch (e) { /* fallback local */ }
-  _distCargaCache = local;
-  return local;
+  _distCargaCache = distCargaMergeRows(local, remote);
+  _distCargaLoaded = true;
+  return _distCargaCache;
 }
 
 function distCargaByCliente(cod) {
   const n = (typeof normCod === 'function' ? normCod(cod) : String(cod || '').replace(/^0+/, '')) || '';
-  const all = _distCargaCache || distCargaGetLocal();
+  const all = (Array.isArray(_distCargaCache) && _distCargaCache.length)
+    ? _distCargaCache
+    : distCargaGetLocal();
   if (!n || n === '0') return [];
   return all.filter(r => {
     const c = (typeof normCod === 'function' ? normCod(r.cod_cliente) : String(r.cod_cliente || '').replace(/^0+/, ''));
@@ -19994,7 +20019,7 @@ function distCargaEquipRefreshStats() {
     : 'Nenhuma carga local. Importa um Excel com a aba <strong>base</strong> (export SAP).';
   if (el) el.innerHTML = txt;
   if (status && !status.innerHTML.includes('Folha lida')) status.innerHTML = '';
-  _distCargaCache = rows;
+  // Não escrever _distCargaCache = [] aqui: isso impedia ler dist_equip_carga no Supabase.
 }
 
 // Refresh pool ao mudar código no form Dist
