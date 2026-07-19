@@ -53,11 +53,119 @@ function Start-AppListener([int]$port) {
     return $listener
 }
 
+# Força janela Outlook à frente (ShellExecute .eml a partir deste processo
+# não tem direito de foreground → Outlook fica na taskbar com toast "a abrir…").
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class OutlookFg {
+  public const int SW_RESTORE = 9;
+  public const int SW_SHOW = 5;
+  public const byte VK_MENU = 0x12;
+  public const uint KEYEVENTF_KEYUP = 0x0002;
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+  [DllImport("user32.dll")] public static extern bool AllowSetForegroundWindow(int dwProcessId);
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+  public static void BringToFront(IntPtr hWnd) {
+    if (hWnd == IntPtr.Zero) return;
+    AllowSetForegroundWindow(-1);
+    IntPtr fg = GetForegroundWindow();
+    uint fgPid;
+    uint fgTid = GetWindowThreadProcessId(fg, out fgPid);
+    uint cur = GetCurrentThreadId();
+    AttachThreadInput(cur, fgTid, true);
+    keybd_event(VK_MENU, 0, 0, UIntPtr.Zero);
+    if (IsIconic(hWnd)) ShowWindow(hWnd, SW_RESTORE);
+    else ShowWindow(hWnd, SW_SHOW);
+    SetForegroundWindow(hWnd);
+    keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+    AttachThreadInput(cur, fgTid, false);
+  }
+}
+'@ -ErrorAction SilentlyContinue
+
+function Get-OutlookInspectorCount($outlook) {
+    if (-not $outlook) { return 0 }
+    try { return [int]$outlook.Inspectors.Count } catch { return 0 }
+}
+
+function Activate-OutlookInspector($outlook, [int]$index1Based) {
+    if (-not $outlook -or $index1Based -lt 1) { return $false }
+    try {
+        $insp = $outlook.Inspectors.Item($index1Based)
+        $insp.Activate()
+        try {
+            $hwnd = [IntPtr]$insp.HWND
+            if ($hwnd -ne [IntPtr]::Zero) { [OutlookFg]::BringToFront($hwnd) }
+        } catch { }
+        return $true
+    } catch { return $false }
+}
+
+function Activate-OutlookForeground {
+    # 1) Activar o último Inspector COM (janela do rascunho)
+    try {
+        $outlook = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
+        $n = Get-OutlookInspectorCount $outlook
+        if ($n -ge 1 -and (Activate-OutlookInspector $outlook $n)) { return $true }
+    } catch { }
+
+    # 2) Fallback: qualquer janela do processo OUTLOOK
+    $procs = @(Get-Process -Name OUTLOOK -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+        Sort-Object StartTime -Descending)
+    foreach ($p in $procs) {
+        try {
+            [OutlookFg]::AllowSetForegroundWindow($p.Id)
+            [OutlookFg]::BringToFront($p.MainWindowHandle)
+            return $true
+        } catch { }
+    }
+    return $false
+}
+
 function Open-EmlDraft([string]$emlPath) {
+    # Contar inspectors antes de abrir (para activar o novo rascunho)
+    $before = 0
+    $outlook = $null
+    try {
+        $outlook = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
+        $before = Get-OutlookInspectorCount $outlook
+    } catch {
+        try {
+            $outlook = New-Object -ComObject Outlook.Application
+            $before = Get-OutlookInspectorCount $outlook
+        } catch { }
+    }
+
+    # ShellExecute preserva X-Unsent:1 (rascunho editável) — melhor que OpenSharedItem
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $emlPath
     $psi.UseShellExecute = $true
     [void][System.Diagnostics.Process]::Start($psi)
+
+    # Esperar o novo inspector e trazer à frente (até ~6s)
+    for ($i = 0; $i -lt 40; $i++) {
+        Start-Sleep -Milliseconds 150
+        try {
+            if (-not $outlook) {
+                $outlook = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
+            }
+            $n = Get-OutlookInspectorCount $outlook
+            if ($n -gt $before -or ($before -eq 0 -and $n -ge 1)) {
+                [void](Activate-OutlookInspector $outlook $n)
+                [void](Activate-OutlookForeground)
+                return
+            }
+        } catch { }
+    }
+    [void](Activate-OutlookForeground)
 }
 
 function Set-CorsHeaders($res) {
