@@ -4231,10 +4231,182 @@ function deduplicarListaSAPPorCod(lista) {
 // Se o Excel novo vier sem colunas de morada/contacto, não apagar o que já estava na lista.
 const SAP_CAMPOS_RICOS = ['cnpj', 'canal', 'rua', 'nro', 'bairro', 'supl', 'cidade', 'uf', 'email', 'tel1', 'tel2', 'ie', 'zd'];
 const SAP_DETALHE_KEY = 'delta_sap_detalhe';
+const CLIENTES_LS_KEY = 'delta_clientes_sistema';
+const CLIENTES_TS_KEY = 'delta_clientes_ts';
+const IDB_NAME = 'dfb_equipamentos';
+const IDB_STORE = 'kv';
+const IDB_VERSION = 1;
+
+/** Cache em memória — evita depender do localStorage (~5MB) para ~29k clientes. */
+let _listaClientesMem = null;
+let _listaClientesTs = 0;
+let _sapDetalheMem = null;
+let _idbReady = null;
+
+function idbOpen() {
+  if (_idbReady) return _idbReady;
+  _idbReady = new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error('IndexedDB indisponível'));
+      return;
+    }
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('IndexedDB open failed'));
+  });
+  return _idbReady;
+}
+
+async function idbGet(key) {
+  try {
+    const db = await idbOpen();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.warn('idbGet', key, e);
+    return undefined;
+  }
+}
+
+async function idbSet(key, value) {
+  const db = await idbOpen();
+  return await new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function isQuotaExceededError(e) {
+  return !!(e && (
+    e.name === 'QuotaExceededError' ||
+    e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    e.code === 22 ||
+    e.code === 1014
+  ));
+}
+
+/** Liberta chaves grandes no localStorage (lista SAP + detalhe duplicado). */
+function libertarQuotaClientesLS() {
+  try { localStorage.removeItem(CLIENTES_LS_KEY); } catch (_) {}
+  try { localStorage.removeItem(SAP_DETALHE_KEY); } catch (_) {}
+  try { localStorage.removeItem(REGISTOS_CACHE_KEY); } catch (_) {}
+}
+
+/**
+ * Grava a lista activa: memória + IndexedDB (fonte estável) + localStorage (best-effort).
+ * Não falha a carga SAP se o localStorage estiver cheio.
+ */
+async function salvarListaClientesLocal(lista, ts) {
+  const arr = Array.isArray(lista) ? lista : [];
+  const stamp = ts || Date.now();
+  _listaClientesMem = arr;
+  _listaClientesTs = stamp;
+  let lsOk = false;
+  try {
+    localStorage.setItem(CLIENTES_LS_KEY, JSON.stringify(arr));
+    localStorage.setItem(CLIENTES_TS_KEY, String(stamp));
+    lsOk = true;
+  } catch (e) {
+    if (isQuotaExceededError(e)) {
+      libertarQuotaClientesLS();
+      try {
+        // Retry só o timestamp + meta pequena; a lista completa vai para IndexedDB
+        localStorage.setItem(CLIENTES_TS_KEY, String(stamp));
+        localStorage.setItem('delta_clientes_storage', 'idb');
+      } catch (_) {}
+      console.warn('localStorage cheio — lista SAP guardada em IndexedDB (' + arr.length + ' clientes)');
+    } else {
+      console.warn('salvarListaClientesLocal LS:', e);
+    }
+  }
+  try {
+    await idbSet(CLIENTES_LS_KEY, { lista: arr, ts: stamp });
+    if (!lsOk) {
+      try { localStorage.setItem('delta_clientes_storage', 'idb'); } catch (_) {}
+    }
+  } catch (e) {
+    console.error('IndexedDB falhou ao guardar lista SAP:', e);
+    if (!lsOk) throw new Error('Sem espaço local (localStorage e IndexedDB). Liberta espaço do browser e tenta de novo.');
+  }
+  return { lsOk, count: arr.length };
+}
+
+/** Hidrata memória a partir de IndexedDB / localStorage (chamar no boot). */
+async function carregarListaClientesLocalAsync() {
+  // 1) Detalhe SAP (carregar do LS antes de limpar quota)
+  try {
+    const det = await idbGet(SAP_DETALHE_KEY);
+    if (det && typeof det === 'object') _sapDetalheMem = det;
+  } catch (_) {}
+  if (!_sapDetalheMem) {
+    try {
+      const raw = localStorage.getItem(SAP_DETALHE_KEY);
+      if (raw) {
+        _sapDetalheMem = JSON.parse(raw) || {};
+        try { await idbSet(SAP_DETALHE_KEY, _sapDetalheMem); } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  // 2) Lista clientes — IndexedDB
+  try {
+    const packed = await idbGet(CLIENTES_LS_KEY);
+    if (packed && Array.isArray(packed.lista) && packed.lista.length) {
+      _listaClientesMem = packed.lista;
+      _listaClientesTs = packed.ts || parseInt(localStorage.getItem(CLIENTES_TS_KEY) || '0', 10) || 0;
+    }
+  } catch (_) {}
+
+  // 3) localStorage legado se memória ainda vazia
+  let migratedBigLs = false;
+  if (!_listaClientesMem || !_listaClientesMem.length) {
+    try {
+      const raw = localStorage.getItem(CLIENTES_LS_KEY);
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list) && list.length) {
+          _listaClientesMem = list;
+          _listaClientesTs = parseInt(localStorage.getItem(CLIENTES_TS_KEY) || '0', 10) || Date.now();
+          try {
+            await idbSet(CLIENTES_LS_KEY, { lista: list, ts: _listaClientesTs });
+            if (raw.length > 2_000_000) migratedBigLs = true;
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  } else {
+    // Já temos IDB — se LS ainda tem cópia enorme, libertar
+    try {
+      const raw = localStorage.getItem(CLIENTES_LS_KEY);
+      if (raw && raw.length > 2_000_000) migratedBigLs = true;
+    } catch (_) {}
+  }
+
+  if (migratedBigLs || localStorage.getItem('delta_clientes_storage') === 'idb') {
+    libertarQuotaClientesLS();
+    try { localStorage.setItem('delta_clientes_storage', 'idb'); } catch (_) {}
+    try { localStorage.setItem(CLIENTES_TS_KEY, String(_listaClientesTs || Date.now())); } catch (_) {}
+  }
+  return _listaClientesMem;
+}
 
 function acumularSapDetalhe(lista) {
-  let det = {};
-  try { det = JSON.parse(localStorage.getItem(SAP_DETALHE_KEY) || '{}') || {}; } catch (e) { det = {}; }
+  let det = { ...(_sapDetalheMem || {}) };
+  try {
+    if (!Object.keys(det).length) {
+      det = JSON.parse(localStorage.getItem(SAP_DETALHE_KEY) || '{}') || {};
+    }
+  } catch (e) { det = det || {}; }
   (lista || []).forEach(c => {
     const k = normCod(c?.cod);
     if (!k) return;
@@ -4245,14 +4417,19 @@ function acumularSapDetalhe(lista) {
     }
     det[k] = merged;
   });
-  try { localStorage.setItem(SAP_DETALHE_KEY, JSON.stringify(det)); } catch (e) {}
+  _sapDetalheMem = det;
+  // Não gravar o mapa completo no localStorage (quota ~5MB). Preferir IndexedDB.
+  try { localStorage.removeItem(SAP_DETALHE_KEY); } catch (e) {}
+  idbSet(SAP_DETALHE_KEY, det).catch(() => {});
   return det;
 }
 
 function getSapDetalhe(cod) {
+  const k = normCod(cod);
+  if (_sapDetalheMem && _sapDetalheMem[k]) return _sapDetalheMem[k];
   try {
     const det = JSON.parse(localStorage.getItem(SAP_DETALHE_KEY) || '{}') || {};
-    return det[normCod(cod)] || null;
+    return det[k] || null;
   } catch (e) { return null; }
 }
 
@@ -4284,8 +4461,10 @@ async function reporClientesRegistadosNaLista(novaLista, listaAnterior, codsAnul
   const novaKeys = new Set((novaLista || []).map(listaClienteKey));
   const prevMap = {};
   (listaAnterior || []).forEach(c => { prevMap[listaClienteKey(c)] = c; });
-  let det = {};
-  try { det = JSON.parse(localStorage.getItem(SAP_DETALHE_KEY) || '{}') || {}; } catch (e) { det = {}; }
+  let det = { ...(_sapDetalheMem || {}) };
+  if (!Object.keys(det).length) {
+    try { det = JSON.parse(localStorage.getItem(SAP_DETALHE_KEY) || '{}') || {}; } catch (e) { det = {}; }
+  }
   let regs = [];
   try { regs = await fetchRegistosPaginado('cod,nome,cep,vendedor', 'cod.asc'); } catch (e) { return { lista: novaLista, restored: 0 }; }
   let restored = 0;
@@ -4797,7 +4976,6 @@ function toggleFiltroInvalidos() {
 
 function getCodsListaAtiva() {
   try {
-    const saved = localStorage.getItem('delta_clientes_sistema');
     const lista = getListaClientesActiva();
     return new Set(lista.map(c => String(c.cod).trim()));
   } catch(e) { return new Set(); }
@@ -7660,18 +7838,22 @@ async function confirmarCargaSAP() {
   novaLista = deduplicarListaSAPPorCod(repostos.lista);
   acumularSapDetalhe(novaLista);
 
-  // 1. Guardar nova lista activa
+  // 1. Guardar nova lista activa (memória + IndexedDB; localStorage best-effort)
   const listaTs = Date.now();
-  localStorage.setItem('delta_clientes_sistema', JSON.stringify(novaLista));
-  localStorage.setItem('delta_clientes_ts', listaTs.toString());
-  localStorage.setItem('delta_sap_ultima_carga', JSON.stringify({
-    data: new Date().toISOString(), ficheiro: fileName, total: novaLista.length,
-    anulados: codsAnulados.length,
-    adicionados: _sapImportBuffer._adicionados || 0,
-    removidos: _sapImportBuffer._removidos || 0,
-    ricosPreservados: preservados.kept || 0,
-    registadosRepostos: repostos.restored || 0
-  }));
+  const saved = await salvarListaClientesLocal(novaLista, listaTs);
+  try {
+    localStorage.setItem('delta_sap_ultima_carga', JSON.stringify({
+      data: new Date().toISOString(), ficheiro: fileName, total: novaLista.length,
+      anulados: codsAnulados.length,
+      adicionados: _sapImportBuffer._adicionados || 0,
+      removidos: _sapImportBuffer._removidos || 0,
+      ricosPreservados: preservados.kept || 0,
+      registadosRepostos: repostos.restored || 0,
+      storage: saved.lsOk ? 'localStorage+idb' : 'indexedDB'
+    }));
+  } catch (e) {
+    console.warn('delta_sap_ultima_carga:', e);
+  }
   // Guardar códigos anulados com registo (lista curta) para o Por Registar os excluir da revisão
   const codsParaApagar = _sapImportBuffer.codsParaApagar
     || (codsAnulados.length ? await (async () => {
@@ -7732,6 +7914,7 @@ async function confirmarCargaSAP() {
 
   // 5. Resultado
   let msg = `✅ Lista actualizada com ${novaLista.length} clientes.`;
+  if (!saved.lsOk) msg += ` (guardada em IndexedDB — localStorage sem espaço).`;
   if (preservados.kept) msg += ` ${preservados.kept} cliente(s) mantiveram morada/contacto da lista anterior.`;
   if (repostos.restored) msg += ` ${repostos.restored} cliente(s) registado(s) reposto(s) (omitidos no Excel).`;
   if (apagados) msg += ` ${apagados} registo(s) anulado(s) apagado(s).`;
@@ -7803,8 +7986,17 @@ function renderUltimaCargaSAP() {
 /** Lista completa (todos os canais) — sem filtro. */
 function getListaClientesCompleta() {
   try {
-    const s = localStorage.getItem('delta_clientes_sistema');
-    const list = s ? JSON.parse(s) : CLIENTES_SISTEMA;
+    let list = null;
+    if (Array.isArray(_listaClientesMem) && _listaClientesMem.length) {
+      list = _listaClientesMem;
+    } else {
+      const s = localStorage.getItem(CLIENTES_LS_KEY);
+      list = s ? JSON.parse(s) : CLIENTES_SISTEMA;
+      if (Array.isArray(list) && list.length && list !== CLIENTES_SISTEMA) {
+        _listaClientesMem = list;
+        _listaClientesTs = parseInt(localStorage.getItem(CLIENTES_TS_KEY) || '0', 10) || 0;
+      }
+    }
     if (!Array.isArray(list)) return CLIENTES_SISTEMA;
     return typeof normalizeVendedorCliente === 'function'
       ? list.map(normalizeVendedorCliente)
@@ -7827,9 +8019,10 @@ function getListaClientesActiva() {
   return full;
 }
 
-// Sincronizar lista de clientes do Supabase para localStorage
+// Sincronizar lista de clientes do Supabase para armazenamento local
 async function sincronizarListaClientes() {
   try {
+    await carregarListaClientesLocalAsync();
     const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/lista_clientes?id=eq.v1&select=data,atualizado_em', {
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
     });
@@ -7838,32 +8031,36 @@ async function sincronizarListaClientes() {
     if (!rows.length || !rows[0].data) return false;
     const remote = rows[0].data;
     const remoteTs = new Date(rows[0].atualizado_em).getTime() || 0;
-    const localRaw = localStorage.getItem('delta_clientes_sistema');
-    const localTs = parseInt(localStorage.getItem('delta_clientes_ts') || '0', 10) || 0;
+    const localTs = _listaClientesTs || parseInt(localStorage.getItem(CLIENTES_TS_KEY) || '0', 10) || 0;
+    const hasLocal = Array.isArray(_listaClientesMem) && _listaClientesMem.length > 0;
 
     // Só puxar do remoto se não houver lista local OU se o remoto for mais recente.
-    // (Antes: localJson !== remoteJson apagava cargas SAP novas quando o publish falhava.)
-    if (!localRaw) {
-      localStorage.setItem('delta_clientes_sistema', JSON.stringify(remote));
-      localStorage.setItem('delta_clientes_ts', String(remoteTs || Date.now()));
+    if (!hasLocal) {
+      await salvarListaClientesLocal(remote, remoteTs || Date.now());
       acumularSapDetalhe(remote);
       console.log('Lista de clientes sincronizada do Supabase (sem local):', remote.length);
       return true;
     }
     if (remoteTs > localTs) {
-      localStorage.setItem('delta_clientes_sistema', JSON.stringify(remote));
-      localStorage.setItem('delta_clientes_ts', String(remoteTs));
+      await salvarListaClientesLocal(remote, remoteTs);
       acumularSapDetalhe(remote);
       console.log('Lista de clientes sincronizada do Supabase (mais recente):', remote.length);
       return true;
     }
     // Local mais recente (ou igual) → manter; se divergir, republicar
-    if (localTs >= remoteTs && localRaw !== JSON.stringify(remote)) {
+    if (localTs >= remoteTs) {
       try {
-        const localLista = JSON.parse(localRaw);
+        const localLista = _listaClientesMem;
         if (Array.isArray(localLista) && localLista.length) {
-          await publicarListaClientesSupabase(localLista);
-          console.log('Lista local mais recente republicada para Supabase:', localLista.length);
+          // Comparação leve por tamanho + 1.º/último código (evita JSON.stringify de 29k)
+          const remoteLen = Array.isArray(remote) ? remote.length : 0;
+          const divergiu = localLista.length !== remoteLen
+            || String(localLista[0]?.cod) !== String(remote[0]?.cod)
+            || String(localLista[localLista.length - 1]?.cod) !== String(remote[remoteLen - 1]?.cod);
+          if (divergiu) {
+            await publicarListaClientesSupabase(localLista);
+            console.log('Lista local mais recente republicada para Supabase:', localLista.length);
+          }
         }
       } catch (_) {}
     }
@@ -7887,16 +8084,18 @@ async function publicarListaClientesSupabase(lista) {
 // confirmarImport — compatibilidade com import-bar do CSV antigo
 function confirmarImport() {
   if (!pendingImportBuffer.length) return;
-  localStorage.setItem('delta_clientes_sistema', JSON.stringify(pendingImportBuffer));
-  localStorage.setItem('delta_clientes_ts', Date.now().toString());
-  foraSPCache = null;
-  clearRegistosCache();
-  const count = pendingImportBuffer.length;
-  pendingImportBuffer = [];
-  const bar = document.getElementById('pending-import-bar');
-  if (bar) bar.style.display = 'none';
-  toast(`✅ Lista atualizada com ${count} clientes!`);
-  loadPendentes();
+  salvarListaClientesLocal(pendingImportBuffer, Date.now()).then(() => {
+    foraSPCache = null;
+    clearRegistosCache();
+    const count = pendingImportBuffer.length;
+    pendingImportBuffer = [];
+    const bar = document.getElementById('pending-import-bar');
+    if (bar) bar.style.display = 'none';
+    toast(`✅ Lista atualizada com ${count} clientes!`);
+    loadPendentes();
+  }).catch(e => {
+    toast('Erro ao guardar lista: ' + (e.message || e), 'error');
+  });
 }
 function cancelarImport() {
   pendingImportBuffer = [];
@@ -19352,6 +19551,7 @@ async function exportATHistoricoExcel() {
 window.addEventListener('DOMContentLoaded', async () => {
   initLogin();
   voltarHome(); // abre na seleção de canais (+ Dados)
+  try { await carregarListaClientesLocalAsync(); } catch (_) {}
   await sincronizarListaClientes();
   try {
     const res = await fetch(SUPA_URL + '?select=id&limit=1', { headers: HEADERS });
