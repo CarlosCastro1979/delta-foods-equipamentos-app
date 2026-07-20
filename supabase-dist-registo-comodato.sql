@@ -42,7 +42,7 @@ COMMENT ON TABLE dist_equip_carga IS
 -- se só houver uma sheet, usa essa. Não usar outras abas como fonte principal.
 --
 -- Colunas esperadas (headers flexíveis / aliases SAP PT-BR — a app mapeia):
---   nf | nº da nota fiscal eletrônica | nfe | nota_fiscal  (NÃO usar nº do documento / doc.faturamento)
+--   nf | coluna A | nº da nota fiscal eletrônica | nfe  (sempre coluna A do Excel base)
 --   cod_cliente | codigo_cliente | cliente | emissor | sold-to | nº cliente
 --   nome_cliente | nome | razao_social | name 1
 --   codigo_sap | material | codigo_equipamento | equipamento | nº material

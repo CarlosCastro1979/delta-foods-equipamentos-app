@@ -21236,25 +21236,21 @@ function distAutoMapHeaders(headers) {
   const norms = headers.map(distNormHeader);
   const map = {};
   const used = new Set();
+  // Regra fixa Dist: NF-e = sempre coluna A (índice 0)
+  if (headers && headers.length) {
+    map.nf = 0;
+    used.add(0);
+  } else {
+    map.nf = -1;
+  }
   const scoreHeader = (field, h, aliasRaw) => {
     const alias = distNormHeader(aliasRaw);
     if (!h || !alias) return 0;
     // Evitar: alias "cliente" / "cod" a apanhar "nome cliente"
     if (field === 'cod_cliente' && /\b(nome|razao|denomin|name)\b/.test(h)) return 0;
     if (field === 'nome_cliente' && /\b(cod|codigo|emissor|sold)\b/.test(h) && !/\bnome\b/.test(h)) return 0;
-    // NF: só nota fiscal eletrônica / NFe — nunca nº do documento / doc. faturamento
-    if (field === 'nf') {
-      if (/\b(documento|doc faturamento|doc fatura|billing document|billing doc)\b/.test(h)
-          && !/\beletronica\b/.test(h) && !/\bnfe\b/.test(h)) return 0;
-      // Exigir "eletrônica" / nfe para score alto (o que o utilizador pediu)
-      if (/\beletronica\b/.test(h) && /\b(nota|nf)\b/.test(h)) return 200;
-      if (/\bnfe\b/.test(h) || h === 'nf e' || h.includes('nf e ')) return 180;
-      // "nota fiscal" sem eletrônica = fraco (muitas vezes é o doc SAP)
-      if (/\bnota fiscal\b/.test(h) && !/\beletronica\b/.test(h)) return 40;
-      if (h === 'nf') return 30;
-      // sem eletrônica/nfe: não aceitar match genérico de alias
-      return 0;
-    }
+    // NF já fixado na coluna A — scoring só para outros campos
+    if (field === 'nf') return 0;
     if (field === 'doc_faturamento') {
       if (/\beletronica\b/.test(h) || /\bnfe\b/.test(h)) return 0;
     }
@@ -21270,6 +21266,7 @@ function distAutoMapHeaders(headers) {
     return 0;
   };
   Object.keys(DIST_COL_ALIASES).forEach(field => {
+    if (field === 'nf') return; // já fixado em coluna A
     const aliases = DIST_COL_ALIASES[field];
     let best = -1;
     let bestScore = 0;
@@ -21811,7 +21808,7 @@ function distCargaEquipShowMapUI() {
   const auto = distAutoMapHeaders(headers);
   _distCargaMapPending.map = auto;
   const fields = [
-    ['nf', 'NF-e (Nº da nota fiscal eletrônica) *'],
+    ['nf', 'NF-e = coluna A (Nº da nota fiscal eletrônica) *'],
     ['doc_faturamento', 'Nº documento SAP (não usar como NF)'],
     ['cod_cliente', 'Código cliente *'],
     ['nome_cliente', 'Nome cliente'],
@@ -21837,21 +21834,14 @@ function distCargaEquipShowMapUI() {
   };
   const nfIdx = auto.nf;
   const nfHdr = nfIdx >= 0 ? headers[nfIdx] : '';
-  const nfNorm = distNormHeader(nfHdr);
-  const nfOk = nfIdx >= 0 && (/\beletronica\b/.test(nfNorm) || /\bnfe\b/.test(nfNorm));
   const esc = (s) => String(s || '').replace(/</g, '&lt;');
-  const warnHtml = nfIdx < 0
-    ? `<div style="grid-column:1/-1;padding:8px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#991b1b;">
-        ⚠ Coluna <strong>Nº da nota fiscal eletrônica</strong> não encontrada automaticamente — escolhe-a no dropdown NF-e.
+  const warnHtml = nfIdx === 0
+    ? `<div style="grid-column:1/-1;padding:8px 10px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;font-size:12px;color:#065f46;">
+        ✓ NF-e fixa na <strong>coluna A</strong>«${esc(nfHdr)}» · exemplos: <code>${esc(sampleVals(0))}</code>
       </div>`
-    : (!nfOk
-      ? `<div style="grid-column:1/-1;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;">
-          ⚠ NF mapeada para «${esc(nfHdr)}» — confirma que é a <strong>nota fiscal eletrônica</strong>, não o nº do documento.
-          Exemplos: <code>${esc(sampleVals(nfIdx))}</code>
-        </div>`
-      : `<div style="grid-column:1/-1;padding:8px 10px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;font-size:12px;color:#065f46;">
-          ✓ NF-e: «${esc(nfHdr)}» · exemplos: <code>${esc(sampleVals(nfIdx))}</code>
-        </div>`);
+    : `<div style="grid-column:1/-1;padding:8px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#991b1b;">
+        ⚠ NF-e deve ser a <strong>coluna A</strong> do Excel.
+      </div>`;
   grid.innerHTML = warnHtml + fields.map(([key, label]) => {
     const opts = ['<option value="-1">— ignorar —</option>']
       .concat(headers.map((h, i) => {
@@ -21883,21 +21873,15 @@ async function distCargaEquipConfirmMap() {
     toast('Mapeia pelo menos a coluna Código cliente.', 'error');
     return;
   }
-  if (map.nf < 0) {
-    toast('Mapeia a coluna NF-e (Nº da nota fiscal eletrônica).', 'error');
+  if (map.nf !== 0) {
+    // Forçar coluna A mesmo se o utilizador mudou o dropdown
+    map.nf = 0;
+  }
+  if (!headers || !headers.length) {
+    toast('Ficheiro sem colunas.', 'error');
     return;
   }
-  const { rows, fileName, sheetName, headers } = _distCargaMapPending;
-  const nfHeaderName = (headers && map.nf >= 0) ? String(headers[map.nf] || '') : '';
-  const nfHdrNorm = distNormHeader(nfHeaderName);
-  if (!/\beletronica\b/.test(nfHdrNorm) && !/\bnfe\b/.test(nfHdrNorm)) {
-    const ok = confirm(
-      'A coluna NF escolhida não parece «Nº da nota fiscal eletrônica».\n\n'
-      + 'Coluna: ' + (nfHeaderName || '(vazia)') + '\n\n'
-      + 'Continuar mesmo assim? (Se for o nº do documento SAP, cancela e escolhe a coluna certa.)'
-    );
-    if (!ok) return;
-  }
+  const nfHeaderName = String(headers[0] || 'coluna A');
   const parsed = [];
   let skippedNoCod = 0;
   let skippedNotEquip = 0;
