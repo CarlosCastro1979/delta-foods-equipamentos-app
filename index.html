@@ -374,17 +374,44 @@
     padding: 8px 10px;
     margin-bottom: 10px;
   }
-  .dist-carga-list { display: flex; flex-direction: column; gap: 6px; }
-  .dist-carga-item {
+  .dist-carga-list { display: flex; flex-direction: column; gap: 8px; }
+  .dist-carga-item,
+  .dist-nf-group {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
-    padding: 8px 10px;
+    padding: 10px;
     background: #fff;
     border: 1px solid #e2e8f0;
     border-radius: 8px;
   }
-  .dist-carga-item.exhausted { opacity: 0.45; }
+  .dist-nf-group { flex-direction: column; gap: 8px; }
+  .dist-nf-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+  .dist-nf-models {
+    width: 100%;
+    padding-left: 46px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .dist-nf-model-line {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.35;
+  }
+  .dist-nf-model-line .q {
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: #1e3a8a;
+    margin-right: 6px;
+  }
+  .dist-carga-item.exhausted,
+  .dist-nf-group.exhausted { opacity: 0.45; }
   .dist-carga-qty {
     min-width: 36px;
     height: 36px;
@@ -398,6 +425,7 @@
     align-items: center;
     justify-content: center;
     font-family: var(--font-mono);
+    flex-shrink: 0;
   }
   .dist-carga-info { flex: 1; min-width: 0; }
   .dist-carga-desc {
@@ -411,6 +439,17 @@
     color: var(--muted);
     margin-top: 2px;
   }
+  .dist-ct-summary {
+    font-size: 12px;
+    color: var(--muted);
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    line-height: 1.45;
+  }
+  .dist-ct-summary strong { color: var(--text); }
   .dist-catalog-fallback {
     margin-top: 8px;
     font-size: 12px;
@@ -1684,17 +1723,19 @@ var _unused_placeholder = 1;
       maxlength="4" inputmode="numeric" autocomplete="off"
       style="text-align:center;font-size:20px;letter-spacing:8px;"
       oninput="this.value=this.value.replace(/\D/g,'').slice(0,4)"
-      onkeydown="if(event.key==='Enter'){event.preventDefault();confirmarUserPin();}">
+      onkeydown="onUserPinKeydown(event,'pin')">
     <div id="user-pin-confirm-wrap" style="display:none;margin-top:10px;">
-      <p class="login-desc" style="margin-bottom:8px;">Confirma o PIN</p>
+      <p class="login-desc" style="margin-bottom:8px;">Confirma o PIN (obrigatório)</p>
       <input type="password" id="user-pin-confirm" class="form-input login-select" placeholder="Repete o PIN"
         maxlength="4" inputmode="numeric" autocomplete="off"
         style="text-align:center;font-size:20px;letter-spacing:8px;"
         oninput="this.value=this.value.replace(/\D/g,'').slice(0,4)"
-        onkeydown="if(event.key==='Enter'){event.preventDefault();confirmarUserPin();}">
+        onkeydown="onUserPinKeydown(event,'confirm')">
     </div>
     <button type="button" class="btn btn-primary login-btn" id="user-pin-btn" onclick="confirmarUserPin()">Entrar</button>
     <button type="button" class="btn btn-secondary login-btn" style="margin-top:8px;" onclick="cancelarUserPin()">Cancelar</button>
+    <button type="button" class="btn btn-secondary login-btn" id="user-pin-forgot-btn"
+      style="margin-top:8px;font-size:12px;" onclick="esqueciUserPin()">Esqueci o PIN</button>
     <div id="canal-pin-erro" class="login-erro">PIN incorrecto.</div>
   </div>
 </div>
@@ -1860,7 +1901,7 @@ var _unused_placeholder = 1;
         </div>
         <div id="dist-contratos-ui" style="display:none">
           <div class="dist-equip-pool" id="f-dist-equip-pool">
-            <div class="dist-equip-pool-title">Equipamentos da carga (Excel NF) — associa ao contrato activo</div>
+            <div class="dist-equip-pool-title">Carga por NF — associa a NF ao contrato activo (qty por modelo)</div>
             <div id="f-dist-pool-chips"><span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo em cada contrato.</span></div>
             <details class="dist-catalog-fallback" id="f-dist-catalog-fallback">
               <summary>Equipamento fora da carga?</summary>
@@ -3491,8 +3532,9 @@ var _unused_placeholder = 1;
               Se o ficheiro só tiver uma aba, usa essa; se existir <code>base</code>, usa sempre essa.<br>
               Headers SAP comuns (PT/BR) são reconhecidos automaticamente; podes mapear se os nomes diferirem.<br>
               Campos: NF, código cliente, material/código SAP, descrição, qty, data, tag (opcional).<br>
-              <strong>Só importa equipamentos profissionais</strong> (catálogo <code>EQUIPAMENTOS_PROFISSIONAIS</code> — máquinas/moinhos/filtros completos). Café, acessórios e outros materiais são ignorados.<br>
-              Qty = unidades de equipamento (máx. 20/linha; se a coluna for peso/valor ou estiver vazia, conta 1). Descrição vem do catálogo quando o Excel não traz texto.<br>
+              <strong>Só importa máquinas profissionais</strong> (catálogo <code>EQUIPAMENTOS_PROFISSIONAIS</code> — máquinas/moinhos; match por código SAP ou descrição). Café, acessórios, filtros (BESTMAX, etc.) e outros materiais são ignorados.<br>
+              Qty = unidades de equipamento (máx. 20/linha; Excel <code>10,000</code> = 10; se a coluna for peso/valor ou estiver vazia, conta 1). Descrição vem do catálogo quando o Excel não traz texto.<br>
+              No registo Dist, a carga agrupa-se por <strong>NF</strong> — associa a NF ao contrato (com qty por modelo).<br>
               Se a carga antiga estiver poluída: <strong>Limpar carga local</strong> e voltar a importar o Excel.
             </div>
           </div>
@@ -3673,7 +3715,7 @@ var _unused_placeholder = 1;
         </div>
         <div id="edit-dist-contratos-ui" style="display:none">
           <div class="dist-equip-pool">
-            <div class="dist-equip-pool-title">Equipamentos da carga (Excel NF) — associa ao contrato activo</div>
+            <div class="dist-equip-pool-title">Carga por NF — associa a NF ao contrato activo (qty por modelo)</div>
             <div id="e-dist-pool-chips"><span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo em cada contrato.</span></div>
             <details class="dist-catalog-fallback" id="e-dist-catalog-fallback">
               <summary>Equipamento fora da carga?</summary>
@@ -8180,6 +8222,8 @@ const EQUIPAMENTOS = [
   'MOINHO MAYOR IBERYA',
   'MAYOR Q',
   'QUORUM',
+  'QUORUM 2GRP STEAMER V2.0',
+  'BRAVILOR BONAMAT RIVERO 12+2',
   'MAQ DOMESTICA DELTA Q',
   'EQUIPAMENTO PROPRIO',
   'CÓDIGO DE ENTREGA',
@@ -8468,6 +8512,7 @@ let _pinGateResolve = null;
 let _pinGateMode = 'verify'; // 'verify' | 'create'
 let _pinGateStoredHash = null;
 let _pinGateBusy = false;
+// _pinGateOffline declarado junto ao bloco PIN (servidor indisponível → cache local)
 
 function ensureCanalView() {
   if (document.body.classList.contains('view-canal') && _canalActivo) return;
@@ -9689,6 +9734,10 @@ const EQUIPAMENTOS_PROFISSIONAIS = [
   { codigo: '4000080', key: '4000080-nova', descricao: 'MOINHO RANCILIO KRYO 65 OD' },
   { codigo: '17463',   descricao: 'DELTA Q MAQ QUORUM QONNECT 220V' },
   { codigo: '4000133', descricao: 'MOINHO MAYOR IBERYA 75 ON DEMA.PR BRA' },
+  // Máquinas Dist (códigos SAP podem vir só no Excel — match também por descrição)
+  { codigo: '', key: 'quorum-2grp-steamer', descricao: 'QUORUM 2GRP STEAMER V2.0', matchTokens: ['QUORUM', 'STEAMER'] },
+  { codigo: '', key: 'bravilor-rivero', descricao: 'BRAVILOR BONAMAT RIVERO 12+2', matchTokens: ['BRAVILOR', 'RIVERO'] },
+  // Filtros (AT / pedidos) — excluídos da carga Dist comodato
   { codigo: '4001014', descricao: 'FILTRO COMPLETO TECNIDELTA' },
   { codigo: '4001573', descricao: 'FILTRO COMPLETO BESTMAX V' },
   { codigo: '4001574', descricao: 'FILTRO COMPLETO BESTMAX M' },
@@ -12437,6 +12486,14 @@ const CANAL_ACESSO = {
 const UTILIZADOR_PINS_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/utilizador_pins';
 const PIN_LEN = 4;
 const PIN_CACHE_LS = 'dfb_pin_hash_cache';
+let _pinGateOffline = false; // true = servidor PIN indisponível; usa cache local
+
+function pinCacheGet(key) {
+  try {
+    const all = JSON.parse(localStorage.getItem(PIN_CACHE_LS) || '{}');
+    return all[key] || null;
+  } catch (_) { return null; }
+}
 
 function pinCacheSet(key, hash) {
   try {
@@ -12446,13 +12503,94 @@ function pinCacheSet(key, hash) {
   } catch (_) {}
 }
 
+function pinCacheClear(key) {
+  try {
+    const all = JSON.parse(localStorage.getItem(PIN_CACHE_LS) || '{}');
+    delete all[key];
+    localStorage.setItem(PIN_CACHE_LS, JSON.stringify(all));
+  } catch (_) {}
+}
+
+function isPinBackendUnavailable(err) {
+  const m = String(err?.message || err || '');
+  return /HTTP 404|HTTP 5\d\d|PGRST205|Failed to fetch|NetworkError|Load failed|relation|does not exist|Could not find the table/i.test(m);
+}
+
+function pinSqlAdminMsg() {
+  return 'Admin: corre supabase-utilizador-pins.sql no Supabase SQL Editor e pede hard-refresh (Ctrl+F5).';
+}
+
+/** SHA-256 hex — WebCrypto se disponível; senão fallback puro (HTTP LAN / browsers antigos). */
 async function hashPinUtilizador(pin, nome) {
   const payload = String(pin || '') + '|' + normNomeUtilizador(nome);
-  if (!globalThis.crypto?.subtle) {
-    throw new Error('Hash indisponível neste browser (usa HTTPS ou localhost).');
+  const data = new TextEncoder().encode(payload);
+  if (globalThis.crypto?.subtle) {
+    const buf = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
   }
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return sha256HexFallback(payload);
+}
+
+/** Fallback SHA-256 (sync) quando crypto.subtle não existe (contexto não-seguro). */
+function sha256HexFallback(str) {
+  // https://geraintluff.github.io/sha256/ (compact)
+  function rotr(n, x) { return (x >>> n) | (x << (32 - n)); }
+  const K = [
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+  ];
+  const bytes = [];
+  for (let i = 0; i < str.length; i++) {
+    let c = str.charCodeAt(i);
+    if (c < 0x80) bytes.push(c);
+    else if (c < 0x800) { bytes.push(0xc0 | (c >> 6), 0x80 | (c & 63)); }
+    else if (c < 0xd800 || c >= 0xe000) {
+      bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    } else {
+      i++;
+      c = 0x10000 + (((c & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff));
+      bytes.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    }
+  }
+  const bitLen = bytes.length * 8;
+  bytes.push(0x80);
+  while ((bytes.length % 64) !== 56) bytes.push(0);
+  for (let i = 7; i >= 0; i--) bytes.push((bitLen / Math.pow(2, i * 8)) & 0xff);
+  let [h0,h1,h2,h3,h4,h5,h6,h7] = [
+    0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
+  ];
+  const w = new Array(64);
+  for (let i = 0; i < bytes.length; i += 64) {
+    for (let j = 0; j < 16; j++) {
+      const o = i + j * 4;
+      w[j] = ((bytes[o] << 24) | (bytes[o+1] << 16) | (bytes[o+2] << 8) | bytes[o+3]) >>> 0;
+    }
+    for (let j = 16; j < 64; j++) {
+      const s0 = rotr(7, w[j-15]) ^ rotr(18, w[j-15]) ^ (w[j-15] >>> 3);
+      const s1 = rotr(17, w[j-2]) ^ rotr(19, w[j-2]) ^ (w[j-2] >>> 10);
+      w[j] = (w[j-16] + s0 + w[j-7] + s1) >>> 0;
+    }
+    let [a,b,c,d,e,f,g,h] = [h0,h1,h2,h3,h4,h5,h6,h7];
+    for (let j = 0; j < 64; j++) {
+      const S1 = rotr(6, e) ^ rotr(11, e) ^ rotr(25, e);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + K[j] + w[j]) >>> 0;
+      const S0 = rotr(2, a) ^ rotr(13, a) ^ rotr(22, a);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0;
+      d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0; h3 = (h3 + d) >>> 0;
+    h4 = (h4 + e) >>> 0; h5 = (h5 + f) >>> 0; h6 = (h6 + g) >>> 0; h7 = (h7 + h) >>> 0;
+  }
+  return [h0,h1,h2,h3,h4,h5,h6,h7].map(x => x.toString(16).padStart(8, '0')).join('');
 }
 
 function pinFormatoValido(pin) {
@@ -12503,8 +12641,85 @@ async function saveUtilizadorPinHash(nome, pinHash) {
   pinCacheSet(key, pinHash);
 }
 
+/** Admin: apaga PIN no Supabase (+ cache) para o utilizador poder criar de novo. */
+async function adminResetUtilizadorPin(nome) {
+  if (!isAdmin()) {
+    toast('Só o administrador pode repor PINs.', 'error');
+    return false;
+  }
+  const key = normNomeUtilizador(nome || getUtilizadorAtual());
+  if (!key) {
+    toast('Utilizador em falta.', 'error');
+    return false;
+  }
+  try {
+    const res = await fetch(
+      UTILIZADOR_PINS_URL + '?utilizador=eq.' + encodeURIComponent(key),
+      {
+        method: 'DELETE',
+        headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY },
+      }
+    );
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error('HTTP ' + res.status + (t ? ': ' + t.slice(0, 120) : ''));
+    }
+    pinCacheClear(key);
+    toast('PIN de ' + key + ' reposto. No próximo acesso cria um PIN novo.', 'success');
+    return true;
+  } catch (e) {
+    console.warn('adminResetUtilizadorPin', e);
+    if (isPinBackendUnavailable(e)) {
+      pinCacheClear(key);
+      toast('Servidor PIN indisponível — cache local limpo. ' + pinSqlAdminMsg(), 'warn');
+      return true;
+    }
+    toast('Falha ao repor PIN: ' + (e.message || e), 'error');
+    return false;
+  }
+}
+
+function showPinGateUi(opts, nome) {
+  const titleEl = document.getElementById('user-pin-title');
+  const descEl = document.getElementById('canal-pin-desc');
+  const confWrap = document.getElementById('user-pin-confirm-wrap');
+  const btn = document.getElementById('user-pin-btn');
+  const forgot = document.getElementById('user-pin-forgot-btn');
+  const offlineNote = _pinGateOffline
+    ? ' (modo temporário nesta máquina — ' + pinSqlAdminMsg() + ')'
+    : '';
+  if (titleEl) {
+    titleEl.textContent = _pinGateMode === 'create'
+      ? (opts.tituloCreate || 'Criar PIN')
+      : (opts.titulo || 'PIN');
+  }
+  if (descEl) {
+    if (_pinGateMode === 'create') {
+      descEl.textContent = (opts.descCreate
+        || `Olá ${nome} — primeiro acesso. Cria o teu PIN pessoal (${PIN_LEN} dígitos) e confirma no 2.º campo. Memoriza-o: o PIN antigo partilhado já não funciona.`)
+        + offlineNote;
+    } else {
+      descEl.textContent = (opts.desc || `Olá ${nome} — introduz o teu PIN pessoal (${PIN_LEN} dígitos).`)
+        + offlineNote;
+    }
+  }
+  if (confWrap) confWrap.style.display = _pinGateMode === 'create' ? '' : 'none';
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = _pinGateMode === 'create' ? 'Criar PIN' : 'Entrar';
+  }
+  if (forgot) {
+    forgot.style.display = _pinGateMode === 'verify' ? '' : 'none';
+    forgot.textContent = isAdmin() ? 'Repor PIN (admin)' : 'Esqueci o PIN';
+  }
+  setTimeout(() => {
+    try { document.getElementById('canal-pin-input')?.focus(); } catch (_) {}
+  }, 50);
+}
+
 /**
  * Modal unificado de PIN. 1.º acesso → criar (enter+confirm); depois → verificar.
+ * Se a tabela Supabase faltar: aviso claro + fallback local (não deixa meio-estado).
  * @returns {Promise<boolean>}
  */
 function pedirPinUtilizador(opts = {}) {
@@ -12514,7 +12729,6 @@ function pedirPinUtilizador(opts = {}) {
     return Promise.resolve(false);
   }
   if (_pinGateResolve) {
-    // Já há um pedido em curso — cancela o anterior
     try { _pinGateResolve(false); } catch (_) {}
     _pinGateResolve = null;
   }
@@ -12522,57 +12736,51 @@ function pedirPinUtilizador(opts = {}) {
   return new Promise(async (resolve) => {
     _pinGateResolve = resolve;
     _pinGateBusy = false;
-    const titleEl = document.getElementById('user-pin-title');
-    const descEl = document.getElementById('canal-pin-desc');
+    _pinGateOffline = false;
     const inp = document.getElementById('canal-pin-input');
-    const confWrap = document.getElementById('user-pin-confirm-wrap');
     const confInp = document.getElementById('user-pin-confirm');
     const err = document.getElementById('canal-pin-erro');
     const btn = document.getElementById('user-pin-btn');
     const ov = document.getElementById('canal-pin-overlay');
+    const descEl = document.getElementById('canal-pin-desc');
 
-    if (titleEl) titleEl.textContent = opts.titulo || 'PIN';
     if (descEl) descEl.textContent = 'A verificar…';
     if (err) { err.style.display = 'none'; err.textContent = 'PIN incorrecto.'; }
     if (inp) inp.value = '';
     if (confInp) confInp.value = '';
+    const confWrap = document.getElementById('user-pin-confirm-wrap');
     if (confWrap) confWrap.style.display = 'none';
     if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    const forgot = document.getElementById('user-pin-forgot-btn');
+    if (forgot) forgot.style.display = 'none';
     if (ov) { ov.style.display = 'flex'; ov.classList.add('open'); }
 
+    const key = normNomeUtilizador(nome);
     let hash = null;
     try {
       hash = await fetchUtilizadorPinHash(nome);
     } catch (e) {
       console.warn('fetchUtilizadorPinHash', e);
-      fecharUserPinOverlay();
-      _pinGateResolve = null;
-      toast(
-        'Não foi possível verificar o PIN (servidor indisponível). Confirma que correste supabase-utilizador-pins.sql e tenta novamente.',
-        'error'
-      );
-      resolve(false);
-      return;
+      _pinGateOffline = true;
+      const cached = pinCacheGet(key);
+      if (cached) {
+        hash = cached;
+        toast(
+          'Servidor PIN indisponível — a verificar com cache local. ' + pinSqlAdminMsg(),
+          'warn'
+        );
+      } else {
+        hash = null;
+        toast(
+          'Tabela/servidor PIN indisponível. Podes criar um PIN temporário nesta máquina. ' + pinSqlAdminMsg(),
+          'warn'
+        );
+      }
     }
 
     _pinGateStoredHash = hash;
     _pinGateMode = hash ? 'verify' : 'create';
-    if (titleEl) {
-      titleEl.textContent = _pinGateMode === 'create'
-        ? (opts.tituloCreate || 'Criar PIN')
-        : (opts.titulo || 'PIN');
-    }
-    if (descEl) {
-      descEl.textContent = _pinGateMode === 'create'
-        ? (opts.descCreate || `Olá ${nome} — primeiro acesso. Cria o teu PIN pessoal (${PIN_LEN} dígitos).`)
-        : (opts.desc || `Olá ${nome} — introduz o teu PIN para aceder.`);
-    }
-    if (confWrap) confWrap.style.display = _pinGateMode === 'create' ? '' : 'none';
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = _pinGateMode === 'create' ? 'Criar PIN' : 'Entrar';
-    }
-    setTimeout(() => { try { inp?.focus(); } catch (_) {} }, 50);
+    showPinGateUi(opts, nome);
   });
 }
 
@@ -12591,7 +12799,50 @@ function cancelarUserPin() {
   _pinGateResolve = null;
   _pinGateStoredHash = null;
   _pinGateBusy = false;
+  _pinGateOffline = false;
   if (r) r(false);
+}
+
+function onUserPinKeydown(ev, which) {
+  if (!ev || ev.key !== 'Enter') return;
+  ev.preventDefault();
+  if (_pinGateMode === 'create' && which === 'pin') {
+    const pin = String(document.getElementById('canal-pin-input')?.value || '').trim();
+    if (pinFormatoValido(pin)) {
+      const conf = document.getElementById('user-pin-confirm');
+      if (conf) { conf.focus(); return; }
+    }
+  }
+  confirmarUserPin();
+}
+
+async function esqueciUserPin() {
+  const nome = getUtilizadorAtual();
+  if (!nome) return;
+  if (isAdmin()) {
+    if (!confirm('Repor o PIN de «' + nome + '»? No próximo acesso terá de criar um PIN novo.')) return;
+    const ok = await adminResetUtilizadorPin(nome);
+    if (!ok) return;
+    // Reabre em modo criar sem fechar o fluxo pendente
+    _pinGateStoredHash = null;
+    _pinGateMode = 'create';
+    _pinGateOffline = false;
+    const err = document.getElementById('canal-pin-erro');
+    if (err) err.style.display = 'none';
+    const inp = document.getElementById('canal-pin-input');
+    const confInp = document.getElementById('user-pin-confirm');
+    if (inp) inp.value = '';
+    if (confInp) confInp.value = '';
+    showPinGateUi({
+      tituloCreate: 'Criar PIN',
+      descCreate: `Olá ${nome} — PIN reposto. Cria um PIN pessoal novo (${PIN_LEN} dígitos) e confirma.`,
+    }, nome);
+    return;
+  }
+  toast(
+    'Pede ao administrador (Carlos) para repor o teu PIN: na app, entra como admin, escolhe o teu utilizador e em «Esqueci o PIN» → Repor.',
+    'warn'
+  );
 }
 
 async function confirmarUserPin() {
@@ -12617,10 +12868,24 @@ async function confirmarUserPin() {
   _pinGateBusy = true;
   if (btn) btn.disabled = true;
 
+  const unlockOk = (hash) => {
+    fecharUserPinOverlay();
+    const r = _pinGateResolve;
+    _pinGateResolve = null;
+    _pinGateStoredHash = hash || _pinGateStoredHash;
+    _pinGateOffline = false;
+    if (r) r(true);
+  };
+
   try {
     if (_pinGateMode === 'create') {
+      if (!pin2) {
+        showErr('Confirma o PIN no segundo campo (Enter no 1.º campo avança para a confirmação).');
+        if (confInp) confInp.focus();
+        return;
+      }
       if (pin !== pin2) {
-        showErr('Os PINs não coincidem.');
+        showErr('Os PINs não coincidem. Escreve o mesmo PIN nos dois campos.');
         if (confInp) { confInp.value = ''; confInp.focus(); }
         return;
       }
@@ -12631,22 +12896,33 @@ async function confirmarUserPin() {
         toast('Não foi possível criar o PIN: ' + (e.message || e), 'error');
         return;
       }
+      if (_pinGateOffline) {
+        pinCacheSet(normNomeUtilizador(nome), hash);
+        toast('PIN temporário criado nesta máquina. ' + pinSqlAdminMsg(), 'warn');
+        unlockOk(hash);
+        return;
+      }
       try {
         await saveUtilizadorPinHash(nome, hash);
       } catch (e) {
         console.warn('saveUtilizadorPinHash', e);
+        if (isPinBackendUnavailable(e)) {
+          pinCacheSet(normNomeUtilizador(nome), hash);
+          toast(
+            'Não deu para gravar no servidor — PIN temporário nesta máquina. ' + pinSqlAdminMsg(),
+            'warn'
+          );
+          unlockOk(hash);
+          return;
+        }
         toast(
-          'Não foi possível guardar o PIN no servidor. Confirma que correste supabase-utilizador-pins.sql e tenta novamente.',
+          'Não foi possível guardar o PIN no servidor. ' + pinSqlAdminMsg(),
           'error'
         );
         return;
       }
-      toast('PIN criado com sucesso.', 'success');
-      fecharUserPinOverlay();
-      const r = _pinGateResolve;
-      _pinGateResolve = null;
-      _pinGateStoredHash = hash;
-      if (r) r(true);
+      toast('PIN criado com sucesso. Usa este PIN da próxima vez (já não é o código antigo partilhado).', 'success');
+      unlockOk(hash);
       return;
     }
 
@@ -12659,27 +12935,28 @@ async function confirmarUserPin() {
       return;
     }
     let expected = _pinGateStoredHash;
-    try {
-      // Revalida no servidor (fonte de verdade)
-      expected = await fetchUtilizadorPinHash(nome);
-      _pinGateStoredHash = expected;
-    } catch (e) {
-      console.warn('fetchUtilizadorPinHash verify', e);
-      toast(
-        'Não foi possível verificar o PIN (servidor indisponível). Tenta novamente.',
-        'error'
-      );
-      return;
+    if (!_pinGateOffline) {
+      try {
+        expected = await fetchUtilizadorPinHash(nome);
+        _pinGateStoredHash = expected;
+      } catch (e) {
+        console.warn('fetchUtilizadorPinHash verify', e);
+        const cached = pinCacheGet(normNomeUtilizador(nome));
+        if (cached) {
+          expected = cached;
+          toast('Servidor PIN indisponível — a usar cache local. ' + pinSqlAdminMsg(), 'warn');
+        } else {
+          toast('Não foi possível verificar o PIN (servidor indisponível). ' + pinSqlAdminMsg(), 'error');
+          return;
+        }
+      }
     }
     if (!expected || hash !== expected) {
-      showErr('PIN incorrecto.');
+      showErr('PIN incorrecto. Se criaste um PIN no 1.º acesso, usa esse — o código antigo partilhado já não serve. Ou pede ao admin para repor.');
       if (inp) { inp.value = ''; inp.focus(); }
       return;
     }
-    fecharUserPinOverlay();
-    const r = _pinGateResolve;
-    _pinGateResolve = null;
-    if (r) r(true);
+    unlockOk(expected);
   } finally {
     _pinGateBusy = false;
     if (btn) btn.disabled = false;
@@ -12689,6 +12966,9 @@ async function confirmarUserPin() {
 window.confirmarUserPin = confirmarUserPin;
 window.cancelarUserPin = cancelarUserPin;
 window.pedirPinUtilizador = pedirPinUtilizador;
+window.onUserPinKeydown = onUserPinKeydown;
+window.esqueciUserPin = esqueciUserPin;
+window.adminResetUtilizadorPin = adminResetUtilizadorPin;
 
 const UTILIZADOR_EMAILS = {
   'PAULO FONTES':   'paulo.fontes@deltafoodsbrasil.com.br',
@@ -20054,9 +20334,57 @@ function distIsEquipProfissionalCodigo(cod) {
   return !!(n && distEquipProfCodigoSet().has(n));
 }
 
-/** UI/pool: só linhas cujo material está no catálogo profissional (não apaga Supabase). */
+function distNormDescEquip(s) {
+  return String(s || '').toUpperCase().normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Filtros completos (BESTMAX, etc.) — fora da carga Dist comodato (só máquinas). */
+function distIsFiltroCarga(codigo, descricao) {
+  const cod = distNormCodigoSap(codigo);
+  if (cod && typeof AT_FILTRO_COMPLETO_MATS !== 'undefined' && AT_FILTRO_COMPLETO_MATS.has(cod)) return true;
+  const d = distNormDescEquip(descricao);
+  if (d.includes('FILTRO COMPLETO') || /\bBESTMAX\b/.test(d)) return true;
+  if (cod) {
+    const cat = distCatalogDescricao(cod);
+    if (cat && (distNormDescEquip(cat).includes('FILTRO COMPLETO') || /\bBESTMAX\b/.test(distNormDescEquip(cat)))) return true;
+  }
+  return false;
+}
+
+/** Match por descrição / tokens do catálogo (ex. Bravilor, Quorum Steamer sem código fixo). */
+function distMatchCatalogByDescricao(descricao) {
+  const d = distNormDescEquip(descricao);
+  if (!d || d.length < 5) return null;
+  const list = (typeof EQUIPAMENTOS_PROFISSIONAIS !== 'undefined' && Array.isArray(EQUIPAMENTOS_PROFISSIONAIS))
+    ? EQUIPAMENTOS_PROFISSIONAIS
+    : [];
+  for (const e of list) {
+    if (!e || distIsFiltroCarga(e.codigo, e.descricao)) continue;
+    const tokens = Array.isArray(e.matchTokens) && e.matchTokens.length
+      ? e.matchTokens.map(t => distNormDescEquip(t)).filter(Boolean)
+      : null;
+    if (tokens && tokens.length >= 2 && tokens.every(t => d.includes(t))) return e;
+    const ed = distNormDescEquip(e.descricao);
+    if (!ed || ed.length < 5) continue;
+    if (d === ed || d.includes(ed) || ed.includes(d)) return e;
+  }
+  return null;
+}
+
+/** Aceita máquina profissional por código SAP ou descrição; rejeita filtros. */
+function distIsEquipProfissionalRow(codigo, descricao) {
+  if (distIsFiltroCarga(codigo, descricao)) return false;
+  if (distIsEquipProfissionalCodigo(codigo)) return true;
+  return !!distMatchCatalogByDescricao(descricao);
+}
+
+/** UI/pool: só máquinas profissionais (não filtros; não apaga Supabase). */
 function distCargaFilterEquipProf(rows) {
-  return (rows || []).filter(r => distIsEquipProfissionalCodigo(r && r.codigo_sap));
+  return (rows || []).filter(r => distIsEquipProfissionalRow(r && r.codigo_sap, r && r.descricao));
 }
 
 function isCanalDistribuidores() {
@@ -20273,20 +20601,64 @@ function distAddContrato(prefix, data) {
     <div class="dist-ct-head">
       <span class="dist-ct-title">Contrato ${idx + 1}</span>
       <button type="button" class="btn-remove-equip" title="Remover contrato"
-        onclick="this.closest('.dist-contrato-card').remove();distRenumberContratos('${prefix}')">✕</button>
+        onclick="this.closest('.dist-contrato-card').remove();distRenumberContratos('${prefix}');distRefreshPoolAfterFormChange('${prefix}')">✕</button>
     </div>
     <div class="form-group" style="margin-bottom:10px">
       <label style="font-size:11px;color:var(--muted)">Nº contrato *</label>
       <input type="text" class="form-input dist-ct-numero" placeholder="Ex: B0029/25" value="${(data.numero || '').replace(/"/g, '&quot;')}"
         onfocus="_distUi['${prefix}'].activeContratoIdx = [...this.closest('#${listId}').children].indexOf(this.closest('.dist-contrato-card'))">
     </div>
+    <div class="dist-ct-summary" style="display:none"></div>
     <div class="dist-ct-equips equip-list"></div>
     <button type="button" class="btn-add-equip" style="margin-top:6px"
       onclick="distAddEquipRow(this.closest('.dist-contrato-card'), '')">+ Adicionar equipamento</button>`;
   list.appendChild(card);
   if (equips.length) equips.forEach(eq => distAddEquipRow(card, eq));
   else if (!data.skipEmptyEquip) distAddEquipRow(card, {});
+  distUpdateContratoSummary(card);
   _distUi[prefix].activeContratoIdx = idx;
+}
+
+/** Resumo no cartão: NFs associadas + qty por modelo. */
+function distUpdateContratoSummary(card) {
+  if (!card) return;
+  const box = card.querySelector('.dist-ct-summary');
+  if (!box) return;
+  const rows = [...card.querySelectorAll('.dist-equip-row')];
+  const nfs = [];
+  const byModel = new Map();
+  rows.forEach(row => {
+    const nf = String(row.dataset.nf || '').trim();
+    const tipo = row.querySelector('.equip-select')?.value || row.dataset.codigo || 'Equipamento';
+    if (nf && !nfs.includes(nf)) nfs.push(nf);
+    if (!tipo) return;
+    byModel.set(tipo, (byModel.get(tipo) || 0) + 1);
+  });
+  if (!nfs.length && !byModel.size) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  const nfTxt = nfs.length
+    ? `<strong>NF:</strong> ${nfs.map(n => String(n).replace(/</g, '')).join(', ')}`
+    : '<strong>NF:</strong> — (associa uma NF da carga)';
+  const modTxt = [...byModel.entries()]
+    .map(([m, q]) => `${q}× ${String(m).replace(/</g, '')}`)
+    .join(' · ');
+  box.style.display = '';
+  box.innerHTML = nfTxt + (modTxt ? `<br><strong>Modelos:</strong> ${modTxt}` : '');
+}
+
+function distRefreshPoolAfterFormChange(prefix) {
+  prefix = prefix || 'f';
+  const poolId = prefix === 'e' ? 'e-dist-pool-chips' : 'f-dist-pool-chips';
+  const pool = document.getElementById(poolId);
+  if (!pool || !pool._groups) return;
+  distPoolMarkUsedFromForm(prefix, pool);
+  distPoolRenderGroups(prefix, pool);
+  const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
+  const list = document.getElementById(listId);
+  if (list) [...list.querySelectorAll('.dist-contrato-card')].forEach(distUpdateContratoSummary);
 }
 
 function distAddEquipRow(card, eq) {
@@ -20301,10 +20673,11 @@ function distAddEquipRow(card, eq) {
   row.dataset.nf = eq.nf || '';
   const tipo = eq.tipo || eq.descricao || '';
   const tag = eq.tag || '';
+  const prefix = card.closest('#e-dist-contratos-list') ? 'e' : 'f';
   row.innerHTML = `
-    <select class="equip-select form-input">${distEquipOptionsHtml(tipo)}</select>
+    <select class="equip-select form-input" onchange="distUpdateContratoSummary(this.closest('.dist-contrato-card'))">${distEquipOptionsHtml(tipo)}</select>
     <input type="text" class="equip-tag form-input" placeholder="Tag" value="${String(tag).replace(/"/g, '&quot;')}">
-    <button type="button" class="btn-remove-equip" onclick="this.closest('.dist-equip-row').remove()">✕</button>`;
+    <button type="button" class="btn-remove-equip" onclick="const c=this.closest('.dist-contrato-card');this.closest('.dist-equip-row').remove();distUpdateContratoSummary(c);distRefreshPoolAfterFormChange('${prefix}')">✕</button>`;
   // Se tipo não está no catálogo, o option já foi injectado; se select ficou vazio, forçar texto livre via option
   const sel = row.querySelector('.equip-select');
   if (tipo && sel && !sel.value) {
@@ -20313,6 +20686,7 @@ function distAddEquipRow(card, eq) {
     sel.appendChild(o);
   }
   list.appendChild(row);
+  distUpdateContratoSummary(card);
 }
 
 function distRenumberContratos(prefix) {
@@ -20366,12 +20740,16 @@ function distBuildPayloadFromForm(prefix) {
   if (!dist_contratos.length) {
     return { error: 'Adiciona pelo menos um contrato com número.' };
   }
+  const requireNf = !!st.hasCarga;
   for (let i = 0; i < dist_contratos.length; i++) {
     if (!dist_contratos[i].numero) {
       return { error: `Contrato ${i + 1}: preenche o Nº contrato.` };
     }
     if (!dist_contratos[i].equipamentos.length) {
       return { error: `Contrato ${i + 1}: adiciona pelo menos um equipamento (ou Tag).` };
+    }
+    if (requireNf && !dist_contratos[i].equipamentos.some(e => e && e.nf)) {
+      return { error: `Contrato ${i + 1}: associa pelo menos uma NF da carga.` };
     }
   }
   const equipamentos = [];
@@ -20480,13 +20858,26 @@ const DIST_QTY_MAX_PER_LINE = 20;
 
 /**
  * Quantidade de equipamento por linha. Default 1.
+ * Excel BR costuma mostrar "10,000" (= 10 com 3 casas) — não 10000.
  * Rejeita valores absurdos (peso, valor líquido, nº de item alto, decimais de kg).
  */
 function distSanitizeQty(raw) {
   if (raw == null || raw === '') return 1;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    if (raw <= 0 || raw > DIST_QTY_MAX_PER_LINE) return 1;
+    if (Math.abs(raw - Math.round(raw)) > 0.01) return 1;
+    return Math.max(1, Math.round(raw));
+  }
   let s = String(raw).trim().replace(/\s/g, '');
   if (!s) return 1;
-  // "1.820,50" (milhar BR) → inválido para qty de máquina → 1
+  // "10,000" / "10,00" (decimal BR) → 10
+  if (/^\d+,\d+$/.test(s)) {
+    const n = Number(s.replace(',', '.'));
+    if (!Number.isFinite(n) || n <= 0 || n > DIST_QTY_MAX_PER_LINE) return 1;
+    if (Math.abs(n - Math.round(n)) > 0.01) return 1;
+    return Math.max(1, Math.round(n));
+  }
+  // "1.820" / "1.820,50" (milhar BR) → inválido para qty de máquina → 1
   if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) return 1;
   s = s.replace(',', '.');
   const n = Number(s);
@@ -20727,7 +21118,69 @@ function distCargaByCliente(cod, opts) {
   return rows;
 }
 
-/** Agrega linhas da carga por material, com unidades expandíveis. */
+/** Ordenação de NF: numérica quando possível. */
+function distNfSortKey(nf) {
+  const s = String(nf || '').trim();
+  const digits = s.replace(/\D/g, '');
+  if (digits) return [0, Number(digits) || 0, s];
+  return [1, 0, s.toUpperCase()];
+}
+
+/**
+ * Agrega carga por NF → modelos com qty e unidades expandíveis.
+ * UI Dist: contrato associa-se a pelo menos uma NF.
+ */
+function distAggregateCargaByNf(rows) {
+  const byNf = new Map();
+  (rows || []).forEach(r => {
+    const nf = String(r.nf || '').trim() || '(sem NF)';
+    const codigo = distNormCodigoSap(r.codigo_sap) || String(r.codigo_sap || '').trim();
+    const descricao = distResolveDescricao(codigo, r.descricao);
+    const modelKey = codigo || ('desc:' + descricao);
+    const q = distSanitizeQty(r.qty);
+    if (!byNf.has(nf)) {
+      byNf.set(nf, { nf, qty: 0, models: new Map(), units: [] });
+    }
+    const g = byNf.get(nf);
+    if (!g.models.has(modelKey)) {
+      g.models.set(modelKey, { codigo, descricao, qty: 0, units: [] });
+    }
+    const m = g.models.get(modelKey);
+    if (descricao && (m.descricao === m.codigo || !m.descricao)) m.descricao = descricao;
+    m.qty += q;
+    g.qty += q;
+    for (let i = 0; i < q; i++) {
+      const unit = {
+        id: String(r.id || 'row') + ':' + nf + ':' + modelKey + ':' + i + ':' + g.units.length,
+        carga_id: r.id || '',
+        codigo,
+        descricao: m.descricao,
+        nf: nf === '(sem NF)' ? '' : nf,
+        tag: r.tag || '',
+      };
+      m.units.push(unit);
+      g.units.push(unit);
+    }
+  });
+  return [...byNf.values()]
+    .map(g => ({
+      nf: g.nf,
+      qty: g.qty,
+      units: g.units,
+      models: [...g.models.values()],
+    }))
+    .sort((a, b) => {
+      const ka = distNfSortKey(a.nf === '(sem NF)' ? '' : a.nf);
+      const kb = distNfSortKey(b.nf === '(sem NF)' ? '' : b.nf);
+      for (let i = 0; i < ka.length; i++) {
+        if (ka[i] < kb[i]) return -1;
+        if (ka[i] > kb[i]) return 1;
+      }
+      return 0;
+    });
+}
+
+/** Compat: agrega por material (stats / legado). */
 function distAggregateCargaRows(rows) {
   const map = new Map();
   (rows || []).forEach(r => {
@@ -20739,7 +21192,6 @@ function distAggregateCargaRows(rows) {
       map.set(key, { codigo, descricao, qty: 0, nfs: [], units: [] });
     }
     const g = map.get(key);
-    // Preferir descrição do catálogo / mais completa se o grupo ainda só tem o código
     if (descricao && (g.descricao === g.codigo || !g.descricao)) g.descricao = descricao;
     g.qty += q;
     if (r.nf && !g.nfs.includes(r.nf)) g.nfs.push(r.nf);
@@ -20768,24 +21220,30 @@ function distPoolRenderGroups(prefix, pool) {
   const left = groups.reduce((s, g) => s + g.units.filter(u => !used.has(u.id)).length, 0);
   const esc = (s) => String(s || '').replace(/</g, '&lt;');
   pool.innerHTML = `
-    <div class="dist-carga-banner">Carga Excel: <strong>${total}</strong> máquina(s) · ${left} por associar — indica o nº de contrato e clica em Associar.</div>
+    <div class="dist-carga-banner">Carga Excel: <strong>${total}</strong> máquina(s) · ${left} por associar — indica o nº de contrato e associa a <strong>NF</strong>.</div>
     <div class="dist-carga-list">
       ${groups.map((g, gi) => {
-        const remain = g.units.filter(u => !used.has(u.id)).length;
-        const title = g.codigo
-          ? (g.descricao && g.descricao !== g.codigo
-            ? `${esc(g.codigo)} — ${esc(g.descricao)}`
-            : esc(g.codigo))
-          : esc(g.descricao || 'Equipamento');
-        const nfs = g.nfs.length ? 'NF ' + g.nfs.map(esc).join(', ') : '—';
-        return `<div class="dist-carga-item${remain ? '' : ' exhausted'}" data-g="${gi}">
-          <span class="dist-carga-qty" title="Quantidade na carga">${remain}/${g.qty}</span>
-          <div class="dist-carga-info">
-            <div class="dist-carga-desc">${title}</div>
-            <div class="dist-carga-meta">${nfs}</div>
+        const remainUnits = g.units.filter(u => !used.has(u.id));
+        const remain = remainUnits.length;
+        const modelLines = (g.models || []).map(m => {
+          const mLeft = m.units.filter(u => !used.has(u.id)).length;
+          const title = m.codigo && m.descricao && m.descricao !== m.codigo
+            ? `${esc(m.codigo)} — ${esc(m.descricao)}`
+            : esc(m.descricao || m.codigo || 'Equipamento');
+          return `<div class="dist-nf-model-line"><span class="q">${mLeft}/${m.qty}</span>${title}</div>`;
+        }).join('');
+        const nfLabel = g.nf === '(sem NF)' ? 'Sem NF' : ('NF ' + esc(g.nf));
+        return `<div class="dist-nf-group${remain ? '' : ' exhausted'}" data-g="${gi}">
+          <div class="dist-nf-head">
+            <span class="dist-carga-qty" title="Máquinas nesta NF">${remain}/${g.qty}</span>
+            <div class="dist-carga-info">
+              <div class="dist-carga-desc">${nfLabel}</div>
+              <div class="dist-carga-meta">${(g.models || []).length} modelo(s)</div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" ${remain ? '' : 'disabled'}
+              onclick="distPoolPickNf('${prefix}', ${gi})">${remain ? 'Associar NF' : 'Esgotada'}</button>
           </div>
-          <button type="button" class="btn btn-secondary btn-sm" ${remain ? '' : 'disabled'}
-            onclick="distPoolPickGroup('${prefix}', ${gi})">${remain ? 'Associar' : 'Esgotado'}</button>
+          <div class="dist-nf-models">${modelLines}</div>
         </div>`;
       }).join('')}
     </div>`;
@@ -20842,11 +21300,14 @@ async function distRefreshPoolForCod(prefix, cod, opts) {
     if (fallback) fallback.style.display = '';
     return;
   }
-  pool._groups = distAggregateCargaRows(rows);
+  pool._groups = distAggregateCargaByNf(rows);
   pool._used = new Set();
   distPoolMarkUsedFromForm(prefix, pool);
   if (fallback) fallback.style.display = '';
   distPoolRenderGroups(prefix, pool);
+  const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
+  const list = document.getElementById(listId);
+  if (list) [...list.querySelectorAll('.dist-contrato-card')].forEach(distUpdateContratoSummary);
   // Prefixo debug muted acima da lista
   if (pool.firstChild) {
     const dbg = document.createElement('div');
@@ -20855,8 +21316,9 @@ async function distRefreshPoolForCod(prefix, cod, opts) {
   }
 }
 
-function distPoolAssociateUnit(prefix, unit) {
-  if (!unit) return;
+function distPoolAssociateUnit(prefix, unit, opts) {
+  if (!unit) return false;
+  opts = opts || {};
   const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
   const list = document.getElementById(listId);
   if (!list || !list.children.length) {
@@ -20873,24 +21335,42 @@ function distPoolAssociateUnit(prefix, unit) {
     nf: unit.nf,
     carga_id: unit.carga_id,
   });
-  toast('Máquina associada ao Contrato ' + (ctIdx + 1));
+  if (!opts.silent) toast('Máquina associada ao Contrato ' + (ctIdx + 1));
   return true;
 }
 
-function distPoolPickGroup(prefix, gi) {
+/** Associa todas as unidades restantes de uma NF ao contrato activo. */
+function distPoolPickNf(prefix, gi) {
   const poolId = prefix === 'e' ? 'e-dist-pool-chips' : 'f-dist-pool-chips';
   const pool = document.getElementById(poolId);
   const groups = pool && pool._groups;
   if (!groups || !groups[gi]) return;
   if (!pool._used) pool._used = new Set();
-  const unit = groups[gi].units.find(u => !pool._used.has(u.id));
-  if (!unit) {
-    toast('Todas as unidades deste equipamento já foram associadas.', 'error');
+  const pending = groups[gi].units.filter(u => !pool._used.has(u.id));
+  if (!pending.length) {
+    toast('Todas as máquinas desta NF já foram associadas.', 'error');
     return;
   }
-  if (!distPoolAssociateUnit(prefix, unit)) return;
-  pool._used.add(unit.id);
+  let ok = 0;
+  for (const unit of pending) {
+    if (!distPoolAssociateUnit(prefix, unit, { silent: true })) {
+      if (!ok) return;
+      break;
+    }
+    pool._used.add(unit.id);
+    ok++;
+  }
+  const nfLabel = groups[gi].nf === '(sem NF)' ? 'sem NF' : ('NF ' + groups[gi].nf);
+  toast(`${ok} máquina(s) de ${nfLabel} associadas ao contrato activo`);
   distPoolRenderGroups(prefix, pool);
+  const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
+  const list = document.getElementById(listId);
+  if (list) [...list.querySelectorAll('.dist-contrato-card')].forEach(distUpdateContratoSummary);
+}
+
+/** Compat: uma unidade do 1.º modelo ainda disponível na NF. */
+function distPoolPickGroup(prefix, gi) {
+  distPoolPickNf(prefix, gi);
 }
 
 /** Compat: chips antigos / chamadas externas. */
@@ -20899,12 +21379,11 @@ function distPoolPick(prefix, idx) {
   const pool = document.getElementById(poolId);
   const groups = pool && pool._groups;
   if (!groups || !groups.length) return;
-  // idx = índice linear nas unidades
   let flat = 0;
   for (let gi = 0; gi < groups.length; gi++) {
     for (let ui = 0; ui < groups[gi].units.length; ui++) {
       if (flat === idx) {
-        distPoolPickGroup(prefix, gi);
+        distPoolPickNf(prefix, gi);
         return;
       }
       flat++;
@@ -21032,7 +21511,8 @@ async function distCargaEquipConfirmMap() {
     const codKey = distNormCodCliente(cod_cliente);
     if (codKey) touchedCods.add(codKey);
     const codigo_sap = cell(map.codigo_sap);
-    if (!distIsEquipProfissionalCodigo(codigo_sap)) {
+    const excelDesc = cell(map.descricao);
+    if (!distIsEquipProfissionalRow(codigo_sap, excelDesc)) {
       skippedNotEquip++;
       return;
     }
@@ -21042,15 +21522,16 @@ async function distCargaEquipConfirmMap() {
       else data_nf = String(row[map.data_nf]);
     }
     const sapNorm = distNormCodigoSap(codigo_sap) || codigo_sap;
-    const excelDesc = cell(map.descricao);
-    const qty = map.qty >= 0 ? distSanitizeQty(cell(map.qty)) : 1;
+    const byDesc = !distIsEquipProfissionalCodigo(sapNorm) ? distMatchCatalogByDescricao(excelDesc) : null;
+    const qtyRaw = map.qty >= 0 && row[map.qty] != null && row[map.qty] !== '' ? row[map.qty] : 1;
+    const qty = distSanitizeQty(qtyRaw);
     parsed.push({
       id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('local-' + Date.now() + '-' + ri),
       nf: cell(map.nf),
       cod_cliente,
       nome_cliente: cell(map.nome_cliente),
       codigo_sap: sapNorm,
-      descricao: distResolveDescricao(sapNorm, excelDesc),
+      descricao: distResolveDescricao(sapNorm, excelDesc || (byDesc && byDesc.descricao) || ''),
       qty,
       data_nf,
       tag: cell(map.tag),
@@ -21123,8 +21604,8 @@ async function distCargaEquipConfirmMap() {
   });
   const where = remoteOk ? ' (Supabase + local)' : ' (só local — corre o SQL de migration)';
   toast(
-    `✅ ${parsed.length} equipamentos profissionais importados · ${skipped} linha(s) ignorada(s)` +
-      (skippedNotEquip ? ` (${skippedNotEquip} não-equip.)` : '') +
+    `✅ ${parsed.length} máquinas profissionais importadas · ${skipped} linha(s) ignorada(s)` +
+      (skippedNotEquip ? ` (${skippedNotEquip} café/filtro/outro)` : '') +
       ` · aba "${sheetName}"` + where
   );
 }
@@ -21147,16 +21628,19 @@ async function distCargaEquipRefreshStats() {
   let meta = null;
   try { meta = JSON.parse(localStorage.getItem(DIST_CARGA_META_KEY) || 'null'); } catch (e) {}
   const byCli = new Map();
+  let totalQty = 0;
   rows.forEach(r => {
     const k = distNormCodCliente(r.cod_cliente) || distNormNomeCliente(r.nome_cliente || r.cod_cliente) || '?';
     if (!byCli.has(k)) byCli.set(k, { cod: distNormCodCliente(r.cod_cliente) || r.cod_cliente, nome: r.nome_cliente || '', n: 0 });
-    byCli.get(k).n += distSanitizeQty(r.qty);
+    const q = distSanitizeQty(r.qty);
+    byCli.get(k).n += q;
+    totalQty += q;
   });
-  const txt = rows.length
-    ? `${rows.length} equipamentos profissionais · ${byCli.size} clientes (local ∪ Supabase)` +
+  const txt = totalQty
+    ? `<strong>${totalQty}</strong> máquina(s) · ${rows.length} linha(s) · ${byCli.size} clientes (local ∪ Supabase)` +
       (meta?.em ? ` · última carga local ${new Date(meta.em).toLocaleString('pt-BR')}` : '') +
-      ' · só códigos de <code>EQUIPAMENTOS_PROFISSIONAIS</code> · fonte: aba <code>base</code>'
-    : 'Nenhuma carga de equipamentos profissionais. Importa um Excel com a aba <strong>base</strong> (export SAP).';
+      ' · máquinas do catálogo (sem filtros) · fonte: aba <code>base</code>'
+    : 'Nenhuma carga de máquinas profissionais. Importa um Excel com a aba <strong>base</strong> (export SAP).';
   if (el) el.innerHTML = txt;
   if (listEl) {
     const arr = [...byCli.values()].sort((a, b) => String(a.nome || a.cod).localeCompare(String(b.nome || b.cod)));
