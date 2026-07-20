@@ -3504,7 +3504,9 @@ var _unused_placeholder = 1;
               <strong>Usar a aba <code>base</code></strong> (export SAP) — a app lê preferencialmente essa sheet (case-insensitive).<br>
               Se o ficheiro só tiver uma aba, usa essa; se existir <code>base</code>, usa sempre essa.<br>
               Headers SAP comuns (PT/BR) são reconhecidos automaticamente; podes mapear se os nomes diferirem.<br>
-              Campos: NF, código cliente, material/código SAP, descrição, qty, data, tag (opcional).
+              Campos: NF, código cliente, material/código SAP, descrição, qty, data, tag (opcional).<br>
+              <strong>Só importa equipamentos profissionais</strong> (catálogo <code>EQUIPAMENTOS_PROFISSIONAIS</code> — máquinas/moinhos/filtros completos). Café, acessórios e outros materiais são ignorados.<br>
+              Se a carga antiga estiver poluída: <strong>Limpar carga local</strong> e voltar a importar o Excel.
             </div>
           </div>
         </div>
@@ -8872,6 +8874,7 @@ const VISITAS_MOTIVOS = [
   'Cliente fechado / ausente',
   'Stock suficiente',
   'Crédito / contencioso',
+  'Comprou fora de rota',
   'Outro',
 ];
 const VISITAS_MOTIVO_OUTRO = 'Outro';
@@ -9069,7 +9072,8 @@ function visMotivoOptionsHtml(selectedKey) {
 }
 
 function visMotivoCellHtml(r, locked, codEsc) {
-  const motivoDis = locked || r.visitado !== true || r.comprou !== false;
+  // Motivo só depende de comprou=N (ex.: venda telefónica sem visita física)
+  const motivoDis = locked || r.comprou !== false;
   const parsed = visParseMotivo(r.motivo_nao_compra);
   const showOutro = parsed.key === VISITAS_MOTIVO_OUTRO;
   const outroVal = String(parsed.outro || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -9086,13 +9090,13 @@ function visMotivoCellHtml(r, locked, codEsc) {
 function visDotHtml(field, value, locked, cod) {
   const v = value === true ? 'sim' : value === false ? 'nao' : 'empty';
   const dis = locked ? 'disabled' : '';
-  const labelSim = field === 'visitado' ? 'S' : 'S';
+  const labelSim = 'S';
   const labelNao = 'N';
   return `<div style="display:inline-flex;gap:6px;justify-content:center;">
     <button type="button" class="vis-dot ${v === 'sim' ? 'vis-sim' : 'vis-empty'}" ${dis}
-      title="Sim" onclick="visSetCampo('${cod}','${field}',true)">${labelSim}</button>
+      title="${v === 'sim' ? 'Clique para desmarcar' : 'Sim'}" onclick="visSetCampo('${cod}','${field}',true)">${labelSim}</button>
     <button type="button" class="vis-dot ${v === 'nao' ? 'vis-nao' : 'vis-empty'}" ${dis}
-      title="Não" onclick="visSetCampo('${cod}','${field}',false)">${labelNao}</button>
+      title="${v === 'nao' ? 'Clique para desmarcar' : 'Não'}" onclick="visSetCampo('${cod}','${field}',false)">${labelNao}</button>
   </div>`;
 }
 
@@ -9339,7 +9343,7 @@ async function visCarregarRota() {
       <td style="font-family:var(--font-mono);font-size:12px;">${cod}</td>
       <td style="font-weight:500;">${(r.nome || '—').replace(/</g, '&lt;')}</td>
       <td style="text-align:center;">${visDotHtml('visitado', r.visitado, locked, codEsc)}</td>
-      <td style="text-align:center;">${visDotHtml('comprou', r.comprou, locked || r.visitado !== true, codEsc)}</td>
+      <td style="text-align:center;">${visDotHtml('comprou', r.comprou, locked, codEsc)}</td>
       <td>${visMotivoCellHtml(r, locked, codEsc)}</td>
     </tr>`;
   }).join('');
@@ -9354,15 +9358,11 @@ async function visSetCampo(cod, field, value) {
   );
   if (!row) return;
   row = { ...row };
-  row[field] = value;
+  // Clique no valor já activo → desmarcar (null); Comprou independente de Visitado
+  row[field] = row[field] === value ? null : value;
   row.atualizado_em = new Date().toISOString();
   row.atualizado_por = getUtilizadorAtual();
-  if (field === 'visitado' && value === false) {
-    row.comprou = null;
-    row.motivo_nao_compra = null;
-  }
-  if (field === 'comprou' && value === true) row.motivo_nao_compra = null;
-  if (field === 'comprou' && value === false && row.visitado !== true) row.visitado = true;
+  if (field === 'comprou' && row.comprou !== false) row.motivo_nao_compra = null;
   await visUpsertRow(row);
   visCarregarRota();
 }
@@ -19852,6 +19852,49 @@ const _distUi = {
 let _distCargaMapPending = null; // { headers, rows, fileName, sheetName }
 let _distCargaCache = null; // linhas em memória após load (local ∪ Supabase)
 let _distCargaLoaded = false; // true só depois de distCargaLoadAll (evita [] bloquear fetch)
+/** Cache Set de códigos SAP de EQUIPAMENTOS_PROFISSIONAIS (normalizados). */
+let _distEquipProfCodigoSet = null;
+
+/** Normaliza código SAP material para match com o catálogo profissional. */
+function distNormCodigoSap(cod) {
+  let s = String(cod ?? '').trim();
+  if (!s) return '';
+  // Excel científico / float
+  if (/^\d+(\.\d+)?e[+\-]?\d+$/i.test(s)) {
+    const n = Number(s);
+    if (Number.isFinite(n)) s = String(Math.round(n));
+  }
+  if (typeof formatSapCod === 'function') s = formatSapCod(s);
+  // "4000925.0" ou espaços
+  s = String(s).trim();
+  if (/^\d+\.0+$/.test(s)) s = s.replace(/\.0+$/, '');
+  // Só dígitos úteis (códigos do catálogo são numéricos)
+  const digits = s.replace(/\D/g, '');
+  if (!digits) return '';
+  return digits.replace(/^0+/, '') || '';
+}
+
+/** Códigos SAP conhecidos de equipamentos profissionais (máquinas/moinhos/filtros). */
+function distEquipProfCodigoSet() {
+  if (_distEquipProfCodigoSet) return _distEquipProfCodigoSet;
+  const list = (typeof EQUIPAMENTOS_PROFISSIONAIS !== 'undefined' && Array.isArray(EQUIPAMENTOS_PROFISSIONAIS))
+    ? EQUIPAMENTOS_PROFISSIONAIS
+    : [];
+  _distEquipProfCodigoSet = new Set(
+    list.map(e => distNormCodigoSap(e && e.codigo)).filter(Boolean)
+  );
+  return _distEquipProfCodigoSet;
+}
+
+function distIsEquipProfissionalCodigo(cod) {
+  const n = distNormCodigoSap(cod);
+  return !!(n && distEquipProfCodigoSet().has(n));
+}
+
+/** UI/pool: só linhas cujo material está no catálogo profissional (não apaga Supabase). */
+function distCargaFilterEquipProf(rows) {
+  return (rows || []).filter(r => distIsEquipProfissionalCodigo(r && r.codigo_sap));
+}
 
 function isCanalDistribuidores() {
   const id = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : _canalActivo) || null;
@@ -20417,13 +20460,14 @@ async function distCargaLoadAll(force) {
   } catch (e) { /* fallback local */ }
   _distCargaCache = distCargaMergeRows(local, remote).map(distRepairCargaRow);
   _distCargaLoaded = true;
-  return _distCargaCache;
+  // Pool/stats: só equipamentos profissionais (dados antigos poluídos ficam no storage)
+  return distCargaFilterEquipProf(_distCargaCache);
 }
 
 function distCargaAllRows() {
   const local = distCargaGetLocal();
   const cached = Array.isArray(_distCargaCache) ? _distCargaCache : [];
-  return distCargaMergeRows(local, cached);
+  return distCargaFilterEquipProf(distCargaMergeRows(local, cached));
 }
 
 /**
