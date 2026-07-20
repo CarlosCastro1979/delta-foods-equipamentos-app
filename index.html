@@ -3532,7 +3532,7 @@ var _unused_placeholder = 1;
               <strong>Usar a aba <code>base</code></strong> (export SAP) — a app lê preferencialmente essa sheet (case-insensitive).<br>
               Se o ficheiro só tiver uma aba, usa essa; se existir <code>base</code>, usa sempre essa.<br>
               Headers SAP comuns (PT/BR) são reconhecidos automaticamente; podes mapear se os nomes diferirem.<br>
-              Campos: <strong>NF-e</strong> (Nº da nota fiscal eletrônica — não o nº do documento SAP), código cliente, material/código SAP, descrição, qty, data, <strong>valor</strong> (opcional), tag (opcional).<br>
+              Campos: <strong>NF-e = coluna A</strong> (Nº da nota fiscal eletrônica), código cliente, material/código SAP, descrição, qty, data, <strong>valor</strong> (opcional), tag (opcional).<br>
               <strong>Só importa máquinas profissionais</strong> (catálogo <code>EQUIPAMENTOS_PROFISSIONAIS</code> — máquinas/moinhos; match por código SAP ou descrição). Café, acessórios, filtros (BESTMAX, etc.) e outros materiais são ignorados.<br>
               Qty = unidades de equipamento (máx. 20/linha; Excel <code>10,000</code> = 10; se a coluna for peso/valor ou estiver vazia, conta 1). Descrição vem do catálogo quando o Excel não traz texto.<br>
               No registo Dist, a carga agrupa-se por <strong>NF</strong> (data completa + qty + valor) — associa a NF ao contrato.<br>
@@ -21873,10 +21873,9 @@ async function distCargaEquipConfirmMap() {
     toast('Mapeia pelo menos a coluna Código cliente.', 'error');
     return;
   }
-  if (map.nf !== 0) {
-    // Forçar coluna A mesmo se o utilizador mudou o dropdown
-    map.nf = 0;
-  }
+  const { rows, fileName, sheetName, headers } = _distCargaMapPending;
+  // Regra fixa: NF-e = sempre coluna A
+  map.nf = 0;
   if (!headers || !headers.length) {
     toast('Ficheiro sem colunas.', 'error');
     return;
