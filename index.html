@@ -3506,6 +3506,7 @@ var _unused_placeholder = 1;
               Headers SAP comuns (PT/BR) são reconhecidos automaticamente; podes mapear se os nomes diferirem.<br>
               Campos: NF, código cliente, material/código SAP, descrição, qty, data, tag (opcional).<br>
               <strong>Só importa equipamentos profissionais</strong> (catálogo <code>EQUIPAMENTOS_PROFISSIONAIS</code> — máquinas/moinhos/filtros completos). Café, acessórios e outros materiais são ignorados.<br>
+              Qty = unidades de equipamento (máx. 20/linha; se a coluna for peso/valor ou estiver vazia, conta 1). Descrição vem do catálogo quando o Excel não traz texto.<br>
               Se a carga antiga estiver poluída: <strong>Limpar carga local</strong> e voltar a importar o Excel.
             </div>
           </div>
@@ -6958,7 +6959,7 @@ function distAssocQtyFromRegisto(r) {
 
 function distCargaQtyForCliente(cod, opts) {
   const rows = typeof distCargaByCliente === 'function' ? distCargaByCliente(cod, opts) : [];
-  return rows.reduce((s, r) => s + Math.max(1, parseInt(r.qty, 10) || 1), 0);
+  return rows.reduce((s, r) => s + distSanitizeQty(r && r.qty), 0);
 }
 
 /**
@@ -20300,13 +20301,65 @@ const DIST_COL_ALIASES = {
     'descricao', 'descrição', 'desc', 'texto breve material', 'texto breve',
     'denominacao material', 'descricao material', 'descrição material',
   ],
-  qty: ['qty', 'qtd', 'quantidade', 'quantity', 'qtde'],
+  qty: [
+    'qty', 'qtd', 'quantidade', 'quantity', 'qtde',
+    'qtd faturada', 'quantidade faturada', 'billing quantity', 'qtde faturada',
+    'quantidade um', 'qtd um',
+  ],
   data_nf: [
     'data nf', 'data', 'data saida', 'data saída', 'data documento',
     'data de faturacao', 'data de faturação', 'billing date', 'data fatura',
   ],
   tag: ['tag', 'numero tag', 'nº tag', 'n serie', 'nº série', 'numero serie', 'serial', 'serial number'],
 };
+
+/** Máx. unidades por linha NF — acima disto é quase de certeza coluna errada (peso/valor/item). */
+const DIST_QTY_MAX_PER_LINE = 20;
+
+/**
+ * Quantidade de equipamento por linha. Default 1.
+ * Rejeita valores absurdos (peso, valor líquido, nº de item alto, decimais de kg).
+ */
+function distSanitizeQty(raw) {
+  if (raw == null || raw === '') return 1;
+  let s = String(raw).trim().replace(/\s/g, '');
+  if (!s) return 1;
+  // "1.820,50" (milhar BR) → inválido para qty de máquina → 1
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) return 1;
+  s = s.replace(',', '.');
+  const n = Number(s);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  if (n > DIST_QTY_MAX_PER_LINE) return 1;
+  if (Math.abs(n - Math.round(n)) > 0.01) return 1;
+  return Math.max(1, Math.round(n));
+}
+
+/** Descrição do catálogo EQUIPAMENTOS_PROFISSIONAIS pelo código SAP (1.ª ocorrência). */
+function distCatalogDescricao(codigo) {
+  const n = distNormCodigoSap(codigo);
+  if (!n) return '';
+  const list = (typeof EQUIPAMENTOS_PROFISSIONAIS !== 'undefined' && Array.isArray(EQUIPAMENTOS_PROFISSIONAIS))
+    ? EQUIPAMENTOS_PROFISSIONAIS
+    : [];
+  const hit = list.find(e => distNormCodigoSap(e && e.codigo) === n);
+  return hit ? String(hit.descricao || '').trim() : '';
+}
+
+/**
+ * Descrição para pool/UI: catálogo se Excel vazio ou só repetir o código;
+ * senão Excel; fallback catálogo / código.
+ */
+function distResolveDescricao(codigo, excelDesc) {
+  const cod = distNormCodigoSap(codigo) || String(codigo || '').trim();
+  const excel = String(excelDesc || '').trim();
+  const cat = distCatalogDescricao(cod);
+  const excelIsCode = !excel
+    || (cod && distNormCodigoSap(excel) === cod)
+    || (cod && excel === cod)
+    || (cod && excel.replace(/\D/g, '') === cod);
+  if (excelIsCode) return cat || excel || cod || 'Equipamento';
+  return excel || cat || cod || 'Equipamento';
+}
 
 function distAutoMapHeaders(headers) {
   const norms = headers.map(distNormHeader);
@@ -20318,6 +20371,8 @@ function distAutoMapHeaders(headers) {
     // Evitar: alias "cliente" / "cod" a apanhar "nome cliente"
     if (field === 'cod_cliente' && /\b(nome|razao|denomin|name)\b/.test(h)) return 0;
     if (field === 'nome_cliente' && /\b(cod|codigo|emissor|sold)\b/.test(h) && !/\bnome\b/.test(h)) return 0;
+    // Qty: nunca mapear peso / valor / preço / item / volume
+    if (field === 'qty' && /\b(peso|weight|valor|preco|price|net|liquido|líquido|item|volume|kg|ton|montante|amount)\b/.test(h)) return 0;
     if (h.startsWith(alias + ' ') || h.endsWith(' ' + alias)) return 80;
     if (h.includes(alias) && alias.length >= 4) return 60;
     if (alias.includes(h) && h.length >= 4) return 40;
@@ -20356,19 +20411,22 @@ function distPickSheetName(wb) {
   };
 }
 
-/** Corrige códigos científicos / "7" truncados quando o raw ainda tem E+… */
+/** Corrige códigos científicos, qty absurda e descrição em falta (catálogo). */
 function distRepairCargaRow(r) {
   if (!r) return r;
+  let out = r;
   const raw = String(r.cod_cliente ?? '').trim();
-  if (!raw) return r;
-  if (/e[+\-]?\d+/i.test(raw) || /^\d+\.\d+$/.test(raw)) {
+  if (raw && (/e[+\-]?\d+/i.test(raw) || /^\d+\.\d+$/.test(raw))) {
     const n = distNormCodCliente(raw);
-    if (n && n !== distNormCodCliente(String(r.cod_cliente))) {
-      return { ...r, cod_cliente: n };
-    }
-    if (n) return { ...r, cod_cliente: n };
+    if (n) out = { ...out, cod_cliente: n };
   }
-  return r;
+  const qty = distSanitizeQty(out.qty);
+  const codigo = distNormCodigoSap(out.codigo_sap) || String(out.codigo_sap || '').trim();
+  const descricao = distResolveDescricao(codigo, out.descricao);
+  if (qty !== out.qty || descricao !== out.descricao || (codigo && codigo !== out.codigo_sap)) {
+    out = { ...out, qty, descricao, codigo_sap: codigo || out.codigo_sap };
+  }
+  return out;
 }
 
 function distCargaGetLocal() {
@@ -20424,23 +20482,31 @@ function distNormCodCliente(cod) {
   return (typeof normCod === 'function' ? normCod(s) : s.replace(/^0+/, '')) || '';
 }
 
-/** Une local + remoto; local primeiro (import recente neste browser). */
+/** Chave de negócio: evita duplicar a mesma linha NF quando local e Supabase têm ids diferentes. */
+function distCargaRowLogicalKey(r) {
+  const cod = distNormCodCliente(r && r.cod_cliente);
+  const sap = distNormCodigoSap(r && r.codigo_sap) || String((r && r.codigo_sap) || '').trim();
+  return [String(r && r.nf || '').trim(), cod, sap, String(r && r.tag || '').trim()].join('|');
+}
+
+/** Une local + remoto; dedupe por NF+cliente+material+tag (não por id UUID). Preferir local / mais recente. */
 function distCargaMergeRows(local, remote) {
-  const keyOf = (r) => {
-    if (r && r.id && !String(r.id).startsWith('local-')) return 'id:' + r.id;
-    const cod = distNormCodCliente(r && r.cod_cliente);
-    return 'k:' + [r && r.nf || '', cod, r && r.codigo_sap || '', r && r.descricao || '', r && r.qty || ''].join('|');
+  const byKey = new Map();
+  const prefer = (a, b) => {
+    const ta = Date.parse(a && a.importado_em) || 0;
+    const tb = Date.parse(b && b.importado_em) || 0;
+    if (ta !== tb) return ta >= tb ? a : b;
+    // Empate: manter o que já está (ordem de inserção = local primeiro)
+    return a;
   };
-  const out = [];
-  const seen = new Set();
   [...(local || []), ...(remote || [])].forEach(r => {
     if (!r) return;
-    const k = keyOf(r);
-    if (seen.has(k)) return;
-    seen.add(k);
-    out.push(r);
+    const k = distCargaRowLogicalKey(r);
+    if (!k || k === '|||') return;
+    if (!byKey.has(k)) byKey.set(k, r);
+    else byKey.set(k, prefer(byKey.get(k), r));
   });
-  return out;
+  return [...byKey.values()];
 }
 
 async function distCargaLoadAll(force) {
@@ -20499,18 +20565,20 @@ function distCargaByCliente(cod, opts) {
   return rows;
 }
 
-/** Agrega linhas da carga por material+descrição, com unidades expandíveis. */
+/** Agrega linhas da carga por material, com unidades expandíveis. */
 function distAggregateCargaRows(rows) {
   const map = new Map();
   (rows || []).forEach(r => {
-    const codigo = String(r.codigo_sap || '').trim();
-    const descricao = String(r.descricao || codigo || 'Equipamento').trim();
-    const key = codigo + '||' + descricao;
-    const q = Math.max(1, parseInt(r.qty, 10) || 1);
+    const codigo = distNormCodigoSap(r.codigo_sap) || String(r.codigo_sap || '').trim();
+    const descricao = distResolveDescricao(codigo, r.descricao);
+    const key = codigo || ('desc:' + descricao);
+    const q = distSanitizeQty(r.qty);
     if (!map.has(key)) {
       map.set(key, { codigo, descricao, qty: 0, nfs: [], units: [] });
     }
     const g = map.get(key);
+    // Preferir descrição do catálogo / mais completa se o grupo ainda só tem o código
+    if (descricao && (g.descricao === g.codigo || !g.descricao)) g.descricao = descricao;
     g.qty += q;
     if (r.nf && !g.nfs.includes(r.nf)) g.nfs.push(r.nf);
     for (let i = 0; i < q; i++) {
@@ -20518,7 +20586,7 @@ function distAggregateCargaRows(rows) {
         id: String(r.id || 'row') + ':' + i + ':' + g.units.length,
         carga_id: r.id || '',
         codigo,
-        descricao,
+        descricao: g.descricao,
         nf: r.nf || '',
         tag: r.tag || '',
       });
@@ -20536,18 +20604,23 @@ function distPoolRenderGroups(prefix, pool) {
   }
   const total = groups.reduce((s, g) => s + g.qty, 0);
   const left = groups.reduce((s, g) => s + g.units.filter(u => !used.has(u.id)).length, 0);
+  const esc = (s) => String(s || '').replace(/</g, '&lt;');
   pool.innerHTML = `
     <div class="dist-carga-banner">Carga Excel: <strong>${total}</strong> máquina(s) · ${left} por associar — indica o nº de contrato e clica em Associar.</div>
     <div class="dist-carga-list">
       ${groups.map((g, gi) => {
         const remain = g.units.filter(u => !used.has(u.id)).length;
-        const nfs = g.nfs.length ? ' · NF ' + g.nfs.join(', ') : '';
-        const cod = g.codigo ? g.codigo + ' · ' : '';
+        const title = g.codigo
+          ? (g.descricao && g.descricao !== g.codigo
+            ? `${esc(g.codigo)} — ${esc(g.descricao)}`
+            : esc(g.codigo))
+          : esc(g.descricao || 'Equipamento');
+        const nfs = g.nfs.length ? 'NF ' + g.nfs.map(esc).join(', ') : '—';
         return `<div class="dist-carga-item${remain ? '' : ' exhausted'}" data-g="${gi}">
           <span class="dist-carga-qty" title="Quantidade na carga">${remain}/${g.qty}</span>
           <div class="dist-carga-info">
-            <div class="dist-carga-desc">${g.descricao.replace(/</g, '&lt;')}</div>
-            <div class="dist-carga-meta">${cod}${nfs || '—'}</div>
+            <div class="dist-carga-desc">${title}</div>
+            <div class="dist-carga-meta">${nfs}</div>
           </div>
           <button type="button" class="btn btn-secondary btn-sm" ${remain ? '' : 'disabled'}
             onclick="distPoolPickGroup('${prefix}', ${gi})">${remain ? 'Associar' : 'Esgotado'}</button>
@@ -20806,15 +20879,16 @@ async function distCargaEquipConfirmMap() {
       if (typeof parseExcelDateFlexible === 'function') data_nf = parseExcelDateFlexible(row[map.data_nf]);
       else data_nf = String(row[map.data_nf]);
     }
-    const qtyRaw = cell(map.qty);
-    const qty = qtyRaw ? (parseFloat(String(qtyRaw).replace(',', '.')) || 1) : 1;
+    const sapNorm = distNormCodigoSap(codigo_sap) || codigo_sap;
+    const excelDesc = cell(map.descricao);
+    const qty = map.qty >= 0 ? distSanitizeQty(cell(map.qty)) : 1;
     parsed.push({
       id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('local-' + Date.now() + '-' + ri),
       nf: cell(map.nf),
       cod_cliente,
       nome_cliente: cell(map.nome_cliente),
-      codigo_sap: distNormCodigoSap(codigo_sap) || codigo_sap,
-      descricao: cell(map.descricao) || cell(map.codigo_sap),
+      codigo_sap: sapNorm,
+      descricao: distResolveDescricao(sapNorm, excelDesc),
       qty,
       data_nf,
       tag: cell(map.tag),
@@ -20843,9 +20917,23 @@ async function distCargaEquipConfirmMap() {
   const merged = kept.concat(parsed);
   distCargaSetLocal(merged);
 
-  // Tentar Supabase (upsert-ish: insert; se falhar, fica só local)
+  // Tentar Supabase: apagar carga antiga destes clientes (evita 2×/N× ao reimportar) + insert
   let remoteOk = false;
   try {
+    const codList = [...touchedCods].filter(Boolean);
+    // Também variantes com zeros à esquerda que possam existir na cloud
+    const codVariants = new Set(codList);
+    codList.forEach(c => {
+      if (/^\d+$/.test(c) && c.length < 10) codVariants.add(c.padStart(10, '0'));
+    });
+    for (const c of codVariants) {
+      try {
+        await fetch(
+          SUPA_DIST_EQUIP_CARGA + '?cod_cliente=eq.' + encodeURIComponent(c),
+          { method: 'DELETE', headers: { ...HEADERS, Prefer: 'return=minimal' } }
+        );
+      } catch (_) { /* continua — insert ainda ajuda via merge lógico */ }
+    }
     const res = await fetch(SUPA_DIST_EQUIP_CARGA, {
       method: 'POST',
       headers: { ...HEADERS, Prefer: 'return=minimal' },
@@ -20900,7 +20988,7 @@ async function distCargaEquipRefreshStats() {
   rows.forEach(r => {
     const k = distNormCodCliente(r.cod_cliente) || distNormNomeCliente(r.nome_cliente || r.cod_cliente) || '?';
     if (!byCli.has(k)) byCli.set(k, { cod: distNormCodCliente(r.cod_cliente) || r.cod_cliente, nome: r.nome_cliente || '', n: 0 });
-    byCli.get(k).n += Math.max(1, parseInt(r.qty, 10) || 1);
+    byCli.get(k).n += distSanitizeQty(r.qty);
   });
   const txt = rows.length
     ? `${rows.length} equipamentos profissionais · ${byCli.size} clientes (local ∪ Supabase)` +
