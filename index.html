@@ -21014,20 +21014,77 @@ async function distLoadEditFromRegisto(r) {
 function distNormHeader(h) {
   return String(h || '').toLowerCase().normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    // Excel wrap: "Nº da nota\nfiscal\neletrônica" → uma só frase
+    .replace(/[\r\n\t]+/g, ' ')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+}
+
+/** Junta cabeçalhos multi-linha (Excel com wrap / 2–3 linhas de título). */
+function distExtractHeadersAndRows(aoa) {
+  const rowsIn = Array.isArray(aoa) ? aoa : [];
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(rowsIn.length, 30); i++) {
+    const nonEmpty = (rowsIn[i] || []).filter(c => String(c).trim()).length;
+    if (nonEmpty >= 2) { headerIdx = i; break; }
+  }
+  const base = (rowsIn[headerIdx] || []).map(c => String(c ?? ''));
+  const width = Math.max(base.length, ...[1, 2].map(o => (rowsIn[headerIdx + o] || []).length), 0);
+  const headers = [];
+  for (let c = 0; c < width; c++) {
+    const parts = [];
+    for (let r = 0; r < 3; r++) {
+      const cell = String((rowsIn[headerIdx + r] || [])[c] ?? '').trim();
+      if (!cell) continue;
+      // Só fundir linhas seguintes se parecer continuação de título (curta, sem número puro)
+      if (r === 0) parts.push(cell);
+      else if (cell.length <= 40 && !/^\d+([.,]\d+)?$/.test(cell) && !parts.join(' ').includes(cell)) {
+        parts.push(cell);
+      }
+    }
+    headers.push(parts.join(' ').replace(/\s+/g, ' ').trim());
+  }
+  // Quantas linhas de header foram consumidas (1–3)
+  let headerRows = 1;
+  for (let r = 1; r < 3; r++) {
+    const row = rowsIn[headerIdx + r] || [];
+    const texts = row.map(c => String(c ?? '').trim()).filter(Boolean);
+    if (!texts.length) break;
+    const looksLikeData = texts.filter(t => /^\d+([.,]\d+)?$/.test(t) || t.length > 40).length >= Math.max(1, Math.floor(texts.length / 2));
+    if (looksLikeData) break;
+    // Se alguma coluna fundiu texto desta linha, conta como header
+    const used = headers.some((h, ci) => {
+      const cell = String(row[ci] ?? '').trim();
+      return cell && h.includes(cell);
+    });
+    if (!used) break;
+    headerRows = r + 1;
+  }
+  const dataRows = rowsIn.slice(headerIdx + headerRows);
+  return { headers, rows: dataRows, headerIdx, headerRows };
 }
 
 const DIST_COL_ALIASES = {
   // NF = Nº da nota fiscal eletrônica (NFe) — NÃO o nº do documento / doc. faturamento SAP
   nf: [
-    'n da nota fiscal eletronica', 'nº da nota fiscal eletrônica',
-    'numero da nota fiscal eletronica', 'número da nota fiscal eletrônica',
-    'nota fiscal eletronica', 'nota fiscal eletrônica',
-    'n nota fiscal eletronica', 'nº nota fiscal eletrônica',
-    'num nota fiscal eletronica', 'nfe', 'nf e', 'nf-e',
-    'numero nfe', 'nº nfe', 'num nfe', 'chave nfe',
-    'nota fiscal', 'numero nf', 'número nf', 'nº nf', 'num nf', 'n nf', 'nf',
+    'n da nota fiscal eletronica',
+    'numero da nota fiscal eletronica',
+    'nota fiscal eletronica',
+    'n nota fiscal eletronica',
+    'num nota fiscal eletronica',
+    'nr da nota fiscal eletronica',
+    'nr nota fiscal eletronica',
+    'nfe', 'nf e',
+    'numero nfe', 'num nfe', 'nr nfe',
+    // fallback fraco — só se não houver coluna eletrônica
+    'nota fiscal', 'numero nf', 'num nf', 'n nf', 'nf',
+  ],
+  // Nº documento SAP (billing) — NÃO usar como NF; só para diagnóstico
+  doc_faturamento: [
+    'doc faturamento', 'documento faturamento', 'doc fatura',
+    'billing document', 'billing doc',
+    'n documento', 'numero documento', 'num documento', 'nr documento',
+    'n do documento', 'numero do documento',
   ],
   cod_cliente: [
     'cod cliente', 'codigo cliente', 'cód cliente', 'código cliente',
@@ -21179,24 +21236,34 @@ function distAutoMapHeaders(headers) {
   const norms = headers.map(distNormHeader);
   const map = {};
   const used = new Set();
-  const scoreHeader = (field, h, alias) => {
+  const scoreHeader = (field, h, aliasRaw) => {
+    const alias = distNormHeader(aliasRaw);
     if (!h || !alias) return 0;
-    if (h === alias) return 100;
     // Evitar: alias "cliente" / "cod" a apanhar "nome cliente"
     if (field === 'cod_cliente' && /\b(nome|razao|denomin|name)\b/.test(h)) return 0;
     if (field === 'nome_cliente' && /\b(cod|codigo|emissor|sold)\b/.test(h) && !/\bnome\b/.test(h)) return 0;
-    // NF: só nota fiscal / NFe — nunca nº do documento / doc. faturamento / billing document
+    // NF: só nota fiscal eletrônica / NFe — nunca nº do documento / doc. faturamento
     if (field === 'nf') {
-      if (/\b(documento|doc faturamento|doc fatura|billing document|billing doc|n documento|numero documento|num documento)\b/.test(h)
-          && !/\b(nota fiscal|nfe|nf e)\b/.test(h)) return 0;
-      if (/\b(eletronica|eletrônica|nfe)\b/.test(h) && /\b(nota|nf)\b/.test(h)) return 120;
-      if (/\bnota fiscal\b/.test(h)) return 95;
+      if (/\b(documento|doc faturamento|doc fatura|billing document|billing doc)\b/.test(h)
+          && !/\beletronica\b/.test(h) && !/\bnfe\b/.test(h)) return 0;
+      // Exigir "eletrônica" / nfe para score alto (o que o utilizador pediu)
+      if (/\beletronica\b/.test(h) && /\b(nota|nf)\b/.test(h)) return 200;
+      if (/\bnfe\b/.test(h) || h === 'nf e' || h.includes('nf e ')) return 180;
+      // "nota fiscal" sem eletrônica = fraco (muitas vezes é o doc SAP)
+      if (/\bnota fiscal\b/.test(h) && !/\beletronica\b/.test(h)) return 40;
+      if (h === 'nf') return 30;
+      // sem eletrônica/nfe: não aceitar match genérico de alias
+      return 0;
     }
+    if (field === 'doc_faturamento') {
+      if (/\beletronica\b/.test(h) || /\bnfe\b/.test(h)) return 0;
+    }
+    if (h === alias) return 100;
     // Qty: nunca mapear peso / valor / preço / item / volume
-    if (field === 'qty' && /\b(peso|weight|valor|preco|price|net|liquido|líquido|item|volume|kg|ton|montante|amount)\b/.test(h)) return 0;
+    if (field === 'qty' && /\b(peso|weight|valor|preco|price|net|liquido|item|volume|kg|ton|montante|amount)\b/.test(h)) return 0;
     // Valor linha: não confundir com qty / data / unitário
-    if (field === 'valor' && /\b(qtd|qty|quantidade|data|unitario|unitário|unit)\b/.test(h) && !/\b(valor|montante|amount|liquido|líquido)\b/.test(h)) return 0;
-    if (field === 'valor_unit' && /\b(qtd|qty|quantidade|data|total|montante|liquido|líquido)\b/.test(h) && !/\b(unit|unitario|unitário|preco|preço|price)\b/.test(h)) return 0;
+    if (field === 'valor' && /\b(qtd|qty|quantidade|data|unitario|unit)\b/.test(h) && !/\b(valor|montante|amount|liquido)\b/.test(h)) return 0;
+    if (field === 'valor_unit' && /\b(qtd|qty|quantidade|data|total|montante|liquido)\b/.test(h) && !/\b(unit|unitario|preco|price)\b/.test(h)) return 0;
     if (h.startsWith(alias + ' ') || h.endsWith(' ' + alias)) return 80;
     if (h.includes(alias) && alias.length >= 4) return 60;
     if (alias.includes(h) && h.length >= 4) return 40;
@@ -21705,8 +21772,9 @@ async function distCargaEquipFile(event) {
       sheetName = (wb.SheetNames && wb.SheetNames[0]) || 'Sheet1';
       const ws = wb.Sheets[sheetName];
       const aoa = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      headers = (aoa[0] || []).map(String);
-      rows = aoa.slice(1);
+      const extracted = distExtractHeadersAndRows(aoa);
+      headers = extracted.headers;
+      rows = extracted.rows;
     } else {
       const wb = window.XLSX.read(buf, { type: 'array' });
       const pick = distPickSheetName(wb);
@@ -21714,15 +21782,14 @@ async function distCargaEquipFile(event) {
       sheetWarn = pick.warn;
       if (!sheetName) throw new Error('Nenhuma folha no Excel.');
       const ws = wb.Sheets[sheetName];
-      const aoa = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      // Saltar linhas vazias no topo até encontrar header com pelo menos 2 células
-      let headerIdx = 0;
-      for (let i = 0; i < Math.min(aoa.length, 30); i++) {
-        const nonEmpty = (aoa[i] || []).filter(c => String(c).trim()).length;
-        if (nonEmpty >= 2) { headerIdx = i; break; }
+      const aoa = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+      const extracted = distExtractHeadersAndRows(aoa);
+      headers = extracted.headers;
+      rows = extracted.rows;
+      if (extracted.headerRows > 1) {
+        sheetWarn = (sheetWarn ? sheetWarn + ' · ' : '')
+          + `Cabeçalho em ${extracted.headerRows} linhas (fundido — ex. "Nº da nota fiscal eletrônica").`;
       }
-      headers = (aoa[headerIdx] || []).map(String);
-      rows = aoa.slice(headerIdx + 1);
     }
 
     _distCargaMapPending = { headers, rows, fileName: file.name, sheetName, sheetWarn };
@@ -21740,11 +21807,12 @@ function distCargaEquipShowMapUI() {
   const box = document.getElementById('dados-dist-equip-map');
   const grid = document.getElementById('dados-dist-equip-map-grid');
   if (!box || !grid || !_distCargaMapPending) return;
-  const { headers } = _distCargaMapPending;
+  const { headers, rows } = _distCargaMapPending;
   const auto = distAutoMapHeaders(headers);
   _distCargaMapPending.map = auto;
   const fields = [
     ['nf', 'NF-e (Nº da nota fiscal eletrônica) *'],
+    ['doc_faturamento', 'Nº documento SAP (não usar como NF)'],
     ['cod_cliente', 'Código cliente *'],
     ['nome_cliente', 'Nome cliente'],
     ['codigo_sap', 'Material / código SAP'],
@@ -21755,11 +21823,42 @@ function distCargaEquipShowMapUI() {
     ['valor_unit', 'Valor unitário (opc.)'],
     ['tag', 'Tag / série (opc.)'],
   ];
-  grid.innerHTML = fields.map(([key, label]) => {
+  const sampleVals = (colIdx, n = 3) => {
+    if (colIdx < 0) return '';
+    const vals = [];
+    for (const row of (rows || [])) {
+      if (!row) continue;
+      const v = row[colIdx];
+      if (v == null || String(v).trim() === '') continue;
+      vals.push(String(v).trim());
+      if (vals.length >= n) break;
+    }
+    return vals.length ? vals.join(' · ') : '(sem valores)';
+  };
+  const nfIdx = auto.nf;
+  const nfHdr = nfIdx >= 0 ? headers[nfIdx] : '';
+  const nfNorm = distNormHeader(nfHdr);
+  const nfOk = nfIdx >= 0 && (/\beletronica\b/.test(nfNorm) || /\bnfe\b/.test(nfNorm));
+  const esc = (s) => String(s || '').replace(/</g, '&lt;');
+  const warnHtml = nfIdx < 0
+    ? `<div style="grid-column:1/-1;padding:8px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12px;color:#991b1b;">
+        ⚠ Coluna <strong>Nº da nota fiscal eletrônica</strong> não encontrada automaticamente — escolhe-a no dropdown NF-e.
+      </div>`
+    : (!nfOk
+      ? `<div style="grid-column:1/-1;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;">
+          ⚠ NF mapeada para «${esc(nfHdr)}» — confirma que é a <strong>nota fiscal eletrônica</strong>, não o nº do documento.
+          Exemplos: <code>${esc(sampleVals(nfIdx))}</code>
+        </div>`
+      : `<div style="grid-column:1/-1;padding:8px 10px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;font-size:12px;color:#065f46;">
+          ✓ NF-e: «${esc(nfHdr)}» · exemplos: <code>${esc(sampleVals(nfIdx))}</code>
+        </div>`);
+  grid.innerHTML = warnHtml + fields.map(([key, label]) => {
     const opts = ['<option value="-1">— ignorar —</option>']
-      .concat(headers.map((h, i) =>
-        `<option value="${i}" ${auto[key] === i ? 'selected' : ''}>${h || '(vazio ' + i + ')'}</option>`
-      ));
+      .concat(headers.map((h, i) => {
+        const preview = sampleVals(i, 1);
+        const labelOpt = (h || '(vazio ' + i + ')') + (preview ? ' — ex: ' + preview : '');
+        return `<option value="${i}" ${auto[key] === i ? 'selected' : ''}>${esc(labelOpt)}</option>`;
+      }));
     return `<label>${label}</label><select class="form-input" data-dist-map="${key}" style="padding:6px 8px;font-size:13px">${opts.join('')}</select>`;
   }).join('');
   box.style.display = 'block';
@@ -21784,7 +21883,21 @@ async function distCargaEquipConfirmMap() {
     toast('Mapeia pelo menos a coluna Código cliente.', 'error');
     return;
   }
-  const { rows, fileName, sheetName } = _distCargaMapPending;
+  if (map.nf < 0) {
+    toast('Mapeia a coluna NF-e (Nº da nota fiscal eletrônica).', 'error');
+    return;
+  }
+  const { rows, fileName, sheetName, headers } = _distCargaMapPending;
+  const nfHeaderName = (headers && map.nf >= 0) ? String(headers[map.nf] || '') : '';
+  const nfHdrNorm = distNormHeader(nfHeaderName);
+  if (!/\beletronica\b/.test(nfHdrNorm) && !/\bnfe\b/.test(nfHdrNorm)) {
+    const ok = confirm(
+      'A coluna NF escolhida não parece «Nº da nota fiscal eletrônica».\n\n'
+      + 'Coluna: ' + (nfHeaderName || '(vazia)') + '\n\n'
+      + 'Continuar mesmo assim? (Se for o nº do documento SAP, cancela e escolhe a coluna certa.)'
+    );
+    if (!ok) return;
+  }
   const parsed = [];
   let skippedNoCod = 0;
   let skippedNotEquip = 0;
@@ -21827,8 +21940,12 @@ async function distCargaEquipConfirmMap() {
     } else if (map.valor_unit >= 0 && row[map.valor_unit] != null && row[map.valor_unit] !== '') {
       valorLinha = parseValorDivida(row[map.valor_unit]) * qty;
     }
-    const meta = { sheet: sheetName };
+    const meta = { sheet: sheetName, nf_header: nfHeaderName || undefined };
     if (valorLinha > 0) meta.valor = Math.round(valorLinha * 100) / 100;
+    if (map.doc_faturamento >= 0) {
+      const doc = cell(map.doc_faturamento);
+      if (doc) meta.doc_faturamento = doc;
+    }
     parsed.push({
       id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('local-' + Date.now() + '-' + ri),
       nf: cell(map.nf),
