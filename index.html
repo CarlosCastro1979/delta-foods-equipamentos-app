@@ -20446,7 +20446,9 @@ function distCargaMergeRows(local, remote) {
 async function distCargaLoadAll(force) {
   // Antes: `if (_distCargaCache && !force)` — [] é truthy e bloqueava o fetch Supabase
   // quando a carga só existia na cloud (outro browser / local limpo).
-  if (!force && _distCargaLoaded && Array.isArray(_distCargaCache)) return _distCargaCache;
+  if (!force && _distCargaLoaded && Array.isArray(_distCargaCache)) {
+    return distCargaFilterEquipProf(_distCargaCache);
+  }
   const local = distCargaGetLocal();
   let remote = [];
   try {
@@ -20775,19 +20777,30 @@ async function distCargaEquipConfirmMap() {
   }
   const { rows, fileName, sheetName } = _distCargaMapPending;
   const parsed = [];
+  let skippedNoCod = 0;
+  let skippedNotEquip = 0;
   const now = new Date().toISOString();
   const por = (typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '') || '';
+  // Clientes tocados no ficheiro (mesmo se só tiverem café) — para limpar carga local antiga poluída
+  const touchedCods = new Set();
 
   rows.forEach((row, ri) => {
     if (!row || !row.length) return;
     const cell = (idx) => (idx >= 0 && row[idx] != null ? String(row[idx]).trim() : '');
     const codRaw = cell(map.cod_cliente);
-    if (!codRaw) return;
+    if (!codRaw) { skippedNoCod++; return; }
     // Extrair/normalizar código (científico Excel 7.79538E+5, zeros, "cod NOME")
     // Se o map apontou para coluna de nome, distNormCodCliente devolve '' → guardar raw
     // para fallback por nome_cliente no match.
     const codNorm = distNormCodCliente(codRaw);
     const cod_cliente = codNorm || codRaw;
+    const codKey = distNormCodCliente(cod_cliente);
+    if (codKey) touchedCods.add(codKey);
+    const codigo_sap = cell(map.codigo_sap);
+    if (!distIsEquipProfissionalCodigo(codigo_sap)) {
+      skippedNotEquip++;
+      return;
+    }
     let data_nf = null;
     if (map.data_nf >= 0 && row[map.data_nf] != null && row[map.data_nf] !== '') {
       if (typeof parseExcelDateFlexible === 'function') data_nf = parseExcelDateFlexible(row[map.data_nf]);
@@ -20800,7 +20813,7 @@ async function distCargaEquipConfirmMap() {
       nf: cell(map.nf),
       cod_cliente,
       nome_cliente: cell(map.nome_cliente),
-      codigo_sap: cell(map.codigo_sap),
+      codigo_sap: distNormCodigoSap(codigo_sap) || codigo_sap,
       descricao: cell(map.descricao) || cell(map.codigo_sap),
       qty,
       data_nf,
@@ -20812,16 +20825,21 @@ async function distCargaEquipConfirmMap() {
     });
   });
 
+  const skipped = skippedNoCod + skippedNotEquip;
   if (!parsed.length) {
-    toast('Nenhuma linha válida (código cliente vazio?).', 'error');
+    toast(
+      skippedNotEquip
+        ? `Nenhum equipamento profissional encontrado · ${skippedNotEquip} linha(s) ignorada(s) (café/acessórios/outros).`
+        : 'Nenhuma linha válida (código cliente vazio?).',
+      'error'
+    );
     return;
   }
 
   // Guardar local sempre
   const prev = distCargaGetLocal();
-  // Substituir por cliente: remover códigos presentes no novo import, depois append
-  const newCods = new Set(parsed.map(p => distNormCodCliente(p.cod_cliente)));
-  const kept = prev.filter(p => !newCods.has(distNormCodCliente(p.cod_cliente)));
+  // Substituir por cliente tocado no ficheiro (limpa café/lixo antigo desses códigos) + append só equipamentos
+  const kept = prev.filter(p => !touchedCods.has(distNormCodCliente(p.cod_cliente)));
   const merged = kept.concat(parsed);
   distCargaSetLocal(merged);
 
@@ -20849,19 +20867,24 @@ async function distCargaEquipConfirmMap() {
   // Se o form Dist estiver aberto com um destes códigos, actualizar UI (salta pergunta)
   ['f', 'e'].forEach(prefix => {
     const el = document.getElementById(prefix === 'e' ? 'e-cod' : 'f-cod');
-    if (el && el.value && newCods.has(distNormCodCliente(el.value))) {
+    if (el && el.value && touchedCods.has(distNormCodCliente(el.value))) {
       distPrepareFormForCod(prefix, el.value);
     }
   });
-  toast(`✅ ${parsed.length} linhas importadas da aba "${sheetName}"` + (remoteOk ? ' (Supabase + local)' : ' (só local — corre o SQL de migration)'));
+  const where = remoteOk ? ' (Supabase + local)' : ' (só local — corre o SQL de migration)';
+  toast(
+    `✅ ${parsed.length} equipamentos profissionais importados · ${skipped} linha(s) ignorada(s)` +
+      (skippedNotEquip ? ` (${skippedNotEquip} não-equip.)` : '') +
+      ` · aba "${sheetName}"` + where
+  );
 }
 
 function distCargaEquipClearLocal() {
-  if (!confirm('Limpar a carga local de equipamentos Distribuidores?')) return;
+  if (!confirm('Limpar a carga local de equipamentos Distribuidores?\n\nDepois volta a importar o Excel (só equipamentos profissionais serão guardados).')) return;
   distCargaSetLocal([]);
   try { localStorage.removeItem(DIST_CARGA_META_KEY); } catch (e) {}
   distCargaEquipRefreshStats();
-  toast('Carga local limpa.');
+  toast('Carga local limpa. Reimporta o Excel para actualizar.');
 }
 
 async function distCargaEquipRefreshStats() {
@@ -20880,10 +20903,10 @@ async function distCargaEquipRefreshStats() {
     byCli.get(k).n += Math.max(1, parseInt(r.qty, 10) || 1);
   });
   const txt = rows.length
-    ? `${rows.length} linhas · ${byCli.size} clientes (local ∪ Supabase)` +
+    ? `${rows.length} equipamentos profissionais · ${byCli.size} clientes (local ∪ Supabase)` +
       (meta?.em ? ` · última carga local ${new Date(meta.em).toLocaleString('pt-BR')}` : '') +
-      ' · fonte: aba <code>base</code> (SAP)'
-    : 'Nenhuma carga. Importa um Excel com a aba <strong>base</strong> (export SAP).';
+      ' · só códigos de <code>EQUIPAMENTOS_PROFISSIONAIS</code> · fonte: aba <code>base</code>'
+    : 'Nenhuma carga de equipamentos profissionais. Importa um Excel com a aba <strong>base</strong> (export SAP).';
   if (el) el.innerHTML = txt;
   if (listEl) {
     const arr = [...byCli.values()].sort((a, b) => String(a.nome || a.cod).localeCompare(String(b.nome || b.cod)));
