@@ -42,13 +42,14 @@ COMMENT ON TABLE dist_equip_carga IS
 -- se só houver uma sheet, usa essa. Não usar outras abas como fonte principal.
 --
 -- Colunas esperadas (headers flexíveis / aliases SAP PT-BR — a app mapeia):
---   nf | numero_nf | nota_fiscal | doc.faturamento | nº documento | billing
+--   nf | coluna A | nº da nota fiscal eletrônica | nfe  (sempre coluna A do Excel base)
 --   cod_cliente | codigo_cliente | cliente | emissor | sold-to | nº cliente
 --   nome_cliente | nome | razao_social | name 1
 --   codigo_sap | material | codigo_equipamento | equipamento | nº material
 --   descricao | desc | descricao_material | texto breve material | denominação
 --   qty | quantidade | qtd | quantity
 --   data_nf | data | data_saida | data documento | data de faturação
+--   valor | valor líquido | montante | net value (opcional — Total de Eq por distribuidor; a app guarda em meta.valor)
 --   tag | numero_tag | nº série | serial (opcional na carga)
 --
 -- RLS: se a tabela for criada com RLS activo, permitir SELECT/INSERT/DELETE
