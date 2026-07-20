@@ -21299,7 +21299,7 @@ function distPickSheetName(wb) {
   };
 }
 
-/** Corrige códigos científicos, qty absurda e descrição em falta (catálogo). */
+/** Corrige códigos científicos, qty absurda, NF com zeros e descrição em falta (catálogo). */
 function distRepairCargaRow(r) {
   if (!r) return r;
   let out = r;
@@ -21311,8 +21311,9 @@ function distRepairCargaRow(r) {
   const qty = distSanitizeQty(out.qty);
   const codigo = distNormCodigoSap(out.codigo_sap) || String(out.codigo_sap || '').trim();
   const descricao = distResolveDescricao(codigo, out.descricao);
-  if (qty !== out.qty || descricao !== out.descricao || (codigo && codigo !== out.codigo_sap)) {
-    out = { ...out, qty, descricao, codigo_sap: codigo || out.codigo_sap };
+  const nf = distNormNf(out.nf);
+  if (qty !== out.qty || descricao !== out.descricao || (codigo && codigo !== out.codigo_sap) || nf !== String(out.nf || '').trim()) {
+    out = { ...out, qty, descricao, codigo_sap: codigo || out.codigo_sap, nf };
   }
   return out;
 }
@@ -21374,7 +21375,7 @@ function distNormCodCliente(cod) {
 function distCargaRowLogicalKey(r) {
   const cod = distNormCodCliente(r && r.cod_cliente);
   const sap = distNormCodigoSap(r && r.codigo_sap) || String((r && r.codigo_sap) || '').trim();
-  return [String(r && r.nf || '').trim(), cod, sap, String(r && r.tag || '').trim()].join('|');
+  return [distNormNf(r && r.nf), cod, sap, String(r && r.tag || '').trim()].join('|');
 }
 
 /** Une local + remoto; dedupe por NF+cliente+material+tag (não por id UUID). Preferir local / mais recente. */
@@ -21453,9 +21454,29 @@ function distCargaByCliente(cod, opts) {
   return rows;
 }
 
-/** Ordenação de NF: numérica quando possível. */
+/** NF-e: remove zeros à esquerda (000143383 → 143383). Mantém não-numérico tal qual. */
+function distNormNf(nf) {
+  let s = String(nf ?? '').trim();
+  if (!s) return '';
+  // Excel científico raro
+  if (/^\d+(\.\d+)?e[+\-]?\d+$/i.test(s)) {
+    const n = Number(s);
+    if (Number.isFinite(n)) s = String(Math.round(n));
+  }
+  // "000143383" / "00143383 " → só dígitos sem zeros à esquerda
+  if (/^0*\d+$/.test(s)) {
+    const stripped = s.replace(/^0+/, '');
+    return stripped || '0';
+  }
+  // Mistura (ex. série): só tira zeros à esquerda do prefixo numérico
+  const m = s.match(/^0+(\d.*)$/);
+  if (m) return m[1];
+  return s;
+}
+
+/** Ordenação de NF: numérica quando possível (já sem zeros à esquerda). */
 function distNfSortKey(nf) {
-  const s = String(nf || '').trim();
+  const s = distNormNf(nf);
   const digits = s.replace(/\D/g, '');
   if (digits) return [0, Number(digits) || 0, s];
   return [1, 0, s.toUpperCase()];
@@ -21469,7 +21490,7 @@ function distNfSortKey(nf) {
 function distAggregateCargaByNf(rows) {
   const byNf = new Map();
   (rows || []).forEach(r => {
-    const nf = String(r.nf || '').trim() || '(sem NF)';
+    const nf = distNormNf(r.nf) || '(sem NF)';
     const codigo = distNormCodigoSap(r.codigo_sap) || String(r.codigo_sap || '').trim();
     const descricao = distResolveDescricao(codigo, r.descricao);
     const modelKey = codigo || ('desc:' + descricao);
@@ -21931,7 +21952,7 @@ async function distCargaEquipConfirmMap() {
     }
     parsed.push({
       id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('local-' + Date.now() + '-' + ri),
-      nf: cell(map.nf),
+      nf: distNormNf(cell(map.nf)),
       cod_cliente,
       nome_cliente: cell(map.nome_cliente),
       codigo_sap: sapNorm,
