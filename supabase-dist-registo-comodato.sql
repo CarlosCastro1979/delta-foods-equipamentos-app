@@ -49,6 +49,7 @@ COMMENT ON TABLE dist_equip_carga IS
 --   descricao | desc | descricao_material | texto breve material | denominação
 --   qty | quantidade | qtd | quantity
 --   data_nf | data | data_saida | data documento | data de faturação
+--   valor | valor líquido | montante | net value (opcional — Total de Eq por distribuidor; a app guarda em meta.valor)
 --   tag | numero_tag | nº série | serial (opcional na carga)
 --
 -- RLS: se a tabela for criada com RLS activo, permitir SELECT/INSERT/DELETE

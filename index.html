@@ -413,8 +413,9 @@
   .dist-carga-item.exhausted,
   .dist-nf-group.exhausted { opacity: 0.45; }
   .dist-carga-qty {
-    min-width: 36px;
+    min-width: 40px;
     height: 36px;
+    padding: 0 6px;
     border-radius: 8px;
     background: #eff6ff;
     border: 1px solid #bfdbfe;
@@ -3531,10 +3532,11 @@ var _unused_placeholder = 1;
               <strong>Usar a aba <code>base</code></strong> (export SAP) — a app lê preferencialmente essa sheet (case-insensitive).<br>
               Se o ficheiro só tiver uma aba, usa essa; se existir <code>base</code>, usa sempre essa.<br>
               Headers SAP comuns (PT/BR) são reconhecidos automaticamente; podes mapear se os nomes diferirem.<br>
-              Campos: NF, código cliente, material/código SAP, descrição, qty, data, tag (opcional).<br>
+              Campos: NF, código cliente, material/código SAP, descrição, qty, data, <strong>valor</strong> (opcional), tag (opcional).<br>
               <strong>Só importa máquinas profissionais</strong> (catálogo <code>EQUIPAMENTOS_PROFISSIONAIS</code> — máquinas/moinhos; match por código SAP ou descrição). Café, acessórios, filtros (BESTMAX, etc.) e outros materiais são ignorados.<br>
               Qty = unidades de equipamento (máx. 20/linha; Excel <code>10,000</code> = 10; se a coluna for peso/valor ou estiver vazia, conta 1). Descrição vem do catálogo quando o Excel não traz texto.<br>
-              No registo Dist, a carga agrupa-se por <strong>NF</strong> — associa a NF ao contrato (com qty por modelo).<br>
+              No registo Dist, a carga agrupa-se por <strong>NF</strong> (data completa + qty + valor) — associa a NF ao contrato.<br>
+              O <strong>Total de Eq</strong> por distribuidor soma o valor das linhas importadas.<br>
               Se a carga antiga estiver poluída: <strong>Limpar carga local</strong> e voltar a importar o Excel.
             </div>
           </div>
@@ -21050,11 +21052,65 @@ const DIST_COL_ALIASES = {
     'data nf', 'data', 'data saida', 'data saída', 'data documento',
     'data de faturacao', 'data de faturação', 'billing date', 'data fatura',
   ],
+  // Montante / valor líquido da linha (não unitário) — usado no Total de Eq por distribuidor
+  valor: [
+    'valor liquido', 'valor líquido', 'vl liquido', 'vl líquido',
+    'montante', 'net value', 'net amount', 'amount',
+    'valor total', 'valor nf', 'valor linha', 'valor da mercadoria',
+    'preco liquido', 'preço líquido', 'valor',
+  ],
+  valor_unit: [
+    'preco unitario', 'preço unitário', 'valor unitario', 'valor unitário',
+    'preco', 'preço', 'unit price', 'price', 'vl unit',
+  ],
   tag: ['tag', 'numero tag', 'nº tag', 'n serie', 'nº série', 'numero serie', 'serial', 'serial number'],
 };
 
 /** Máx. unidades por linha NF — acima disto é quase de certeza coluna errada (peso/valor/item). */
 const DIST_QTY_MAX_PER_LINE = 20;
+
+/** Valor (R$) da linha de carga — gravado em meta.valor (sem coluna dedicada no Supabase). */
+function distCargaRowValor(r) {
+  if (!r) return 0;
+  if (r.valor != null && r.valor !== '') {
+    return typeof parseValorDivida === 'function' ? parseValorDivida(r.valor) : Number(r.valor) || 0;
+  }
+  const m = r.meta;
+  if (m && typeof m === 'object') {
+    if (m.valor != null && m.valor !== '') {
+      return typeof parseValorDivida === 'function' ? parseValorDivida(m.valor) : Number(m.valor) || 0;
+    }
+    if (m.valor_total != null && m.valor_total !== '') {
+      return typeof parseValorDivida === 'function' ? parseValorDivida(m.valor_total) : Number(m.valor_total) || 0;
+    }
+  }
+  return 0;
+}
+
+/** Formata data NF ISO → DD/MM/AAAA (não confundir com qty 10/10). */
+function distFmtDataNf(d) {
+  if (d == null || d === '') return '';
+  if (d instanceof Date && !isNaN(d.getTime())) {
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}/${d.getFullYear()}`;
+  }
+  const s = String(d).trim();
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  const br = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (br) {
+    const y = br[3].length === 2 ? ('20' + br[3]) : br[3];
+    return `${br[1].padStart(2, '0')}/${br[2].padStart(2, '0')}/${y}`;
+  }
+  return s;
+}
+
+function distFmtValorBRL(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return '';
+  return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 /**
  * Quantidade de equipamento por linha. Default 1.
@@ -21126,6 +21182,9 @@ function distAutoMapHeaders(headers) {
     if (field === 'nome_cliente' && /\b(cod|codigo|emissor|sold)\b/.test(h) && !/\bnome\b/.test(h)) return 0;
     // Qty: nunca mapear peso / valor / preço / item / volume
     if (field === 'qty' && /\b(peso|weight|valor|preco|price|net|liquido|líquido|item|volume|kg|ton|montante|amount)\b/.test(h)) return 0;
+    // Valor linha: não confundir com qty / data / unitário
+    if (field === 'valor' && /\b(qtd|qty|quantidade|data|unitario|unitário|unit)\b/.test(h) && !/\b(valor|montante|amount|liquido|líquido)\b/.test(h)) return 0;
+    if (field === 'valor_unit' && /\b(qtd|qty|quantidade|data|total|montante|liquido|líquido)\b/.test(h) && !/\b(unit|unitario|unitário|preco|preço|price)\b/.test(h)) return 0;
     if (h.startsWith(alias + ' ') || h.endsWith(' ' + alias)) return 80;
     if (h.includes(alias) && alias.length >= 4) return 60;
     if (alias.includes(h) && h.length >= 4) return 40;
@@ -21327,8 +21386,9 @@ function distNfSortKey(nf) {
 }
 
 /**
- * Agrega carga por NF → modelos com qty e unidades expandíveis.
+ * Agrega carga por NF → modelos com qty, data, valor e unidades expandíveis.
  * UI Dist: contrato associa-se a pelo menos uma NF.
+ * Nota: o badge "10" é qty de máquinas (não é data 10/10).
  */
 function distAggregateCargaByNf(rows) {
   const byNf = new Map();
@@ -21338,17 +21398,23 @@ function distAggregateCargaByNf(rows) {
     const descricao = distResolveDescricao(codigo, r.descricao);
     const modelKey = codigo || ('desc:' + descricao);
     const q = distSanitizeQty(r.qty);
+    const valor = distCargaRowValor(r);
+    const dataNf = r.data_nf || null;
     if (!byNf.has(nf)) {
-      byNf.set(nf, { nf, qty: 0, models: new Map(), units: [] });
+      byNf.set(nf, { nf, qty: 0, valor: 0, data_nf: null, models: new Map(), units: [] });
     }
     const g = byNf.get(nf);
     if (!g.models.has(modelKey)) {
-      g.models.set(modelKey, { codigo, descricao, qty: 0, units: [] });
+      g.models.set(modelKey, { codigo, descricao, qty: 0, valor: 0, units: [] });
     }
     const m = g.models.get(modelKey);
     if (descricao && (m.descricao === m.codigo || !m.descricao)) m.descricao = descricao;
     m.qty += q;
+    m.valor += valor;
     g.qty += q;
+    g.valor += valor;
+    if (dataNf && !g.data_nf) g.data_nf = dataNf;
+    const valorUnit = q > 0 ? (valor / q) : 0;
     for (let i = 0; i < q; i++) {
       const unit = {
         id: String(r.id || 'row') + ':' + nf + ':' + modelKey + ':' + i + ':' + g.units.length,
@@ -21357,6 +21423,8 @@ function distAggregateCargaByNf(rows) {
         descricao: m.descricao,
         nf: nf === '(sem NF)' ? '' : nf,
         tag: r.tag || '',
+        valor: valorUnit,
+        data_nf: dataNf,
       };
       m.units.push(unit);
       g.units.push(unit);
@@ -21366,6 +21434,8 @@ function distAggregateCargaByNf(rows) {
     .map(g => ({
       nf: g.nf,
       qty: g.qty,
+      valor: g.valor,
+      data_nf: g.data_nf,
       units: g.units,
       models: [...g.models.values()],
     }))
@@ -21418,27 +21488,38 @@ function distPoolRenderGroups(prefix, pool) {
   }
   const total = groups.reduce((s, g) => s + g.qty, 0);
   const left = groups.reduce((s, g) => s + g.units.filter(u => !used.has(u.id)).length, 0);
+  const totalValor = groups.reduce((s, g) => s + (Number(g.valor) || 0), 0);
+  const valorBanner = distFmtValorBRL(totalValor);
   const esc = (s) => String(s || '').replace(/</g, '&lt;');
   pool.innerHTML = `
-    <div class="dist-carga-banner">Carga Excel: <strong>${total}</strong> máquina(s) · ${left} por associar — indica o nº de contrato e associa a <strong>NF</strong>.</div>
+    <div class="dist-carga-banner">Carga Excel: <strong>${total}</strong> máquina(s)${valorBanner ? ` · Total Eq <strong>${valorBanner}</strong>` : ''} · ${left} por associar — indica o nº de contrato e associa a <strong>NF</strong>.</div>
     <div class="dist-carga-list">
       ${groups.map((g, gi) => {
         const remainUnits = g.units.filter(u => !used.has(u.id));
         const remain = remainUnits.length;
         const modelLines = (g.models || []).map(m => {
-          const mLeft = m.units.filter(u => !used.has(u.id)).length;
+          // Qty = nº de máquinas deste modelo (não é data; não precisa de "5/5")
           const title = m.codigo && m.descricao && m.descricao !== m.codigo
             ? `${esc(m.codigo)} — ${esc(m.descricao)}`
             : esc(m.descricao || m.codigo || 'Equipamento');
-          return `<div class="dist-nf-model-line"><span class="q">${mLeft}/${m.qty}</span>${title}</div>`;
+          const vModel = distFmtValorBRL(m.valor);
+          return `<div class="dist-nf-model-line"><span class="q" title="Quantidade de máquinas">${m.qty}</span>${title}${vModel ? ` <span style="color:var(--muted);font-weight:500;">· ${vModel}</span>` : ''}</div>`;
         }).join('');
         const nfLabel = g.nf === '(sem NF)' ? 'Sem NF' : ('NF ' + esc(g.nf));
+        const dataFmt = distFmtDataNf(g.data_nf);
+        const vNf = distFmtValorBRL(g.valor);
+        const metaBits = [
+          dataFmt || null,
+          `${(g.models || []).length} modelo(s)`,
+          vNf || null,
+          remain < g.qty ? `${remain} por associar` : null,
+        ].filter(Boolean);
         return `<div class="dist-nf-group${remain ? '' : ' exhausted'}" data-g="${gi}">
           <div class="dist-nf-head">
-            <span class="dist-carga-qty" title="Máquinas nesta NF">${remain}/${g.qty}</span>
+            <span class="dist-carga-qty" title="Nº de máquinas nesta NF (não é data)">${g.qty}</span>
             <div class="dist-carga-info">
               <div class="dist-carga-desc">${nfLabel}</div>
-              <div class="dist-carga-meta">${(g.models || []).length} modelo(s)</div>
+              <div class="dist-carga-meta">${metaBits.join(' · ')}</div>
             </div>
             <button type="button" class="btn btn-secondary btn-sm" ${remain ? '' : 'disabled'}
               onclick="distPoolPickNf('${prefix}', ${gi})">${remain ? 'Associar NF' : 'Esgotada'}</button>
@@ -21658,6 +21739,8 @@ function distCargaEquipShowMapUI() {
     ['descricao', 'Descrição'],
     ['qty', 'Quantidade'],
     ['data_nf', 'Data NF'],
+    ['valor', 'Valor linha / líquido (opc.)'],
+    ['valor_unit', 'Valor unitário (opc.)'],
     ['tag', 'Tag / série (opc.)'],
   ];
   grid.innerHTML = fields.map(([key, label]) => {
@@ -21725,6 +21808,15 @@ async function distCargaEquipConfirmMap() {
     const byDesc = !distIsEquipProfissionalCodigo(sapNorm) ? distMatchCatalogByDescricao(excelDesc) : null;
     const qtyRaw = map.qty >= 0 && row[map.qty] != null && row[map.qty] !== '' ? row[map.qty] : 1;
     const qty = distSanitizeQty(qtyRaw);
+    // Valor da linha (preferir montante/líquido); senão unitário × qty
+    let valorLinha = 0;
+    if (map.valor >= 0 && row[map.valor] != null && row[map.valor] !== '') {
+      valorLinha = parseValorDivida(row[map.valor]);
+    } else if (map.valor_unit >= 0 && row[map.valor_unit] != null && row[map.valor_unit] !== '') {
+      valorLinha = parseValorDivida(row[map.valor_unit]) * qty;
+    }
+    const meta = { sheet: sheetName };
+    if (valorLinha > 0) meta.valor = Math.round(valorLinha * 100) / 100;
     parsed.push({
       id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('local-' + Date.now() + '-' + ri),
       nf: cell(map.nf),
@@ -21738,7 +21830,7 @@ async function distCargaEquipConfirmMap() {
       origem_ficheiro: fileName + ' [' + sheetName + ']',
       importado_em: now,
       importado_por: por,
-      meta: { sheet: sheetName },
+      meta,
     });
   });
 
@@ -21829,15 +21921,22 @@ async function distCargaEquipRefreshStats() {
   try { meta = JSON.parse(localStorage.getItem(DIST_CARGA_META_KEY) || 'null'); } catch (e) {}
   const byCli = new Map();
   let totalQty = 0;
+  let totalValor = 0;
   rows.forEach(r => {
     const k = distNormCodCliente(r.cod_cliente) || distNormNomeCliente(r.nome_cliente || r.cod_cliente) || '?';
-    if (!byCli.has(k)) byCli.set(k, { cod: distNormCodCliente(r.cod_cliente) || r.cod_cliente, nome: r.nome_cliente || '', n: 0 });
+    if (!byCli.has(k)) byCli.set(k, { cod: distNormCodCliente(r.cod_cliente) || r.cod_cliente, nome: r.nome_cliente || '', n: 0, valor: 0 });
     const q = distSanitizeQty(r.qty);
+    const v = distCargaRowValor(r);
     byCli.get(k).n += q;
+    byCli.get(k).valor += v;
     totalQty += q;
+    totalValor += v;
   });
+  const valorTxt = distFmtValorBRL(totalValor);
   const txt = totalQty
-    ? `<strong>${totalQty}</strong> máquina(s) · ${rows.length} linha(s) · ${byCli.size} clientes (local ∪ Supabase)` +
+    ? `<strong>${totalQty}</strong> máquina(s)` +
+      (valorTxt ? ` · Total Eq <strong>${valorTxt}</strong>` : '') +
+      ` · ${rows.length} linha(s) · ${byCli.size} clientes (local ∪ Supabase)` +
       (meta?.em ? ` · última carga local ${new Date(meta.em).toLocaleString('pt-BR')}` : '') +
       ' · máquinas do catálogo (sem filtros) · fonte: aba <code>base</code>'
     : 'Nenhuma carga de máquinas profissionais. Importa um Excel com a aba <strong>base</strong> (export SAP).';
@@ -21845,7 +21944,10 @@ async function distCargaEquipRefreshStats() {
   if (listEl) {
     const arr = [...byCli.values()].sort((a, b) => String(a.nome || a.cod).localeCompare(String(b.nome || b.cod)));
     listEl.innerHTML = arr.length
-      ? arr.map(c => `<div><code>${String(c.cod || '—').replace(/</g, '')}</code> — ${(c.nome || '').replace(/</g, '')} · ${c.n} un.</div>`).join('')
+      ? arr.map(c => {
+          const v = distFmtValorBRL(c.valor);
+          return `<div><code>${String(c.cod || '—').replace(/</g, '')}</code> — ${(c.nome || '').replace(/</g, '')} · ${c.n} un.${v ? ` · Total Eq ${v}` : ''}</div>`;
+        }).join('')
       : '<div>Sem clientes na carga.</div>';
   }
   if (status && !status.innerHTML.includes('Folha lida')) status.innerHTML = '';
