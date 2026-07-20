@@ -7902,9 +7902,15 @@ async function confirmarCargaSAP() {
     clearRegistosCache();
   } catch(e) { console.warn('Erro ao actualizar manuais:', e); }
 
-  // 4. Publicar no Supabase para outros dispositivos
-  await publicarListaClientesSupabase(novaLista);
-  toast('A sincronizar com outros dispositivos...', 'info');
+  // 4. Publicar no Supabase para outros dispositivos (chunks — lista ~29k falhava em silêncio)
+  const pub = await publicarListaClientesSupabase(novaLista);
+  if (pub && pub.ok) {
+    toast(`Lista sincronizada no Supabase (${pub.total} clientes · ${pub.chunks} partes).`, 'info');
+  } else {
+    const errMsg = (pub && pub.error) ? pub.error : 'erro desconhecido';
+    console.error('Falha ao publicar lista SAP:', errMsg);
+    toast('⚠ Lista guardada neste browser, mas NÃO sincronizou no Supabase: ' + errMsg, 'error');
+  }
 
   // 4b. Reconciliar cadastros já guardados com o SAP (SAP ganha nos campos que fornece)
   const nCad = await reconciliarCadastrosComSAP(novaLista);
@@ -7914,6 +7920,11 @@ async function confirmarCargaSAP() {
 
   // 5. Resultado
   let msg = `✅ Lista actualizada com ${novaLista.length} clientes.`;
+  if (pub && pub.ok) {
+    msg += ` Supabase OK (${pub.chunks} parte(s)).`;
+  } else {
+    msg += ` ⚠ Supabase NÃO actualizado${pub && pub.error ? ': ' + String(pub.error).slice(0, 120) : ''}.`;
+  }
   if (!saved.lsOk) msg += ` (guardada em IndexedDB — localStorage sem espaço).`;
   if (preservados.kept) msg += ` ${preservados.kept} cliente(s) mantiveram morada/contacto da lista anterior.`;
   if (repostos.restored) msg += ` ${repostos.restored} cliente(s) registado(s) reposto(s) (omitidos no Excel).`;
@@ -8019,18 +8030,112 @@ function getListaClientesActiva() {
   return full;
 }
 
+/** URL da tabela lista_clientes no Supabase. */
+const LISTA_CLIENTES_SUPA_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/lista_clientes';
+/** ~4k clientes/chunk evita timeout PostgREST (~2MB) na publicação da lista SAP (~29k). */
+const LISTA_CLIENTES_CHUNK_SIZE = 4000;
+const LISTA_CLIENTES_META_ID = 'v1';
+const LISTA_CLIENTES_CHUNK_PREFIX = 'v1__';
+
+/** Remove campos vazios para reduzir payload JSON no Supabase. */
+function compactClienteSap(c) {
+  if (!c || typeof c !== 'object') return c;
+  const out = {};
+  for (const [k, v] of Object.entries(c)) {
+    if (v == null) continue;
+    if (typeof v === 'string' && !v.trim()) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+function isListaClientesChunkedMeta(data) {
+  return !!(data && typeof data === 'object' && !Array.isArray(data) && data.__format === 'chunked');
+}
+
+/**
+ * Lê a lista remota (legado: array em id=v1; actual: meta chunked + v1__0…).
+ * @returns {{ lista: Array, ts: number, chunked: boolean } | null}
+ */
+async function fetchListaClientesRemota() {
+  const res = await fetch(
+    `${LISTA_CLIENTES_SUPA_URL}?id=eq.${LISTA_CLIENTES_META_ID}&select=data,atualizado_em`,
+    { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY } }
+  );
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const rows = await res.json();
+  if (!rows.length || rows[0].data == null) return null;
+  const metaTs = new Date(rows[0].atualizado_em).getTime() || 0;
+  const data = rows[0].data;
+
+  // Legado: data é o array completo
+  if (Array.isArray(data)) {
+    return { lista: data, ts: metaTs, chunked: false };
+  }
+
+  if (!isListaClientesChunkedMeta(data)) {
+    console.warn('lista_clientes v1: formato desconhecido', data);
+    return null;
+  }
+
+  const nChunks = Math.max(0, parseInt(data.__chunks, 10) || 0);
+  const prefix = String(data.__prefix || LISTA_CLIENTES_CHUNK_PREFIX);
+  if (!nChunks) return { lista: [], ts: metaTs, chunked: true };
+
+  const ids = Array.from({ length: nChunks }, (_, i) => `${prefix}${i}`);
+  // PostgREST: id=in.(v1__0,v1__1,…)
+  const inList = ids.map(id => `"${id}"`).join(',');
+  const cres = await fetch(
+    `${LISTA_CLIENTES_SUPA_URL}?id=in.(${inList})&select=id,data,atualizado_em`,
+    { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY } }
+  );
+  if (!cres.ok) throw new Error('Chunks HTTP ' + cres.status);
+  const chunkRows = await cres.json();
+  const byId = new Map((chunkRows || []).map(r => [r.id, r]));
+  const lista = [];
+  for (let i = 0; i < nChunks; i++) {
+    const row = byId.get(`${prefix}${i}`);
+    if (!row || !Array.isArray(row.data)) {
+      throw new Error(`Chunk em falta: ${prefix}${i}`);
+    }
+    lista.push(...row.data);
+  }
+  return { lista, ts: metaTs, chunked: true };
+}
+
+/** Apaga chunks antigos v1__N que já não fazem parte da publicação actual. */
+async function limparChunksListaClientesAntigos(keepCount) {
+  const keep = Math.max(0, keepCount | 0);
+  // Buscar ids com prefixo (limit alto — nº de chunks é pequeno)
+  const res = await fetch(
+    `${LISTA_CLIENTES_SUPA_URL}?id=like.${LISTA_CLIENTES_CHUNK_PREFIX}*&select=id`,
+    { headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY } }
+  );
+  if (!res.ok) return;
+  const rows = await res.json();
+  const toDelete = (rows || [])
+    .map(r => r.id)
+    .filter(id => {
+      const m = String(id || '').match(new RegExp('^' + LISTA_CLIENTES_CHUNK_PREFIX + '(\\d+)$'));
+      if (!m) return false;
+      return parseInt(m[1], 10) >= keep;
+    });
+  if (!toDelete.length) return;
+  const inList = toDelete.map(id => `"${id}"`).join(',');
+  await fetch(`${LISTA_CLIENTES_SUPA_URL}?id=in.(${inList})`, {
+    method: 'DELETE',
+    headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY },
+  });
+}
+
 // Sincronizar lista de clientes do Supabase para armazenamento local
 async function sincronizarListaClientes() {
   try {
     await carregarListaClientesLocalAsync();
-    const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/lista_clientes?id=eq.v1&select=data,atualizado_em', {
-      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
-    });
-    if (!res.ok) return false;
-    const rows = await res.json();
-    if (!rows.length || !rows[0].data) return false;
-    const remote = rows[0].data;
-    const remoteTs = new Date(rows[0].atualizado_em).getTime() || 0;
+    const remotePack = await fetchListaClientesRemota();
+    if (!remotePack || !Array.isArray(remotePack.lista)) return false;
+    const remote = remotePack.lista;
+    const remoteTs = remotePack.ts || 0;
     const localTs = _listaClientesTs || parseInt(localStorage.getItem(CLIENTES_TS_KEY) || '0', 10) || 0;
     const hasLocal = Array.isArray(_listaClientesMem) && _listaClientesMem.length > 0;
 
@@ -8042,43 +8147,90 @@ async function sincronizarListaClientes() {
       return true;
     }
     if (remoteTs > localTs) {
+      // Não substituir uma lista local completa por um remoto truncado (ex. só Horeca).
+      const localLen = _listaClientesMem.length;
+      if (remote.length > 0 && remote.length < localLen * 0.5 && localLen >= 2000) {
+        console.warn(
+          `Supabase tem lista truncada (${remote.length}) vs local (${localLen}) — mantém local; republica via carga SAP.`
+        );
+        return false;
+      }
       await salvarListaClientesLocal(remote, remoteTs);
       acumularSapDetalhe(remote);
       console.log('Lista de clientes sincronizada do Supabase (mais recente):', remote.length);
       return true;
     }
-    // Local mais recente (ou igual) → manter; se divergir, republicar
-    if (localTs >= remoteTs) {
-      try {
-        const localLista = _listaClientesMem;
-        if (Array.isArray(localLista) && localLista.length) {
-          // Comparação leve por tamanho + 1.º/último código (evita JSON.stringify de 29k)
-          const remoteLen = Array.isArray(remote) ? remote.length : 0;
-          const divergiu = localLista.length !== remoteLen
-            || String(localLista[0]?.cod) !== String(remote[0]?.cod)
-            || String(localLista[localLista.length - 1]?.cod) !== String(remote[remoteLen - 1]?.cod);
-          if (divergiu) {
-            await publicarListaClientesSupabase(localLista);
-            console.log('Lista local mais recente republicada para Supabase:', localLista.length);
-          }
-        }
-      } catch (_) {}
-    }
+    // Local mais recente → NÃO republicar automaticamente.
+    // Antes, um browser com lista parcial (ex. só Horeca) podia sobrescrever o remoto completo.
+    // A publicação só ocorre em confirmarCargaSAP (e toast se falhar).
     return false;
   } catch(e) { console.warn('sincronizarListaClientes:', e); return false; }
 }
 
-// Publicar lista local para o Supabase (chamado após carga SAP)
+/**
+ * Publica a lista SAP no Supabase em chunks (evita timeout ~10k+/4MB num único JSON).
+ * @returns {{ ok: boolean, total?: number, chunks?: number, error?: string }}
+ */
 async function publicarListaClientesSupabase(lista) {
   try {
-    const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/lista_clientes', {
+    const arr = (Array.isArray(lista) ? lista : []).map(compactClienteSap);
+    const total = arr.length;
+    const chunkSize = LISTA_CLIENTES_CHUNK_SIZE;
+    const nChunks = Math.max(1, Math.ceil(total / chunkSize) || 1);
+    const ts = new Date().toISOString();
+    const prefer = { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' };
+
+    // 1) Chunks primeiro (se meta for escrita antes e falhar a meio, o leitor detecta chunk em falta)
+    for (let i = 0; i < nChunks; i++) {
+      const slice = arr.slice(i * chunkSize, (i + 1) * chunkSize);
+      const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
+        method: 'POST',
+        headers: prefer,
+        body: JSON.stringify({
+          id: `${LISTA_CLIENTES_CHUNK_PREFIX}${i}`,
+          data: slice,
+          atualizado_em: ts,
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        const msg = `Chunk ${i}/${nChunks} falhou (HTTP ${res.status})${errText ? ': ' + errText.slice(0, 180) : ''}`;
+        console.error('publicarListaClientesSupabase:', msg);
+        return { ok: false, total, chunks: nChunks, error: msg };
+      }
+    }
+
+    // 2) Meta em id=v1 (substitui o array legado monolítico)
+    const meta = {
+      __format: 'chunked',
+      __total: total,
+      __chunks: nChunks,
+      __chunkSize: chunkSize,
+      __prefix: LISTA_CLIENTES_CHUNK_PREFIX,
+    };
+    const metaRes = await fetch(LISTA_CLIENTES_SUPA_URL, {
       method: 'POST',
-      headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
-      body: JSON.stringify({ id: 'v1', data: lista, atualizado_em: new Date().toISOString() })
+      headers: prefer,
+      body: JSON.stringify({ id: LISTA_CLIENTES_META_ID, data: meta, atualizado_em: ts }),
     });
-    if (res.ok) console.log('Lista publicada no Supabase');
-    return res.ok;
-  } catch(e) { console.warn('publicarListaClientesSupabase:', e); return false; }
+    if (!metaRes.ok) {
+      const errText = await metaRes.text().catch(() => '');
+      const msg = `Meta v1 falhou (HTTP ${metaRes.status})${errText ? ': ' + errText.slice(0, 180) : ''}`;
+      console.error('publicarListaClientesSupabase:', msg);
+      return { ok: false, total, chunks: nChunks, error: msg };
+    }
+
+    // 3) Remover chunks sobrantes de publicações anteriores
+    try { await limparChunksListaClientesAntigos(nChunks); } catch (e) {
+      console.warn('limparChunksListaClientesAntigos:', e);
+    }
+
+    console.log(`Lista publicada no Supabase: ${total} clientes em ${nChunks} chunk(s)`);
+    return { ok: true, total, chunks: nChunks };
+  } catch (e) {
+    console.warn('publicarListaClientesSupabase:', e);
+    return { ok: false, error: e.message || String(e) };
+  }
 }
 
 // confirmarImport — compatibilidade com import-bar do CSV antigo
