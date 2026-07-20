@@ -3532,7 +3532,7 @@ var _unused_placeholder = 1;
               <strong>Usar a aba <code>base</code></strong> (export SAP) — a app lê preferencialmente essa sheet (case-insensitive).<br>
               Se o ficheiro só tiver uma aba, usa essa; se existir <code>base</code>, usa sempre essa.<br>
               Headers SAP comuns (PT/BR) são reconhecidos automaticamente; podes mapear se os nomes diferirem.<br>
-              Campos: NF, código cliente, material/código SAP, descrição, qty, data, <strong>valor</strong> (opcional), tag (opcional).<br>
+              Campos: <strong>NF-e</strong> (Nº da nota fiscal eletrônica — não o nº do documento SAP), código cliente, material/código SAP, descrição, qty, data, <strong>valor</strong> (opcional), tag (opcional).<br>
               <strong>Só importa máquinas profissionais</strong> (catálogo <code>EQUIPAMENTOS_PROFISSIONAIS</code> — máquinas/moinhos; match por código SAP ou descrição). Café, acessórios, filtros (BESTMAX, etc.) e outros materiais são ignorados.<br>
               Qty = unidades de equipamento (máx. 20/linha; Excel <code>10,000</code> = 10; se a coluna for peso/valor ou estiver vazia, conta 1). Descrição vem do catálogo quando o Excel não traz texto.<br>
               No registo Dist, a carga agrupa-se por <strong>NF</strong> (data completa + qty + valor) — associa a NF ao contrato.<br>
@@ -21019,10 +21019,15 @@ function distNormHeader(h) {
 }
 
 const DIST_COL_ALIASES = {
+  // NF = Nº da nota fiscal eletrônica (NFe) — NÃO o nº do documento / doc. faturamento SAP
   nf: [
-    'nf', 'numero nf', 'n nf', 'nota fiscal', 'nº nf', 'num nf', 'doc faturamento',
-    'doc.faturamento', 'documento faturamento', 'billing document', 'n documento',
-    'numero documento', 'nº documento', 'doc fatura', 'fatura',
+    'n da nota fiscal eletronica', 'nº da nota fiscal eletrônica',
+    'numero da nota fiscal eletronica', 'número da nota fiscal eletrônica',
+    'nota fiscal eletronica', 'nota fiscal eletrônica',
+    'n nota fiscal eletronica', 'nº nota fiscal eletrônica',
+    'num nota fiscal eletronica', 'nfe', 'nf e', 'nf-e',
+    'numero nfe', 'nº nfe', 'num nfe', 'chave nfe',
+    'nota fiscal', 'numero nf', 'número nf', 'nº nf', 'num nf', 'n nf', 'nf',
   ],
   cod_cliente: [
     'cod cliente', 'codigo cliente', 'cód cliente', 'código cliente',
@@ -21180,6 +21185,13 @@ function distAutoMapHeaders(headers) {
     // Evitar: alias "cliente" / "cod" a apanhar "nome cliente"
     if (field === 'cod_cliente' && /\b(nome|razao|denomin|name)\b/.test(h)) return 0;
     if (field === 'nome_cliente' && /\b(cod|codigo|emissor|sold)\b/.test(h) && !/\bnome\b/.test(h)) return 0;
+    // NF: só nota fiscal / NFe — nunca nº do documento / doc. faturamento / billing document
+    if (field === 'nf') {
+      if (/\b(documento|doc faturamento|doc fatura|billing document|billing doc|n documento|numero documento|num documento)\b/.test(h)
+          && !/\b(nota fiscal|nfe|nf e)\b/.test(h)) return 0;
+      if (/\b(eletronica|eletrônica|nfe)\b/.test(h) && /\b(nota|nf)\b/.test(h)) return 120;
+      if (/\bnota fiscal\b/.test(h)) return 95;
+    }
     // Qty: nunca mapear peso / valor / preço / item / volume
     if (field === 'qty' && /\b(peso|weight|valor|preco|price|net|liquido|líquido|item|volume|kg|ton|montante|amount)\b/.test(h)) return 0;
     // Valor linha: não confundir com qty / data / unitário
@@ -21732,7 +21744,7 @@ function distCargaEquipShowMapUI() {
   const auto = distAutoMapHeaders(headers);
   _distCargaMapPending.map = auto;
   const fields = [
-    ['nf', 'NF / Doc. faturamento'],
+    ['nf', 'NF-e (Nº da nota fiscal eletrônica) *'],
     ['cod_cliente', 'Código cliente *'],
     ['nome_cliente', 'Nome cliente'],
     ['codigo_sap', 'Material / código SAP'],
