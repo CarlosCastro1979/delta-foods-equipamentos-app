@@ -7033,15 +7033,22 @@ async function exportContratosPorRegistarExcel() {
 }
 
 // ─── EDIT ─────────────────────────────────────────────
-function openEdit(id) {
-  const registo = allData.find(r => r.id === id);
-  if (!registo) return;
+/** Abre o modal de edição com o objecto registo já carregado. */
+function openEditWithRegisto(registo) {
+  if (!registo || !registo.id) {
+    toast('Registo não encontrado.', 'error');
+    return;
+  }
   if (!podeEditarRegisto(registo.vendedor)) {
     toast('Não tens permissão para editar registos de ' + registo.vendedor, 'error');
     return;
   }
-  editingId = id;
+  editingId = registo.id;
   window._editingRegisto = registo;
+  // Garantir que allData conhece o registo (ex.: aberto a partir de Contratos em falta)
+  if (Array.isArray(allData) && !allData.some(r => r.id === registo.id)) {
+    allData = [registo].concat(allData);
+  }
   // Saltar diretamente para o step2 — utilizador já está identificado pelo login
   document.getElementById('modal-step1').style.display = 'none';
   document.getElementById('modal-step2').style.display = 'block';
@@ -7051,6 +7058,41 @@ function openEdit(id) {
   _editMc00Preenchido = false;
   editSwitchTab('registo');
   document.getElementById('modal-overlay').classList.add('open');
+}
+
+function openEdit(id) {
+  if (!id) {
+    toast('Registo sem id — não é possível editar.', 'error');
+    return;
+  }
+  const registo = (allData || []).find(r => r.id === id);
+  if (registo) {
+    openEditWithRegisto(registo);
+    return;
+  }
+  // Pode faltar em allData (cache da lista OK desactualizado) — ir buscar ao Supabase
+  openEditFetch(id);
+}
+
+async function openEditFetch(id) {
+  try {
+    toast('A carregar registo…');
+    const res = await fetch(
+      `${SUPA_URL}?id=eq.${encodeURIComponent(id)}&select=*`,
+      { headers: HEADERS }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const rows = await res.json();
+    const registo = Array.isArray(rows) ? rows[0] : null;
+    if (!registo) {
+      toast('Registo não encontrado. Recarrega e tenta de novo.', 'error');
+      return;
+    }
+    openEditWithRegisto(registo);
+  } catch (e) {
+    console.error('openEditFetch:', e);
+    toast('Erro ao abrir registo: ' + (e.message || e), 'error');
+  }
 }
 
 function closeEdit() {
@@ -7347,8 +7389,15 @@ function renderDistContratosFalta() {
     tbody.addEventListener('click', function(e) {
       const btn = e.target.closest('[data-dist-falta]');
       if (!btn) return;
-      if (btn.dataset.regId) {
-        openEdit(btn.dataset.regId);
+      const regId = btn.dataset.regId || '';
+      if (regId) {
+        // Preferir o registo já carregado nesta lista (tem dist_contratos)
+        const cached = (distContratosFaltaData || []).find(c => c._registo && c._registo.id === regId);
+        if (cached && cached._registo) {
+          openEditWithRegisto(cached._registo);
+        } else if (typeof openEdit === 'function') {
+          openEdit(regId);
+        }
       } else {
         preencherNovo(btn.dataset.cod, btn.dataset.nome, btn.dataset.cep, btn.dataset.vend);
       }
