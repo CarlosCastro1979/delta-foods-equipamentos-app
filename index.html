@@ -345,6 +345,12 @@
     gap: 8px;
     margin-bottom: 10px;
   }
+  .dist-contrato-card .dist-ct-head-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
   .dist-contrato-card .dist-ct-title {
     font-size: 12px;
     font-weight: 700;
@@ -352,6 +358,35 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
+  .dist-ct-toggle {
+    border: none;
+    background: #f1f5f9;
+    color: #475569;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    flex-shrink: 0;
+    padding: 0;
+  }
+  .dist-ct-toggle:hover { background: #e2e8f0; }
+  .dist-contrato-card.is-collapsed .dist-ct-body { display: none; }
+  .dist-contrato-card.is-collapsed .dist-ct-summary {
+    cursor: pointer;
+    margin-bottom: 0;
+  }
+  .dist-contrato-card.is-collapsed .dist-ct-summary:hover {
+    background: #f1f5f9;
+  }
+  .dist-ct-collapse-hint {
+    display: none;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .dist-contrato-card.is-collapsed .dist-ct-collapse-hint { display: block; }
   .dist-equip-pool {
     border: 1px dashed var(--border);
     border-radius: 8px;
@@ -21002,24 +21037,50 @@ function distAddContrato(prefix, data) {
   const equips = Array.isArray(data.equipamentos) ? data.equipamentos : [];
   card.innerHTML = `
     <div class="dist-ct-head">
-      <span class="dist-ct-title">Contrato ${idx + 1}</span>
+      <div class="dist-ct-head-left">
+        <button type="button" class="dist-ct-toggle" title="Comprimir / expandir"
+          onclick="distToggleContratoCard(this.closest('.dist-contrato-card'))">▾</button>
+        <span class="dist-ct-title">Contrato ${idx + 1}</span>
+      </div>
       <button type="button" class="btn-remove-equip" title="Remover contrato"
         onclick="this.closest('.dist-contrato-card').remove();distRenumberContratos('${prefix}');distRefreshPoolAfterFormChange('${prefix}')">✕</button>
     </div>
     <div class="form-group" style="margin-bottom:10px">
       <label style="font-size:11px;color:var(--muted)">Nº contrato *</label>
       <input type="text" class="form-input dist-ct-numero" placeholder="Ex: B0029/25" value="${(data.numero || '').replace(/"/g, '&quot;')}"
-        onfocus="_distUi['${prefix}'].activeContratoIdx = [...this.closest('#${listId}').children].indexOf(this.closest('.dist-contrato-card'))">
+        onfocus="_distUi['${prefix}'].activeContratoIdx = [...this.closest('#${listId}').children].indexOf(this.closest('.dist-contrato-card'));distSetContratoCollapsed(this.closest('.dist-contrato-card'), false)">
     </div>
-    <div class="dist-ct-summary" style="display:none"></div>
-    <div class="dist-ct-equips equip-list"></div>
-    <button type="button" class="btn-add-equip" style="margin-top:6px"
-      onclick="distAddEquipRow(this.closest('.dist-contrato-card'), '')">+ Adicionar equipamento</button>`;
+    <div class="dist-ct-summary" style="display:none" onclick="if(this.closest('.dist-contrato-card')?.classList.contains('is-collapsed'))distToggleContratoCard(this.closest('.dist-contrato-card'))"></div>
+    <div class="dist-ct-body">
+      <div class="dist-ct-equips equip-list"></div>
+      <button type="button" class="btn-add-equip" style="margin-top:6px"
+        onclick="distSetContratoCollapsed(this.closest('.dist-contrato-card'), false);distAddEquipRow(this.closest('.dist-contrato-card'), '')">+ Adicionar equipamento</button>
+    </div>`;
   list.appendChild(card);
   if (equips.length) equips.forEach(eq => distAddEquipRow(card, eq));
   else if (!data.skipEmptyEquip) distAddEquipRow(card, {});
   distUpdateContratoSummary(card);
+  // Já preenchido (reabrir edição / carga guardada) → comprimido para não ocupar scroll
+  if (equips.length && (data.numero || equips.some(e => e && (e.nf || e.tag)))) {
+    distSetContratoCollapsed(card, true);
+  }
   _distUi[prefix].activeContratoIdx = idx;
+}
+
+function distSetContratoCollapsed(card, collapsed) {
+  if (!card) return;
+  card.classList.toggle('is-collapsed', !!collapsed);
+  const btn = card.querySelector('.dist-ct-toggle');
+  if (btn) {
+    btn.textContent = collapsed ? '▸' : '▾';
+    btn.title = collapsed ? 'Expandir detalhe' : 'Comprimir detalhe';
+  }
+  distUpdateContratoSummary(card);
+}
+
+function distToggleContratoCard(card) {
+  if (!card) return;
+  distSetContratoCollapsed(card, !card.classList.contains('is-collapsed'));
 }
 
 /** Resumo no cartão: NFs associadas + qty por modelo. */
@@ -21042,14 +21103,18 @@ function distUpdateContratoSummary(card) {
     box.innerHTML = '';
     return;
   }
+  const nEq = rows.filter(r => r.querySelector('.equip-select')?.value).length;
   const nfTxt = nfs.length
     ? `<strong>NF:</strong> ${nfs.map(n => String(n).replace(/</g, '')).join(', ')}`
     : '<strong>NF:</strong> — (associa uma NF da carga)';
   const modTxt = [...byModel.entries()]
     .map(([m, q]) => `${q}× ${String(m).replace(/</g, '')}`)
     .join(' · ');
+  const hint = card.classList.contains('is-collapsed')
+    ? `<div class="dist-ct-collapse-hint">${nEq} máquina(s) · clica para expandir o detalhe</div>`
+    : '';
   box.style.display = '';
-  box.innerHTML = nfTxt + (modTxt ? `<br><strong>Modelos:</strong> ${modTxt}` : '');
+  box.innerHTML = nfTxt + (modTxt ? `<br><strong>Modelos:</strong> ${modTxt}` : '') + hint;
 }
 
 function distRefreshPoolAfterFormChange(prefix) {
@@ -22016,7 +22081,14 @@ function distPoolPickNf(prefix, gi) {
   distPoolRenderGroups(prefix, pool);
   const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
   const list = document.getElementById(listId);
-  if (list) [...list.querySelectorAll('.dist-contrato-card')].forEach(distUpdateContratoSummary);
+  if (list) {
+    [...list.querySelectorAll('.dist-contrato-card')].forEach(distUpdateContratoSummary);
+    // Comprimir o contrato activo — resumo fica visível, detalhe sob pedido
+    let ctIdx = (_distUi[prefix] && _distUi[prefix].activeContratoIdx) || 0;
+    if (ctIdx < 0 || ctIdx >= list.children.length) ctIdx = list.children.length - 1;
+    const activeCard = list.children[ctIdx];
+    if (activeCard && ok > 0) distSetContratoCollapsed(activeCard, true);
+  }
 }
 
 /** Compat: uma unidade do 1.º modelo ainda disponível na NF. */
