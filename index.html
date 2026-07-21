@@ -3235,6 +3235,7 @@ var _unused_placeholder = 1;
     <div class="sub-nav">
       <button class="sub-tab active" id="vis-sub-rota" onclick="visSwitchSub('rota')">Rota do dia</button>
       <button class="sub-tab" id="vis-sub-stats" onclick="visSwitchSub('stats')">Estatísticas</button>
+      <button class="sub-tab" id="vis-sub-ajustes" onclick="visSwitchSub('ajustes')">Ajustes de Rota</button>
     </div>
 
     <div id="vis-panel-rota">
@@ -3362,6 +3363,47 @@ var _unused_placeholder = 1;
           </thead>
           <tbody id="vis-motivos-body">
             <tr><td colspan="3" style="text-align:center;padding:24px;color:var(--muted);">Sem dados.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="vis-panel-ajustes" style="display:none;">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">
+        Indica a <strong>nova rota (ZD)</strong> e/ou o <strong>novo vendedor</strong> para cada cliente.
+        No final, exporta as alterações em Excel e abre o email para <strong>Dados Mestres</strong>
+        (CC Carlos Castro e Filipe Neves).
+      </p>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px;">
+        <div style="flex:1;min-width:200px;">
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;">PESQUISAR</label>
+          <input type="text" id="vis-ajustes-search" class="form-input" placeholder="Código ou nome…"
+            style="width:100%;height:36px;" oninput="visAjustesRender()">
+        </div>
+        <div id="vis-ajustes-vend-wrap">
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;">VENDEDOR</label>
+          <select id="vis-ajustes-vendedor" class="form-input" style="min-width:200px;height:36px;" onchange="visAjustesRender()">
+            <option value="">Todos</option>
+          </select>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="visAjustesRender()" style="height:36px;">↺ Actualizar</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="visAjustesExportarEmail()" style="height:36px;">⬇ Exportar alterações e enviar email</button>
+      </div>
+      <div id="vis-ajustes-info" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:90px;">Cód. Cliente</th>
+              <th>Nome do Cliente</th>
+              <th style="width:100px;">Rota Actual</th>
+              <th style="width:110px;">Nova Rota</th>
+              <th style="width:110px;">Cód. Vendedor</th>
+              <th style="min-width:200px;">Mudar Vendedor</th>
+            </tr>
+          </thead>
+          <tbody id="vis-ajustes-body">
+            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">A carregar…</td></tr>
           </tbody>
         </table>
       </div>
@@ -9376,6 +9418,8 @@ const VISITAS_MOTIVO_OUTRO = 'Outro';
 let _visitasCache = []; // todas as linhas carregadas (local + remoto)
 let _visitasRota = [];  // rota do dia/vendedor actual
 let _visitasSub = 'rota';
+/** Edits em Ajustes de Rota: cod → { novaRota, novoVendedor } */
+let _visAjustesEdits = {};
 
 function visHojeISO() {
   const d = new Date();
@@ -9754,11 +9798,315 @@ function visSwitchSub(sub) {
   _visitasSub = sub;
   const rota = document.getElementById('vis-panel-rota');
   const stats = document.getElementById('vis-panel-stats');
+  const ajustes = document.getElementById('vis-panel-ajustes');
   if (rota) rota.style.display = sub === 'rota' ? '' : 'none';
   if (stats) stats.style.display = sub === 'stats' ? '' : 'none';
+  if (ajustes) ajustes.style.display = sub === 'ajustes' ? '' : 'none';
   document.getElementById('vis-sub-rota')?.classList.toggle('active', sub === 'rota');
   document.getElementById('vis-sub-stats')?.classList.toggle('active', sub === 'stats');
+  document.getElementById('vis-sub-ajustes')?.classList.toggle('active', sub === 'ajustes');
   if (sub === 'stats') visRenderStats();
+  if (sub === 'ajustes') visAjustesInit();
+}
+
+/** Código NPess principal do vendedor (nome) no canal Horeca. */
+function visCodNPessDoVendedor(nome) {
+  const want = normNomeUtilizador(nome);
+  if (!want) return '';
+  const map = typeof getVendedoresMap === 'function' ? getVendedoresMap() : {};
+  const canalCods = typeof getVendedorCodsDoCanal === 'function'
+    ? getVendedorCodsDoCanal('horeca')
+    : new Set();
+  let fallback = '';
+  for (const [cod, n] of Object.entries(map)) {
+    if (normNomeUtilizador(n) !== want) continue;
+    const c = parseInt(cod, 10);
+    if (isNaN(c)) continue;
+    if (canalCods && canalCods.size && canalCods.has(c)) return String(c);
+    if (!fallback) fallback = String(c);
+  }
+  return fallback;
+}
+
+function visAjustesEsc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+function visAjustesVendedorOpts(selected) {
+  const vends = typeof getVendedoresCanalActivo === 'function'
+    ? getVendedoresCanalActivo('horeca')
+    : ['Hélcio Grégio', 'Paulo Fontes', 'Daniela Santos', 'Filipe Neves'];
+  const selN = normNomeUtilizador(selected);
+  let html = '<option value="">— manter —</option>';
+  vends.forEach(v => {
+    const sel = selN && normNomeUtilizador(v) === selN ? ' selected' : '';
+    html += `<option value="${visAjustesEsc(v)}"${sel}>${visAjustesEsc(v)}</option>`;
+  });
+  return html;
+}
+
+function visAjustesInit() {
+  const sel = document.getElementById('vis-ajustes-vendedor');
+  const wrap = document.getElementById('vis-ajustes-vend-wrap');
+  const user = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
+  const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
+  if (sel && typeof fillVendedorSelectCanal === 'function') {
+    // Admin/Filipe: filtro opcional; vendedor normal: só o próprio (já scoped)
+    fillVendedorSelectCanal('vis-ajustes-vendedor', {
+      emptyLabel: 'Todos',
+      selected: scope || '',
+    });
+  }
+  if (wrap) wrap.style.display = scope ? 'none' : '';
+  visAjustesRender();
+}
+
+function visAjustesOnNovaRota(cod, val) {
+  const k = String(cod || '').trim();
+  if (!k) return;
+  const ed = _visAjustesEdits[k] || {};
+  ed.novaRota = String(val || '').trim();
+  _visAjustesEdits[k] = ed;
+  visAjustesUpdateInfo();
+}
+
+function visAjustesOnNovoVend(cod, val) {
+  const k = String(cod || '').trim();
+  if (!k) return;
+  const ed = _visAjustesEdits[k] || {};
+  ed.novoVendedor = String(val || '').trim();
+  _visAjustesEdits[k] = ed;
+  visAjustesUpdateInfo();
+}
+
+function visAjustesClientesBase() {
+  const lista = (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : []) || [];
+  const vendFilt = document.getElementById('vis-ajustes-vendedor')?.value || '';
+  if (!vendFilt) return lista.slice();
+  const vn = normNomeUtilizador(vendFilt);
+  return lista.filter(c => normNomeUtilizador(c.vendedor) === vn);
+}
+
+function visAjustesUpdateInfo() {
+  const info = document.getElementById('vis-ajustes-info');
+  if (!info) return;
+  const changes = visAjustesCollectChanges();
+  info.textContent = changes.length
+    ? `${changes.length} alteração(ões) pendente(s) para exportar.`
+    : 'Preenche «Nova Rota» e/ou «Mudar Vendedor» nas linhas a alterar.';
+}
+
+function visAjustesRender() {
+  const body = document.getElementById('vis-ajustes-body');
+  if (!body) return;
+  const search = (document.getElementById('vis-ajustes-search')?.value || '').trim().toLowerCase();
+  let rows = visAjustesClientesBase();
+  if (search) {
+    rows = rows.filter(c =>
+      String(c.cod || '').toLowerCase().includes(search)
+      || String(c.nome || '').toLowerCase().includes(search)
+      || String(c.zd || c.ZD || '').toLowerCase().includes(search)
+    );
+  }
+  rows.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Nenhum cliente encontrado.</td></tr>';
+    visAjustesUpdateInfo();
+    return;
+  }
+  // Limitar render inicial se lista enorme — mostrar até 500 + aviso
+  const MAX = 500;
+  const shown = rows.slice(0, MAX);
+  body.innerHTML = shown.map(c => {
+    const cod = String(c.cod || '').trim();
+    const ed = _visAjustesEdits[cod] || {};
+    const rota = String(c.zd ?? c.ZD ?? '').trim();
+    const vendNome = c.vendedor || '';
+    const vendCod = String(c.npess || '').trim() || visCodNPessDoVendedor(vendNome);
+    const novaRota = ed.novaRota != null ? ed.novaRota : '';
+    const novoVend = ed.novoVendedor != null ? ed.novoVendedor : '';
+    return `<tr data-cod="${visAjustesEsc(cod)}">
+      <td style="font-family:var(--font-mono);font-size:12px;">${visAjustesEsc(cod)}</td>
+      <td>${visAjustesEsc(c.nome || '—')}</td>
+      <td style="font-family:var(--font-mono);">${visAjustesEsc(rota || '—')}</td>
+      <td><input type="text" class="form-input" style="width:100%;height:32px;font-size:12px;"
+        placeholder="ZD…" value="${visAjustesEsc(novaRota)}"
+        oninput="visAjustesOnNovaRota('${visAjustesEsc(cod)}', this.value)"></td>
+      <td style="font-family:var(--font-mono);font-size:12px;">${visAjustesEsc(vendCod || '—')}</td>
+      <td><select class="form-input" style="width:100%;height:32px;font-size:12px;"
+        onchange="visAjustesOnNovoVend('${visAjustesEsc(cod)}', this.value)">${visAjustesVendedorOpts(novoVend)}</select></td>
+    </tr>`;
+  }).join('');
+  if (rows.length > MAX) {
+    body.innerHTML += `<tr><td colspan="6" style="text-align:center;padding:12px;color:var(--muted);font-size:12px;">
+      A mostrar ${MAX} de ${rows.length} — usa a pesquisa para filtrar.
+    </td></tr>`;
+  }
+  visAjustesUpdateInfo();
+}
+
+/** Linhas com alteração real (nova rota e/ou novo vendedor diferente do actual). */
+function visAjustesCollectChanges() {
+  const byCod = new Map();
+  visAjustesClientesBase().forEach(c => byCod.set(String(c.cod || '').trim(), c));
+  const out = [];
+  Object.keys(_visAjustesEdits || {}).forEach(cod => {
+    const ed = _visAjustesEdits[cod] || {};
+    const c = byCod.get(cod);
+    if (!c) return;
+    const rotaActual = String(c.zd ?? c.ZD ?? '').trim();
+    const vendActual = c.vendedor || '';
+    const vendCod = String(c.npess || '').trim() || visCodNPessDoVendedor(vendActual);
+    const novaRota = String(ed.novaRota || '').trim();
+    const novoVend = String(ed.novoVendedor || '').trim();
+    const mudaRota = !!(novaRota && novaRota !== rotaActual);
+    const mudaVend = !!(novoVend && normNomeUtilizador(novoVend) !== normNomeUtilizador(vendActual));
+    if (!mudaRota && !mudaVend) return;
+    out.push({
+      cod,
+      nome: c.nome || '',
+      rotaActual,
+      novaRota: mudaRota ? novaRota : '',
+      codVendedorActual: vendCod,
+      vendedorActual: vendActual,
+      novoVendedor: mudaVend ? novoVend : '',
+      codNovoVendedor: mudaVend ? visCodNPessDoVendedor(novoVend) : '',
+    });
+  });
+  return out.sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+}
+
+async function visAjustesBuildXlsxBlob(changes) {
+  await ensureXLSX();
+  const header = [
+    'Cód. Cliente', 'Nome do Cliente', 'Rota Actual', 'Nova Rota',
+    'Cód. Vendedor Actual', 'Vendedor Actual', 'Mudar Vendedor', 'Cód. Novo Vendedor',
+    'Pedido por', 'Data pedido',
+  ];
+  const por = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
+  const agora = new Date().toISOString().slice(0, 10);
+  const rows = [header].concat(changes.map(r => [
+    r.cod, r.nome, r.rotaActual, r.novaRota,
+    r.codVendedorActual, r.vendedorActual, r.novoVendedor, r.codNovoVendedor,
+    por, agora,
+  ]));
+  const ws = window.XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 12 }, { wch: 36 }, { wch: 12 }, { wch: 12 },
+    { wch: 14 }, { wch: 20 }, { wch: 20 }, { wch: 14 },
+    { wch: 18 }, { wch: 12 },
+  ];
+  if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Ajustes Rota');
+  const out = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  return new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+async function visAjustesExportarEmail() {
+  const changes = visAjustesCollectChanges();
+  if (!changes.length) {
+    toast('Não há alterações para exportar — preenche Nova Rota e/ou Mudar Vendedor.', 'warn');
+    return;
+  }
+  const por = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
+  const porN = normNomeUtilizador(por);
+  const isSupervisor = porN === normNomeUtilizador('Carlos Castro')
+    || porN === normNomeUtilizador('Filipe Neves')
+    || (typeof isAdmin === 'function' && isAdmin());
+
+  const EMAIL_DADOS_MESTRE = 'dadosmestres.entidades2@gruponabeiro.com';
+  const EMAIL_CARLOS = 'carlos.castro@deltafoodsbrasil.com.br';
+  const EMAIL_FILIPE = 'filipe.neves@deltafoodsbrasil.com.br';
+
+  const cc = [EMAIL_CARLOS, EMAIL_FILIPE];
+  if (isSupervisor) {
+    changes.forEach(r => {
+      [r.vendedorActual, r.novoVendedor].forEach(n => {
+        if (!n) return;
+        const em = typeof getEmailUtilizador === 'function' ? getEmailUtilizador(n) : '';
+        if (em) cc.push(em);
+      });
+    });
+  }
+
+  // Dedup CC
+  const ccUnique = [];
+  const seen = new Set();
+  cc.forEach(e => {
+    const k = String(e || '').trim().toLowerCase();
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    ccUnique.push(e.trim());
+  });
+
+  try {
+    toast('A gerar Excel…');
+    const blob = await visAjustesBuildXlsxBlob(changes);
+    const filename = `Ajustes_Rota_${(por || 'pedido').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 20)}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const nRota = changes.filter(c => c.novaRota).length;
+    const nVend = changes.filter(c => c.novoVendedor).length;
+    const linhasHtml = changes.slice(0, 40).map(r =>
+      `<tr>
+        <td style="border:1px solid #ddd;padding:4px 8px;font-family:Consolas,monospace;">${visAjustesEsc(r.cod)}</td>
+        <td style="border:1px solid #ddd;padding:4px 8px;">${visAjustesEsc(r.nome)}</td>
+        <td style="border:1px solid #ddd;padding:4px 8px;">${visAjustesEsc(r.rotaActual || '—')} → <strong>${visAjustesEsc(r.novaRota || '—')}</strong></td>
+        <td style="border:1px solid #ddd;padding:4px 8px;">${visAjustesEsc(r.vendedorActual || '—')} → <strong>${visAjustesEsc(r.novoVendedor || '—')}</strong></td>
+      </tr>`
+    ).join('');
+    const html = `
+<p>Olá equipa de Dados Mestres,</p>
+<p>Solicito o tratamento das seguintes <strong>alterações de rota / vendedor</strong> (${changes.length} cliente(s)):
+${nRota ? ` <strong>${nRota}</strong> mudança(s) de rota;` : ''}
+${nVend ? ` <strong>${nVend}</strong> mudança(s) de vendedor.` : ''}</p>
+<p><strong>Pedido por:</strong> ${visAjustesEsc(por)}<br>
+<strong>Canal:</strong> Horeca</p>
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:12px;margin:12px 0;">
+  <thead><tr style="background:#c8102e;color:#fff;">
+    <th style="padding:6px 8px;text-align:left;">Cód.</th>
+    <th style="padding:6px 8px;text-align:left;">Cliente</th>
+    <th style="padding:6px 8px;text-align:left;">Rota</th>
+    <th style="padding:6px 8px;text-align:left;">Vendedor</th>
+  </tr></thead>
+  <tbody>${linhasHtml}</tbody>
+</table>
+${changes.length > 40 ? `<p><em>… e mais ${changes.length - 40} no Excel em anexo.</em></p>` : ''}
+<p>Segue o Excel completo em anexo.</p>
+<p>Cumprimentos,<br>${visAjustesEsc(por)}</p>`;
+
+    const corpoTxt =
+`Olá equipa de Dados Mestres,
+
+Solicito o tratamento de ${changes.length} alteração(ões) de rota/vendedor (Horeca).
+Pedido por: ${por}
+
+Segue o Excel em anexo (também descarregado se o Outlook não anexar automaticamente).
+
+Cumprimentos,
+${por}`;
+
+    const ok = await outlookAbrirRascunho({
+      to: EMAIL_DADOS_MESTRE,
+      cc: ccUnique.join(', '),
+      subject: `Ajustes de Rota / Vendedor — Horeca — ${por} — ${changes.length} cliente(s)`,
+      html,
+      attachments: [{ blob, filename, mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }],
+      draftName: filename.replace(/\.xlsx$/i, '') + '.eml',
+      toastMsg: '📧 Outlook aberto com Excel em anexo para Dados Mestres.',
+      mailtoFallback: {
+        body: corpoTxt,
+        toastMsg: '📧 Outlook aberto. Anexa o Excel descarregado ao email para Dados Mestres.',
+      },
+    });
+    if (!ok) {
+      // Fallback já descarrega anexos em outlookAbrirRascunho; garantir download
+      triggerBlobDownload(blob, filename);
+      toast('Excel descarregado — anexa-o ao email se o Outlook não abriu com anexo.', 'warn');
+    }
+  } catch (e) {
+    console.error('visAjustesExportarEmail', e);
+    toast('Erro ao exportar: ' + (e.message || e), 'error');
+  }
 }
 
 async function visCarregarRota() {
