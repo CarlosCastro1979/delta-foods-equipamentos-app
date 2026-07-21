@@ -72,6 +72,7 @@ public static class OutlookFg {
   [DllImport("user32.dll")] public static extern bool AllowSetForegroundWindow(int dwProcessId);
   [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
   [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+  [DllImport("user32.dll")] public static extern bool SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
   public static void BringToFront(IntPtr hWnd) {
     if (hWnd == IntPtr.Zero) return;
     AllowSetForegroundWindow(-1);
@@ -80,12 +81,19 @@ public static class OutlookFg {
     uint fgTid = GetWindowThreadProcessId(fg, out fgPid);
     uint cur = GetCurrentThreadId();
     AttachThreadInput(cur, fgTid, true);
+    // Alt + minimize/restore força o Windows a ceder o foreground
     keybd_event(VK_MENU, 0, 0, UIntPtr.Zero);
+    ShowWindow(hWnd, SW_SHOW);
     if (IsIconic(hWnd)) ShowWindow(hWnd, SW_RESTORE);
-    else ShowWindow(hWnd, SW_SHOW);
+    else {
+      ShowWindow(hWnd, 6); // SW_MINIMIZE
+      ShowWindow(hWnd, SW_RESTORE);
+    }
+    SwitchToThisWindow(hWnd, true);
     SetForegroundWindow(hWnd);
     keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     AttachThreadInput(cur, fgTid, false);
+    SetForegroundWindow(hWnd);
   }
 }
 '@ -ErrorAction SilentlyContinue
@@ -130,8 +138,8 @@ function Activate-OutlookForeground {
     return $false
 }
 
-function Open-EmlDraft([string]$emlPath) {
-    # Contar inspectors antes de abrir (para activar o novo rascunho)
+function Start-EmlDraft([string]$emlPath) {
+    # Contar inspectors + ShellExecute já (antes de fechar HTTP → melhor chance de foco)
     $before = 0
     $outlook = $null
     try {
@@ -143,16 +151,23 @@ function Open-EmlDraft([string]$emlPath) {
             $before = Get-OutlookInspectorCount $outlook
         } catch { }
     }
-
-    # ShellExecute preserva X-Unsent:1 (rascunho editável) — melhor que OpenSharedItem
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $emlPath
     $psi.UseShellExecute = $true
     [void][System.Diagnostics.Process]::Start($psi)
+    return @{ Before = $before; Outlook = $outlook }
+}
 
-    # Esperar o novo inspector e trazer à frente (até ~6s)
-    for ($i = 0; $i -lt 40; $i++) {
-        Start-Sleep -Milliseconds 150
+function Complete-EmlDraftFocus($state) {
+    if (-not $state) {
+        [void](Activate-OutlookForeground)
+        return
+    }
+    $before = [int]$state.Before
+    $outlook = $state.Outlook
+    $activated = $false
+    for ($i = 0; $i -lt 50; $i++) {
+        Start-Sleep -Milliseconds 160
         try {
             if (-not $outlook) {
                 $outlook = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
@@ -161,11 +176,27 @@ function Open-EmlDraft([string]$emlPath) {
             if ($n -gt $before -or ($before -eq 0 -and $n -ge 1)) {
                 [void](Activate-OutlookInspector $outlook $n)
                 [void](Activate-OutlookForeground)
+                $activated = $true
+                # Retries — Windows por vezes ignora o 1.º SetForeground
+                Start-Sleep -Milliseconds 200
+                [void](Activate-OutlookInspector $outlook $n)
+                [void](Activate-OutlookForeground)
+                Start-Sleep -Milliseconds 350
+                [void](Activate-OutlookForeground)
                 return
             }
         } catch { }
     }
-    [void](Activate-OutlookForeground)
+    if (-not $activated) {
+        [void](Activate-OutlookForeground)
+        Start-Sleep -Milliseconds 250
+        [void](Activate-OutlookForeground)
+    }
+}
+
+function Open-EmlDraft([string]$emlPath) {
+    $st = Start-EmlDraft $emlPath
+    Complete-EmlDraftFocus $st
 }
 
 function Set-CorsHeaders($res) {
@@ -204,6 +235,7 @@ while ($listener.IsListening) {
     $res = $ctx.Response
     $openEmlPath = $null
     $openEmlKb = 0
+    $openEmlState = $null
     try {
         Sync-AppAssets
         $path = $ctx.Request.Url.LocalPath
@@ -236,6 +268,10 @@ while ($listener.IsListening) {
                     [IO.File]::WriteAllBytes($tmp, $emlBytes)
                     $openEmlPath = $tmp
                     $openEmlKb = [math]::Round($emlBytes.Length / 1KB)
+                    # ShellExecute ANTES do 204 — preserva melhor a cadeia de foco do clique
+                    try { $openEmlState = Start-EmlDraft $openEmlPath } catch {
+                        Write-Host "  WARN Start-EmlDraft: $($_.Exception.Message)" -ForegroundColor Yellow
+                    }
                     $res.StatusCode = 204
                     $res.ContentLength64 = 0
                 }
@@ -270,10 +306,10 @@ while ($listener.IsListening) {
 
     try { $res.Close() } catch { Write-Host '' }
 
-    # Abrir Outlook so depois de fechar a resposta HTTP (evita hang no browser).
+    # Trazer Outlook à frente depois do 204 (retries sem bloquear o browser)
     if ($openEmlPath) {
         try {
-            Open-EmlDraft $openEmlPath
+            Complete-EmlDraftFocus $openEmlState
             Write-Host "  204  POST -> Outlook ($openEmlKb KB)" -ForegroundColor DarkGray
         } catch {
             Write-Host "  WARN eml gravado mas Outlook nao abriu: $($_.Exception.Message)" -ForegroundColor Yellow

@@ -14137,9 +14137,11 @@ function outlookGuessMime(filename) {
   return 'application/octet-stream';
 }
 
+const OUTLOOK_API_CACHE_KEY = 'delta_outlook_api_url';
+
 /** Endpoints da API local (serve.ps1) que abrem o rascunho no Outlook. */
 function outlookDraftApiUrls() {
-  // Porta actual primeiro (menos latência → Outlook abre enquanto o browser ainda está em foco)
+  // Porta actual / cache primeiro (menos latência → Outlook abre com foco)
   const pagePort = Number(location.port) || 0;
   const ports = [8088, 8080, 8090, 5505];
   if (pagePort && !ports.includes(pagePort)) ports.unshift(pagePort);
@@ -14156,12 +14158,36 @@ function outlookDraftApiUrls() {
   const isLocal = host === 'localhost' || host === '127.0.0.1';
   // Em GitHub Pages NÃO usar paths relativos — um 200 HTML dava falso "Outlook aberto"
   // e o browser descarregava .eml em vez de abrir o email.
-  if (!isLocal) return local;
-  return [
-    '/api/open-outlook-draft',
-    '/delta-foods-equipamentos-app/api/open-outlook-draft',
-    ...local,
-  ];
+  let urls = isLocal
+    ? ['/api/open-outlook-draft', '/delta-foods-equipamentos-app/api/open-outlook-draft', ...local]
+    : local;
+  try {
+    const cached = sessionStorage.getItem(OUTLOOK_API_CACHE_KEY);
+    if (cached) {
+      urls = [cached, ...urls.filter(u => u !== cached)];
+    }
+  } catch (_) {}
+  return urls;
+}
+
+/** POST curto à API Outlook — timeout evita esperar portas mortas em background. */
+async function outlookPostDraft(ep, eml, timeoutMs = 700) {
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const t = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, timeoutMs) : null;
+  try {
+    const r = await fetch(ep, {
+      method: 'POST',
+      headers: { 'Content-Type': 'message/rfc822; charset=utf-8' },
+      body: eml,
+      signal: ctrl ? ctrl.signal : undefined,
+    });
+    if (r.status === 204) return ep;
+    return null;
+  } catch (_) {
+    return null;
+  } finally {
+    if (t) clearTimeout(t);
+  }
 }
 
 /**
@@ -14221,19 +14247,24 @@ async function outlookAbrirRascunho({
   parts.push(`--${boundary}--`, '');
   const eml = parts.join('\r\n');
 
-  // serve.ps1: só 204 = Outlook aberto com anexos (ignorar outros 200/HTML)
-  for (const ep of outlookDraftApiUrls()) {
-    try {
-      const r = await fetch(ep, {
-        method: 'POST',
-        headers: { 'Content-Type': 'message/rfc822; charset=utf-8' },
-        body: eml,
-      });
-      if (r.status === 204) {
-        toast(toastMsg || '📧 Outlook aberto com email e anexos.');
-        return true;
-      }
-    } catch (_) { /* porta/host sem API */ }
+  // serve.ps1: só 204 = Outlook aberto. Cache + timeout curto evita atrasos
+  // que fazem o Outlook abrir atrás do browser.
+  const urls = outlookDraftApiUrls();
+  let openedEp = null;
+  // 1) Endpoint em cache / primeiro da lista (rápido)
+  if (urls.length) {
+    openedEp = await outlookPostDraft(urls[0], eml, 2500);
+  }
+  // 2) Restantes em paralelo com timeout curto
+  if (!openedEp && urls.length > 1) {
+    const rest = urls.slice(1);
+    const raced = await Promise.all(rest.map(ep => outlookPostDraft(ep, eml, 600)));
+    openedEp = raced.find(Boolean) || null;
+  }
+  if (openedEp) {
+    try { sessionStorage.setItem(OUTLOOK_API_CACHE_KEY, openedEp); } catch (_) {}
+    toast(toastMsg || '📧 Outlook aberto com email e anexos.');
+    return true;
   }
 
   // Sem serve.ps1: abrir email real via mailto (+ Excel em download para anexar)
@@ -14249,6 +14280,7 @@ async function outlookAbrirRascunho({
       ccMailtoParam(ccList) +
       '&subject=' + encodeURIComponent(subject || '') +
       '&body=' + encodeURIComponent(bodyTxt);
+    // location.href mantém o gesto do utilizador melhor que window.open em background
     window.location.href = mailto;
     toast(mailtoFallback.toastMsg || '📧 Outlook aberto. Anexa o Excel descarregado ao email.');
     return true;
