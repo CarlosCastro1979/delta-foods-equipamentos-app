@@ -21241,8 +21241,8 @@ const DIST_COL_ALIASES = {
   cod_cliente: [
     'cod cliente', 'codigo cliente', 'cód cliente', 'código cliente',
     'emissor', 'emissor da ordem', 'sold to', 'sold to party', 'n cliente',
-    'nº cliente', 'numero cliente', 'cod', 'codigo',
-    // NÃO usar alias curto "cliente" — faz match em "Nome cliente" via includes()
+    'nº cliente', 'numero cliente', 'codigo do cliente', 'código do cliente',
+    // Evitar alias curto "cod"/"codigo" — apanha CEP / código material
   ],
   nome_cliente: [
     'nome cliente', 'nome', 'razao social', 'razão social', 'name 1', 'name1',
@@ -21398,8 +21398,10 @@ function distAutoMapHeaders(headers) {
   const scoreHeader = (field, h, aliasRaw) => {
     const alias = distNormHeader(aliasRaw);
     if (!h || !alias) return 0;
-    // Evitar: alias "cliente" / "cod" a apanhar "nome cliente"
-    if (field === 'cod_cliente' && /\b(nome|razao|denomin|name)\b/.test(h)) return 0;
+    // Evitar: alias "cliente" / "cod" a apanhar "nome cliente" ou CEP
+    if (field === 'cod_cliente') {
+      if (/\b(nome|razao|denomin|name|cep|postal|enderec|rua|material|equip)\b/.test(h)) return 0;
+    }
     if (field === 'nome_cliente' && /\b(cod|codigo|emissor|sold)\b/.test(h) && !/\bnome\b/.test(h)) return 0;
     // NF já fixado na coluna A — scoring só para outros campos
     if (field === 'nf') return 0;
@@ -21495,6 +21497,23 @@ function distCargaSetLocal(rows) {
 function distNormNomeCliente(s) {
   return String(s || '').toUpperCase().normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]/g, '');
+}
+
+/** Parece CEP BR (ex. 69058-411 ou 69058411) — NÃO é código cliente SAP. */
+function distLooksLikeCep(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return false;
+  if (/^\d{5}-?\d{3}$/.test(s)) return true;
+  // Só 5 dígitos de CEP sem hífen (ex. 69058) — ambíguo; só se vier com hífen ou 8 dígitos
+  return false;
+}
+
+/** Código cliente útil (não CEP). */
+function distSanitizeCodClienteImport(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  if (distLooksLikeCep(s)) return '';
+  return distNormCodCliente(s) || (/^\d{4,}$/.test(s.replace(/\D/g, '')) ? s.replace(/\D/g, '').replace(/^0+/, '') || '' : '');
 }
 
 /** Normaliza código cliente para match carga ↔ formulário (zeros, científico Excel, "cod NOME"). */
@@ -22046,6 +22065,10 @@ async function distCargaEquipConfirmMap() {
     toast('Mapeia pelo menos a coluna Código cliente.', 'error');
     return;
   }
+  if (map.qty < 0) {
+    toast('Mapeia a coluna Quantidade (sem isso cada linha conta 1 e perdes máquinas).', 'error');
+    return;
+  }
   const { rows, fileName, sheetName, headers } = _distCargaMapPending;
   // Regra fixa: NF-e = sempre coluna A
   map.nf = 0;
@@ -22053,27 +22076,38 @@ async function distCargaEquipConfirmMap() {
     toast('Ficheiro sem colunas.', 'error');
     return;
   }
+  const codHdr = distNormHeader(headers[map.cod_cliente]);
+  if (/\b(cep|postal)\b/.test(codHdr)) {
+    toast('Código cliente está mapeado para CEP — escolhe a coluna do código SAP do cliente (ex. 779538), não o CEP.', 'error');
+    return;
+  }
   const nfHeaderName = String(headers[0] || 'coluna A');
   const parsed = [];
   let skippedNoCod = 0;
+  let skippedCep = 0;
   let skippedNotEquip = 0;
   const now = new Date().toISOString();
   const por = (typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '') || '';
   // Clientes tocados no ficheiro (mesmo se só tiverem café) — para limpar carga local antiga poluída
   const touchedCods = new Set();
+  // Também limpar por nome (carga antiga com CEP como "código")
+  const touchedNomes = new Set();
 
   rows.forEach((row, ri) => {
     if (!row || !row.length) return;
     const cell = (idx) => (idx >= 0 && row[idx] != null ? String(row[idx]).trim() : '');
     const codRaw = cell(map.cod_cliente);
     if (!codRaw) { skippedNoCod++; return; }
+    if (distLooksLikeCep(codRaw)) { skippedCep++; return; }
     // Extrair/normalizar código (científico Excel 7.79538E+5, zeros, "cod NOME")
-    // Se o map apontou para coluna de nome, distNormCodCliente devolve '' → guardar raw
-    // para fallback por nome_cliente no match.
-    const codNorm = distNormCodCliente(codRaw);
-    const cod_cliente = codNorm || codRaw;
+    const codNorm = distSanitizeCodClienteImport(codRaw);
+    if (!codNorm) { skippedNoCod++; return; }
+    const cod_cliente = codNorm;
     const codKey = distNormCodCliente(cod_cliente);
     if (codKey) touchedCods.add(codKey);
+    const nomeCli = cell(map.nome_cliente);
+    const nomeKey = distNormNomeCliente(nomeCli);
+    if (nomeKey) touchedNomes.add(nomeKey);
     const codigo_sap = cell(map.codigo_sap);
     const excelDesc = cell(map.descricao);
     if (!distIsEquipProfissionalRow(codigo_sap, excelDesc)) {
@@ -22087,7 +22121,7 @@ async function distCargaEquipConfirmMap() {
     }
     const sapNorm = distNormCodigoSap(codigo_sap) || codigo_sap;
     const byDesc = !distIsEquipProfissionalCodigo(sapNorm) ? distMatchCatalogByDescricao(excelDesc) : null;
-    const qtyRaw = map.qty >= 0 && row[map.qty] != null && row[map.qty] !== '' ? row[map.qty] : 1;
+    const qtyRaw = row[map.qty] != null && row[map.qty] !== '' ? row[map.qty] : 1;
     const qty = distSanitizeQty(qtyRaw);
     // Valor da linha (preferir montante/líquido); senão unitário × qty
     let valorLinha = 0;
@@ -22106,7 +22140,7 @@ async function distCargaEquipConfirmMap() {
       id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('local-' + Date.now() + '-' + ri),
       nf: distNormNf(cell(map.nf)),
       cod_cliente,
-      nome_cliente: cell(map.nome_cliente),
+      nome_cliente: nomeCli,
       codigo_sap: sapNorm,
       descricao: distResolveDescricao(sapNorm, excelDesc || (byDesc && byDesc.descricao) || ''),
       qty,
@@ -22119,10 +22153,12 @@ async function distCargaEquipConfirmMap() {
     });
   });
 
-  const skipped = skippedNoCod + skippedNotEquip;
+  const skipped = skippedNoCod + skippedNotEquip + skippedCep;
   if (!parsed.length) {
     toast(
-      skippedNotEquip
+      skippedCep && !skippedNotEquip
+        ? 'Nenhuma linha válida — a coluna «código cliente» parece ser CEP. Mapeia o código SAP do cliente.'
+        : skippedNotEquip
         ? `Nenhum equipamento profissional encontrado · ${skippedNotEquip} linha(s) ignorada(s) (café/acessórios/outros).`
         : 'Nenhuma linha válida (código cliente vazio?).',
       'error'
@@ -22130,10 +22166,40 @@ async function distCargaEquipConfirmMap() {
     return;
   }
 
+  const qtySum = parsed.reduce((s, r) => s + distSanitizeQty(r.qty), 0);
+  const allQtyOne = parsed.every(r => distSanitizeQty(r.qty) === 1);
+  if (allQtyOne && parsed.length <= 40) {
+    const ok = confirm(
+      `Atenção: ${parsed.length} linhas com qty=1 (total ${qtySum} máquinas).\n\n`
+      + 'Para Marizete o Excel costuma ter ~95 máquinas — a coluna Quantidade pode estar mal mapeada.\n\n'
+      + 'Continuar mesmo assim? (Isto SUBSTITUI a carga anterior deste cliente.)'
+    );
+    if (!ok) return;
+  }
+
   // Guardar local sempre
   const prev = distCargaGetLocal();
-  // Substituir por cliente tocado no ficheiro (limpa café/lixo antigo desses códigos) + append só equipamentos
-  const kept = prev.filter(p => !touchedCods.has(distNormCodCliente(p.cod_cliente)));
+  // Qty antiga dos clientes/nomes tocados — evitar apagar 95 com um import de 19
+  const prevTouchedQty = prev
+    .filter(p =>
+      touchedCods.has(distNormCodCliente(p.cod_cliente))
+      || (touchedNomes.size && touchedNomes.has(distNormNomeCliente(p.nome_cliente)))
+    )
+    .reduce((s, p) => s + distSanitizeQty(p.qty), 0);
+  if (prevTouchedQty > 0 && qtySum < prevTouchedQty * 0.5) {
+    const ok = confirm(
+      `A carga actual destes clientes tem ${prevTouchedQty} máquinas e o novo ficheiro só traz ${qtySum}.\n\n`
+      + 'Continuar substitui a carga boa pela nova (podes perder dados).\n\nContinuar?'
+    );
+    if (!ok) return;
+  }
+
+  // Substituir por cliente tocado OU mesmo nome (limpa carga antiga com CEP como código)
+  const kept = prev.filter(p => {
+    if (touchedCods.has(distNormCodCliente(p.cod_cliente))) return false;
+    if (touchedNomes.size && touchedNomes.has(distNormNomeCliente(p.nome_cliente))) return false;
+    return true;
+  });
   const merged = kept.concat(parsed);
   distCargaSetLocal(merged);
 
@@ -22141,7 +22207,13 @@ async function distCargaEquipConfirmMap() {
   let remoteOk = false;
   try {
     const codList = [...touchedCods].filter(Boolean);
-    // Também variantes com zeros à esquerda que possam existir na cloud
+    // Códigos antigos errados (ex. CEP 69058) do mesmo nome — apagar também
+    prev.forEach(p => {
+      if (touchedNomes.size && touchedNomes.has(distNormNomeCliente(p.nome_cliente))) {
+        const oc = distNormCodCliente(p.cod_cliente);
+        if (oc) codList.push(oc);
+      }
+    });
     const codVariants = new Set(codList);
     codList.forEach(c => {
       if (/^\d+$/.test(c) && c.length < 10) codVariants.add(c.padStart(10, '0'));
@@ -22175,14 +22247,19 @@ async function distCargaEquipConfirmMap() {
   // Se o form Dist estiver aberto com um destes códigos, actualizar UI (salta pergunta)
   ['f', 'e'].forEach(prefix => {
     const el = document.getElementById(prefix === 'e' ? 'e-cod' : 'f-cod');
-    if (el && el.value && touchedCods.has(distNormCodCliente(el.value))) {
-      distPrepareFormForCod(prefix, el.value);
+    if (!el || !el.value) return;
+    const n = document.getElementById(prefix === 'e' ? 'e-nome' : 'f-nome')?.value || '';
+    if (touchedCods.has(distNormCodCliente(el.value))
+        || (touchedNomes.size && touchedNomes.has(distNormNomeCliente(n)))) {
+      distPrepareFormForCod(prefix, el.value, { nome: n });
     }
   });
   const where = remoteOk ? ' (Supabase + local)' : ' (só local — corre o SQL de migration)';
   toast(
-    `✅ ${parsed.length} máquinas profissionais importadas · ${skipped} linha(s) ignorada(s)` +
-      (skippedNotEquip ? ` (${skippedNotEquip} café/filtro/outro)` : '') +
+    `✅ ${qtySum} máquina(s) · ${parsed.length} linha(s)` +
+      (skipped ? ` · ${skipped} ignorada(s)` : '') +
+      (skippedCep ? ` · ${skippedCep} CEP rejeitado(s)` : '') +
+      (skippedNotEquip ? ` · ${skippedNotEquip} café/filtro/outro` : '') +
       ` · aba "${sheetName}"` + where
   );
 }
