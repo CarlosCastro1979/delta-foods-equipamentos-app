@@ -22207,7 +22207,13 @@ async function distCargaEquipConfirmMap() {
   let remoteOk = false;
   try {
     const codList = [...touchedCods].filter(Boolean);
-    // Também variantes com zeros à esquerda que possam existir na cloud
+    // Códigos antigos errados (ex. CEP 69058) do mesmo nome — apagar também
+    prev.forEach(p => {
+      if (touchedNomes.size && touchedNomes.has(distNormNomeCliente(p.nome_cliente))) {
+        const oc = distNormCodCliente(p.cod_cliente);
+        if (oc) codList.push(oc);
+      }
+    });
     const codVariants = new Set(codList);
     codList.forEach(c => {
       if (/^\d+$/.test(c) && c.length < 10) codVariants.add(c.padStart(10, '0'));
@@ -22241,14 +22247,19 @@ async function distCargaEquipConfirmMap() {
   // Se o form Dist estiver aberto com um destes códigos, actualizar UI (salta pergunta)
   ['f', 'e'].forEach(prefix => {
     const el = document.getElementById(prefix === 'e' ? 'e-cod' : 'f-cod');
-    if (el && el.value && touchedCods.has(distNormCodCliente(el.value))) {
-      distPrepareFormForCod(prefix, el.value);
+    if (!el || !el.value) return;
+    const n = document.getElementById(prefix === 'e' ? 'e-nome' : 'f-nome')?.value || '';
+    if (touchedCods.has(distNormCodCliente(el.value))
+        || (touchedNomes.size && touchedNomes.has(distNormNomeCliente(n)))) {
+      distPrepareFormForCod(prefix, el.value, { nome: n });
     }
   });
   const where = remoteOk ? ' (Supabase + local)' : ' (só local — corre o SQL de migration)';
   toast(
-    `✅ ${parsed.length} máquinas profissionais importadas · ${skipped} linha(s) ignorada(s)` +
-      (skippedNotEquip ? ` (${skippedNotEquip} café/filtro/outro)` : '') +
+    `✅ ${qtySum} máquina(s) · ${parsed.length} linha(s)` +
+      (skipped ? ` · ${skipped} ignorada(s)` : '') +
+      (skippedCep ? ` · ${skippedCep} CEP rejeitado(s)` : '') +
+      (skippedNotEquip ? ` · ${skippedNotEquip} café/filtro/outro` : '') +
       ` · aba "${sheetName}"` + where
   );
 }
