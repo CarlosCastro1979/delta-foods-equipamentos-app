@@ -5038,10 +5038,17 @@ function renderTable() {
   const nomeFilt = document.getElementById('filtro-nome')?.value?.trim()?.toLowerCase() || '';
   const tabelaBody = document.getElementById('table-body');
 
-  // Contencioso (*13) não conta; no canal activo só vendedores desse canal
-  const activos = getRegistosActivos(allData).filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+  // Contencioso (*13) não conta; no canal activo só vendedores desse canal (+ escopo Horeca)
+  let activos = getRegistosActivos(allData).filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+  if (typeof filterByUtilizadorActivo === 'function') {
+    activos = filterByUtilizadorActivo(activos);
+  }
   let filtered = activos;
-  if (vendFilt) filtered = filtered.filter(r => normNomeUtilizador(r.vendedor) === normNomeUtilizador(vendFilt));
+  const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
+  const vendFiltEffective = scope || vendFilt;
+  if (vendFiltEffective) {
+    filtered = filtered.filter(r => normNomeUtilizador(r.vendedor) === normNomeUtilizador(vendFiltEffective));
+  }
   if (codFilt) filtered = filtered.filter(r => (r.cod||'').toLowerCase().includes(codFilt));
   if (nomeFilt) filtered = filtered.filter(r => (r.nome||'').toLowerCase().includes(nomeFilt));
 
@@ -8118,16 +8125,20 @@ function getListaClientesCompleta() {
 /**
  * Lista activa no contexto actual.
  * Dentro de um canal → só clientes dos vendedores desse canal.
+ * No Horeca, vendedores normais vêem só os seus (admin / Filipe vêem todos).
  */
 function getListaClientesActiva() {
   const full = getListaClientesCompleta();
   const canalId = (typeof resolveCanalActivoId === 'function')
     ? resolveCanalActivoId()
     : (typeof _canalActivo !== 'undefined' ? _canalActivo : null);
+  let rows = full;
   if (canalId && CANAIS_APP[canalId]) {
-    return full.filter(c => clientePertenceAoCanal(c, canalId));
+    rows = full.filter(c => clientePertenceAoCanal(c, canalId));
   }
-  return full;
+  return typeof filterByUtilizadorActivo === 'function'
+    ? filterByUtilizadorActivo(rows)
+    : rows;
 }
 
 /** URL da tabela lista_clientes no Supabase. */
@@ -8483,7 +8494,10 @@ async function loadResumo() {
       }
     }
     const registadosAll = getRegistosActivos(regsSrc);
-    const registados = registadosAll.filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+    let registados = registadosAll.filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+    if (typeof filterByUtilizadorActivo === 'function') {
+      registados = filterByUtilizadorActivo(registados);
+    }
 
     const vendedores = {};
     const codRegistados = new Set(registados.map(r => normCod(r.cod)));
@@ -8853,19 +8867,32 @@ function getVendedoresCanalActivo(canalId) {
 function fillVendedorSelectCanal(selOrId, { emptyLabel, selected, keepExtra } = {}) {
   const sel = typeof selOrId === 'string' ? document.getElementById(selOrId) : selOrId;
   if (!sel) return;
-  const cur = selected !== undefined ? selected : sel.value;
-  const vends = getVendedoresCanalActivo();
+  let cur = selected !== undefined ? selected : sel.value;
+  let vends = getVendedoresCanalActivo();
+  // Horeca: vendedor logado só vê/selecciona o próprio nome (exceto admin/Filipe)
+  const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
+  if (scope) {
+    const sn = normNomeUtilizador(scope);
+    vends = vends.filter(v => normNomeUtilizador(v) === sn);
+    if (!vends.length) vends = [scope];
+    cur = vends[0];
+  }
   const opts = vends.slice();
   if (keepExtra && cur && !opts.some(v => normNomeUtilizador(v) === normNomeUtilizador(cur))) {
     opts.push(cur);
   }
   const empty = emptyLabel != null ? emptyLabel : 'Todos os vendedores';
-  sel.innerHTML = `<option value="">${empty}</option>` +
+  // Com escopo: sem opção "Todos" — só o próprio vendedor
+  sel.innerHTML = (scope ? '' : `<option value="">${empty}</option>`) +
     opts.map(v => `<option value="${String(v).replace(/"/g, '&quot;')}">${v}</option>`).join('');
   if (cur && [...sel.options].some(o => o.value === cur || normNomeUtilizador(o.value) === normNomeUtilizador(cur))) {
     const match = [...sel.options].find(o => o.value === cur || normNomeUtilizador(o.value) === normNomeUtilizador(cur));
     if (match) sel.value = match.value;
+  } else if (scope && sel.options.length) {
+    sel.selectedIndex = 0;
   }
+  sel.disabled = !!scope;
+  sel.title = scope ? 'Vista filtrada ao teu utilizador' : '';
 }
 
 /** Filtra linhas pelo vendedor do canal activo (Horeca/Ecommerce/Varejo/Dist). */
@@ -8873,7 +8900,10 @@ function filterByCanalActivoVendedor(rows, getVend = r => r && r.vendedor) {
   if (!rows || !rows.length) return [];
   const canalId = typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : null;
   if (!canalId || !CANAIS_APP[canalId]) return rows.slice();
-  return rows.filter(r => vendedorPertenceAoCanalActivo(getVend(r)));
+  const canalRows = rows.filter(r => vendedorPertenceAoCanalActivo(getVend(r)));
+  return typeof filterByUtilizadorActivo === 'function'
+    ? filterByUtilizadorActivo(canalRows, getVend)
+    : canalRows;
 }
 
 /** Extrai código NPess do valor SAP do dropdown (ex.: "99520003 - BOTTELLO…"). */
@@ -9085,6 +9115,9 @@ function abrirCanalConfirmado(canalId) {
     try { aplicarUtilizador(getUtilizadorAtual()); } catch (_) {}
     try { if (typeof adaptarFormRegistoCanal === 'function') adaptarFormRegistoCanal(); } catch (_) {}
     try { if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal(); } catch (_) {}
+    // Re-render listas com escopo Horeca (só dados do vendedor logado)
+    try { if (typeof renderTable === 'function') renderTable(); } catch (_) {}
+    try { if (typeof renderPendentes === 'function') renderPendentes(); } catch (_) {}
   }, 50);
 }
 
@@ -9424,21 +9457,37 @@ function visFillVendedorSelects() {
   const nomes = visNomesVendedoresUnicos();
   const user = getUtilizadorAtual();
   const userUp = visNormVend(user);
+  const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
+  const scopeUp = scope ? visNormVend(scope) : '';
   ['vis-vendedor', 'vis-stats-vendedor'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     const cur = el.value;
     const isStats = id === 'vis-stats-vendedor';
-    el.innerHTML = isStats
-      ? '<option value="">Todos</option>'
-      : '<option value="">— Selecionar —</option>';
-    nomes.forEach(n => {
+    let nomesOpts = nomes;
+    if (scopeUp) {
+      nomesOpts = nomes.filter(n => visNormVend(n) === scopeUp);
+      if (!nomesOpts.length && scope) nomesOpts = [scope];
+    }
+    if (scopeUp) el.innerHTML = '';
+    else if (isStats) el.innerHTML = '<option value="">Todos</option>';
+    else el.innerHTML = '<option value="">— Selecionar —</option>';
+    nomesOpts.forEach(n => {
       el.innerHTML += `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`;
     });
-    if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
-    else if (!isStats && userUp) {
-      for (const o of el.options) {
-        if (visNormVend(o.value) === userUp) { el.value = o.value; break; }
+    if (scopeUp) {
+      const match = [...el.options].find(o => visNormVend(o.value) === scopeUp);
+      if (match) el.value = match.value;
+      el.disabled = true;
+      el.title = 'Vista filtrada ao teu utilizador';
+    } else {
+      el.disabled = false;
+      el.title = '';
+      if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
+      else if (!isStats && userUp) {
+        for (const o of el.options) {
+          if (visNormVend(o.value) === userUp) { el.value = o.value; break; }
+        }
       }
     }
   });
@@ -12967,6 +13016,12 @@ async function exportContratosExcel() {
 // ─── UTILIZADOR / LOGIN ──────────────────────────────
 const ADMINS = ['Carlos Castro']; // acesso a todos os canais + Dados + AT + Financeira
 
+/**
+ * No Horeca: vêem todos os vendedores do canal (sem filtro ao login).
+ * Carlos (admin global) também. Não dá acesso a Dados / outros canais.
+ */
+const HORECA_VE_TUDO = ['Filipe Neves'];
+
 /** Quem pode entrar em cada canal (admins entram em todos). */
 const CANAL_ACESSO = {
   horeca: ['Hélcio Grégio', 'Paulo Fontes', 'Daniela Santos', 'Filipe Neves'],
@@ -13712,6 +13767,30 @@ function isAdmin() {
   return ADMINS.some(a => normNomeUtilizador(a) === atual);
 }
 
+/**
+ * Escopo de dados no Horeca:
+ * - null → vê todos (admin Carlos, Filipe, ou fora do Horeca)
+ * - string → só esse vendedor (Hélcio, Paulo, Daniela, …)
+ */
+function getVendedorScope() {
+  if (typeof isAdmin === 'function' && isAdmin()) return null;
+  if (typeof isCanalHorecaActivo !== 'function' || !isCanalHorecaActivo()) return null;
+  const atual = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
+  if (!atual) return null;
+  const an = normNomeUtilizador(atual);
+  if ((HORECA_VE_TUDO || []).some(n => normNomeUtilizador(n) === an)) return null;
+  return atual;
+}
+
+/** Filtra linhas ao vendedor do utilizador logado (Horeca). Sem escopo → devolve tudo. */
+function filterByUtilizadorActivo(rows, getVend = r => r && r.vendedor) {
+  if (!rows || !rows.length) return rows || [];
+  const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
+  if (!scope) return rows;
+  const sn = normNomeUtilizador(scope);
+  return rows.filter(r => normNomeUtilizador(getVend(r)) === sn);
+}
+
 function podeAcederCanal(canalId) {
   if (isAdmin()) return true;
   const lista = CANAL_ACESSO[canalId] || [];
@@ -13762,6 +13841,11 @@ function atualizarHomeCanais() {
 
 function podeEditarRegisto(vendedor) {
   if (isAdmin()) return true;
+  // Filipe: supervisor Horeca — pode editar todos do canal
+  if (typeof isCanalHorecaActivo === 'function' && isCanalHorecaActivo()) {
+    const atual = normNomeUtilizador(getUtilizadorAtual());
+    if ((HORECA_VE_TUDO || []).some(n => normNomeUtilizador(n) === atual)) return true;
+  }
   // Comparação insensível a maiúsculas/acentos: login guarda "Daniela Santos",
   // mas os registos têm "DANIELA SANTOS"
   return normNomeUtilizador(getUtilizadorAtual()) === normNomeUtilizador(vendedor);
@@ -13804,15 +13888,37 @@ function aplicarUtilizador(nome) {
   if (bar) { bar.style.display = 'inline-flex'; document.getElementById('user-bar-name').textContent = nome; }
   const homeName = document.getElementById('home-user-name');
   if (homeName) homeName.textContent = nome || '—';
-  // Pré-selecionar vendedor nos formulários se for um dos 4 Horeca
-  const nomeUpper = normNomeUtilizador(nome);
-  ['f-vendedor','e-vendedor','at-vendedor','at-dist-eq-vendedor','at-dist-pc-vendedor'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    for (const opt of el.options) {
-      if (normNomeUtilizador(opt.value) === nomeUpper) { el.value = opt.value; break; }
-    }
-  });
+  // Reaplicar selects de vendedor com escopo Horeca (só o próprio / disabled)
+  if (typeof fillVendedorSelectCanal === 'function' && typeof isCanalHorecaActivo === 'function' && isCanalHorecaActivo()) {
+    try {
+      fillVendedorSelectCanal('f-vendedor', { emptyLabel: '— Selecionar vendedor —', selected: nome });
+      fillVendedorSelectCanal('e-vendedor', { emptyLabel: '— Selecionar vendedor —', selected: nome, keepExtra: true });
+      fillVendedorSelectCanal('filtro-vendedor-lista', { emptyLabel: 'Todos os vendedores', selected: nome });
+      fillVendedorSelectCanal('pending-filter-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
+      fillVendedorSelectCanal('contratos-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
+      fillVendedorSelectCanal('contratos-pr-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
+      fillVendedorSelectCanal('sc-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
+      fillVendedorSelectCanal('ep-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
+      fillVendedorSelectCanal('cp-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
+      fillVendedorSelectCanal('at-hist-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
+      fillVendedorSelectCanal('at-vendedor', { emptyLabel: '— Selecionar —', selected: nome });
+      fillVendedorSelectCanal('fsp-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
+      fillVendedorSelectCanal('pros-filtro-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
+    } catch (_) {}
+  } else {
+    // Pré-selecionar vendedor nos formulários
+    const nomeUpper = normNomeUtilizador(nome);
+    ['f-vendedor','e-vendedor','at-vendedor','at-dist-eq-vendedor','at-dist-pc-vendedor'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      for (const opt of el.options) {
+        if (normNomeUtilizador(opt.value) === nomeUpper) { el.value = opt.value; break; }
+      }
+    });
+  }
+  if (typeof visFillVendedorSelects === 'function' && typeof isCanalHorecaActivo === 'function' && isCanalHorecaActivo()) {
+    try { visFillVendedorSelects(); } catch (_) {}
+  }
   atualizarHomeCanais();
 }
 
@@ -14135,12 +14241,15 @@ function getListaContenciosoRaw() {
 function getListaContenciosoActiva(filtroCanal) {
   const want = filtroCanal ? String(filtroCanal).padStart(2, '0') : '';
   const canalId = (typeof _canalActivo !== 'undefined' && _canalActivo) ? _canalActivo : null;
-  return getListaContenciosoRaw().filter(c => {
+  const rows = getListaContenciosoRaw().filter(c => {
     if (!contenciosoPertenceAoCanalApp(c, canalId)) return false;
     // Override por código: canal SAP físico pode diferir (ex. 13) — não filtrar pelo dropdown SAP
     if (want && !getClienteCanalAppOverride(c) && canalCodFromSap(c.canal) !== want) return false;
     return true;
   });
+  return typeof filterByUtilizadorActivo === 'function'
+    ? filterByUtilizadorActivo(rows)
+    : rows;
 }
 
 /** Actualiza o select de filtro de canal SAP na tab Contencioso. */
@@ -19661,10 +19770,15 @@ function renderATHistorico() {
       (isDist && String(c.tipo_equip || '').startsWith('dist_'))
     );
   }
+  if (typeof filterByUtilizadorActivo === 'function') {
+    pool = filterByUtilizadorActivo(pool);
+  }
 
   let data = pool;
-  if (vendFilt) {
-    const vn = normNomeUtilizador(vendFilt);
+  const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
+  const vendFiltEffective = scope || vendFilt;
+  if (vendFiltEffective) {
+    const vn = normNomeUtilizador(vendFiltEffective);
     data = data.filter(c => normNomeUtilizador(c.vendedor) === vn);
   }
 
