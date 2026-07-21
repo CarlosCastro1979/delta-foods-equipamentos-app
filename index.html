@@ -269,6 +269,14 @@
     align-items: center;
   }
 
+  .equip-row.equip-no-tag {
+    grid-template-columns: 1fr 36px;
+  }
+
+  .equip-row.equip-no-tag input.equip-tag {
+    display: none !important;
+  }
+
   .equip-row input { margin: 0; }
 
   .btn-remove-equip {
@@ -3960,21 +3968,25 @@ function addEquipRow(tipo='', tag='') {
   if (!list) return;
   const row = document.createElement('div');
   row.className = 'equip-row';
+  const noTag = typeof equipIsDelonghi === 'function' && equipIsDelonghi(tipo);
   row.innerHTML = `
-    <select class="equip-select form-input">
+    <select class="equip-select form-input" onchange="equipApplyTagVisibility(this.closest('.equip-row'))">
       <option value="">— Selecionar equipamento —</option>
       ${(typeof EQUIPAMENTOS !== 'undefined' ? EQUIPAMENTOS : []).map(e => `<option value="${e}" ${e===tipo?'selected':''}>${e}</option>`).join('')}
     </select>
-    <input type="text" class="equip-tag form-input" placeholder="Tag (opcional)" value="${tag}">
+    <input type="text" class="equip-tag form-input" placeholder="Tag (opcional)" value="${noTag ? '' : tag}">
     <button type="button" class="btn-remove-equip" onclick="this.closest('.equip-row').remove()">✕</button>`;
   list.appendChild(row);
+  if (typeof equipApplyTagVisibility === 'function') equipApplyTagVisibility(row);
 }
 
 function getEquipamentos(listId) {
-  return [...document.querySelectorAll(`#${listId} .equip-row`)].map(row => ({
-    tipo: row.querySelector('.equip-select').value,
-    tag: row.querySelector('.equip-tag').value.trim()
-  })).filter(e => e.tipo);
+  return [...document.querySelectorAll(`#${listId} .equip-row`)].map(row => {
+    const tipo = row.querySelector('.equip-select')?.value || '';
+    const rawTag = (row.querySelector('input.equip-tag')?.value || '').trim();
+    const tag = (typeof equipIsDelonghi === 'function' && equipIsDelonghi(tipo)) ? '' : rawTag;
+    return { tipo, tag };
+  }).filter(e => e.tipo);
 }
 
 function toggleSemEquipamentosEdit() {
@@ -4007,14 +4019,16 @@ function addEditEquipRow(tipo='', tag='') {
   const list = document.getElementById('edit-equip-list');
   const row = document.createElement('div');
   row.className = 'equip-row';
+  const noTag = typeof equipIsDelonghi === 'function' && equipIsDelonghi(tipo);
   row.innerHTML = `
-    <select class="equip-select form-input">
+    <select class="equip-select form-input" onchange="equipApplyTagVisibility(this.closest('.equip-row'))">
       <option value="">— Selecionar equipamento —</option>
       ${EQUIPAMENTOS.map(e => `<option value="${e}" ${e===tipo?'selected':''}>${e}</option>`).join('')}
     </select>
-    <input type="text" class="equip-tag form-input" placeholder="Tag (opcional)" value="${tag}">
+    <input type="text" class="equip-tag form-input" placeholder="Tag (opcional)" value="${noTag ? '' : tag}">
     <button type="button" class="btn-remove-equip" onclick="this.closest('.equip-row').remove()">✕</button>`;
   list.appendChild(row);
+  if (typeof equipApplyTagVisibility === 'function') equipApplyTagVisibility(row);
 }
 
 // ─── STATUS ───────────────────────────────────────────
@@ -8668,6 +8682,33 @@ const EQUIPAMENTOS = [
   'CLIENTE CONTENCIOSO'
 ];
 
+/** Delonghi não tem Tag — esconder o campo em toda a app. */
+function equipIsDelonghi(...parts) {
+  const s = parts
+    .map(p => String(p || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+    .join(' ');
+  return s.includes('DELONGHI');
+}
+
+/** Mostra/esconde o input Tag conforme o equipamento seleccionado. */
+function equipApplyTagVisibility(row) {
+  if (!row) return;
+  const sel = row.querySelector('.equip-select');
+  const tagInp = row.querySelector('input.equip-tag');
+  if (!tagInp) return;
+  const tipo = (sel && sel.value) || row.dataset.codigo || '';
+  const label = sel && sel.selectedOptions && sel.selectedOptions[0]
+    ? sel.selectedOptions[0].textContent
+    : '';
+  const noTag = equipIsDelonghi(tipo, label, row.dataset.descricao || '');
+  row.classList.toggle('equip-no-tag', noTag);
+  if (noTag) {
+    tagInp.value = '';
+    tagInp.disabled = true;
+  } else {
+    tagInp.disabled = false;
+  }
+}
 let allData = [];
 let editingId = null;
 
@@ -18744,21 +18785,29 @@ function renderAreaTecnicaDetalhe(c) {
 
   let linhasHtml = '';
   if (isEquip) {
+    const anyNeedsTag = ataDraftLinhas.some(l => !equipIsDelonghi(l.desc, l.tipo, l.codigo, l.material));
     linhasHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead><tr style="background:var(--surface2);border-bottom:1px solid var(--border);">
         <th style="padding:8px;text-align:left;">Código</th>
         <th style="padding:8px;text-align:left;">Descrição</th>
         <th style="padding:8px;text-align:right;">Qty</th>
-        <th style="padding:8px;text-align:left;">Tag</th>
+        ${anyNeedsTag ? '<th style="padding:8px;text-align:left;">Tag</th>' : ''}
       </tr></thead><tbody>
-      ${ataDraftLinhas.map((l, i) => `<tr style="border-bottom:1px solid var(--border);">
+      ${ataDraftLinhas.map((l, i) => {
+        const delonghi = equipIsDelonghi(l.desc, l.tipo, l.codigo, l.material);
+        if (delonghi) l.tag = '';
+        const tagCell = !anyNeedsTag ? '' : (delonghi
+          ? `<td style="padding:8px;color:var(--muted);font-size:11px;">— (sem Tag)</td>`
+          : `<td style="padding:8px;"><input class="form-input" style="width:100%;min-width:100px;height:32px;font-size:12px;"
+          id="ata-tag-${i}" value="${escHtml(l.tag || '')}" ${concluido ? 'disabled' : ''}
+          oninput="ataDraftLinhas[${i}].tag=this.value" placeholder="Nº Tag"></td>`);
+        return `<tr style="border-bottom:1px solid var(--border);">
         <td style="padding:8px;font-family:var(--font-mono);">${escHtml(l.codigo || l.material || '—')}</td>
         <td style="padding:8px;">${escHtml(l.desc || l.tipo || '—')}</td>
         <td style="padding:8px;text-align:right;font-weight:600;">${escHtml(l.qty)}</td>
-        <td style="padding:8px;"><input class="form-input" style="width:100%;min-width:100px;height:32px;font-size:12px;"
-          id="ata-tag-${i}" value="${escHtml(l.tag || '')}" ${concluido ? 'disabled' : ''}
-          oninput="ataDraftLinhas[${i}].tag=this.value" placeholder="Nº Tag"></td>
-      </tr>`).join('')}
+        ${tagCell}
+      </tr>`;
+      }).join('')}
       </tbody></table>`;
   } else if (isPecas) {
     linhasHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -18898,7 +18947,11 @@ function ataEmailTabelaHtml(linhas, { comTag = false } = {}) {
     const bg = i % 2 ? '#f9fafb' : '#ffffff';
     const cod = l.codigo || l.material || '—';
     const desc = l.desc || l.tipo || '—';
-    const tagCell = comTag ? `<td style="${td}font-family:Consolas,monospace;">${outlookEmailEsc(l.tag || '—')}</td>` : '';
+    const tagCell = comTag
+      ? `<td style="${td}font-family:Consolas,monospace;">${outlookEmailEsc(
+          equipIsDelonghi(desc, cod) ? '—' : (l.tag || '—')
+        )}</td>`
+      : '';
     return `<tr style="background:${bg}">
       <td style="${td}white-space:nowrap;">${outlookEmailEsc(cod)}</td>
       <td style="${td}">${outlookEmailEsc(desc)}</td>
@@ -18926,7 +18979,10 @@ async function ataEnviarEmailConcluir() {
     return;
   }
   if (ataIsEquip(c)) {
-    const semTag = ataDraftLinhas.filter(l => !String(l.tag || '').trim());
+    const semTag = ataDraftLinhas.filter(l =>
+      !equipIsDelonghi(l.desc, l.tipo, l.codigo, l.material)
+      && !String(l.tag || '').trim()
+    );
     if (semTag.length && !confirm(`${semTag.length} equipamento(s) sem Tag. Continuar mesmo assim?`)) return;
   }
   if (!confirm(`Enviar email consolidado e marcar chamado #${c.numero || '—'} como concluído?`)) return;
@@ -21141,10 +21197,11 @@ function distAddEquipRow(card, eq) {
   row.dataset.nf = eq.nf || '';
   const tipo = eq.tipo || eq.descricao || '';
   const tag = eq.tag || '';
+  const noTag = typeof equipIsDelonghi === 'function' && equipIsDelonghi(tipo, eq.descricao, eq.codigo);
   const prefix = card.closest('#e-dist-contratos-list') ? 'e' : 'f';
   row.innerHTML = `
-    <select class="equip-select form-input" onchange="distUpdateContratoSummary(this.closest('.dist-contrato-card'))">${distEquipOptionsHtml(tipo)}</select>
-    <input type="text" class="equip-tag form-input" placeholder="Tag" value="${String(tag).replace(/"/g, '&quot;')}">
+    <select class="equip-select form-input" onchange="equipApplyTagVisibility(this.closest('.equip-row'));distUpdateContratoSummary(this.closest('.dist-contrato-card'))">${distEquipOptionsHtml(tipo)}</select>
+    <input type="text" class="equip-tag form-input" placeholder="Tag" value="${noTag ? '' : String(tag).replace(/"/g, '&quot;')}">
     <button type="button" class="btn-remove-equip" onclick="const c=this.closest('.dist-contrato-card');this.closest('.dist-equip-row').remove();distUpdateContratoSummary(c);distRefreshPoolAfterFormChange('${prefix}')">✕</button>`;
   // Se tipo não está no catálogo, o option já foi injectado; se select ficou vazio, forçar texto livre via option
   const sel = row.querySelector('.equip-select');
@@ -21154,6 +21211,7 @@ function distAddEquipRow(card, eq) {
     sel.appendChild(o);
   }
   list.appendChild(row);
+  if (typeof equipApplyTagVisibility === 'function') equipApplyTagVisibility(row);
   distUpdateContratoSummary(card);
 }
 
@@ -21176,8 +21234,11 @@ function distGetContratosFromForm(prefix) {
     const numero = (card.querySelector('.dist-ct-numero')?.value || '').trim();
     const equipamentos = [...card.querySelectorAll('.dist-equip-row')].map(row => {
       const tipo = row.querySelector('.equip-select')?.value || '';
-      const tag = (row.querySelector('.equip-tag')?.value || '').trim();
+      const rawTag = (row.querySelector('input.equip-tag')?.value || '').trim();
       if (!tipo) return null;
+      const tag = (typeof equipIsDelonghi === 'function' && equipIsDelonghi(tipo, row.dataset.codigo))
+        ? ''
+        : rawTag;
       return {
         tipo,
         tag,
