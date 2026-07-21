@@ -3382,8 +3382,14 @@ var _unused_placeholder = 1;
         </div>
         <div id="vis-ajustes-vend-wrap">
           <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;">VENDEDOR</label>
-          <select id="vis-ajustes-vendedor" class="form-input" style="min-width:200px;height:36px;" onchange="visAjustesRender()">
+          <select id="vis-ajustes-vendedor" class="form-input" style="min-width:200px;height:36px;" onchange="visAjustesOnVendedorChange()">
             <option value="">Todos</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;">ROTA (ZD)</label>
+          <select id="vis-ajustes-rota" class="form-input" style="min-width:140px;height:36px;" onchange="visAjustesRender()">
+            <option value="">Todas</option>
           </select>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" onclick="visAjustesRender()" style="height:36px;">↺ Actualizar</button>
@@ -9888,7 +9894,40 @@ function visAjustesInit() {
     });
   }
   if (wrap) wrap.style.display = scope ? 'none' : '';
+  visAjustesFillRotaSelect();
   visAjustesRender();
+}
+
+function visAjustesOnVendedorChange() {
+  visAjustesFillRotaSelect();
+  visAjustesRender();
+}
+
+/** Preenche o filtro ROTA (ZD) com as rotas do vendedor seleccionado (ou todas). */
+function visAjustesFillRotaSelect() {
+  const el = document.getElementById('vis-ajustes-rota');
+  if (!el) return;
+  const cur = el.value;
+  const vendFilt = document.getElementById('vis-ajustes-vendedor')?.value || '';
+  let rotas = [];
+  if (vendFilt && typeof visRotasDoVendedor === 'function') {
+    rotas = visRotasDoVendedor(vendFilt);
+  } else {
+    const set = new Set();
+    const lista = (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : []) || [];
+    lista.forEach(c => {
+      const z = typeof visZdCliente === 'function' ? visZdCliente(c) : String(c.zd ?? c.ZD ?? '').trim();
+      if (z) set.add(z);
+    });
+    rotas = Array.from(set).sort((a, b) => a.localeCompare(b, 'pt', { numeric: true }));
+  }
+  el.innerHTML = '<option value="">Todas</option>';
+  rotas.forEach(z => {
+    const v = String(z).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    el.innerHTML += `<option value="${v}">${v}</option>`;
+  });
+  if (cur && [...el.options].some(o => o.value === cur)) el.value = cur;
+  else el.value = '';
 }
 
 function visAjustesOnNovaRota(cod, val) {
@@ -9921,9 +9960,16 @@ function visAjustesOnNovoCanal(cod, val) {
 function visAjustesClientesBase() {
   const lista = (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : []) || [];
   const vendFilt = document.getElementById('vis-ajustes-vendedor')?.value || '';
-  if (!vendFilt) return lista.slice();
-  const vn = normNomeUtilizador(vendFilt);
-  return lista.filter(c => normNomeUtilizador(c.vendedor) === vn);
+  const rotaFilt = visNormZd(document.getElementById('vis-ajustes-rota')?.value || '');
+  let rows = lista.slice();
+  if (vendFilt) {
+    const vn = normNomeUtilizador(vendFilt);
+    rows = rows.filter(c => normNomeUtilizador(c.vendedor) === vn);
+  }
+  if (rotaFilt) {
+    rows = rows.filter(c => visNormZd(visZdCliente(c)) === rotaFilt);
+  }
+  return rows;
 }
 
 function visAjustesUpdateInfo() {
