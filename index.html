@@ -21753,6 +21753,19 @@ function distAggregateCargaRows(rows) {
   return [...map.values()];
 }
 
+/** NFs já ligadas a algum contrato do formulário (não devem aparecer na lista). */
+function distPoolNfsOnForm(prefix) {
+  const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
+  const list = document.getElementById(listId);
+  const nfs = new Set();
+  if (!list) return nfs;
+  list.querySelectorAll('.dist-equip-row').forEach(row => {
+    const nf = distNormNf(row.dataset.nf || '');
+    if (nf) nfs.add(nf);
+  });
+  return nfs;
+}
+
 function distPoolRenderGroups(prefix, pool) {
   const groups = pool._groups || [];
   const used = pool._used || new Set();
@@ -21760,17 +21773,23 @@ function distPoolRenderGroups(prefix, pool) {
     pool.innerHTML = '<span style="font-size:12px;color:var(--muted)">Sem carga para este cliente — podes escolher do catálogo em cada contrato.</span>';
     return;
   }
+  const nfsOnForm = distPoolNfsOnForm(prefix);
+  // Só NFs ainda por associar — as já ligadas a um contrato saem da lista
+  const pending = groups
+    .map((g, gi) => ({ g, gi }))
+    .filter(({ g }) => {
+      const nfKey = g.nf === '(sem NF)' ? '' : distNormNf(g.nf);
+      if (nfKey && nfsOnForm.has(nfKey)) return false;
+      return g.units.some(u => !used.has(u.id));
+    });
   const total = groups.reduce((s, g) => s + g.qty, 0);
-  const left = groups.reduce((s, g) => s + g.units.filter(u => !used.has(u.id)).length, 0);
+  const left = pending.reduce((s, { g }) => s + g.units.filter(u => !used.has(u.id)).length, 0);
   const totalValor = groups.reduce((s, g) => s + (Number(g.valor) || 0), 0);
   const valorBanner = distFmtValorBRL(totalValor);
   const esc = (s) => String(s || '').replace(/</g, '&lt;');
-  pool.innerHTML = `
-    <div class="dist-carga-banner">Carga Excel: <strong>${total}</strong> máquina(s)${valorBanner ? ` · Total Eq <strong>${valorBanner}</strong>` : ''} · ${left} por associar — indica o nº de contrato e associa a <strong>NF</strong>.</div>
-    <div class="dist-carga-list">
-      ${groups.map((g, gi) => {
-        const remainUnits = g.units.filter(u => !used.has(u.id));
-        const remain = remainUnits.length;
+  const listHtml = pending.length
+    ? pending.map(({ g, gi }) => {
+        const remain = g.units.filter(u => !used.has(u.id)).length;
         const modelLines = (g.models || []).map(m => {
           // Qty = nº de máquinas deste modelo (não é data; não precisa de "5/5")
           const title = m.codigo && m.descricao && m.descricao !== m.codigo
@@ -21786,22 +21805,24 @@ function distPoolRenderGroups(prefix, pool) {
           dataFmt || null,
           `${(g.models || []).length} modelo(s)`,
           vNf || null,
-          remain < g.qty ? `${remain} por associar` : null,
         ].filter(Boolean);
-        return `<div class="dist-nf-group${remain ? '' : ' exhausted'}" data-g="${gi}">
+        return `<div class="dist-nf-group" data-g="${gi}">
           <div class="dist-nf-head">
             <span class="dist-carga-qty" title="Nº de máquinas nesta NF (não é data)">${g.qty}</span>
             <div class="dist-carga-info">
               <div class="dist-carga-desc">${nfLabel}</div>
               <div class="dist-carga-meta">${metaBits.join(' · ')}</div>
             </div>
-            <button type="button" class="btn btn-secondary btn-sm" ${remain ? '' : 'disabled'}
-              onclick="distPoolPickNf('${prefix}', ${gi})">${remain ? 'Associar NF' : 'Esgotada'}</button>
+            <button type="button" class="btn btn-secondary btn-sm"
+              onclick="distPoolPickNf('${prefix}', ${gi})">Associar NF</button>
           </div>
           <div class="dist-nf-models">${modelLines}</div>
         </div>`;
-      }).join('')}
-    </div>`;
+      }).join('')
+    : `<div style="font-size:13px;color:#166534;padding:8px 4px;">✓ Todas as NFs desta carga já estão associadas a contratos.</div>`;
+  pool.innerHTML = `
+    <div class="dist-carga-banner">Carga Excel: <strong>${total}</strong> máquina(s)${valorBanner ? ` · Total Eq <strong>${valorBanner}</strong>` : ''} · ${left} por associar — indica o nº de contrato e associa a <strong>NF</strong>.</div>
+    <div class="dist-carga-list">${listHtml}</div>`;
 }
 
 /** Marca unidades da carga já ligadas aos contratos do formulário. */
@@ -21817,21 +21838,45 @@ function distPoolMarkUsedFromForm(prefix, pool) {
       carga_id: row.dataset.cargaId || '',
       codigo: row.dataset.codigo || '',
       tipo,
-      nf: row.dataset.nf || '',
+      nf: distNormNf(row.dataset.nf || ''),
     });
   });
   pool._used = new Set();
-  usedKeys.forEach(k => {
+  const findUnit = (pred) => {
     for (const g of pool._groups) {
-      const unit = g.units.find(u => {
-        if (pool._used.has(u.id)) return false;
-        if (k.carga_id && u.carga_id && k.carga_id === u.carga_id) return true;
+      const unit = g.units.find(u => !pool._used.has(u.id) && pred(u));
+      if (unit) return unit;
+    }
+    return null;
+  };
+  usedKeys.forEach(k => {
+    let unit = null;
+    // 1) Preferir mesma NF + carga_id (qty expandida partilha carga_id)
+    if (k.carga_id) {
+      unit = findUnit(u =>
+        u.carga_id === k.carga_id
+        && (!k.nf || distNormNf(u.nf) === k.nf)
+      );
+    }
+    // 2) Mesma NF + modelo (evita "roubar" unidades de outra NF)
+    if (!unit && k.nf) {
+      unit = findUnit(u =>
+        distNormNf(u.nf) === k.nf
+        && (
+          (k.codigo && u.codigo && k.codigo === u.codigo)
+          || (k.tipo && k.tipo === u.descricao)
+        )
+      );
+    }
+    // 3) Fallback sem NF (linhas manuais / legado)
+    if (!unit) {
+      unit = findUnit(u => {
         if (k.codigo && u.codigo && k.codigo === u.codigo && (!k.tipo || k.tipo === u.descricao)) return true;
         if (k.tipo && k.tipo === u.descricao && (!k.codigo || k.codigo === u.codigo)) return true;
         return false;
       });
-      if (unit) { pool._used.add(unit.id); break; }
     }
+    if (unit) pool._used.add(unit.id);
   });
 }
 
@@ -21917,6 +21962,8 @@ function distPoolPickNf(prefix, gi) {
   }
   const nfLabel = groups[gi].nf === '(sem NF)' ? 'sem NF' : ('NF ' + groups[gi].nf);
   toast(`${ok} máquina(s) de ${nfLabel} associadas ao contrato activo`);
+  // Reconta a partir do formulário e retira a NF da lista (já associada)
+  distPoolMarkUsedFromForm(prefix, pool);
   distPoolRenderGroups(prefix, pool);
   const listId = prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list';
   const list = document.getElementById(listId);
