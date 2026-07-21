@@ -10322,14 +10322,24 @@ function loadAtTab() {
     return;
   }
 
+  const userAtual = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
   if (typeof fillVendedorSelectCanal === 'function') {
-    fillVendedorSelectCanal('at-vendedor', { emptyLabel: '— Selecionar —' });
+    fillVendedorSelectCanal('at-vendedor', {
+      emptyLabel: '— Selecionar —',
+      selected: userAtual,
+    });
   } else {
     const lista = getListaClientesActiva();
     const vendedores = [...new Set(lista.map(c => c.vendedor).filter(Boolean))].sort();
     const sel = document.getElementById('at-vendedor');
-    if (sel) sel.innerHTML = '<option value="">— Selecionar —</option>' +
-      vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+    if (sel) {
+      sel.innerHTML = '<option value="">— Selecionar —</option>' +
+        vendedores.map(v => `<option value="${v}">${v}</option>`).join('');
+      const match = [...sel.options].find(o =>
+        o.value && normNomeUtilizador(o.value) === normNomeUtilizador(userAtual)
+      );
+      if (match) sel.value = match.value;
+    }
   }
 
   // Reset campos — todos visíveis mas disabled
@@ -10364,7 +10374,11 @@ function loadAtTab() {
   const instInfo = document.getElementById('inst-cliente-info');
   if (instInfo) instInfo.style.display = 'none';
 
-  setTimeout(() => aplicarUtilizador(getUtilizadorAtual()), 50);
+  // Importante: pré-seleccionar o vendedor logado NÃO dispara onchange.
+  // Sem isto o tipo de equipamento fica disabled até o user mudar de vendedor e voltar.
+  if (document.getElementById('at-vendedor')?.value) {
+    atOnVendedorChange();
+  }
 }
 
 /** Preenche dropdowns partilhados do Pedido AT Distribuidores. */
@@ -11156,7 +11170,8 @@ async function atOnTipoEquipChange() {
   if (!atTipoEquip || !vendedor) return;
 
   const lista = getListaClientesActiva();
-  const clientesVendedor = lista.filter(c => c.vendedor === vendedor);
+  const vendKey = normNomeUtilizador(vendedor);
+  const clientesVendedor = lista.filter(c => normNomeUtilizador(c.vendedor) === vendKey);
 
   // Filtrar clientes que têm equipamentos do tipo seleccionado
   let codsComEquip = new Set();
