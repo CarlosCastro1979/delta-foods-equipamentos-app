@@ -10155,30 +10155,40 @@ async function visAjustesExportarEmail() {
     const nRota = changes.filter(c => c.novaRota).length;
     const nCanal = changes.filter(c => c.novoCanal).length;
     const nVend = changes.filter(c => c.codNovoVendedor || c.novoVendedor).length;
-    const linhasHtml = changes.slice(0, 40).map(r =>
-      `<tr>
-        <td style="border:1px solid #ddd;padding:4px 8px;font-family:Consolas,monospace;">${visAjustesEsc(r.cod)}</td>
-        <td style="border:1px solid #ddd;padding:4px 8px;">${visAjustesEsc(r.nome)}</td>
-        <td style="border:1px solid #ddd;padding:4px 8px;">${visAjustesEsc(r.rotaActual || '—')} → <strong>${visAjustesEsc(r.novaRota || '—')}</strong></td>
-        <td style="border:1px solid #ddd;padding:4px 8px;">${visAjustesEsc(r.canalActual || '—')} → <strong>${visAjustesEsc(r.novoCanal || '—')}</strong></td>
-        <td style="border:1px solid #ddd;padding:4px 8px;">${visAjustesEsc(r.codVendedorActual || '—')} ${visAjustesEsc(r.vendedorActual || '')} → <strong>${visAjustesEsc(r.codNovoVendedor || '—')} ${visAjustesEsc(r.novoVendedor || '')}</strong></td>
-      </tr>`
-    ).join('');
+    const showRota = nRota > 0;
+    const showCanal = nCanal > 0;
+    const showVend = nVend > 0;
+    const td = (v, mono) =>
+      `<td style="border:1px solid #ddd;padding:4px 8px;${mono ? 'font-family:Consolas,monospace;' : ''}">${visAjustesEsc(v || '—')}</td>`;
+    const th = (label) =>
+      `<th style="padding:6px 8px;text-align:left;">${visAjustesEsc(label)}</th>`;
+    const headers = ['Cód. Cliente', 'Nome do Cliente'];
+    if (showRota) headers.push('Rota Actual', 'Nova Rota');
+    if (showCanal) headers.push('Canal Actual', 'Novo Canal');
+    if (showVend) headers.push('Cód. Vendedor Actual', 'Vendedor Actual', 'Mudar Vendedor', 'Cód. Novo Vendedor');
+    const linhasHtml = changes.slice(0, 40).map(r => {
+      let cells = td(r.cod, true) + td(r.nome, false);
+      if (showRota) cells += td(r.rotaActual, true) + td(r.novaRota, true);
+      if (showCanal) cells += td(r.canalActual, true) + td(r.novoCanal, true);
+      if (showVend) {
+        cells += td(r.codVendedorActual, true) + td(r.vendedorActual, false)
+          + td(r.novoVendedor, false) + td(r.codNovoVendedor, true);
+      }
+      return `<tr>${cells}</tr>`;
+    }).join('');
+    const tipos = [
+      showRota ? `<strong>${nRota}</strong> rota` : '',
+      showCanal ? `<strong>${nCanal}</strong> canal` : '',
+      showVend ? `<strong>${nVend}</strong> vendedor` : '',
+    ].filter(Boolean).join('; ');
     const html = `
 <p>Olá equipa de Dados Mestres,</p>
-<p>Solicito o tratamento das seguintes <strong>alterações de rota / canal / vendedor</strong> (${changes.length} cliente(s)):
-${nRota ? ` <strong>${nRota}</strong> rota;` : ''}
-${nCanal ? ` <strong>${nCanal}</strong> canal;` : ''}
-${nVend ? ` <strong>${nVend}</strong> vendedor.` : ''}</p>
+<p>Solicito o tratamento das seguintes <strong>alterações de rota / canal / vendedor</strong> (${changes.length} cliente(s))${tipos ? `: ${tipos}.` : '.'}</p>
 <p><strong>Pedido por:</strong> ${visAjustesEsc(por)}<br>
 <strong>Canal app:</strong> Horeca</p>
 <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-family:Calibri,Arial,sans-serif;font-size:12px;margin:12px 0;">
   <thead><tr style="background:#c8102e;color:#fff;">
-    <th style="padding:6px 8px;text-align:left;">Cód.</th>
-    <th style="padding:6px 8px;text-align:left;">Cliente</th>
-    <th style="padding:6px 8px;text-align:left;">Rota</th>
-    <th style="padding:6px 8px;text-align:left;">Canal vendas</th>
-    <th style="padding:6px 8px;text-align:left;">Vendedor</th>
+    ${headers.map(th).join('')}
   </tr></thead>
   <tbody>${linhasHtml}</tbody>
 </table>
