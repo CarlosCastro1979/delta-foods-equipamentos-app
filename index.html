@@ -3514,6 +3514,10 @@ var _unused_placeholder = 1;
         </div>
       </div>
       <div id="af-sec-divida-sem-compras" style="display:none;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+          <button type="button" class="sub-tab active" id="af-dsc-tab-prov" onclick="showAfDscSub('prov180')">≥ 180 dias (provisionável)</button>
+          <button type="button" class="sub-tab" id="af-dsc-tab-outros" onclick="showAfDscSub('outros')">&lt; 180 dias</button>
+        </div>
         <div id="af-dsc-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
         <div id="af-dsc-content"><div style="color:var(--muted);font-size:13px;padding:20px 0;">A carregar…</div></div>
       </div>
@@ -20649,6 +20653,41 @@ async function loadAfContencioso() {
 
 let _afDscLista = [];
 let _afDscVendFiltro = '';
+/** Sub-aba: 'prov180' (≥180 dias, provisionável) | 'outros' (<180 dias) */
+let _afDscSub = 'prov180';
+const AF_DSC_DIAS_PROVISAO = 180;
+
+function showAfDscSub(sub) {
+  _afDscSub = sub === 'outros' ? 'outros' : 'prov180';
+  document.getElementById('af-dsc-tab-prov')?.classList.toggle('active', _afDscSub === 'prov180');
+  document.getElementById('af-dsc-tab-outros')?.classList.toggle('active', _afDscSub === 'outros');
+  // Limpar filtro de vendedor ao mudar de sub-aba (os totais mudam)
+  _afDscVendFiltro = '';
+  renderAfDividaSemCompras();
+}
+
+function afDscClienteProvisionavel(c) {
+  const d = c && c.diasAtraso != null ? Number(c.diasAtraso) : null;
+  return d != null && !Number.isNaN(d) && d >= AF_DSC_DIAS_PROVISAO;
+}
+
+function afDscListaDaSub() {
+  const all = _afDscLista || [];
+  if (_afDscSub === 'outros') return all.filter(c => !afDscClienteProvisionavel(c));
+  return all.filter(c => afDscClienteProvisionavel(c));
+}
+
+function afDscAtualizarTabs() {
+  const all = _afDscLista || [];
+  const nProv = all.filter(afDscClienteProvisionavel).length;
+  const nOutros = all.length - nProv;
+  const tabProv = document.getElementById('af-dsc-tab-prov');
+  const tabOutros = document.getElementById('af-dsc-tab-outros');
+  if (tabProv) tabProv.textContent = `≥ ${AF_DSC_DIAS_PROVISAO} dias (provisionável) · ${nProv}`;
+  if (tabOutros) tabOutros.textContent = `< ${AF_DSC_DIAS_PROVISAO} dias · ${nOutros}`;
+  document.getElementById('af-dsc-tab-prov')?.classList.toggle('active', _afDscSub === 'prov180');
+  document.getElementById('af-dsc-tab-outros')?.classList.toggle('active', _afDscSub === 'outros');
+}
 
 function afDscFiltrarResumo(vendEnc) {
   _afDscVendFiltro = vendEnc === 'todos' || !vendEnc ? '' : decodeURIComponent(vendEnc);
@@ -20664,14 +20703,26 @@ function renderAfDividaSemCompras() {
   const el = document.getElementById('af-dsc-content');
   const info = document.getElementById('af-dsc-info');
   if (!el) return;
-  const out = _afDscLista || [];
+  afDscAtualizarTabs();
+  const out = afDscListaDaSub();
+  const isProv = _afDscSub === 'prov180';
   if (info) {
-    info.innerHTML = out.length
-      ? `<span style="color:#7f1d1d;font-weight:600;">${out.length}</span> cliente(s) com dívida e sem compras há ≥ 3 meses (calendário)`
-      : 'Nenhum cliente com dívida e sem compras ≥ 3 meses (ou faltam dados de dívidas/vendas — carrega em Dados).';
+    if (!(_afDscLista || []).length) {
+      info.innerHTML = 'Nenhum cliente com dívida e sem compras ≥ 3 meses (ou faltam dados de dívidas/vendas — carrega em Dados).';
+    } else if (isProv) {
+      info.innerHTML = out.length
+        ? `<span style="color:#7f1d1d;font-weight:600;">${out.length}</span> cliente(s) com dívida ≥ <b>${AF_DSC_DIAS_PROVISAO} dias</b> (provisionável) e sem compras ≥ 3 meses`
+        : `Nenhum cliente com dívida ≥ ${AF_DSC_DIAS_PROVISAO} dias nesta lista.`;
+    } else {
+      info.innerHTML = out.length
+        ? `<span style="color:#7f1d1d;font-weight:600;">${out.length}</span> cliente(s) com dívida <b>&lt; ${AF_DSC_DIAS_PROVISAO} dias</b> (ainda não provisionável) e sem compras ≥ 3 meses`
+        : `Nenhum cliente com dívida &lt; ${AF_DSC_DIAS_PROVISAO} dias nesta lista.`;
+    }
   }
   if (!out.length) {
-    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:40px 0;text-align:center;">Sem resultados. Confirma cargas de Dívidas e Vendas em Dados.</div>';
+    el.innerHTML = (_afDscLista || []).length
+      ? `<div style="color:var(--muted);font-size:13px;padding:40px 0;text-align:center;">Sem clientes nesta sub-aba. Vê a outra tab.</div>`
+      : '<div style="color:var(--muted);font-size:13px;padding:40px 0;text-align:center;">Sem resultados. Confirma cargas de Dívidas e Vendas em Dados.</div>';
     return;
   }
 
@@ -20738,12 +20789,16 @@ function renderAfDividaSemCompras() {
     const ultSort = c.ultima instanceof Date
       ? c.ultima.getTime()
       : (c.ultima ? String(c.ultima) : 0);
+    const dias = c.diasAtraso != null ? Number(c.diasAtraso) : null;
+    const diasTxt = dias != null && !Number.isNaN(dias) ? `${dias}d` : '—';
+    const diasSort = dias != null && !Number.isNaN(dias) ? dias : -1;
     return `<tr style="border-bottom:1px solid var(--border);">
       <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(c.cod || '—')}</td>
       <td style="padding:8px 10px;font-size:12px;font-weight:500;">${escHtml(c.nome || '—')}</td>
       <td style="padding:8px 10px;font-size:12px;">${escHtml(c.vendedor || '—')}</td>
       <td style="padding:8px 10px;font-size:12px;">${escHtml(c.canal || '—')}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;color:#7f1d1d;" data-sort="${c.vencido || 0}">${formatEur(c.vencido)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center;font-weight:600;${dias != null && dias >= AF_DSC_DIAS_PROVISAO ? 'color:#7f1d1d;' : ''}" data-sort="${diasSort}">${diasTxt}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center;font-weight:600;" data-sort="${c.mesesCal || 0}">${c.mesesCal}m</td>
       <td style="padding:8px 10px;font-size:12px;color:var(--muted);" data-sort="${ultSort}">${escHtml(ult)}</td>
     </tr>`;
@@ -20758,8 +20813,8 @@ function renderAfDividaSemCompras() {
     <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;">Lista detalhada — ${detalheLabel}</div>
     <div class="table-wrap"><table class="data-table" id="af-dsc-table" style="width:100%;">
       <thead><tr style="background:var(--surface2);">
-        <th>Cód.</th><th>Nome</th><th>Vendedor</th><th>Canal</th><th>Dívida vencida</th><th>Meses s/ compra</th><th>Última compra</th>
-      </tr></thead><tbody>${rows || '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted);">Sem linhas para este filtro.</td></tr>'}</tbody></table></div>`;
+        <th>Cód.</th><th>Nome</th><th>Vendedor</th><th>Canal</th><th>Dívida vencida</th><th>Dias atraso</th><th>Meses s/ compra</th><th>Última compra</th>
+      </tr></thead><tbody>${rows || '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--muted);">Sem linhas para este filtro.</td></tr>'}</tbody></table></div>`;
 
   const tbl = document.getElementById('af-dsc-table') || el.querySelector('#af-dsc-table');
   if (tbl && filtered.length) {
@@ -20804,6 +20859,9 @@ async function loadAfDividaSemCompras() {
         ? mesesCalendarioSemCompra(ultima, hoje)
         : 99;
       if (mesesCal < 3) continue;
+      const diasAtraso = typeof calcDiasAtrasoDesdeVencimento === 'function'
+        ? calcDiasAtrasoDesdeVencimento(div, hoje)
+        : null;
       out.push({
         cod: cli.cod,
         nome: cli.nome,
@@ -20813,6 +20871,7 @@ async function loadAfDividaSemCompras() {
         ultima: ultima || null,
         vencido: div.vencido || 0,
         total: div.total || 0,
+        diasAtraso: diasAtraso != null ? diasAtraso : null,
         _antiguidade: antiguidadeDivida(div),
       });
     }
@@ -20823,8 +20882,9 @@ async function loadAfDividaSemCompras() {
       return (b._antiguidade || 0) - (a._antiguidade || 0);
     });
     _afDscLista = out;
-    // Manter filtro activo se o vendedor ainda existir na nova lista
-    if (_afDscVendFiltro && !out.some(c => (c.vendedor || '—') === _afDscVendFiltro)) {
+    // Manter filtro activo se o vendedor ainda existir na sub-aba actual
+    const subLista = afDscListaDaSub();
+    if (_afDscVendFiltro && !subLista.some(c => (c.vendedor || '—') === _afDscVendFiltro)) {
       _afDscVendFiltro = '';
     }
     renderAfDividaSemCompras();
@@ -20835,6 +20895,7 @@ async function loadAfDividaSemCompras() {
 
 window.afDscFiltrarResumo = afDscFiltrarResumo;
 window.afDscLimparFiltro = afDscLimparFiltro;
+window.showAfDscSub = showAfDscSub;
 window.showAreaFinanceira = showAreaFinanceira;
 
 
