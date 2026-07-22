@@ -2822,6 +2822,8 @@ var _unused_placeholder = 1;
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
       <div id="pros-panel-title" style="font-size:15px;font-weight:600;">🎯 Prospeção de Clientes</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="search" id="pros-filtro-nome" class="form-input" placeholder="Pesquisar nome…"
+          style="min-width:180px;width:200px;height:36px;font-size:13px;" oninput="renderPros()" autocomplete="off">
         <select id="pros-filtro-vendedor" class="form-input" style="min-width:170px;height:36px;font-size:13px;" onchange="renderPros()">
           <option value="">Todos os vendedores</option>
         </select>
@@ -15780,13 +15782,27 @@ function prosEstadoTabsHtml(base, active) {
   }).join('');
 }
 
+function prosNormSearch(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
 function renderPros() {
+  const nomeQ = prosNormSearch(document.getElementById('pros-filtro-nome')?.value || '');
   const vendedor = document.getElementById('pros-filtro-vendedor')?.value || '';
   const segmento = document.getElementById('pros-filtro-segmento')?.value || '';
   const estadoTab = prosEstadoTab || 'todos';
 
-  // Base: aplica filtros de vendedor/segmento (serve para contagens das abas e resumo).
+  // Base: nome / vendedor / segmento (serve para contagens das abas e resumo).
   const base = prosData.filter(p => {
+    if (nomeQ) {
+      const nome = prosNormSearch(p.nome);
+      const contato = prosNormSearch(p.contato);
+      const cnpj = String(p.cnpj || '').replace(/\D/g, '');
+      const qDigits = nomeQ.replace(/\D/g, '');
+      const hitNome = nome.includes(nomeQ) || contato.includes(nomeQ);
+      const hitCnpj = qDigits.length >= 3 && cnpj.includes(qDigits);
+      if (!hitNome && !hitCnpj) return false;
+    }
     if (vendedor && p.vendedor !== vendedor) return false;
     if (segmento && p.segmento !== segmento) return false;
     return true;
