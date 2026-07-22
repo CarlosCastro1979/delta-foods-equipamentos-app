@@ -1786,7 +1786,7 @@ var _unused_placeholder = 1;
 
 <nav class="main-nav" id="main-nav">
   <div class="main-nav-inner">
-    <button class="tab active" onclick="switchTab('registos')">Registo Clientes</button>
+    <button class="tab active" id="tab-registos" onclick="switchTab('registos')">Registo Clientes</button>
     <button class="tab" id="tab-analise" onclick="switchTab('analise')">Análise Clientes</button>
     <button class="tab tab-hide-varejo" onclick="switchTab('at')">Pedido AT</button>
     <button class="tab" onclick="switchTab('contratos')">Contratos</button>
@@ -9334,6 +9334,11 @@ function atualizarCanalBar(label) {
   document.querySelectorAll('.tab-hide-varejo').forEach(t => {
     t.style.display = (_canalActivo === 'varejo') ? 'none' : '';
   });
+  // Ecommerce: sem Registo Clientes
+  const tabRegistos = document.getElementById('tab-registos');
+  if (tabRegistos) {
+    tabRegistos.style.display = (_canalActivo === 'ecommerce') ? 'none' : '';
+  }
 }
 
 let _canalPinPendente = null; // canalId à espera de PIN
@@ -9403,6 +9408,14 @@ function abrirCanalConfirmado(canalId) {
   try { localStorage.setItem('dfb_canal_activo', canalId); } catch (e) {}
   setAppView('canal');
   atualizarCanalBar(c.nome);
+  // Ecommerce: sem Registo Clientes → abrir Análise
+  if (canalId === 'ecommerce') {
+    switchTab('analise');
+    setTimeout(() => {
+      try { aplicarUtilizador(getUtilizadorAtual()); } catch (_) {}
+    }, 80);
+    return;
+  }
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   const panel = document.getElementById('panel-registos');
   if (panel) panel.classList.add('active');
@@ -9635,9 +9648,12 @@ function switchTab(tab) {
     abrirDadosHome();
     return;
   }
+  if (tab === 'registos' && _canalActivo === 'ecommerce') {
+    tab = 'analise';
+  }
   if (tab === 'visitas' && _canalActivo !== 'horeca') {
     toast('Visitas do dia só está disponível no canal Horeca.', 'warn');
-    tab = 'registos';
+    tab = (_canalActivo === 'ecommerce') ? 'analise' : 'registos';
   }
   if ((tab === 'at' || tab === 'historico-at') && _canalActivo === 'varejo') {
     toast('Pedido AT e Histórico AT não estão disponíveis no Varejo.', 'warn');
