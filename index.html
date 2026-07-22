@@ -8043,6 +8043,17 @@ async function confirmarCargaSAP() {
   // Lista "Clientes no Contencioso" (vendedor 99520013) — canais 03/04 deixam de contar nos registos
   const listaContencioso = deduplicarListaSAPPorCod(_sapImportBuffer.listaContencioso || []);
   guardarListaContencioso(listaContencioso);
+  // Publicar Contencioso no Supabase (Área Financeira em qualquer PC)
+  try {
+    const pubCc = await publicarListaContenciosoSupabase(listaContencioso);
+    if (pubCc && pubCc.ok) {
+      console.log('Contencioso publicado no Supabase:', pubCc.total);
+    } else {
+      console.warn('Falha a publicar Contencioso:', pubCc && pubCc.error);
+    }
+  } catch (e) {
+    console.warn('publicarListaContenciosoSupabase:', e);
+  }
   foraSPCache = null;
   clearRegistosCache();
 
@@ -14746,6 +14757,9 @@ const CONTENCIOSO_VENDEDOR = '99520013';
 const CONTENCIOSO_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/clientes_contencioso';
 const CONTENCIOSO_LS_KEY = 'delta_contencioso_pendentes';
 const CONTENCIOSO_LISTA_KEY = 'delta_clientes_contencioso';
+const CONTENCIOSO_LISTA_TS_KEY = 'delta_clientes_contencioso_ts';
+/** Registo na tabela lista_clientes (mesmo padrão da lista SAP) para sync multi-browser. */
+const CONTENCIOSO_LISTA_SUPA_ID = 'contencioso';
 let _contenciosoCliente = null;
 let scContenciosoPendentes = new Map();
 
@@ -14846,6 +14860,82 @@ function getListaContenciosoRaw() {
   } catch (e) { return []; }
 }
 
+function getListaContenciosoLocalTs() {
+  try { return parseInt(localStorage.getItem(CONTENCIOSO_LISTA_TS_KEY) || '0', 10) || 0; }
+  catch (_) { return 0; }
+}
+
+/** Publica a lista Contencioso (SAP *13) no Supabase para todos os browsers. */
+async function publicarListaContenciosoSupabase(lista) {
+  try {
+    const arr = (Array.isArray(lista) ? lista : []).map(c =>
+      (typeof compactClienteSap === 'function' ? compactClienteSap(c) : c)
+    );
+    const ts = new Date().toISOString();
+    const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
+      method: 'POST',
+      headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({
+        id: CONTENCIOSO_LISTA_SUPA_ID,
+        data: arr,
+        atualizado_em: ts,
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.warn('publicarListaContenciosoSupabase HTTP', res.status, errText.slice(0, 200));
+      return { ok: false, error: 'HTTP ' + res.status };
+    }
+    try { localStorage.setItem(CONTENCIOSO_LISTA_TS_KEY, String(Date.parse(ts) || Date.now())); } catch (_) {}
+    return { ok: true, total: arr.length };
+  } catch (e) {
+    console.warn('publicarListaContenciosoSupabase:', e.message || e);
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
+/**
+ * Sincroniza lista Contencioso SAP *13:
+ * - Se remoto existir e for mais recente (ou local vazio) → puxa
+ * - Se local tiver dados e remoto vazio → publica (bootstrap após deploy)
+ */
+async function sincronizarListaContencioso() {
+  try {
+    const local = getListaContenciosoRaw();
+    const localTs = getListaContenciosoLocalTs();
+    const res = await fetch(
+      `${LISTA_CLIENTES_SUPA_URL}?id=eq.${CONTENCIOSO_LISTA_SUPA_ID}&select=data,atualizado_em`,
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+    );
+    if (!res.ok) {
+      // Sem remoto: se temos local, tenta publicar
+      if (local.length) await publicarListaContenciosoSupabase(local);
+      return !!local.length;
+    }
+    const rows = await res.json();
+    const remoteRow = Array.isArray(rows) && rows[0] ? rows[0] : null;
+    const remote = remoteRow && Array.isArray(remoteRow.data) ? remoteRow.data : null;
+    const remoteTs = remoteRow && remoteRow.atualizado_em
+      ? (Date.parse(remoteRow.atualizado_em) || 0)
+      : 0;
+
+    if ((!remote || !remote.length) && local.length) {
+      await publicarListaContenciosoSupabase(local);
+      return true;
+    }
+    if (remote && remote.length && (!local.length || remoteTs > localTs)) {
+      guardarListaContencioso(remote);
+      try { localStorage.setItem(CONTENCIOSO_LISTA_TS_KEY, String(remoteTs || Date.now())); } catch (_) {}
+      console.log('Lista Contencioso sincronizada do Supabase:', remote.length);
+      return true;
+    }
+    return !!(local.length || (remote && remote.length));
+  } catch (e) {
+    console.warn('sincronizarListaContencioso:', e.message || e);
+    return false;
+  }
+}
+
 /**
  * Lista "Clientes no Contencioso" no contexto do canal activo:
  * vendedor 99520013 (*13) nos mesmos canais SAP dos vendedores desse canal.
@@ -14904,6 +14994,7 @@ function getRegistosActivos(data) {
 function guardarListaContencioso(lista) {
   const arr = Array.isArray(lista) ? lista : [];
   try { localStorage.setItem(CONTENCIOSO_LISTA_KEY, JSON.stringify(arr)); } catch (e) {}
+  try { localStorage.setItem(CONTENCIOSO_LISTA_TS_KEY, String(Date.now())); } catch (e) {}
   // Códigos Contencioso do canal activo (ou 03/04) — exclusão dos registos activos
   try {
     const cods = arr.filter(c => contenciosoPertenceAoCanalApp(c, _canalActivo || 'horeca'))
@@ -20555,6 +20646,7 @@ async function loadAfContencioso() {
       typeof loadSCContenciosoPendentes === 'function' ? loadSCContenciosoPendentes() : Promise.resolve(),
       typeof scLoadDividasFromSupabase === 'function' ? scLoadDividasFromSupabase() : Promise.resolve(),
       typeof loadContenciosoEscritoriosFromSupabase === 'function' ? loadContenciosoEscritoriosFromSupabase() : Promise.resolve(),
+      typeof sincronizarListaContencioso === 'function' ? sincronizarListaContencioso() : Promise.resolve(),
     ]);
     if (typeof applyContenciosoPddSeed === 'function') applyContenciosoPddSeed();
     const pend = [...(scContenciosoPendentes?.values?.() || [])]
@@ -20616,11 +20708,11 @@ async function loadAfContencioso() {
         ? `<span style="color:#7f1d1d;font-weight:600;">${listaCc.length}</span> cliente(s) no Contencioso (lista SAP)`
           + (totalDiv > 0 ? ` · Dívida: <b>${formatEur(totalDiv)}</b>` : '')
           + ` · Escritório: <b>${nComEsc}</b>/${listaCc.length}`
-        : 'Nenhum cliente Contencioso na lista carregada (carrega Lista SAP em Dados).';
+        : 'Nenhum cliente Contencioso na lista (sincroniza do Supabase ao abrir; ou carrega Lista SAP em Dados).';
     }
     if (ccEl) {
       if (!listaCc.length) {
-        ccEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Sem clientes Contencioso. Carrega a Lista SAP em Dados se necessário.</div>';
+        ccEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Sem clientes Contencioso. A lista SAP *13 sincroniza entre PCs — abre esta página noutro browser onde já exista, ou carrega a Lista SAP em Dados.</div>';
       } else {
         const rows = listaCc.map(c => {
           const escVal = c.escritorio || '';
@@ -21278,6 +21370,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   voltarHome(); // abre na seleção de canais (+ Dados)
   try { await carregarListaClientesLocalAsync(); } catch (_) {}
   await sincronizarListaClientes();
+  try { await sincronizarListaContencioso(); } catch (_) {}
   try {
     const res = await fetch(SUPA_URL + '?select=id&limit=1', { headers: HEADERS });
     const data = await res.json();
