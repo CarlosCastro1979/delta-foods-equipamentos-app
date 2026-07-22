@@ -15396,11 +15396,13 @@ function compactPddSourceRow(r) {
   };
 }
 
-/** Publica opts + PDD (fonte/extra) em lista_clientes id=contencioso_meta. */
+/** Publica mapa escritórios + opts + PDD em lista_clientes id=contencioso_meta. */
 async function publicarContenciosoMetaSupabase() {
   try {
     const iso = new Date().toISOString();
+    const map = { ...(readContenciosoEscritoriosMap() || {}) };
     const payload = {
+      escritorios: map,
       opts: readContenciosoEscritoriosOpts(),
       pddSource: (readContenciosoPddSource() || []).map(compactPddSourceRow),
       pddExtra: (readContenciosoPddExtra() || []).map(compactPddSourceRow),
@@ -15413,18 +15415,34 @@ async function publicarContenciosoMetaSupabase() {
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       console.warn('publicarContenciosoMetaSupabase HTTP', res.status, errText.slice(0, 200));
-      return { ok: false };
+      return { ok: false, error: 'HTTP ' + res.status + (errText ? ': ' + errText.slice(0, 120) : '') };
     }
     _contenciosoMetaTs = Date.parse(iso) || Date.now();
     limparLegacyContenciosoMetaLS();
-    return { ok: true };
+    return { ok: true, nEscritorios: Object.keys(map).filter(k => map[k]).length };
   } catch (e) {
     console.warn('publicarContenciosoMetaSupabase:', e.message || e);
-    return { ok: false };
+    return { ok: false, error: e.message || String(e) };
   }
 }
 
-/** Puxa meta Contencioso do Supabase; se remoto vazio e há dados em memória/legado, publica. */
+function applyContenciosoEscritoriosMapFromRemote(mapObj) {
+  if (!mapObj || typeof mapObj !== 'object' || Array.isArray(mapObj)) return 0;
+  const map = { ...(readContenciosoEscritoriosMap() || {}) };
+  let n = 0;
+  Object.entries(mapObj).forEach(([cod, esc]) => {
+    const k = normCod(cod);
+    const e = String(esc || '').trim();
+    if (!k || k === '0' || !e) return;
+    map[k] = e;
+    addEscritorioOpt(e);
+    n++;
+  });
+  writeContenciosoEscritoriosMap(map);
+  return n;
+}
+
+/** Puxa meta Contencioso do Supabase (inclui mapa escritórios); se remoto vazio e há local, publica. */
 async function sincronizarContenciosoMeta() {
   try {
     migrarContenciosoMetaDeLocalStorage();
@@ -15440,13 +15458,19 @@ async function sincronizarContenciosoMeta() {
     const remoteRow = Array.isArray(rows) && rows[0] ? rows[0] : null;
     const data = remoteRow && remoteRow.data && typeof remoteRow.data === 'object' ? remoteRow.data : null;
     const remoteTs = remoteRow && remoteRow.atualizado_em ? (Date.parse(remoteRow.atualizado_em) || 0) : 0;
+    const remoteEsc = data && data.escritorios && typeof data.escritorios === 'object' ? data.escritorios : null;
+    const nRemoteEsc = remoteEsc ? Object.keys(remoteEsc).filter(k => remoteEsc[k]).length : 0;
     const hasRemote = !!(data && (
-      (Array.isArray(data.opts) && data.opts.length)
+      nRemoteEsc
+      || (Array.isArray(data.opts) && data.opts.length)
       || (Array.isArray(data.pddSource) && data.pddSource.length)
       || (Array.isArray(data.pddExtra) && data.pddExtra.length)
     ));
+    const localMap = readContenciosoEscritoriosMap() || {};
+    const nLocalEsc = Object.keys(localMap).filter(k => localMap[k]).length;
     const hasLocal = !!(
-      (_contenciosoEscritoriosOpts && _contenciosoEscritoriosOpts.length)
+      nLocalEsc
+      || (_contenciosoEscritoriosOpts && _contenciosoEscritoriosOpts.length)
       || (_contenciosoPddSource && _contenciosoPddSource.length)
       || (_contenciosoPddExtra && _contenciosoPddExtra.length)
     );
@@ -15455,54 +15479,48 @@ async function sincronizarContenciosoMeta() {
       return;
     }
     if (hasRemote && (!_contenciosoMetaTs || remoteTs >= _contenciosoMetaTs)) {
+      if (remoteEsc) applyContenciosoEscritoriosMapFromRemote(remoteEsc);
       if (Array.isArray(data.opts)) _contenciosoEscritoriosOpts = data.opts.filter(Boolean);
       if (Array.isArray(data.pddSource) && data.pddSource.length) _contenciosoPddSource = data.pddSource;
       if (Array.isArray(data.pddExtra)) _contenciosoPddExtra = data.pddExtra;
       _contenciosoMetaTs = remoteTs || Date.now();
       limparLegacyContenciosoMetaLS();
+    } else if (nLocalEsc && !nRemoteEsc) {
+      // Local tem escritórios que o remoto ainda não tem → publica
+      await publicarContenciosoMetaSupabase();
     }
   } catch (e) {
     console.warn('sincronizarContenciosoMeta:', e.message || e);
   }
 }
 
+/**
+ * Carrega escritórios:
+ * 1) tabela dedicada (se existir)
+ * 2) lista_clientes id=contencioso_meta.escritorios (fonte fiável — a tabela dedicada pode não existir)
+ */
 async function loadContenciosoEscritoriosFromSupabase() {
-  if (_contenciosoEscritoriosSupaOk === false) return;
   try {
-    // Se tabela vazia e há mapa legado em memória, publica (bootstrap)
     migrarContenciosoMetaDeLocalStorage();
+    // Preferir meta (lista_clientes) — funciona mesmo sem tabela dedicada
+    try { await sincronizarContenciosoMeta(); } catch (_) {}
+
+    // Tentativa opcional da tabela dedicada (não bloqueia se 404)
+    if (_contenciosoEscritoriosSupaOk === false) return;
     const res = await fetch(`${CONTENCIOSO_ESCRITORIOS_URL}?select=cod,escritorio&limit=5000`, { headers: HEADERS });
     if (res.status === 404 || res.status === 406) {
-      _contenciosoEscritoriosSupaOk = false;
+      _contenciosoEscritoriosSupaOk = false; // tabela inexistente — usamos só meta
       return;
     }
     if (!res.ok) {
-      _contenciosoEscritoriosSupaOk = false;
+      console.warn('loadContenciosoEscritoriosFromSupabase HTTP', res.status);
       return;
     }
     const dados = await res.json();
     if (!Array.isArray(dados)) return;
     _contenciosoEscritoriosSupaOk = true;
-    if (!dados.length) {
-      const localMap = readContenciosoEscritoriosMap();
-      const entries = Object.entries(localMap).filter(([k, v]) => k && k !== '0' && String(v || '').trim());
-      if (entries.length) {
-        for (let i = 0; i < entries.length; i += 50) {
-          const lote = entries.slice(i, i + 50).map(([cod, escritorio]) => ({
-            cod, escritorio: String(escritorio).trim(), updated_at: new Date().toISOString(),
-          }));
-          try {
-            await fetch(CONTENCIOSO_ESCRITORIOS_URL, {
-              method: 'POST',
-              headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
-              body: JSON.stringify(lote),
-            });
-          } catch (_) { break; }
-        }
-      }
-      return;
-    }
-    const map = {};
+    if (!dados.length) return;
+    const map = { ...(readContenciosoEscritoriosMap() || {}) };
     dados.forEach(r => {
       const k = normCod(r.cod);
       const e = String(r.escritorio || '').trim();
@@ -15512,31 +15530,42 @@ async function loadContenciosoEscritoriosFromSupabase() {
       }
     });
     writeContenciosoEscritoriosMap(map);
-  } catch (_) {
-    _contenciosoEscritoriosSupaOk = false;
+  } catch (e) {
+    console.warn('loadContenciosoEscritoriosFromSupabase:', e.message || e);
   }
 }
 
+/** Persiste um escritório: meta lista_clientes (sempre) + tabela dedicada se existir. */
 async function persistEscritorioContenciosoSupabase(cod, escritorio) {
-  if (_contenciosoEscritoriosSupaOk === false) return;
   const k = normCod(cod);
-  if (!k || k === '0') return;
-  try {
-    const res = await fetch(CONTENCIOSO_ESCRITORIOS_URL, {
-      method: 'POST',
-      headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ cod: k, escritorio: String(escritorio || ''), updated_at: new Date().toISOString() }),
-    });
-    if (res.status === 404 || res.status === 406) _contenciosoEscritoriosSupaOk = false;
-    else if (res.ok || res.status === 201 || res.status === 200) _contenciosoEscritoriosSupaOk = true;
-  } catch (_) {
-    _contenciosoEscritoriosSupaOk = false;
+  if (!k || k === '0') return { ok: false, error: 'código inválido' };
+
+  // 1) Fonte de verdade: contencioso_meta em lista_clientes
+  const meta = await publicarContenciosoMetaSupabase();
+  if (!meta || !meta.ok) {
+    return { ok: false, error: (meta && meta.error) || 'falha a gravar no Supabase (meta)' };
   }
+
+  // 2) Espelho opcional na tabela dedicada (se existir)
+  if (_contenciosoEscritoriosSupaOk !== false) {
+    try {
+      const res = await fetch(CONTENCIOSO_ESCRITORIOS_URL, {
+        method: 'POST',
+        headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ cod: k, escritorio: String(escritorio || ''), updated_at: new Date().toISOString() }),
+      });
+      if (res.status === 404 || res.status === 406) _contenciosoEscritoriosSupaOk = false;
+      else if (res.ok || res.status === 201 || res.status === 200) _contenciosoEscritoriosSupaOk = true;
+    } catch (_) {
+      _contenciosoEscritoriosSupaOk = false;
+    }
+  }
+  return { ok: true };
 }
 
 async function setEscritorioContencioso(cod, escritorio, opts) {
   const k = normCod(cod);
-  if (!k || k === '0') return;
+  if (!k || k === '0') return { ok: false, error: 'código inválido' };
   const nome = String(escritorio || '').trim();
   const map = { ...readContenciosoEscritoriosMap() };
   if (nome) {
@@ -15565,9 +15594,14 @@ async function setEscritorioContencioso(cod, escritorio, opts) {
     }
     sel.value = nome;
   }
+  let saveResult = { ok: true };
   if (!(opts && opts.skipSupa)) {
-    await persistEscritorioContenciosoSupabase(k, nome);
-    try { await publicarContenciosoMetaSupabase(); } catch (_) {}
+    saveResult = await persistEscritorioContenciosoSupabase(k, nome);
+    if (!saveResult || !saveResult.ok) {
+      toast('⚠ Escritório alterado neste ecrã, mas NÃO gravou no Supabase'
+        + (saveResult && saveResult.error ? ': ' + saveResult.error : '')
+        + '. Ao refrescar pode perder-se.', 'error');
+    }
   }
   // Actualizar resumo AF Contencioso se estiver aberto
   if (Array.isArray(_afCcLista) && _afCcLista.length) {
@@ -15580,6 +15614,7 @@ async function setEscritorioContencioso(cod, escritorio, opts) {
       renderAfContenciosoLista();
     }
   }
+  return saveResult;
 }
 
 function htmlSelectEscritorioContencioso(cod) {
@@ -15612,8 +15647,10 @@ async function onAfEscritorioChange(sel) {
     val = String(nome).trim();
     addEscritorioOpt(val);
   }
-  await setEscritorioContencioso(cod, val);
-  toast(val ? `Escritório: ${val}` : 'Escritório removido.');
+  const saved = await setEscritorioContencioso(cod, val);
+  if (saved && saved.ok !== false) {
+    toast(val ? `Escritório guardado: ${val}` : 'Escritório removido.');
+  }
 }
 
 function showAfContenciosoSub(sub) {
