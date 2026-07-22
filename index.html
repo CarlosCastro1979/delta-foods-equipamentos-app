@@ -15868,9 +15868,11 @@ function renderAfPddExtra() {
   if (!el) return;
   const lista = readContenciosoPddExtra();
   const nEsc = Object.keys(readContenciosoEscritoriosMap()).length;
+  const totalDiv = (lista || []).reduce((s, r) => s + (Number(r.divida) || 0), 0);
   if (info) {
     info.innerHTML = lista.length
       ? `<span style="color:#7f1d1d;font-weight:600;">${lista.length}</span> cliente(s) no Excel PDD que <b>não</b> estão na lista Contencioso da app (vendedor ${CONTENCIOSO_VENDEDOR}).`
+        + ` · Dívida total: <b style="color:#7f1d1d;">${formatEur(totalDiv)}</b>`
         + (nEsc ? ` · Mapa escritórios: <b>${nEsc}</b>` : '')
       : `Nenhum cliente “só no PDD”. Importa o Excel «PDD por Advogado» (sem protecção IRM) para comparar com a lista Contencioso.`
         + (nEsc ? ` · Já tens <b>${nEsc}</b> escritório(s) guardado(s).` : '');
@@ -15909,16 +15911,61 @@ function renderAfPddExtra() {
       ${extras}
     </tr>`;
   }).join('');
-  el.innerHTML = `<div class="table-wrap"><table class="data-table" id="af-pdd-table" style="width:100%;">
+  const colspanAntes = 5;
+  const colspanDepois = extraKeys.length;
+  el.innerHTML = `<div id="af-pdd-total" style="font-size:13px;margin-bottom:10px;padding:8px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;">
+      Soma dívida PDD (fora da app): <b style="color:#7f1d1d;font-size:15px;">${formatEur(totalDiv)}</b>
+      <span style="color:var(--muted);font-size:12px;"> · ${lista.length} cliente(s)</span>
+    </div>
+    <div class="table-wrap"><table class="data-table" id="af-pdd-table" style="width:100%;">
     <thead><tr style="background:#ffedd5;">
       <th>Cód.</th><th>Nome</th><th>Escritório</th><th>Canal</th><th>Vendedor</th><th>Dívida</th>
       ${extraKeys.map(k => `<th>${escHtml(k)}</th>`).join('')}
-    </tr></thead><tbody>${rows}</tbody></table></div>`;
+    </tr></thead><tbody>${rows}</tbody>
+    <tfoot>
+      <tr style="background:#ffedd5;border-top:2px solid #fdba74;font-weight:700;">
+        <td colspan="${colspanAntes}" style="padding:8px 10px;font-size:12px;text-align:right;">Total</td>
+        <td id="af-pdd-tfoot-divida" style="padding:8px 10px;font-size:13px;text-align:right;color:#7f1d1d;" data-sort="${totalDiv}">${formatEur(totalDiv)}</td>
+        ${colspanDepois ? `<td colspan="${colspanDepois}"></td>` : ''}
+      </tr>
+    </tfoot>
+    </table></div>`;
   const tbl = el.querySelector('table');
   if (tbl) {
     const infoBase = info ? info.innerHTML : '';
     enableTableColFilters(tbl, { infoId: 'af-pdd-info', total: lista.length, infoBase });
     enableTableSort(tbl);
+    const refreshSum = () => updateAfPddVisibleTotal();
+    tbl.querySelectorAll('.col-filter-input').forEach(inp => {
+      inp.addEventListener('input', refreshSum);
+    });
+    refreshSum();
+  }
+}
+
+/** Actualiza soma da dívida PDD conforme linhas visíveis (filtros de coluna). */
+function updateAfPddVisibleTotal() {
+  const tbl = document.getElementById('af-pdd-table');
+  const bar = document.getElementById('af-pdd-total');
+  const tfoot = document.getElementById('af-pdd-tfoot-divida');
+  if (!tbl || !tbl.tBodies[0]) return;
+  let sum = 0;
+  let n = 0;
+  for (const tr of tbl.tBodies[0].rows) {
+    if (tr.style.display === 'none') continue;
+    n++;
+    const cell = tr.cells[5];
+    const v = cell && cell.dataset.sort != null && cell.dataset.sort !== ''
+      ? Number(cell.dataset.sort)
+      : 0;
+    if (!Number.isNaN(v)) sum += v;
+  }
+  const label = `Soma dívida PDD (fora da app): <b style="color:#7f1d1d;font-size:15px;">${formatEur(sum)}</b>`
+    + ` <span style="color:var(--muted);font-size:12px;"> · ${n} cliente(s)${n !== tbl.tBodies[0].rows.length ? ' visíveis' : ''}</span>`;
+  if (bar) bar.innerHTML = label;
+  if (tfoot) {
+    tfoot.textContent = formatEur(sum);
+    tfoot.dataset.sort = String(sum);
   }
 }
 
