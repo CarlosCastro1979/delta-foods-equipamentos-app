@@ -3494,9 +3494,24 @@ var _unused_placeholder = 1;
         <div style="font-size:14px;font-weight:600;color:#7f1d1d;margin-bottom:8px;">Pedidos Contencioso pendentes</div>
         <div id="af-cp-info" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
         <div id="af-cp-content" style="margin-bottom:28px;"><div style="color:var(--muted);font-size:13px;">A carregar…</div></div>
-        <div style="font-size:14px;font-weight:600;color:#7f1d1d;margin-bottom:8px;">Clientes no Contencioso (SAP *13)</div>
-        <div id="af-cc-info" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
-        <div id="af-cc-content"><div style="color:var(--muted);font-size:13px;">A carregar…</div></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button type="button" class="sub-tab active" id="af-cc-tab-lista" onclick="showAfContenciosoSub('lista')">Clientes no Contencioso (SAP *13)</button>
+            <button type="button" class="sub-tab" id="af-cc-tab-pdd" onclick="showAfContenciosoSub('pdd')">Só no PDD (fora da app)</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('af-pdd-adv-input')?.click()" style="min-height:36px;" title="Importar Excel PDD por Advogado (código + escritório)">⬆ Importar PDD Advogados</button>
+            <input type="file" id="af-pdd-adv-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="importAfPddAdvogados(event)">
+          </div>
+        </div>
+        <div id="af-cc-lista-wrap">
+          <div id="af-cc-info" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
+          <div id="af-cc-content"><div style="color:var(--muted);font-size:13px;">A carregar…</div></div>
+        </div>
+        <div id="af-cc-pdd-wrap" style="display:none;">
+          <div id="af-pdd-info" style="font-size:12px;color:var(--muted);margin-bottom:10px;">Importa o Excel «PDD por Advogado» para ver clientes do ficheiro que não estão na lista Contencioso da app.</div>
+          <div id="af-pdd-content"><div style="color:var(--muted);font-size:13px;padding:20px 0;">Ainda sem importação PDD.</div></div>
+        </div>
       </div>
       <div id="af-sec-divida-sem-compras" style="display:none;">
         <div id="af-dsc-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
@@ -10701,20 +10716,30 @@ async function renderClientesContencioso() {
     el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:40px 0;text-align:center;">Sem clientes no Contencioso para os filtros seleccionados.</div>';
     return;
   }
-  const rows = lista.map(c => `<tr style="border-bottom:1px solid #fecaca;background:#fef2f2;">
+  if (typeof loadContenciosoEscritoriosFromSupabase === 'function') {
+    try { await loadContenciosoEscritoriosFromSupabase(); } catch (_) {}
+  }
+  const rows = lista.map(c => {
+    const escVal = typeof getEscritorioContencioso === 'function' ? getEscritorioContencioso(c.cod) : '';
+    const escCell = typeof htmlSelectEscritorioContencioso === 'function'
+      ? htmlSelectEscritorioContencioso(c.cod)
+      : escHtml(escVal || '—');
+    return `<tr style="border-bottom:1px solid #fecaca;background:#fef2f2;">
     <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(c.cod || '—')}</td>
     <td style="padding:8px 10px;font-size:12px;font-weight:500;">${escHtml(c.nome || '—')}</td>
+    <td style="padding:8px 10px;font-size:12px;" data-sort="${escHtml(escVal)}" data-filter-text="${escHtml(escVal)}">${escCell}</td>
     <td style="padding:8px 10px;font-size:12px;">${escHtml(c.canal || '—')}</td>
     <td style="padding:8px 10px;font-size:12px;">${escHtml(c.cep || '—')}</td>
     <td style="padding:8px 10px;font-size:12px;">${escHtml(c.cidade || '—')}</td>
     <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(c.cnpj || '—')}</td>
     <td style="padding:8px 10px;font-size:12px;font-weight:700;color:${c.vencido > 0 ? '#7f1d1d' : 'var(--muted)'};text-align:right;white-space:nowrap;" data-sort="${c.vencido || 0}">${c.vencido > 0 ? formatEur(c.vencido) : '—'}</td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
   el.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;">
     <div class="table-wrap">
       <table class="data-table" style="width:100%;">
         <thead><tr style="background:#fee2e2;">
-          <th>Cód.</th><th>Nome</th><th>Canal</th><th>CEP</th><th>Cidade</th><th>CNPJ</th><th style="text-align:right;">Valor dívida</th>
+          <th>Cód.</th><th>Nome</th><th>Escritório</th><th>Canal</th><th>CEP</th><th>Cidade</th><th>CNPJ</th><th style="text-align:right;">Valor dívida</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -10735,8 +10760,9 @@ async function exportClientesContenciosoExcel() {
   const rows = lista.map(c => {
     const div = c._div || getDividaCliente(c.cod);
     const vencido = c.vencido != null ? c.vencido : (div ? div.vencido : 0);
+    const escritorio = typeof getEscritorioContencioso === 'function' ? getEscritorioContencioso(c.cod) : '';
     return {
-      Codigo: c.cod, Nome: c.nome, Canal: c.canal, CEP: c.cep, Cidade: c.cidade,
+      Codigo: c.cod, Nome: c.nome, Escritorio: escritorio, Canal: c.canal, CEP: c.cep, Cidade: c.cidade,
       CNPJ: c.cnpj, Email: c.email, Tel1: c.tel1,
       Valor_Divida: vencido || 0,
     };
@@ -14817,6 +14843,523 @@ function guardarListaContencioso(lista) {
     localStorage.setItem('delta_sap_contencioso', JSON.stringify(cods));
   } catch (e) {}
 }
+
+// ─── Contencioso: escritório de advogados (PDD) ──────
+const CONTENCIOSO_ESCRITORIOS_KEY = 'delta_contencioso_escritorios';
+const CONTENCIOSO_ESCRITORIOS_OPTS_KEY = 'delta_contencioso_escritorios_opts';
+const CONTENCIOSO_PDD_EXTRA_KEY = 'delta_contencioso_pdd_extra';
+const CONTENCIOSO_PDD_SOURCE_KEY = 'delta_contencioso_pdd_source';
+const CONTENCIOSO_ESCRITORIOS_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/contencioso_escritorios';
+const CONTENCIOSO_PDD_SEED_MAP = {"400327":"PDD Advogado Rezende","401761":"PDD Advogado Rezende","401763":"PDD Advogado Rezende","401842":"PDD Advogado Rezende","401958":"PDD Advogado Rezende","401964":"PDD Advogado Rezende","402646":"PDD Advogado Rezende","402718":"PDD Advogado Rezende","402902":"PDD Advogado Rezende","403253":"PDD Advogado Rezende","403960":"PDD Advogado Rezende","404156":"PDD Advogado Rezende","406168":"PDD Advogado Rezende","406172":"PDD Advogado Rezende","406964":"PDD Advogado Rezende","407276":"PDD Advogado Rezende","407917":"PDD Advogado Rezende","409207":"PDD Advogado Rezende","410367":"PDD Advogado Rezende","415444":"PDD Advogado Rezende","418255":"PDD Advogado Rezende","418495":"PDD Advogado Rezende","418497":"PDD Advogado Rezende","418506":"PDD Advogado Rezende","418568":"PDD Advogado Rezende","418591":"PDD Advogado Rezende","418668":"PDD Advogado Rezende","422938":"PDD Advogado Rezende","423872":"PDD Advogado Rezende","424365":"PDD Advogado Rezende","427914":"PDD Advogado Rezende","748872":"PDD Advogado Rezende","749288":"PDD - Advogado Henrique","749650":"PDD Advogado Rezende","765613":"PDD Advogado Rezende","766422":"PDD Advogado Rezende","767023":"PDD Advogado Rezende","771827":"PDD - Advogado Felipe","773391":"PDD Advogado Rezende","777527":"PDD Advogado Rezende","778367":"PDD Advogado Rezende","779050":"PDD Advogado Rezende","790473":"PDD Advogado Rezende","790599":"PDD Advogado Rezende","791646":"PDD Advogado Rezende","792640":"PDD Advogado Rezende","793504":"PDD Advogado Rezende","794479":"PDD Advogado Rezende","797061":"PDD Advogado Rezende","799075":"PDD Advogado Rezende"};
+const CONTENCIOSO_PDD_SEED_ROWS = [{"cod":"400327","nome":"RESTAURANTE AMORE GUSTO E","escritorio":"PDD Advogado Rezende","divida":550.17,"raw":{"Conta do Razão":"1104010101","Codigo":400327,"Cliente":"RESTAURANTE AMORE GUSTO E","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":550.17,"2025":0,"2026":0,"Total":550.17,"PECLD":-550.17,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"401761","nome":"JPCRIS BAR RESTAURANTE E","escritorio":"PDD Advogado Rezende","divida":339.74,"raw":{"Conta do Razão":"1104010101","Codigo":401761,"Cliente":"JPCRIS BAR RESTAURANTE E","2019":0,"2020":0,"2021":0,"2022":0,"2023":339.74,"2024":0,"2025":0,"2026":0,"Total":339.74,"PECLD":-339.74,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"401763","nome":"MS BAR E RESTAURANTE LTDA","escritorio":"PDD Advogado Rezende","divida":339.74,"raw":{"Conta do Razão":"1104010101","Codigo":401763,"Cliente":"MS BAR E RESTAURANTE LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":339.74,"2024":0,"2025":0,"2026":0,"Total":339.74,"PECLD":-339.74,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"401842","nome":"NANCY SNACKBAR LTDA","escritorio":"PDD Advogado Rezende","divida":377.13,"raw":{"Conta do Razão":"1104010101","Codigo":401842,"Cliente":"NANCY SNACKBAR LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":0,"2025":377.13,"2026":0,"Total":377.13,"PECLD":-377.13,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"401958","nome":"SEMPRE FRESCO COM.DE ALIM","escritorio":"PDD Advogado Rezende","divida":339.74,"raw":{"Conta do Razão":"1104010101","Codigo":401958,"Cliente":"SEMPRE FRESCO COM.DE ALIM","2019":0,"2020":0,"2021":0,"2022":0,"2023":339.74,"2024":0,"2025":0,"2026":0,"Total":339.74,"PECLD":-339.74,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"401964","nome":"OR KOSHER SERVICE E RESTA","escritorio":"PDD Advogado Rezende","divida":603.41,"raw":{"Conta do Razão":"1104010101","Codigo":401964,"Cliente":"OR KOSHER SERVICE E RESTA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":603.41,"2025":0,"2026":0,"Total":603.41,"PECLD":-603.41,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"402646","nome":"NAGO GASTROBAR LTDA","escritorio":"PDD Advogado Rezende","divida":339.74,"raw":{"Conta do Razão":"1104010101","Codigo":402646,"Cliente":"NAGO GASTROBAR LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":339.74,"2024":0,"2025":0,"2026":0,"Total":339.74,"PECLD":-339.74,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"402718","nome":"BAR SANTINHOS LTDA","escritorio":"PDD Advogado Rezende","divida":352.08,"raw":{"Conta do Razão":"1104010101","Codigo":402718,"Cliente":"BAR SANTINHOS LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.08,"2025":0,"2026":0,"Total":352.08,"PECLD":-352.08,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"402902","nome":"EMBARXADOR CHOPERIA LTDA","escritorio":"PDD Advogado Rezende","divida":352.56,"raw":{"Conta do Razão":"1104010101","Codigo":402902,"Cliente":"EMBARXADOR CHOPERIA LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.56,"2025":0,"2026":0,"Total":352.56,"PECLD":-352.56,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"403253","nome":"BODEGAS","escritorio":"PDD Advogado Rezende","divida":655.89,"raw":{"Conta do Razão":"1104010101","Codigo":403253,"Cliente":"BODEGAS","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":655.89,"2025":0,"2026":0,"Total":655.89,"PECLD":-655.89,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"403960","nome":"ILHA DO PATO- BAR E CHOPE","escritorio":"PDD Advogado Rezende","divida":679.48,"raw":{"Conta do Razão":"1104010101","Codigo":403960,"Cliente":"ILHA DO PATO- BAR E CHOPE","2019":0,"2020":0,"2021":0,"2022":0,"2023":679.48,"2024":0,"2025":0,"2026":0,"Total":679.48,"PECLD":-679.48,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"404156","nome":"EURO PIRACICABA PR.ALIMEN","escritorio":"PDD Advogado Rezende","divida":1567.53,"raw":{"Conta do Razão":"1104010101","Codigo":404156,"Cliente":"EURO PIRACICABA PR.ALIMEN","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":1567.53,"2025":0,"2026":0,"Total":1567.53,"PECLD":-1567.53,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"406168","nome":"LIDIA COMERCIO DE ALIMENT","escritorio":"PDD Advogado Rezende","divida":241.24,"raw":{"Conta do Razão":"1104010101","Codigo":406168,"Cliente":"LIDIA COMERCIO DE ALIMENT","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":241.24,"2025":0,"2026":0,"Total":241.24,"PECLD":-241.24,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"406172","nome":"MISS SAIGON RESTAURANTE L","escritorio":"PDD Advogado Rezende","divida":803.73,"raw":{"Conta do Razão":"1104010101","Codigo":406172,"Cliente":"MISS SAIGON RESTAURANTE L","2019":0,"2020":0,"2021":0,"2022":0,"2023":803.73,"2024":0,"2025":0,"2026":0,"Total":803.73,"PECLD":-803.73,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"406964","nome":"MAKENAILS CABELEIREIROS E","escritorio":"PDD Advogado Rezende","divida":359.73,"raw":{"Conta do Razão":"1104010101","Codigo":406964,"Cliente":"MAKENAILS CABELEIREIROS E","2019":0,"2020":0,"2021":0,"2022":0,"2023":359.73,"2024":0,"2025":0,"2026":0,"Total":359.73,"PECLD":-359.73,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"407276","nome":"REINALDO SILVA MATIAS","escritorio":"PDD Advogado Rezende","divida":956.4300000000001,"raw":{"Conta do Razão":"1104010101","Codigo":407276,"Cliente":"REINALDO SILVA MATIAS","2019":0,"2020":0,"2021":0,"2022":0,"2023":423.71,"2024":532.72,"2025":0,"2026":0,"Total":956.4300000000001,"PECLD":-956.4300000000001,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"407917","nome":"E-MONTEIRO DIST.ALIM.FOOD","escritorio":"PDD Advogado Rezende","divida":17845.81,"raw":{"Conta do Razão":"1104010101","Codigo":407917,"Cliente":"E-MONTEIRO DIST.ALIM.FOOD","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":17845.81,"2025":0,"2026":0,"Total":17845.81,"PECLD":-17845.81,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"409207","nome":"GIIRO RESTAURANTE LTDA","escritorio":"PDD Advogado Rezende","divida":1416.75,"raw":{"Conta do Razão":"1104010101","Codigo":409207,"Cliente":"GIIRO RESTAURANTE LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":1416.75,"2025":0,"2026":0,"Total":1416.75,"PECLD":-1416.75,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"410367","nome":"GASTRO BAR AMIGOS SÃO CAE","escritorio":"PDD Advogado Rezende","divida":783.77,"raw":{"Conta do Razão":"1104010101","Codigo":410367,"Cliente":"GASTRO BAR AMIGOS SÃO CAE","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":783.77,"2025":0,"2026":0,"Total":783.77,"PECLD":-783.77,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"415444","nome":"AVANTI FIT ACADEMIA LTDA","escritorio":"PDD Advogado Rezende","divida":1167.82,"raw":{"Conta do Razão":"1104010101","Codigo":415444,"Cliente":"AVANTI FIT ACADEMIA LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":1167.82,"2025":0,"2026":0,"Total":1167.82,"PECLD":-1167.82,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418255","nome":"BAR RESTAURANT ESQUINA DA","escritorio":"PDD Advogado Rezende","divida":367.93,"raw":{"Conta do Razão":"1104010101","Codigo":418255,"Cliente":"BAR RESTAURANT ESQUINA DA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":367.93,"2025":0,"2026":0,"Total":367.93,"PECLD":-367.93,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418495","nome":"53.428.020 WILMA MARTINS","escritorio":"PDD Advogado Rezende","divida":352.58,"raw":{"Conta do Razão":"1104010101","Codigo":418495,"Cliente":"53.428.020 WILMA MARTINS","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.58,"2025":0,"2026":0,"Total":352.58,"PECLD":-352.58,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418497","nome":"BUTECO LION BEER 2 LTDA","escritorio":"PDD Advogado Rezende","divida":352.58,"raw":{"Conta do Razão":"1104010101","Codigo":418497,"Cliente":"BUTECO LION BEER 2 LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.58,"2025":0,"2026":0,"Total":352.58,"PECLD":-352.58,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418506","nome":"CABRAL ASSADOS NA PARRILL","escritorio":"PDD Advogado Rezende","divida":655.89,"raw":{"Conta do Razão":"1104010101","Codigo":418506,"Cliente":"CABRAL ASSADOS NA PARRILL","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":655.89,"2025":0,"2026":0,"Total":655.89,"PECLD":-655.89,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418568","nome":"SANTO BOLINHO LTDA","escritorio":"PDD Advogado Rezende","divida":352.08,"raw":{"Conta do Razão":"1104010101","Codigo":418568,"Cliente":"SANTO BOLINHO LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.08,"2025":0,"2026":0,"Total":352.08,"PECLD":-352.08,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418591","nome":"F.A.N. MOLINA","escritorio":"PDD Advogado Rezende","divida":507.9,"raw":{"Conta do Razão":"1104010101","Codigo":418591,"Cliente":"F.A.N. MOLINA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":507.9,"2025":0,"2026":0,"Total":507.9,"PECLD":-507.9,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418668","nome":"TIAGO PESSOA DE LIMA","escritorio":"PDD Advogado Rezende","divida":352.56,"raw":{"Conta do Razão":"1104010101","Codigo":418668,"Cliente":"TIAGO PESSOA DE LIMA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.56,"2025":0,"2026":0,"Total":352.56,"PECLD":-352.56,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"422938","nome":"ATHENA-BAR, REST.E EVENTO","escritorio":"PDD Advogado Rezende","divida":502.09,"raw":{"Conta do Razão":"1104010101","Codigo":422938,"Cliente":"ATHENA-BAR, REST.E EVENTO","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":502.09,"2025":0,"2026":0,"Total":502.09,"PECLD":-502.09,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"423872","nome":"KAZUKA SUSHI LTDA","escritorio":"PDD Advogado Rezende","divida":783.76,"raw":{"Conta do Razão":"1104010101","Codigo":423872,"Cliente":"KAZUKA SUSHI LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":783.76,"2025":0,"2026":0,"Total":783.76,"PECLD":-783.76,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"424365","nome":"ELIZABETH ZAIDA TORRES PA","escritorio":"PDD Advogado Rezende","divida":532.72,"raw":{"Conta do Razão":"1104010101","Codigo":424365,"Cliente":"ELIZABETH ZAIDA TORRES PA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":532.72,"2025":0,"2026":0,"Total":532.72,"PECLD":-532.72,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"427914","nome":"LAMERAS BAR LTDA","escritorio":"PDD Advogado Rezende","divida":492.54,"raw":{"Conta do Razão":"1104010101","Codigo":427914,"Cliente":"LAMERAS BAR LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":0,"2025":492.54,"2026":0,"Total":492.54,"PECLD":-492.54,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"748872","nome":"FREITAS BAR E RESTAURANTE","escritorio":"PDD Advogado Rezende","divida":1903.49,"raw":{"Conta do Razão":"1104010101","Codigo":748872,"Cliente":"FREITAS BAR E RESTAURANTE","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":1903.49,"2025":0,"2026":0,"Total":1903.49,"PECLD":-1903.49,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"749288","nome":"N. T. DELTA NORTE COMERCI","escritorio":"PDD - Advogado Henrique","divida":48626.880000000005,"raw":{"Conta do Razão":"1104010101","Codigo":749288,"Cliente":"N. T. DELTA NORTE COMERCI","2019":1863.58,"2020":42596.46,"2021":0,"2022":0,"2023":0,"2024":4166.84,"2025":0,"2026":0,"Total":48626.880000000005,"PECLD":-48626.880000000005,"Observação Delta":"PDD - Advogado Henriqte"}},{"cod":"749650","nome":"LHE E ALIMENTOS, LTDA","escritorio":"PDD Advogado Rezende","divida":3180.92,"raw":{"Conta do Razão":"1104010101","Codigo":749650,"Cliente":"LHE E ALIMENTOS, LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":3180.92,"2025":0,"2026":0,"Total":3180.92,"PECLD":-3180.92,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"765613","nome":"REST.E CHOPERIA VILA ROST","escritorio":"PDD Advogado Rezende","divida":414.64,"raw":{"Conta do Razão":"1104010101","Codigo":765613,"Cliente":"REST.E CHOPERIA VILA ROST","2019":0,"2020":0,"2021":0,"2022":0,"2023":414.64,"2024":0,"2025":0,"2026":0,"Total":414.64,"PECLD":-414.64,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"766422","nome":"STRONG WASH MOTORCYCLE LA","escritorio":"PDD Advogado Rezende","divida":345.52,"raw":{"Conta do Razão":"1104010101","Codigo":766422,"Cliente":"STRONG WASH MOTORCYCLE LA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":345.52,"2025":0,"2026":0,"Total":345.52,"PECLD":-345.52,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"767023","nome":"MONTEIRO DIST.ALIM.FOOD S","escritorio":"PDD Advogado Rezende","divida":3088.53,"raw":{"Conta do Razão":"1104010101","Codigo":767023,"Cliente":"MONTEIRO DIST.ALIM.FOOD S","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":3088.53,"2025":0,"2026":0,"Total":3088.53,"PECLD":-3088.53,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"771827","nome":"FERREIRA COM REPR LTDA","escritorio":"PDD - Advogado Felipe","divida":142383.53,"raw":{"Conta do Razão":"1104010101","Codigo":771827,"Cliente":"FERREIRA COM REPR LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":89050.38,"2024":53333.15,"2025":0,"2026":0,"Total":142383.53,"PECLD":-142383.53000000003,"Observação Delta":"PDD - Advogado Felipe"}},{"cod":"773391","nome":"EMPORIO DAS CAPSULAS LTDA","escritorio":"PDD Advogado Rezende","divida":2377.94,"raw":{"Conta do Razão":"1104010101","Codigo":773391,"Cliente":"EMPORIO DAS CAPSULAS LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":2377.94,"2024":0,"2025":0,"2026":0,"Total":2377.94,"PECLD":-2377.94,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"777527","nome":"DENILSON ALMEIDA DOS SANT","escritorio":"PDD Advogado Rezende","divida":27305.92,"raw":{"Conta do Razão":"1104010101","Codigo":777527,"Cliente":"DENILSON ALMEIDA DOS SANT","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":27759.24,"2025":-453.32000000000335,"2026":0,"Total":27305.92,"PECLD":-27305.920000000002,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"778367","nome":"RESTAUR.BICOLOR CULINARIA","escritorio":"PDD Advogado Rezende","divida":532.39,"raw":{"Conta do Razão":"1104010101","Codigo":778367,"Cliente":"RESTAUR.BICOLOR CULINARIA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":532.39,"2025":0,"2026":0,"Total":532.39,"PECLD":-532.39,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"779050","nome":"REST.NUTRICORPO NUTR.EQUI","escritorio":"PDD Advogado Rezende","divida":1135.46,"raw":{"Conta do Razão":"1104010101","Codigo":779050,"Cliente":"REST.NUTRICORPO NUTR.EQUI","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":1135.46,"2025":0,"2026":0,"Total":1135.46,"PECLD":-1135.46,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"790473","nome":"SANTO DICA LTDA","escritorio":"PDD Advogado Rezende","divida":1671.6200000000001,"raw":{"Conta do Razão":"1104010101","Codigo":790473,"Cliente":"SANTO DICA LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":1671.6200000000001,"2024":0,"2025":0,"2026":0,"Total":1671.6200000000001,"PECLD":-1671.6200000000001,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"790599","nome":"NOOWA COMERCIO DE ALIMENT","escritorio":"PDD Advogado Rezende","divida":783.77,"raw":{"Conta do Razão":"1104010101","Codigo":790599,"Cliente":"NOOWA COMERCIO DE ALIMENT","2019":0,"2020":0,"2021":0,"2022":0,"2023":783.77,"2024":0,"2025":0,"2026":0,"Total":783.77,"PECLD":-783.77,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"791646","nome":"CANTINA DO NAGATA MOOCA L","escritorio":"PDD Advogado Rezende","divida":930.31,"raw":{"Conta do Razão":"1104010101","Codigo":791646,"Cliente":"CANTINA DO NAGATA MOOCA L","2019":0,"2020":0,"2021":0,"2022":0,"2023":930.31,"2024":0,"2025":0,"2026":0,"Total":930.31,"PECLD":-930.31,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"792640","nome":"ZPN RESTAURANTE LTDA","escritorio":"PDD Advogado Rezende","divida":705.39,"raw":{"Conta do Razão":"1104010101","Codigo":792640,"Cliente":"ZPN RESTAURANTE LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":705.39,"2025":0,"2026":0,"Total":705.39,"PECLD":-705.39,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"793504","nome":"ROMEZAL PADARIA PORTUGUES","escritorio":"PDD Advogado Rezende","divida":3957.1799999999994,"raw":{"Conta do Razão":"1104010101","Codigo":793504,"Cliente":"ROMEZAL PADARIA PORTUGUES","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":0,"2025":3957.1799999999994,"2026":0,"Total":3957.1799999999994,"PECLD":-3957.1799999999994,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"794479","nome":"B B N-BIWA BIRO DE NEGÓCI","escritorio":"PDD Advogado Rezende","divida":1420.58,"raw":{"Conta do Razão":"1104010101","Codigo":794479,"Cliente":"B B N-BIWA BIRO DE NEGÓCI","2019":0,"2020":0,"2021":0,"2022":0,"2023":1420.58,"2024":0,"2025":0,"2026":0,"Total":1420.58,"PECLD":-1420.58,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"797061","nome":"M&P UNIMAX DISTRIB.ALIMEN","escritorio":"PDD Advogado Rezende","divida":21501.78,"raw":{"Conta do Razão":"1104010101","Codigo":797061,"Cliente":"M&P UNIMAX DISTRIB.ALIMEN","2019":0,"2020":0,"2021":0,"2022":0,"2023":21501.78,"2024":0,"2025":0,"2026":0,"Total":21501.78,"PECLD":-21501.78,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"799075","nome":"LB PARRILLA RESTAURANTE L","escritorio":"PDD Advogado Rezende","divida":532.72,"raw":{"Conta do Razão":"1104010101","Codigo":799075,"Cliente":"LB PARRILLA RESTAURANTE L","2019":0,"2020":0,"2021":0,"2022":0,"2023":532.72,"2024":0,"2025":0,"2026":0,"Total":532.72,"PECLD":-532.72,"Observação Delta":"PDD Advogado Rezende"}}];
+let _afCcSub = 'lista'; // lista | pdd
+let _contenciosoEscritoriosCache = null; // { [normCod]: string }
+let _contenciosoEscritoriosOpts = null; // string[]
+let _contenciosoPddExtra = null; // [{cod, escritorio, ...cols}]
+let _contenciosoPddSource = null; // linhas PDD (seed ou última importação)
+let _contenciosoEscritoriosSupaOk = null; // null | true | false
+
+function readContenciosoEscritoriosMap() {
+  if (_contenciosoEscritoriosCache) return _contenciosoEscritoriosCache;
+  try {
+    _contenciosoEscritoriosCache = JSON.parse(localStorage.getItem(CONTENCIOSO_ESCRITORIOS_KEY) || '{}') || {};
+  } catch (_) {
+    _contenciosoEscritoriosCache = {};
+  }
+  return _contenciosoEscritoriosCache;
+}
+
+function writeContenciosoEscritoriosMap(map) {
+  _contenciosoEscritoriosCache = map || {};
+  try { localStorage.setItem(CONTENCIOSO_ESCRITORIOS_KEY, JSON.stringify(_contenciosoEscritoriosCache)); } catch (_) {}
+}
+
+function getEscritorioContencioso(cod) {
+  const k = normCod(cod);
+  if (!k || k === '0') return '';
+  return String(readContenciosoEscritoriosMap()[k] || '').trim();
+}
+
+function readContenciosoEscritoriosOpts() {
+  if (_contenciosoEscritoriosOpts) return _contenciosoEscritoriosOpts;
+  try {
+    const arr = JSON.parse(localStorage.getItem(CONTENCIOSO_ESCRITORIOS_OPTS_KEY) || '[]');
+    _contenciosoEscritoriosOpts = Array.isArray(arr) ? arr.filter(Boolean) : [];
+  } catch (_) {
+    _contenciosoEscritoriosOpts = [];
+  }
+  // Incluir nomes já atribuídos
+  const fromMap = Object.values(readContenciosoEscritoriosMap()).filter(Boolean);
+  const set = new Set([..._contenciosoEscritoriosOpts, ...fromMap].map(s => String(s).trim()).filter(Boolean));
+  _contenciosoEscritoriosOpts = [...set].sort((a, b) => a.localeCompare(b, 'pt'));
+  return _contenciosoEscritoriosOpts;
+}
+
+function addEscritorioOpt(nome) {
+  const n = String(nome || '').trim();
+  if (!n) return;
+  const opts = readContenciosoEscritoriosOpts();
+  if (!opts.some(o => o.toLowerCase() === n.toLowerCase())) {
+    opts.push(n);
+    opts.sort((a, b) => a.localeCompare(b, 'pt'));
+    _contenciosoEscritoriosOpts = opts;
+    try { localStorage.setItem(CONTENCIOSO_ESCRITORIOS_OPTS_KEY, JSON.stringify(opts)); } catch (_) {}
+  }
+}
+
+function readContenciosoPddExtra() {
+  if (_contenciosoPddExtra) return _contenciosoPddExtra;
+  try {
+    const arr = JSON.parse(localStorage.getItem(CONTENCIOSO_PDD_EXTRA_KEY) || '[]');
+    _contenciosoPddExtra = Array.isArray(arr) ? arr : [];
+  } catch (_) {
+    _contenciosoPddExtra = [];
+  }
+  return _contenciosoPddExtra;
+}
+
+function writeContenciosoPddExtra(rows) {
+  _contenciosoPddExtra = Array.isArray(rows) ? rows : [];
+  try { localStorage.setItem(CONTENCIOSO_PDD_EXTRA_KEY, JSON.stringify(_contenciosoPddExtra)); } catch (_) {}
+}
+
+function readContenciosoPddSource() {
+  if (_contenciosoPddSource) return _contenciosoPddSource;
+  try {
+    const arr = JSON.parse(localStorage.getItem(CONTENCIOSO_PDD_SOURCE_KEY) || 'null');
+    if (Array.isArray(arr) && arr.length) _contenciosoPddSource = arr;
+  } catch (_) {}
+  if (!_contenciosoPddSource) {
+    _contenciosoPddSource = (typeof CONTENCIOSO_PDD_SEED_ROWS !== 'undefined' && CONTENCIOSO_PDD_SEED_ROWS) || [];
+  }
+  return _contenciosoPddSource;
+}
+
+function writeContenciosoPddSource(rows) {
+  _contenciosoPddSource = Array.isArray(rows) ? rows : [];
+  try { localStorage.setItem(CONTENCIOSO_PDD_SOURCE_KEY, JSON.stringify(_contenciosoPddSource)); } catch (_) {}
+}
+
+async function loadContenciosoEscritoriosFromSupabase() {
+  if (_contenciosoEscritoriosSupaOk === false) return;
+  try {
+    const res = await fetch(`${CONTENCIOSO_ESCRITORIOS_URL}?select=cod,escritorio&limit=5000`, { headers: HEADERS });
+    if (res.status === 404 || res.status === 406) {
+      _contenciosoEscritoriosSupaOk = false;
+      return;
+    }
+    if (!res.ok) {
+      _contenciosoEscritoriosSupaOk = false;
+      return;
+    }
+    const dados = await res.json();
+    if (!Array.isArray(dados)) return;
+    _contenciosoEscritoriosSupaOk = true;
+    const map = { ...readContenciosoEscritoriosMap() };
+    dados.forEach(r => {
+      const k = normCod(r.cod);
+      const e = String(r.escritorio || '').trim();
+      if (k && k !== '0' && e) {
+        map[k] = e;
+        addEscritorioOpt(e);
+      }
+    });
+    writeContenciosoEscritoriosMap(map);
+  } catch (_) {
+    _contenciosoEscritoriosSupaOk = false;
+  }
+}
+
+async function persistEscritorioContenciosoSupabase(cod, escritorio) {
+  if (_contenciosoEscritoriosSupaOk === false) return;
+  const k = normCod(cod);
+  if (!k || k === '0') return;
+  try {
+    const res = await fetch(CONTENCIOSO_ESCRITORIOS_URL, {
+      method: 'POST',
+      headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ cod: k, escritorio: String(escritorio || ''), updated_at: new Date().toISOString() }),
+    });
+    if (res.status === 404 || res.status === 406) _contenciosoEscritoriosSupaOk = false;
+    else if (res.ok || res.status === 201 || res.status === 200) _contenciosoEscritoriosSupaOk = true;
+  } catch (_) {
+    _contenciosoEscritoriosSupaOk = false;
+  }
+}
+
+async function setEscritorioContencioso(cod, escritorio, opts) {
+  const k = normCod(cod);
+  if (!k || k === '0') return;
+  const nome = String(escritorio || '').trim();
+  const map = { ...readContenciosoEscritoriosMap() };
+  if (nome) {
+    map[k] = nome;
+    addEscritorioOpt(nome);
+  } else {
+    delete map[k];
+  }
+  writeContenciosoEscritoriosMap(map);
+  // Actualizar célula sem re-render completo
+  const sel = document.querySelector(`select.af-cc-escritorio-sel[data-cod="${k}"]`);
+  if (sel) {
+    const td = sel.closest('td');
+    if (td) {
+      td.dataset.sort = nome;
+      td.dataset.filterText = nome;
+    }
+    // Reconstruir options se novo nome
+    if (nome && ![...sel.options].some(o => o.value === nome)) {
+      const opt = document.createElement('option');
+      opt.value = nome;
+      opt.textContent = nome;
+      const novo = sel.querySelector('option[value="__novo__"]');
+      if (novo) sel.insertBefore(opt, novo);
+      else sel.appendChild(opt);
+    }
+    sel.value = nome;
+  }
+  if (!(opts && opts.skipSupa)) await persistEscritorioContenciosoSupabase(k, nome);
+}
+
+function htmlSelectEscritorioContencioso(cod) {
+  const k = normCod(cod);
+  const cur = getEscritorioContencioso(k);
+  const opts = readContenciosoEscritoriosOpts();
+  const optsHtml = opts.map(o => {
+    const v = escHtml(o);
+    return `<option value="${v}"${o === cur ? ' selected' : ''}>${v}</option>`;
+  }).join('');
+  return `<select class="form-input af-cc-escritorio-sel" data-cod="${escHtml(k)}"
+      style="min-width:160px;max-width:220px;height:32px;font-size:12px;padding:2px 6px;"
+      onchange="onAfEscritorioChange(this)" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
+      <option value="">— Seleccionar —</option>
+      ${optsHtml}
+      <option value="__novo__">＋ Novo escritório…</option>
+    </select>`;
+}
+
+async function onAfEscritorioChange(sel) {
+  if (!sel) return;
+  const cod = sel.getAttribute('data-cod') || '';
+  let val = sel.value || '';
+  if (val === '__novo__') {
+    const nome = prompt('Nome do escritório de advogados:');
+    if (!nome || !String(nome).trim()) {
+      sel.value = getEscritorioContencioso(cod);
+      return;
+    }
+    val = String(nome).trim();
+    addEscritorioOpt(val);
+  }
+  await setEscritorioContencioso(cod, val);
+  toast(val ? `Escritório: ${val}` : 'Escritório removido.');
+}
+
+function showAfContenciosoSub(sub) {
+  _afCcSub = sub === 'pdd' ? 'pdd' : 'lista';
+  const listaWrap = document.getElementById('af-cc-lista-wrap');
+  const pddWrap = document.getElementById('af-cc-pdd-wrap');
+  if (listaWrap) listaWrap.style.display = _afCcSub === 'lista' ? '' : 'none';
+  if (pddWrap) pddWrap.style.display = _afCcSub === 'pdd' ? '' : 'none';
+  document.getElementById('af-cc-tab-lista')?.classList.toggle('active', _afCcSub === 'lista');
+  document.getElementById('af-cc-tab-pdd')?.classList.toggle('active', _afCcSub === 'pdd');
+  if (_afCcSub === 'pdd') renderAfPddExtra();
+}
+
+function _pddHeaderLooksLikeCod(h) {
+  const s = String(h || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  // Não confundir com coluna "Cliente" (nome)
+  if (s === 'cliente' || s === 'nome' || s === 'razao social') return false;
+  return /^(cod|codigo|c[oó]d\.?|cod.?cliente|codigo.?cliente|n[ºo]?\s*cliente)$/.test(s)
+    || (s.includes('cod') && (s.includes('client') || s.includes('sap')))
+    || s === 'codigo de cliente' || s.includes('codigo de cliente');
+}
+
+function _pddHeaderLooksLikeEscritorio(h) {
+  const s = String(h || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  return s.includes('escrit') || s.includes('advogad') || s.includes('advogado')
+    || s === 'pdd' || s.includes('escritorio')
+    || s.includes('observacao delta') || (s.includes('observ') && s.includes('delta'));
+}
+
+/** Corrige typos conhecidos do Excel PDD. */
+function normPddEscritorioNome(nome) {
+  let s = String(nome || '').trim();
+  if (!s || s === '-') return '';
+  s = s.replace(/Henriqte/gi, 'Henrique');
+  return s;
+}
+
+function parsePddAdvogadosAoa(aoa) {
+  if (!aoa || !aoa.length) return { map: {}, extraRows: [], headers: [], error: 'Folha vazia' };
+  // Encontrar linha de cabeçalho (primeiras 15 linhas)
+  let headerIdx = -1;
+  let colCod = -1;
+  let colEsc = -1;
+  for (let r = 0; r < Math.min(15, aoa.length); r++) {
+    const row = aoa[r] || [];
+    for (let c = 0; c < row.length; c++) {
+      if (_pddHeaderLooksLikeCod(row[c])) colCod = c;
+      if (_pddHeaderLooksLikeEscritorio(row[c])) colEsc = c;
+    }
+    if (colCod >= 0 && colEsc >= 0) { headerIdx = r; break; }
+    // reset partial
+    if (colCod < 0 || colEsc < 0) { colCod = -1; colEsc = -1; }
+  }
+  // Fallback: 1ª col código numérico + coluna com "adv" / "escrit"
+  if (headerIdx < 0) {
+    for (let r = 0; r < Math.min(10, aoa.length); r++) {
+      const row = aoa[r] || [];
+      const labels = row.map(x => String(x || ''));
+      const iCod = labels.findIndex(h => _pddHeaderLooksLikeCod(h) || /c[oó]d/i.test(h));
+      const iEsc = labels.findIndex(h => _pddHeaderLooksLikeEscritorio(h));
+      if (iCod >= 0 && iEsc >= 0) {
+        headerIdx = r; colCod = iCod; colEsc = iEsc; break;
+      }
+    }
+  }
+  if (headerIdx < 0 || colCod < 0 || colEsc < 0) {
+    return { map: {}, extraRows: [], headers: [], error: 'Não encontrei colunas de código de cliente e escritório/advogado no Excel.' };
+  }
+  const headers = (aoa[headerIdx] || []).map(h => String(h == null ? '' : h).trim());
+  const map = {};
+  const rows = [];
+  for (let r = headerIdx + 1; r < aoa.length; r++) {
+    const row = aoa[r] || [];
+    const rawCod = row[colCod];
+    if (rawCod == null || rawCod === '') continue;
+    let codStr = String(rawCod).trim();
+    if (/^\d+\.0+$/.test(codStr)) codStr = codStr.replace(/\.0+$/, '');
+    const k = normCod(codStr);
+    if (!k || k === '0') continue;
+    // Ignorar totais
+    if (/total/i.test(codStr)) continue;
+    const esc = normPddEscritorioNome(row[colEsc]);
+    if (esc) map[k] = esc;
+    const obj = { cod: k, escritorio: esc, _raw: {} };
+    headers.forEach((h, i) => {
+      if (!h) return;
+      let v = row[i];
+      if (v == null) v = '';
+      else if (typeof v === 'number') v = v;
+      else v = String(v).trim();
+      if (i === colEsc && typeof v === 'string') v = normPddEscritorioNome(v);
+      obj._raw[h] = v;
+      // aliases úteis
+      const hn = h.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if ((hn === 'cliente' || hn.includes('nome') || hn.includes('razao')) && !obj.nome) obj.nome = String(v);
+      if ((hn.includes('canal') || hn === 'ch') && !obj.canal) obj.canal = String(v);
+      if (hn.includes('vendedor') && !obj.vendedor) obj.vendedor = String(v);
+      if ((hn === 'total' || hn.includes('divida') || hn.includes('vencid') || hn.includes('saldo') || hn.includes('pecld') || hn.includes('valor')) && obj.divida == null) {
+        const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/\./g, '').replace(',', '.'));
+        if (!Number.isNaN(n)) obj.divida = Math.abs(n);
+      }
+    });
+    rows.push(obj);
+  }
+  return { map, extraRows: rows, headers, colCod, colEsc, error: null };
+}
+
+/** Aplica seed/import PDD: preenche escritórios em falta e recalcula «só no PDD». */
+function applyContenciosoPddSeed(opts) {
+  const force = !!(opts && opts.force);
+  const seedMap = (typeof CONTENCIOSO_PDD_SEED_MAP !== 'undefined' && CONTENCIOSO_PDD_SEED_MAP) || {};
+  const map = { ...readContenciosoEscritoriosMap() };
+  let filled = 0;
+  Object.entries(seedMap).forEach(([cod, esc]) => {
+    const k = normCod(cod);
+    const nome = normPddEscritorioNome(esc);
+    if (!k || k === '0' || !nome) return;
+    addEscritorioOpt(nome);
+    if (force || !map[k]) {
+      if (!map[k]) filled++;
+      map[k] = nome;
+    }
+  });
+  writeContenciosoEscritoriosMap(map);
+
+  if (opts && Array.isArray(opts.fromImport) && opts.fromImport.length) {
+    writeContenciosoPddSource(opts.fromImport);
+  }
+
+  const naApp = new Set(
+    (typeof getListaContenciosoRaw === 'function' ? getListaContenciosoRaw() : [])
+      .map(c => normCod(c.cod)).filter(k => k && k !== '0')
+  );
+  const sourceRows = readContenciosoPddSource();
+  const foraMap = new Map();
+  (sourceRows || []).forEach(r => {
+    const k = normCod(r.cod);
+    if (!k || k === '0' || naApp.has(k)) return;
+    foraMap.set(k, {
+      cod: k,
+      nome: r.nome || '',
+      canal: r.canal || '',
+      vendedor: r.vendedor || '',
+      escritorio: normPddEscritorioNome(r.escritorio || getEscritorioContencioso(k)),
+      divida: r.divida != null ? r.divida : null,
+      raw: r.raw || r._raw || {},
+    });
+  });
+  const foraArr = [...foraMap.values()].sort((a, b) =>
+    (Number(b.divida) || 0) - (Number(a.divida) || 0)
+    || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt')
+  );
+  writeContenciosoPddExtra(foraArr);
+  return { filled, nSeed: Object.keys(seedMap).length, nFora: foraArr.length, nSource: (sourceRows || []).length };
+}
+
+async function importAfPddAdvogados(ev) {
+  const file = ev?.target?.files?.[0];
+  if (ev?.target) ev.target.value = '';
+  if (!file) return;
+  try {
+    await ensureXLSX();
+  } catch (_) {
+    toast('Não foi possível carregar a biblioteca Excel.', 'error');
+    return;
+  }
+  let aoa;
+  try {
+    const buf = await file.arrayBuffer();
+    // DRM / OLE encrypted → SheetJS falha ou lê lixo
+    const u8 = new Uint8Array(buf);
+    const isOle = u8[0] === 0xD0 && u8[1] === 0xCF;
+    const wb = window.XLSX.read(buf, { type: 'array' });
+    const sheetName = wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    aoa = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+    if (isOle && (!aoa || aoa.length < 2)) {
+      toast('Este Excel está protegido (IRM/DRM «Internal»). Grava uma cópia sem protecção e importa de novo.', 'error');
+      return;
+    }
+  } catch (e) {
+    const msg = String(e && e.message || e);
+    if (/password|encrypt|ole|cfb|drm|irm/i.test(msg) || /EncryptedPackage/i.test(msg)) {
+      toast('Excel encriptado/protegido. Remove a classificação «Internal» / IRM e volta a importar.', 'error');
+    } else {
+      toast('Erro ao ler o Excel: ' + msg, 'error');
+    }
+    return;
+  }
+  const parsed = parsePddAdvogadosAoa(aoa);
+  if (parsed.error) {
+    toast(parsed.error, 'error');
+    return;
+  }
+  // Import sobrescreve escritórios do ficheiro
+  const map = { ...readContenciosoEscritoriosMap() };
+  Object.entries(parsed.map).forEach(([cod, esc]) => {
+    const k = normCod(cod);
+    const nome = normPddEscritorioNome(esc);
+    if (!k || k === '0' || !nome) return;
+    map[k] = nome;
+    addEscritorioOpt(nome);
+  });
+  writeContenciosoEscritoriosMap(map);
+  const result = applyContenciosoPddSeed({
+    fromImport: parsed.extraRows.map(r => ({
+      cod: r.cod,
+      nome: r.nome || '',
+      canal: r.canal || '',
+      vendedor: r.vendedor || '',
+      escritorio: r.escritorio || '',
+      divida: r.divida != null ? r.divida : null,
+      raw: r._raw || {},
+    })),
+  });
+  // Sync supabase (best-effort, lotes)
+  const entries = Object.entries(parsed.map);
+  for (let i = 0; i < entries.length; i += 50) {
+    const lote = entries.slice(i, i + 50).map(([cod, escritorio]) => ({
+      cod: normCod(cod),
+      escritorio: normPddEscritorioNome(escritorio),
+      updated_at: new Date().toISOString(),
+    }));
+    if (_contenciosoEscritoriosSupaOk === false) break;
+    try {
+      const res = await fetch(CONTENCIOSO_ESCRITORIOS_URL, {
+        method: 'POST',
+        headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify(lote),
+      });
+      if (res.status === 404 || res.status === 406) { _contenciosoEscritoriosSupaOk = false; break; }
+      if (res.ok) _contenciosoEscritoriosSupaOk = true;
+    } catch (_) { _contenciosoEscritoriosSupaOk = false; break; }
+  }
+
+  const nMap = Object.keys(parsed.map).length;
+  const nFora = result.nFora;
+  toast(`PDD importado: ${nMap} com escritório · ${nFora} só no Excel (fora da lista Contencioso).`);
+  if (typeof loadAfContencioso === 'function') await loadAfContencioso();
+  if (nFora > 0) showAfContenciosoSub('pdd');
+  else showAfContenciosoSub('lista');
+}
+
+function renderAfPddExtra() {
+  const el = document.getElementById('af-pdd-content');
+  const info = document.getElementById('af-pdd-info');
+  if (!el) return;
+  const lista = readContenciosoPddExtra();
+  const nEsc = Object.keys(readContenciosoEscritoriosMap()).length;
+  if (info) {
+    info.innerHTML = lista.length
+      ? `<span style="color:#7f1d1d;font-weight:600;">${lista.length}</span> cliente(s) no Excel PDD que <b>não</b> estão na lista Contencioso da app (vendedor ${CONTENCIOSO_VENDEDOR}).`
+        + (nEsc ? ` · Mapa escritórios: <b>${nEsc}</b>` : '')
+      : `Nenhum cliente “só no PDD”. Importa o Excel «PDD por Advogado» (sem protecção IRM) para comparar com a lista Contencioso.`
+        + (nEsc ? ` · Já tens <b>${nEsc}</b> escritório(s) guardado(s).` : '');
+  }
+  if (!lista.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Sem linhas. Usa «Importar PDD Advogados» acima.</div>';
+    return;
+  }
+  // Colunas: união das chaves raw + campos principais
+  const extraKeys = [];
+  const seen = new Set(['cod', 'nome', 'canal', 'vendedor', 'escritorio', 'divida']);
+  lista.forEach(r => {
+    Object.keys(r.raw || {}).forEach(k => {
+      const kl = k.toLowerCase();
+      if (seen.has(kl) || seen.has(k)) return;
+      if (_pddHeaderLooksLikeCod(k) || _pddHeaderLooksLikeEscritorio(k)) return;
+      seen.add(k);
+      extraKeys.push(k);
+    });
+  });
+  const rows = lista.map(r => {
+    const escCell = htmlSelectEscritorioContencioso(r.cod);
+    const escVal = getEscritorioContencioso(r.cod) || r.escritorio || '';
+    const extras = extraKeys.map(k => {
+      const v = r.raw && r.raw[k] != null ? r.raw[k] : '';
+      const show = typeof v === 'number' ? v : escHtml(String(v));
+      return `<td style="padding:8px 10px;font-size:12px;">${show === '' ? '—' : show}</td>`;
+    }).join('');
+    return `<tr style="border-bottom:1px solid #fecaca;background:#fff7ed;">
+      <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(r.cod)}</td>
+      <td style="padding:8px 10px;font-size:12px;font-weight:500;">${escHtml(r.nome || '—')}</td>
+      <td style="padding:8px 10px;font-size:12px;" data-sort="${escHtml(escVal)}" data-filter-text="${escHtml(escVal)}">${escCell}</td>
+      <td style="padding:8px 10px;font-size:12px;">${escHtml(r.canal || '—')}</td>
+      <td style="padding:8px 10px;font-size:12px;">${escHtml(r.vendedor || '—')}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;color:#7f1d1d;" data-sort="${r.divida != null ? r.divida : ''}">${r.divida != null ? formatEur(r.divida) : '—'}</td>
+      ${extras}
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<div class="table-wrap"><table class="data-table" id="af-pdd-table" style="width:100%;">
+    <thead><tr style="background:#ffedd5;">
+      <th>Cód.</th><th>Nome</th><th>Escritório</th><th>Canal</th><th>Vendedor</th><th>Dívida</th>
+      ${extraKeys.map(k => `<th>${escHtml(k)}</th>`).join('')}
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  const tbl = el.querySelector('table');
+  if (tbl) {
+    const infoBase = info ? info.innerHTML : '';
+    enableTableColFilters(tbl, { infoId: 'af-pdd-info', total: lista.length, infoBase });
+    enableTableSort(tbl);
+  }
+}
+
+window.showAfContenciosoSub = showAfContenciosoSub;
+window.importAfPddAdvogados = importAfPddAdvogados;
+window.onAfEscritorioChange = onAfEscritorioChange;
+window.setEscritorioContencioso = setEscritorioContencioso;
 
 function readContenciosoLocal() {
   try { return JSON.parse(localStorage.getItem(CONTENCIOSO_LS_KEY) || '[]'); }
@@ -19782,7 +20325,21 @@ function applyTableColFilters(tableOrId) {
     let ok = true;
     for (let i = 0; i < filters.length; i++) {
       if (!filters[i]) continue;
-      const text = ((tr.cells[i] && tr.cells[i].textContent) || '').trim().toLowerCase();
+      const cell = tr.cells[i];
+      let text = '';
+      if (cell) {
+        if (cell.dataset.filterText != null) text = cell.dataset.filterText;
+        else {
+          const sel = cell.querySelector('select');
+          if (sel) {
+            const opt = sel.options[sel.selectedIndex];
+            text = (opt && opt.value && opt.value !== '__novo__') ? opt.value : '';
+          } else {
+            text = cell.textContent || '';
+          }
+        }
+      }
+      text = String(text).trim().toLowerCase();
       if (!text.includes(filters[i])) { ok = false; break; }
     }
     tr.style.display = ok ? '' : 'none';
@@ -19925,11 +20482,13 @@ async function loadAfContencioso() {
   const ccInfo = document.getElementById('af-cc-info');
   if (cpEl && !scDividasLoaded) cpEl.innerHTML = '<div style="color:var(--muted);font-size:13px;">A carregar…</div>';
   try {
-    // Dívidas + pedidos Contencioso em paralelo (antes era sequencial)
+    // Dívidas + pedidos Contencioso + escritorios em paralelo (antes era sequencial)
     await Promise.all([
       typeof loadSCContenciosoPendentes === 'function' ? loadSCContenciosoPendentes() : Promise.resolve(),
       typeof scLoadDividasFromSupabase === 'function' ? scLoadDividasFromSupabase() : Promise.resolve(),
+      typeof loadContenciosoEscritoriosFromSupabase === 'function' ? loadContenciosoEscritoriosFromSupabase() : Promise.resolve(),
     ]);
+    if (typeof applyContenciosoPddSeed === 'function') applyContenciosoPddSeed();
     const pend = [...(scContenciosoPendentes?.values?.() || [])]
       .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
     if (cpInfo) {
@@ -19971,30 +20530,44 @@ async function loadAfContencioso() {
       .slice()
       .map(c => {
         const div = typeof getDividaCliente === 'function' ? getDividaCliente(c.cod) : null;
-        return { ...c, vencido: div ? (div.vencido || 0) : 0 };
+        const escritorio = typeof getEscritorioContencioso === 'function' ? getEscritorioContencioso(c.cod) : '';
+        return { ...c, vencido: div ? (div.vencido || 0) : 0, escritorio };
       })
       .sort((a, b) => (b.vencido || 0) - (a.vencido || 0) || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
     const totalDiv = listaCc.reduce((s, c) => s + (c.vencido || 0), 0);
+    const nComEsc = listaCc.filter(c => c.escritorio).length;
+    const nPddFora = (typeof readContenciosoPddExtra === 'function' ? readContenciosoPddExtra() : []).length;
+    const pddTab = document.getElementById('af-cc-tab-pdd');
+    if (pddTab) {
+      pddTab.textContent = nPddFora
+        ? `Só no PDD (fora da app) · ${nPddFora}`
+        : 'Só no PDD (fora da app)';
+    }
     if (ccInfo) {
       ccInfo.innerHTML = listaCc.length
         ? `<span style="color:#7f1d1d;font-weight:600;">${listaCc.length}</span> cliente(s) no Contencioso (lista SAP)`
           + (totalDiv > 0 ? ` · Dívida: <b>${formatEur(totalDiv)}</b>` : '')
+          + ` · Escritório: <b>${nComEsc}</b>/${listaCc.length}`
         : 'Nenhum cliente Contencioso na lista carregada (carrega Lista SAP em Dados).';
     }
     if (ccEl) {
       if (!listaCc.length) {
         ccEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Sem clientes Contencioso. Carrega a Lista SAP em Dados se necessário.</div>';
       } else {
-        const rows = listaCc.map(c => `<tr style="border-bottom:1px solid #fecaca;background:#fef2f2;">
+        const rows = listaCc.map(c => {
+          const escVal = c.escritorio || '';
+          return `<tr style="border-bottom:1px solid #fecaca;background:#fef2f2;">
           <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(c.cod || '—')}</td>
           <td style="padding:8px 10px;font-size:12px;font-weight:500;">${escHtml(c.nome || '—')}</td>
+          <td style="padding:8px 10px;font-size:12px;" data-sort="${escHtml(escVal)}" data-filter-text="${escHtml(escVal).replace(/"/g, '&quot;')}">${htmlSelectEscritorioContencioso(c.cod)}</td>
           <td style="padding:8px 10px;font-size:12px;">${escHtml(c.canal || '—')}</td>
           <td style="padding:8px 10px;font-size:12px;">${escHtml(c.vendedor || '—')}</td>
           <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;color:#7f1d1d;" data-sort="${c.vencido || 0}">${c.vencido ? formatEur(c.vencido) : '—'}</td>
-        </tr>`).join('');
+        </tr>`;
+        }).join('');
         ccEl.innerHTML = `<div class="table-wrap"><table class="data-table" style="width:100%;">
           <thead><tr style="background:#fee2e2;">
-            <th>Cód.</th><th>Nome</th><th>Canal</th><th>Vendedor</th><th>Dívida vencida</th>
+            <th>Cód.</th><th>Nome</th><th>Escritório</th><th>Canal</th><th>Vendedor</th><th>Dívida vencida</th>
           </tr></thead><tbody>${rows}</tbody></table></div>`;
         const ccTbl = ccEl.querySelector('table');
         if (ccTbl) {
@@ -20004,6 +20577,7 @@ async function loadAfContencioso() {
         }
       }
     }
+    if (typeof showAfContenciosoSub === 'function') showAfContenciosoSub(_afCcSub || 'lista');
   } catch (e) {
     if (cpEl) cpEl.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro: ${escHtml(e.message)}</div>`;
   }
