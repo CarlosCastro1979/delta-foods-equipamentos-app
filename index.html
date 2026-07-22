@@ -9461,6 +9461,7 @@ function switchTab(tab) {
 // ─── VISITAS DO DIA (Horeca) ─────────────────────────
 const VISITAS_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/visitas_horeca';
 const VISITAS_LS_KEY = 'delta_visitas_horeca';
+const VIS_AJUSTES_EDITS_KEY = 'delta_visitas_ajustes_edits';
 const VISITAS_MOTIVOS = [
   'Cliente fechado / ausente',
   'Stock suficiente',
@@ -9473,8 +9474,63 @@ const VISITAS_MOTIVO_OUTRO = 'Outro';
 let _visitasCache = []; // todas as linhas carregadas (local + remoto)
 let _visitasRota = [];  // rota do dia/vendedor actual
 let _visitasSub = 'rota';
-/** Edits em Ajustes de Rota: cod → { novaRota, novoVendedorCod, novoCanal } */
+/** Edits em Ajustes de Rota: cod → { novaRota, novoVendedorCod, novoCanal } (autosave local) */
 let _visAjustesEdits = {};
+let _visAjustesEditsLoaded = false;
+
+function visAjustesEditsStorageKey() {
+  const u = typeof getUtilizadorAtual === 'function' ? normNomeUtilizador(getUtilizadorAtual()) : '';
+  return u ? `${VIS_AJUSTES_EDITS_KEY}:${u}` : VIS_AJUSTES_EDITS_KEY;
+}
+
+function visAjustesLoadEdits() {
+  try {
+    const raw = localStorage.getItem(visAjustesEditsStorageKey());
+    const obj = raw ? JSON.parse(raw) : {};
+    _visAjustesEdits = (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+  } catch (_) {
+    _visAjustesEdits = {};
+  }
+  _visAjustesEditsLoaded = true;
+  return _visAjustesEdits;
+}
+
+function visAjustesEnsureEdits() {
+  if (!_visAjustesEditsLoaded) visAjustesLoadEdits();
+  return _visAjustesEdits;
+}
+
+function visAjustesSaveEdits() {
+  try {
+    localStorage.setItem(visAjustesEditsStorageKey(), JSON.stringify(_visAjustesEdits || {}));
+  } catch (e) {
+    console.warn('visAjustesSaveEdits:', e.message || e);
+  }
+}
+
+function visAjustesClearEdits() {
+  _visAjustesEdits = {};
+  _visAjustesEditsLoaded = true;
+  try { localStorage.removeItem(visAjustesEditsStorageKey()); } catch (_) {}
+}
+
+/** Actualiza um campo do draft e faz autosave (remove a linha se ficar vazia). */
+function visAjustesSetEdit(cod, patch) {
+  const k = String(cod || '').trim();
+  if (!k) return;
+  visAjustesEnsureEdits();
+  const ed = { ...(_visAjustesEdits[k] || {}), ...(patch || {}) };
+  const novaRota = String(ed.novaRota || '').trim();
+  const novoCanal = String(ed.novoCanal || '').trim();
+  const novoVendedorCod = String(ed.novoVendedorCod || '').trim();
+  if (!novaRota && !novoCanal && !novoVendedorCod) {
+    delete _visAjustesEdits[k];
+  } else {
+    _visAjustesEdits[k] = { novaRota, novoCanal, novoVendedorCod };
+  }
+  visAjustesSaveEdits();
+  visAjustesUpdateInfo();
+}
 
 function visHojeISO() {
   const d = new Date();
@@ -9934,6 +9990,7 @@ function visAjustesCanalOpts(canalActual, selectedNovo) {
 }
 
 function visAjustesInit() {
+  visAjustesLoadEdits();
   const sel = document.getElementById('vis-ajustes-vendedor');
   const wrap = document.getElementById('vis-ajustes-vend-wrap');
   const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
@@ -9981,30 +10038,15 @@ function visAjustesFillRotaSelect() {
 }
 
 function visAjustesOnNovaRota(cod, val) {
-  const k = String(cod || '').trim();
-  if (!k) return;
-  const ed = _visAjustesEdits[k] || {};
-  ed.novaRota = String(val || '').trim();
-  _visAjustesEdits[k] = ed;
-  visAjustesUpdateInfo();
+  visAjustesSetEdit(cod, { novaRota: String(val || '').trim() });
 }
 
 function visAjustesOnNovoVend(cod, val) {
-  const k = String(cod || '').trim();
-  if (!k) return;
-  const ed = _visAjustesEdits[k] || {};
-  ed.novoVendedorCod = String(val || '').trim();
-  _visAjustesEdits[k] = ed;
-  visAjustesUpdateInfo();
+  visAjustesSetEdit(cod, { novoVendedorCod: String(val || '').trim() });
 }
 
 function visAjustesOnNovoCanal(cod, val) {
-  const k = String(cod || '').trim();
-  if (!k) return;
-  const ed = _visAjustesEdits[k] || {};
-  ed.novoCanal = String(val || '').trim();
-  _visAjustesEdits[k] = ed;
-  visAjustesUpdateInfo();
+  visAjustesSetEdit(cod, { novoCanal: String(val || '').trim() });
 }
 
 function visAjustesClientesBase() {
@@ -10025,15 +10067,22 @@ function visAjustesClientesBase() {
 function visAjustesUpdateInfo() {
   const info = document.getElementById('vis-ajustes-info');
   if (!info) return;
+  visAjustesEnsureEdits();
   const changes = visAjustesCollectChanges();
-  info.textContent = changes.length
-    ? `${changes.length} alteração(ões) pendente(s) para exportar.`
-    : 'Preenche Nova Rota, Novo Canal e/ou Mudar Vendedor nas linhas a alterar.';
+  const nDraft = Object.keys(_visAjustesEdits || {}).length;
+  if (changes.length) {
+    info.innerHTML = `<span style="color:#7f1d1d;font-weight:600;">${changes.length}</span> alteração(ões) pendente(s) — <b>autosave activo</b> (só se apagam ao exportar e enviar email).`;
+  } else if (nDraft) {
+    info.textContent = 'Rascunhos guardados sem alteração efectiva (iguais aos valores actuais). Autosave activo.';
+  } else {
+    info.textContent = 'Preenche Nova Rota, Novo Canal e/ou Mudar Vendedor nas linhas a alterar. As alterações são guardadas automaticamente.';
+  }
 }
 
 function visAjustesRender() {
   const body = document.getElementById('vis-ajustes-body');
   if (!body) return;
+  visAjustesEnsureEdits();
   const search = (document.getElementById('vis-ajustes-search')?.value || '').trim().toLowerCase();
   let rows = visAjustesClientesBase();
   if (search) {
@@ -10085,10 +10134,19 @@ function visAjustesRender() {
   visAjustesUpdateInfo();
 }
 
-/** Linhas com alteração real (rota / canal / vendedor). */
+/** Linhas com alteração real (rota / canal / vendedor). Inclui todos os rascunhos autosaved (ignora filtro UI). */
 function visAjustesCollectChanges() {
+  visAjustesEnsureEdits();
   const byCod = new Map();
-  visAjustesClientesBase().forEach(c => byCod.set(String(c.cod || '').trim(), c));
+  const lista = (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : []) || [];
+  lista.forEach(c => byCod.set(String(c.cod || '').trim(), c));
+  // Fallback: lista completa se o código não estiver na activa
+  if (typeof getListaClientesCompleta === 'function') {
+    (getListaClientesCompleta() || []).forEach(c => {
+      const k = String(c.cod || '').trim();
+      if (k && !byCod.has(k)) byCod.set(k, c);
+    });
+  }
   const map = typeof getVendedoresMap === 'function' ? getVendedoresMap() : {};
   const out = [];
   Object.keys(_visAjustesEdits || {}).forEach(cod => {
@@ -10272,6 +10330,12 @@ ${por}`;
       triggerBlobDownload(blob, filename);
       toast('Excel descarregado — anexa-o ao email se o Outlook não abriu com anexo.', 'warn');
     }
+    // Autosave: limpar rascunhos só depois de exportar / enviar email
+    visAjustesClearEdits();
+    visAjustesRender();
+    toast(ok
+      ? `✅ ${changes.length} alteração(ões) exportadas — rascunho limpo.`
+      : `✅ ${changes.length} alteração(ões) exportadas (Excel descarregado) — rascunho limpo.`);
   } catch (e) {
     console.error('visAjustesExportarEmail', e);
     toast('Erro ao exportar: ' + (e.message || e), 'error');
