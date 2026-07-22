@@ -20915,7 +20915,7 @@ async function loadAfContencioso() {
     }
     if (ccEl) {
       if (!listaCc.length) {
-        ccEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Sem clientes Contencioso. A lista SAP *13 sincroniza entre PCs — abre esta página noutro browser onde já exista, ou carrega a Lista SAP em Dados.</div>';
+        ccEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Sem clientes Contencioso. A lista vem só do Supabase — noutro PC abre Contencioso (ou carrega Lista SAP em Dados) para publicar; depois refresca aqui.</div>';
       } else {
         const rows = listaCc.map(c => {
           const escVal = c.escritorio || '';
