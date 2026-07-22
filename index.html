@@ -20656,6 +20656,68 @@ let _afDscVendFiltro = '';
 /** Sub-aba: 'prov180' (≥180 dias, provisionável) | 'outros' (<180 dias) */
 let _afDscSub = 'prov180';
 const AF_DSC_DIAS_PROVISAO = 180;
+const AF_DSC_OBS_KEY = 'delta_af_dsc_observacoes';
+let _afDscObsCache = null; // { [normCod]: string }
+let _afDscObsLoaded = false;
+
+function afDscObsStorageKey() {
+  const u = typeof getUtilizadorAtual === 'function' ? normNomeUtilizador(getUtilizadorAtual()) : '';
+  return u ? `${AF_DSC_OBS_KEY}:${u}` : AF_DSC_OBS_KEY;
+}
+
+function afDscLoadObs() {
+  try {
+    const raw = localStorage.getItem(afDscObsStorageKey());
+    const obj = raw ? JSON.parse(raw) : {};
+    _afDscObsCache = (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+  } catch (_) {
+    _afDscObsCache = {};
+  }
+  _afDscObsLoaded = true;
+  return _afDscObsCache;
+}
+
+function afDscEnsureObs() {
+  if (!_afDscObsLoaded) afDscLoadObs();
+  return _afDscObsCache || {};
+}
+
+function afDscSaveObsMap() {
+  try {
+    localStorage.setItem(afDscObsStorageKey(), JSON.stringify(_afDscObsCache || {}));
+  } catch (e) {
+    console.warn('afDscSaveObsMap:', e.message || e);
+  }
+}
+
+function afDscGetObs(cod) {
+  const k = typeof normCod === 'function' ? normCod(cod) : String(cod || '').trim();
+  if (!k || k === '0') return '';
+  return String(afDscEnsureObs()[k] || '');
+}
+
+function afDscSetObs(cod, texto) {
+  const k = typeof normCod === 'function' ? normCod(cod) : String(cod || '').trim();
+  if (!k || k === '0') return;
+  afDscEnsureObs();
+  const t = String(texto || '').trimEnd();
+  if (!t.trim()) delete _afDscObsCache[k];
+  else _afDscObsCache[k] = t;
+  afDscSaveObsMap();
+  // Actualizar data-filter-text sem re-render
+  const ta = document.querySelector(`textarea.af-dsc-obs[data-cod="${k}"]`);
+  if (ta) {
+    const td = ta.closest('td');
+    if (td) {
+      td.dataset.filterText = t;
+      td.dataset.sort = t;
+    }
+  }
+}
+
+function afDscOnObsInput(cod, val) {
+  afDscSetObs(cod, val);
+}
 
 function showAfDscSub(sub) {
   _afDscSub = sub === 'outros' ? 'outros' : 'prov180';
@@ -20703,6 +20765,7 @@ function renderAfDividaSemCompras() {
   const el = document.getElementById('af-dsc-content');
   const info = document.getElementById('af-dsc-info');
   if (!el) return;
+  afDscEnsureObs();
   afDscAtualizarTabs();
   const out = afDscListaDaSub();
   const isProv = _afDscSub === 'prov180';
@@ -20792,6 +20855,8 @@ function renderAfDividaSemCompras() {
     const dias = c.diasAtraso != null ? Number(c.diasAtraso) : null;
     const diasTxt = dias != null && !Number.isNaN(dias) ? `${dias}d` : '—';
     const diasSort = dias != null && !Number.isNaN(dias) ? dias : -1;
+    const obs = afDscGetObs(c.cod);
+    const codKey = typeof normCod === 'function' ? normCod(c.cod) : String(c.cod || '').trim();
     return `<tr style="border-bottom:1px solid var(--border);">
       <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(c.cod || '—')}</td>
       <td style="padding:8px 10px;font-size:12px;font-weight:500;">${escHtml(c.nome || '—')}</td>
@@ -20801,6 +20866,13 @@ function renderAfDividaSemCompras() {
       <td style="padding:8px 10px;font-size:12px;text-align:center;font-weight:600;${dias != null && dias >= AF_DSC_DIAS_PROVISAO ? 'color:#7f1d1d;' : ''}" data-sort="${diasSort}">${diasTxt}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center;font-weight:600;" data-sort="${c.mesesCal || 0}">${c.mesesCal}m</td>
       <td style="padding:8px 10px;font-size:12px;color:var(--muted);" data-sort="${ultSort}">${escHtml(ult)}</td>
+      <td style="padding:6px 8px;min-width:180px;max-width:280px;" data-sort="${escHtml(obs)}" data-filter-text="${escHtml(obs)}">
+        <textarea class="form-input af-dsc-obs" data-cod="${escHtml(codKey)}" rows="2"
+          placeholder="Observações…"
+          style="width:100%;min-height:44px;font-size:12px;padding:6px 8px;resize:vertical;line-height:1.35;"
+          oninput="afDscOnObsInput('${escHtml(codKey)}', this.value)"
+          onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">${escHtml(obs)}</textarea>
+      </td>
     </tr>`;
   }).join('');
 
@@ -20810,11 +20882,11 @@ function renderAfDividaSemCompras() {
     : `${filtered.length} cliente(s)`;
 
   el.innerHTML = `${banner}${resumoHtml}
-    <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;">Lista detalhada — ${detalheLabel}</div>
+    <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;">Lista detalhada — ${detalheLabel} <span style="font-weight:400;">· Observações com autosave</span></div>
     <div class="table-wrap"><table class="data-table" id="af-dsc-table" style="width:100%;">
       <thead><tr style="background:var(--surface2);">
-        <th>Cód.</th><th>Nome</th><th>Vendedor</th><th>Canal</th><th>Dívida vencida</th><th>Dias atraso</th><th>Meses s/ compra</th><th>Última compra</th>
-      </tr></thead><tbody>${rows || '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--muted);">Sem linhas para este filtro.</td></tr>'}</tbody></table></div>`;
+        <th>Cód.</th><th>Nome</th><th>Vendedor</th><th>Canal</th><th>Dívida vencida</th><th>Dias atraso</th><th>Meses s/ compra</th><th>Última compra</th><th>Observações</th>
+      </tr></thead><tbody>${rows || '<tr><td colspan="9" style="padding:24px;text-align:center;color:var(--muted);">Sem linhas para este filtro.</td></tr>'}</tbody></table></div>`;
 
   const tbl = document.getElementById('af-dsc-table') || el.querySelector('#af-dsc-table');
   if (tbl && filtered.length) {
@@ -20896,6 +20968,7 @@ async function loadAfDividaSemCompras() {
 window.afDscFiltrarResumo = afDscFiltrarResumo;
 window.afDscLimparFiltro = afDscLimparFiltro;
 window.showAfDscSub = showAfDscSub;
+window.afDscOnObsInput = afDscOnObsInput;
 window.showAreaFinanceira = showAreaFinanceira;
 
 
