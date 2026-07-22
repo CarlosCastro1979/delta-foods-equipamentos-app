@@ -3487,11 +3487,17 @@ var _unused_placeholder = 1;
         <button type="button" class="sub-tab" id="af-tab-div" onclick="showAreaFinanceira('divida-sem-compras')">Dívida + sem compras ≥ 3m</button>
       </div>
       <div id="af-sec-encerramentos">
-        <div id="af-ep-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+          <div id="af-ep-info" style="font-size:12px;color:var(--muted);"></div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="exportAfEncerramentosExcel()" style="min-height:36px;">⬇ Excel</button>
+        </div>
         <div id="af-ep-content"><div style="color:var(--muted);font-size:13px;padding:20px 0;">A carregar…</div></div>
       </div>
       <div id="af-sec-contencioso" style="display:none;">
-        <div style="font-size:14px;font-weight:600;color:#7f1d1d;margin-bottom:8px;">Pedidos Contencioso pendentes</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:8px;">
+          <div style="font-size:14px;font-weight:600;color:#7f1d1d;">Pedidos Contencioso pendentes</div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="exportAfContenciosoPendentesExcel()" style="min-height:36px;">⬇ Excel</button>
+        </div>
         <div id="af-cp-info" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
         <div id="af-cp-content" style="margin-bottom:28px;"><div style="color:var(--muted);font-size:13px;">A carregar…</div></div>
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
@@ -3500,6 +3506,8 @@ var _unused_placeholder = 1;
             <button type="button" class="sub-tab" id="af-cc-tab-pdd" onclick="showAfContenciosoSub('pdd')">Só no PDD (fora da app)</button>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" id="af-cc-btn-excel" onclick="exportAfContenciosoListaExcel()" style="min-height:36px;">⬇ Excel</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="af-pdd-btn-excel" onclick="exportAfPddExtraExcel()" style="min-height:36px;display:none;">⬇ Excel</button>
             <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('af-pdd-adv-input')?.click()" style="min-height:36px;" title="Importar Excel PDD por Advogado (código + escritório)">⬆ Importar PDD Advogados</button>
             <input type="file" id="af-pdd-adv-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="importAfPddAdvogados(event)">
           </div>
@@ -3514,9 +3522,12 @@ var _unused_placeholder = 1;
         </div>
       </div>
       <div id="af-sec-divida-sem-compras" style="display:none;">
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
-          <button type="button" class="sub-tab active" id="af-dsc-tab-prov" onclick="showAfDscSub('prov180')">≥ 180 dias (provisionável)</button>
-          <button type="button" class="sub-tab" id="af-dsc-tab-outros" onclick="showAfDscSub('outros')">&lt; 180 dias</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button type="button" class="sub-tab active" id="af-dsc-tab-prov" onclick="showAfDscSub('prov180')">≥ 180 dias (provisionável)</button>
+            <button type="button" class="sub-tab" id="af-dsc-tab-outros" onclick="showAfDscSub('outros')">&lt; 180 dias</button>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="exportAfDividaSemComprasExcel()" style="min-height:36px;">⬇ Excel</button>
         </div>
         <div id="af-dsc-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
         <div id="af-dsc-content"><div style="color:var(--muted);font-size:13px;padding:20px 0;">A carregar…</div></div>
@@ -15598,6 +15609,10 @@ function showAfContenciosoSub(sub) {
   if (pddWrap) pddWrap.style.display = _afCcSub === 'pdd' ? '' : 'none';
   document.getElementById('af-cc-tab-lista')?.classList.toggle('active', _afCcSub === 'lista');
   document.getElementById('af-cc-tab-pdd')?.classList.toggle('active', _afCcSub === 'pdd');
+  const btnLista = document.getElementById('af-cc-btn-excel');
+  const btnPdd = document.getElementById('af-pdd-btn-excel');
+  if (btnLista) btnLista.style.display = _afCcSub === 'lista' ? '' : 'none';
+  if (btnPdd) btnPdd.style.display = _afCcSub === 'pdd' ? '' : 'none';
   if (_afCcSub === 'pdd') renderAfPddExtra();
 }
 
@@ -20832,6 +20847,140 @@ window.eliminarChamadosATByIds = eliminarChamadosATByIds;
 
 // ─── ÁREA FINANCEIRA (home) ───────────────────────────
 let _afSubActiva = 'encerramentos';
+
+function afExportStamp() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+}
+
+async function afExportJsonExcel(items, sheetName, filename) {
+  if (!items || !items.length) {
+    toast('Nada para exportar.', 'error');
+    return false;
+  }
+  try {
+    await ensureXLSX();
+  } catch (_) {
+    toast('Não foi possível carregar a biblioteca Excel. Verifica a rede e tenta de novo.', 'error');
+    return false;
+  }
+  writeXlsxJsonDownload(items, sheetName, filename);
+  toast('Excel exportado.');
+  return true;
+}
+
+async function exportAfEncerramentosExcel() {
+  const lista = typeof getSCEncerramentosPendentesLista === 'function'
+    ? getSCEncerramentosPendentesLista('')
+    : [];
+  const rows = lista.map(d => ({
+    Vendedor: d.vendedor || '',
+    Codigo: d.cod || '',
+    Nome: d.nome || '',
+    Motivo: d.motivo || '',
+    Solicitado_por: d.solicitado_por || '',
+    Data: d.criado_em ? new Date(d.criado_em).toLocaleDateString('pt-BR') : '',
+    Estado: 'Aguarda aprovação',
+  }));
+  await afExportJsonExcel(rows, 'Encerramentos', `AF_Encerramentos_pendentes_${afExportStamp()}.xlsx`);
+}
+
+async function exportAfContenciosoPendentesExcel() {
+  const lista = [...(scContenciosoPendentes?.values?.() || [])]
+    .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
+  const rows = lista.map(d => ({
+    Vendedor: d.vendedor || '',
+    Codigo: d.cod || '',
+    Nome: d.nome || '',
+    Valor_Divida: d.valor_divida != null ? d.valor_divida : '',
+    Dias_atraso: d.dias_atraso != null ? d.dias_atraso : '',
+    Solicitado_por: d.solicitado_por || '',
+    Data: d.criado_em ? new Date(d.criado_em).toLocaleDateString('pt-BR') : '',
+    Observacoes: d.observacoes || '',
+  }));
+  await afExportJsonExcel(rows, 'Pedidos Contencioso', `AF_Contencioso_pedidos_${afExportStamp()}.xlsx`);
+}
+
+async function exportAfContenciosoListaExcel() {
+  const lista = (typeof getListaContenciosoRaw === 'function' ? getListaContenciosoRaw() : [])
+    .slice()
+    .map(c => {
+      const div = typeof getDividaCliente === 'function' ? getDividaCliente(c.cod) : null;
+      const escritorio = typeof getEscritorioContencioso === 'function' ? getEscritorioContencioso(c.cod) : '';
+      return {
+        Codigo: c.cod || '',
+        Nome: c.nome || '',
+        Escritorio: escritorio || '',
+        Canal: c.canal || '',
+        Vendedor: c.vendedor || '',
+        CEP: c.cep || '',
+        Cidade: c.cidade || '',
+        CNPJ: c.cnpj || '',
+        Email: c.email || '',
+        Tel1: c.tel1 || '',
+        Valor_Divida_vencida: div ? (div.vencido || 0) : 0,
+      };
+    })
+    .sort((a, b) => (b.Valor_Divida_vencida || 0) - (a.Valor_Divida_vencida || 0)
+      || String(a.Nome || '').localeCompare(String(b.Nome || ''), 'pt'));
+  await afExportJsonExcel(lista, 'Contencioso SAP', `AF_Clientes_Contencioso_${afExportStamp()}.xlsx`);
+}
+
+async function exportAfPddExtraExcel() {
+  const lista = typeof readContenciosoPddExtra === 'function' ? readContenciosoPddExtra() : [];
+  const rows = (lista || []).map(r => {
+    const base = {
+      Codigo: r.cod || '',
+      Nome: r.nome || '',
+      Escritorio: (typeof getEscritorioContencioso === 'function' ? getEscritorioContencioso(r.cod) : '') || r.escritorio || '',
+      Canal: r.canal || '',
+      Vendedor: r.vendedor || '',
+      Divida: r.divida != null ? r.divida : '',
+    };
+    const raw = r.raw || r._raw || {};
+    Object.keys(raw).forEach(k => {
+      if (!k || base[k] != null) return;
+      base[k] = raw[k];
+    });
+    return base;
+  });
+  await afExportJsonExcel(rows, 'So no PDD', `AF_PDD_fora_lista_${afExportStamp()}.xlsx`);
+}
+
+async function exportAfDividaSemComprasExcel() {
+  if (typeof afDscEnsureObs === 'function') afDscEnsureObs();
+  const out = typeof afDscListaDaSub === 'function' ? afDscListaDaSub() : (_afDscLista || []);
+  const filtered = _afDscVendFiltro
+    ? out.filter(c => (c.vendedor || '—') === _afDscVendFiltro)
+    : out;
+  const isProv = _afDscSub === 'prov180';
+  const rows = filtered.map(c => {
+    const ult = c.ultima
+      ? (c.ultima instanceof Date ? c.ultima.toLocaleDateString('pt-BR') : String(c.ultima))
+      : '';
+    return {
+      Codigo: c.cod || '',
+      Nome: c.nome || '',
+      Vendedor: c.vendedor || '',
+      Canal: c.canal || '',
+      Divida_vencida: c.vencido != null ? c.vencido : '',
+      Dias_atraso: c.diasAtraso != null ? c.diasAtraso : '',
+      Meses_sem_compra: c.mesesCal != null ? c.mesesCal : '',
+      Ultima_compra: ult,
+      Observacoes: typeof afDscGetObs === 'function' ? afDscGetObs(c.cod) : '',
+      Faixa: isProv ? `>=${AF_DSC_DIAS_PROVISAO}d provisionavel` : `<${AF_DSC_DIAS_PROVISAO}d`,
+    };
+  });
+  const suffix = isProv ? `ge${AF_DSC_DIAS_PROVISAO}d` : `lt${AF_DSC_DIAS_PROVISAO}d`;
+  await afExportJsonExcel(rows, 'Divida sem compras', `AF_Divida_sem_compras_${suffix}_${afExportStamp()}.xlsx`);
+}
+
+window.exportAfEncerramentosExcel = exportAfEncerramentosExcel;
+window.exportAfContenciosoPendentesExcel = exportAfContenciosoPendentesExcel;
+window.exportAfContenciosoListaExcel = exportAfContenciosoListaExcel;
+window.exportAfPddExtraExcel = exportAfPddExtraExcel;
+window.exportAfDividaSemComprasExcel = exportAfDividaSemComprasExcel;
 
 /** Linha de filtros por coluna sob o thead (reutilizável). */
 function enableTableColFilters(tableOrId, opts) {
