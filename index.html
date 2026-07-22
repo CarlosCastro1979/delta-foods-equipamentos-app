@@ -8831,8 +8831,32 @@ async function loadResumo() {
       ? 'cursor:pointer;text-decoration:underline;text-underline-offset:2px;'
       : '';
     const contCardOn = nContencioso ? `onclick="showAnalise('clientes-contencioso')" title="Ver Clientes no Contencioso"` : '';
+    const isEcommerce = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : _canalActivo) === 'ecommerce';
 
-    let html = `<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin-left:24px;"><div style="${wrap}">
+    let html = `<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin-left:24px;">`;
+
+    // Ecommerce: sem menu Registo Clientes → só Total + Contencioso (sem Registados/Cobertura)
+    if (isEcommerce) {
+      html += `<div style="${wrap}">
+      <div style="${title}">Clientes</div>
+      <div style="${cards}">
+        <div style="${card('#f9f9f9','#e8e8e8')}"><div style="${num('#333')}">${totalSistema}</div><div style="${lbl('var(--muted)')}">Total</div></div>
+        <div ${contCardOn} style="${card('#FEF2F2','#FECACA')}${contCardClick}"><div style="${num('#7f1d1d')}">${nContencioso || '—'}</div><div style="${lbl('#991b1b')}">Contencioso</div></div>
+      </div>
+      <table style="width:auto;border-collapse:collapse;">
+        <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+          <th style="${th}text-align:left;">Vendedor</th>
+          <th style="${th}text-align:center;">Total</th>
+        </tr></thead><tbody>`;
+      Object.entries(vendedores).sort((a,b) => b[1].total - a[1].total || a[0].localeCompare(b[0])).forEach(([vend, s], i) => {
+        html += `<tr style="background:${i%2===0?'#fff':'#fafafa'}">
+          <td style="${td}font-weight:500;">${vend}</td>
+          <td style="${td}text-align:center;">${s.total}</td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+    } else {
+      html += `<div style="${wrap}">
       <div style="${title}">Registo de Clientes</div>
       <div style="${cards}">
         <div style="${card('#f9f9f9','#e8e8e8')}"><div style="${num('#333')}">${totalSistema}</div><div style="${lbl('var(--muted)')}">Total</div></div>
@@ -8850,18 +8874,19 @@ async function loadResumo() {
           <th style="${th}text-align:center;">Cobertura</th>
         </tr></thead><tbody>`;
 
-    Object.entries(vendedores).sort((a,b) => b[1].registados/b[1].total - a[1].registados/a[1].total).forEach(([vend, s], i) => {
-      const pct = s.total > 0 ? Math.round(s.registados/s.total*100) : 0;
-      const pr  = s.total - s.registados;
-      html += `<tr style="background:${i%2===0?'#fff':'#fafafa'}">
-        <td style="${td}font-weight:500;">${vend}</td>
-        <td style="${td}text-align:center;">${s.total}</td>
-        <td style="${td}text-align:center;color:#16a34a;font-weight:600;">${s.registados}</td>
-        <td style="${td}text-align:center;font-weight:${pr>0?'700':'400'};color:${pr>0?'#c8102e':'var(--muted)'};">${pr||'—'}</td>
-        <td style="${td}text-align:center;">${badge(pct)}</td>
-      </tr>`;
-    });
-    html += `</tbody></table></div>`;
+      Object.entries(vendedores).sort((a,b) => b[1].registados/b[1].total - a[1].registados/a[1].total).forEach(([vend, s], i) => {
+        const pct = s.total > 0 ? Math.round(s.registados/s.total*100) : 0;
+        const pr  = s.total - s.registados;
+        html += `<tr style="background:${i%2===0?'#fff':'#fafafa'}">
+          <td style="${td}font-weight:500;">${vend}</td>
+          <td style="${td}text-align:center;">${s.total}</td>
+          <td style="${td}text-align:center;color:#16a34a;font-weight:600;">${s.registados}</td>
+          <td style="${td}text-align:center;font-weight:${pr>0?'700':'400'};color:${pr>0?'#c8102e':'var(--muted)'};">${pr||'—'}</td>
+          <td style="${td}text-align:center;">${badge(pct)}</td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
 
     html += `<div style="${wrap}">
       <div style="${title}">Contratos — Cobertura por Vendedor</div>
