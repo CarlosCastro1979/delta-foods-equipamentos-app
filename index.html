@@ -8237,8 +8237,9 @@ async function confirmarCargaSAP() {
   const listaContencioso = deduplicarListaSAPPorCod(_sapImportBuffer.listaContencioso || []);
   guardarListaContencioso(listaContencioso);
   // Publicar Contencioso no Supabase (Área Financeira em qualquer PC)
+  let pubCc = null;
   try {
-    const pubCc = await publicarListaContenciosoSupabase(listaContencioso);
+    pubCc = await publicarListaContenciosoSupabase(listaContencioso);
     if (pubCc && pubCc.ok) {
       console.log('Contencioso publicado no Supabase:', pubCc.total);
     } else {
@@ -8246,6 +8247,7 @@ async function confirmarCargaSAP() {
     }
   } catch (e) {
     console.warn('publicarListaContenciosoSupabase:', e);
+    pubCc = { ok: false, error: e.message || String(e) };
   }
   foraSPCache = null;
   clearRegistosCache();
@@ -8323,7 +8325,11 @@ async function confirmarCargaSAP() {
       }).filter(Boolean);
       if (porCanalMsg.length) msg += ` · por canal: ${porCanalMsg.join(', ')}`;
     } catch (_) {}
+    if (pubCc && pubCc.ok) msg += ' · Contencioso no Supabase OK';
+    else msg += ` · ⚠ Contencioso NÃO sincronizou${pubCc && pubCc.error ? ': ' + String(pubCc.error).slice(0, 80) : ''}`;
     msg += '.';
+  } else if (pubCc && pubCc.ok) {
+    msg += ' Contencioso (*13) vazio publicado no Supabase.';
   }
 
   const nCont = await removerPedidosContenciosoPorCods(codsContencioso || []);
