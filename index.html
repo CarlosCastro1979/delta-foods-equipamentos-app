@@ -3496,7 +3496,7 @@ var _unused_placeholder = 1;
       <div id="af-sec-contencioso" style="display:none;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:8px;">
           <div style="font-size:14px;font-weight:600;color:#7f1d1d;">Pedidos Contencioso pendentes</div>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="exportAfContenciosoPendentesExcel()" style="min-height:36px;">⬇ Excel</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="exportAfContenciosoPendentesExcel()" style="min-height:36px;" title="Exporta os pedidos pendentes visíveis (respeita filtros)">⬇ Excel</button>
         </div>
         <div id="af-cp-info" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
         <div id="af-cp-content" style="margin-bottom:28px;"><div style="color:var(--muted);font-size:13px;">A carregar…</div></div>
@@ -3506,8 +3506,8 @@ var _unused_placeholder = 1;
             <button type="button" class="sub-tab" id="af-cc-tab-pdd" onclick="showAfContenciosoSub('pdd')">Só no PDD (fora da app)</button>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <button type="button" class="btn btn-secondary btn-sm" id="af-cc-btn-excel" onclick="exportAfContenciosoListaExcel()" style="min-height:36px;">⬇ Excel</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="af-pdd-btn-excel" onclick="exportAfPddExtraExcel()" style="min-height:36px;display:none;">⬇ Excel</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="af-cc-btn-excel" onclick="exportAfContenciosoListaExcel()" style="min-height:36px;" title="Exporta a lista Contencioso visível (resumo + filtros de coluna)">⬇ Excel</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="af-pdd-btn-excel" onclick="exportAfPddExtraExcel()" style="min-height:36px;display:none;" title="Exporta «Só no PDD» visível (respeita filtros)">⬇ Excel</button>
             <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('af-pdd-adv-input')?.click()" style="min-height:36px;" title="Importar Excel PDD por Advogado (código + escritório)">⬆ Importar PDD Advogados</button>
             <input type="file" id="af-pdd-adv-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="importAfPddAdvogados(event)">
           </div>
@@ -11038,8 +11038,16 @@ async function renderClientesContencioso() {
 }
 
 async function exportClientesContenciosoExcel() {
-  const lista = window._clientesContenciosoView || getListaContenciosoActiva(document.getElementById('cc-canal')?.value || '');
-  if (!lista.length) { toast('Nada para exportar.', 'error'); return; }
+  let lista = window._clientesContenciosoView || getListaContenciosoActiva(document.getElementById('cc-canal')?.value || '');
+  // Respeitar filtros de coluna da tabela visível (se existirem)
+  const tbl = document.querySelector('#panel-contencioso table, #contencioso-content table, #cc-table, table.data-table');
+  // Preferir tabela dentro do bloco Contencioso do canal
+  const ccRoot = document.getElementById('contencioso-lista') || document.getElementById('clientes-contencioso') || document.querySelector('[id*="contencioso"]');
+  const tblCc = (ccRoot && ccRoot.querySelector('table')) || document.querySelector('#cc-content table') || null;
+  if (typeof filterRowsToVisibleTable === 'function' && tblCc) {
+    lista = filterRowsToVisibleTable(lista, tblCc, c => c.cod, 0);
+  }
+  if (!lista.length) { toast('Nada para exportar (com os filtros actuais).', 'error'); return; }
   try {
     await ensureXLSX();
   } catch (e) {
@@ -11057,7 +11065,7 @@ async function exportClientesContenciosoExcel() {
     };
   });
   writeXlsxJsonDownload(rows, 'Contencioso', 'Clientes_no_Contencioso.xlsx');
-  toast('Excel exportado.');
+  toast(`Excel exportado (${rows.length} linha${rows.length === 1 ? '' : 's'}).`);
 }
 
 // ─── PEDIDO AT ──────────────────────────────────────
@@ -20867,7 +20875,7 @@ function afExportStamp() {
 
 async function afExportJsonExcel(items, sheetName, filename) {
   if (!items || !items.length) {
-    toast('Nada para exportar.', 'error');
+    toast('Nada para exportar (com os filtros actuais).', 'error');
     return false;
   }
   try {
@@ -20877,14 +20885,65 @@ async function afExportJsonExcel(items, sheetName, filename) {
     return false;
   }
   writeXlsxJsonDownload(items, sheetName, filename);
-  toast('Excel exportado.');
+  toast(`Excel exportado (${items.length} linha${items.length === 1 ? '' : 's'}).`);
   return true;
 }
 
+/** Há filtros de coluna activos nesta tabela? */
+function tableHasActiveColFilters(table) {
+  if (!table || !table.tHead) return false;
+  const filterRow = table.tHead.querySelector('tr.col-filter-row');
+  if (!filterRow) return false;
+  return [...filterRow.querySelectorAll('input.col-filter-input, input')].some(i => String(i.value || '').trim());
+}
+
+/**
+ * Códigos das linhas visíveis (display !== none) numa tabela.
+ * Retorna null se a tabela não existir / sem tbody.
+ */
+function getVisibleTableCods(tableOrId, codColIdx) {
+  const table = typeof tableOrId === 'string' ? document.getElementById(tableOrId) : tableOrId;
+  const tbody = table && table.tBodies && table.tBodies[0];
+  if (!tbody) return null;
+  const idx = codColIdx == null ? 0 : codColIdx;
+  const set = new Set();
+  let anyHidden = false;
+  for (const tr of tbody.rows) {
+    if (tr.style.display === 'none') { anyHidden = true; continue; }
+    const cell = tr.cells[idx];
+    if (!cell) continue;
+    const raw = String(cell.textContent || '').replace(/[▲▼↕]/g, '').trim();
+    if (!raw || raw === '—') continue;
+    const k = typeof normCod === 'function' ? normCod(raw) : raw;
+    if (k && k !== '0') set.add(k);
+  }
+  return { set, anyHidden, hasColFilters: tableHasActiveColFilters(table), totalRows: tbody.rows.length };
+}
+
+/**
+ * Filtra rows ao que está visível na tabela (filtros de coluna / display:none).
+ * getCod: função que devolve o código da row (default Codigo/cod).
+ */
+function filterRowsToVisibleTable(rows, tableOrId, getCod, codColIdx) {
+  const arr = Array.isArray(rows) ? rows : [];
+  const vis = getVisibleTableCods(tableOrId, codColIdx);
+  if (!vis) return arr;
+  if (!vis.hasColFilters && !vis.anyHidden) return arr;
+  if (!vis.set.size && (vis.hasColFilters || vis.anyHidden)) return [];
+  const fn = getCod || (r => (r && (r.Codigo != null ? r.Codigo : r.cod)));
+  return arr.filter(r => {
+    const k = typeof normCod === 'function' ? normCod(fn(r)) : String(fn(r) || '').trim();
+    return k && vis.set.has(k);
+  });
+}
+
 async function exportAfEncerramentosExcel() {
-  const lista = typeof getSCEncerramentosPendentesLista === 'function'
+  let lista = typeof getSCEncerramentosPendentesLista === 'function'
     ? getSCEncerramentosPendentesLista('')
     : [];
+  const tbl = document.querySelector('#af-ep-content table');
+  // Coluna Cód. = índice 1 na tabela de encerramentos
+  lista = filterRowsToVisibleTable(lista, tbl, d => d.cod, 1);
   const rows = lista.map(d => ({
     Vendedor: d.vendedor || '',
     Codigo: d.cod || '',
@@ -20898,8 +20957,10 @@ async function exportAfEncerramentosExcel() {
 }
 
 async function exportAfContenciosoPendentesExcel() {
-  const lista = [...(scContenciosoPendentes?.values?.() || [])]
+  let lista = [...(scContenciosoPendentes?.values?.() || [])]
     .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
+  const tbl = document.querySelector('#af-cp-content table');
+  lista = filterRowsToVisibleTable(lista, tbl, d => d.cod, 1);
   const rows = lista.map(d => ({
     Vendedor: d.vendedor || '',
     Codigo: d.cod || '',
@@ -20914,32 +20975,43 @@ async function exportAfContenciosoPendentesExcel() {
 }
 
 async function exportAfContenciosoListaExcel() {
-  const lista = (typeof getListaContenciosoRaw === 'function' ? getListaContenciosoRaw() : [])
-    .slice()
-    .map(c => {
-      const div = typeof getDividaCliente === 'function' ? getDividaCliente(c.cod) : null;
-      const escritorio = typeof getEscritorioContencioso === 'function' ? getEscritorioContencioso(c.cod) : '';
-      return {
-        Codigo: c.cod || '',
-        Nome: c.nome || '',
-        Escritorio: escritorio || '',
-        Canal: c.canal || '',
-        Vendedor: c.vendedor || '',
-        CEP: c.cep || '',
-        Cidade: c.cidade || '',
-        CNPJ: c.cnpj || '',
-        Email: c.email || '',
-        Tel1: c.tel1 || '',
-        Valor_Divida_vencida: div ? (div.vencido || 0) : 0,
-      };
-    })
-    .sort((a, b) => (b.Valor_Divida_vencida || 0) - (a.Valor_Divida_vencida || 0)
-      || String(a.Nome || '').localeCompare(String(b.Nome || ''), 'pt'));
-  await afExportJsonExcel(lista, 'Contencioso SAP', `AF_Clientes_Contencioso_${afExportStamp()}.xlsx`);
+  // Base: lista em memória da AF; respeita filtro do resumo por escritório
+  let lista = (Array.isArray(_afCcLista) && _afCcLista.length
+    ? _afCcLista
+    : (typeof getListaContenciosoRaw === 'function' ? getListaContenciosoRaw() : [])
+  ).slice();
+  if (_afCcEscFiltro) {
+    lista = lista.filter(c => afCcEscKey(c) === _afCcEscFiltro);
+  }
+  // Depois: filtros de coluna da tabela detalhada
+  lista = filterRowsToVisibleTable(lista, 'af-cc-table', c => c.cod, 0);
+  const rows = lista.map(c => {
+    const div = typeof getDividaCliente === 'function' ? getDividaCliente(c.cod) : null;
+    const escritorio = (c.escritorio != null && c.escritorio !== '')
+      ? c.escritorio
+      : (typeof getEscritorioContencioso === 'function' ? getEscritorioContencioso(c.cod) : '');
+    const vencido = c.vencido != null ? c.vencido : (div ? (div.vencido || 0) : 0);
+    return {
+      Codigo: c.cod || '',
+      Nome: c.nome || '',
+      Escritorio: escritorio || '',
+      Canal: c.canal || '',
+      Vendedor: c.vendedor || '',
+      CEP: c.cep || '',
+      Cidade: c.cidade || '',
+      CNPJ: c.cnpj || '',
+      Email: c.email || '',
+      Tel1: c.tel1 || '',
+      Valor_Divida_vencida: vencido || 0,
+    };
+  }).sort((a, b) => (b.Valor_Divida_vencida || 0) - (a.Valor_Divida_vencida || 0)
+    || String(a.Nome || '').localeCompare(String(b.Nome || ''), 'pt'));
+  await afExportJsonExcel(rows, 'Contencioso SAP', `AF_Clientes_Contencioso_${afExportStamp()}.xlsx`);
 }
 
 async function exportAfPddExtraExcel() {
-  const lista = typeof readContenciosoPddExtra === 'function' ? readContenciosoPddExtra() : [];
+  let lista = typeof readContenciosoPddExtra === 'function' ? readContenciosoPddExtra() : [];
+  lista = filterRowsToVisibleTable(lista || [], 'af-pdd-table', r => r.cod, 0);
   const rows = (lista || []).map(r => {
     const base = {
       Codigo: r.cod || '',
@@ -20961,12 +21033,13 @@ async function exportAfPddExtraExcel() {
 
 async function exportAfDividaSemComprasExcel() {
   if (typeof afDscEnsureObs === 'function') afDscEnsureObs();
-  const out = typeof afDscListaDaSub === 'function' ? afDscListaDaSub() : (_afDscLista || []);
-  const filtered = _afDscVendFiltro
-    ? out.filter(c => (c.vendedor || '—') === _afDscVendFiltro)
-    : out;
+  let out = typeof afDscListaDaSub === 'function' ? afDscListaDaSub() : (_afDscLista || []);
+  if (_afDscVendFiltro) {
+    out = out.filter(c => (c.vendedor || '—') === _afDscVendFiltro);
+  }
+  out = filterRowsToVisibleTable(out, 'af-dsc-table', c => c.cod, 0);
   const isProv = _afDscSub === 'prov180';
-  const rows = filtered.map(c => {
+  const rows = out.map(c => {
     const ult = c.ultima
       ? (c.ultima instanceof Date ? c.ultima.toLocaleDateString('pt-BR') : String(c.ultima))
       : '';
