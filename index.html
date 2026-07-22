@@ -2837,7 +2837,8 @@ var _unused_placeholder = 1;
       </div>
     </div>
     <div id="pros-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
-    <div id="pros-estado-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;"></div>
+    <div id="pros-estado-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"></div>
+    <div id="pros-estado-subtabs" style="display:none;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
     <div id="pros-content"></div>
   </div>
 
@@ -15742,6 +15743,8 @@ const PROS_ESTADOS = {
   perdido:      { label: '❌ Perdido',          cor: '#dc2626', bg: '#fef2f2' },
 };
 const PROS_PIPELINE = ['identificado','contactado','visita','proposta','ganho','perdido'];
+/** Estados activos do pipeline (aba Em curso). */
+const PROS_EM_CURSO = ['identificado', 'contactado', 'visita', 'proposta'];
 
 async function initProsTab() {
   await loadProsData();
@@ -15760,24 +15763,88 @@ async function loadProsData() {
   await prosNormalizarMarcasExistentes();
 }
 
-let prosEstadoTab = 'todos';
+/** Aba principal: em_curso | ganho | perdido */
+let prosGrupoTab = 'em_curso';
+/** Sub-filtro dentro de Em curso: '' = todos | identificado|contactado|visita|proposta */
+let prosEstadoSub = '';
 
-function prosSetEstadoTab(estado) {
-  prosEstadoTab = estado;
+function prosSetGrupoTab(grupo) {
+  prosGrupoTab = grupo === 'ganho' || grupo === 'perdido' ? grupo : 'em_curso';
+  if (prosGrupoTab !== 'em_curso') prosEstadoSub = '';
   renderPros();
 }
 
-// Barra de abas por estado (com contagens). Sempre visível para se poder trocar de aba.
-function prosEstadoTabsHtml(base, active) {
-  const tabs = [{ key: 'todos', label: 'Todos', cor: '#374151', bg: '#f3f4f6' }]
-    .concat(PROS_PIPELINE.map(k => ({ key: k, label: PROS_ESTADOS[k].label, cor: PROS_ESTADOS[k].cor, bg: PROS_ESTADOS[k].bg })));
-  return tabs.map(t => {
-    const n = t.key === 'todos' ? base.length : base.filter(p => p.estado === t.key).length;
-    const on = t.key === active;
-    const label = t.label.replace('✅ ', '').replace('❌ ', '');
-    return `<button onclick="prosSetEstadoTab('${t.key}')" style="border:1px solid ${on ? t.cor : '#e5e7eb'};background:${on ? t.cor : '#fff'};color:${on ? '#fff' : t.cor};border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .12s;">
-      ${label}
-      <span style="background:${on ? 'rgba(255,255,255,.28)' : t.bg};color:${on ? '#fff' : t.cor};border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;">${n}</span>
+function prosSetEstadoSub(estado) {
+  prosGrupoTab = 'em_curso';
+  prosEstadoSub = PROS_EM_CURSO.includes(estado) ? estado : '';
+  renderPros();
+}
+
+/** Compat: chamadas antigas com estado individual. */
+function prosSetEstadoTab(estado) {
+  if (estado === 'ganho' || estado === 'perdido') {
+    prosSetGrupoTab(estado);
+    return;
+  }
+  if (estado === 'todos' || estado === 'em_curso') {
+    prosGrupoTab = 'em_curso';
+    prosEstadoSub = '';
+    renderPros();
+    return;
+  }
+  if (PROS_EM_CURSO.includes(estado)) {
+    prosSetEstadoSub(estado);
+    return;
+  }
+  prosSetGrupoTab('em_curso');
+}
+
+function prosPillBtn(opts) {
+  const { onclick, label, n, on, cor, bg } = opts;
+  return `<button type="button" onclick="${onclick}" style="border:1px solid ${on ? cor : '#e5e7eb'};background:${on ? cor : '#fff'};color:${on ? '#fff' : cor};border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .12s;">
+    ${label}
+    <span style="background:${on ? 'rgba(255,255,255,.28)' : bg};color:${on ? '#fff' : cor};border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;">${n}</span>
+  </button>`;
+}
+
+/** 3 abas: Em curso · Ganho · Perdido */
+function prosEstadoTabsHtml(base, grupoActive) {
+  const nCurso = base.filter(p => PROS_EM_CURSO.includes(p.estado)).length;
+  const nGanho = base.filter(p => p.estado === 'ganho').length;
+  const nPerd = base.filter(p => p.estado === 'perdido').length;
+  const tabs = [
+    { key: 'em_curso', label: 'Em curso', cor: '#374151', bg: '#f3f4f6', n: nCurso },
+    { key: 'ganho', label: 'Ganho', cor: '#16a34a', bg: '#f0fdf4', n: nGanho },
+    { key: 'perdido', label: 'Perdido', cor: '#dc2626', bg: '#fef2f2', n: nPerd },
+  ];
+  return tabs.map(t => prosPillBtn({
+    onclick: `prosSetGrupoTab('${t.key}')`,
+    label: t.label,
+    n: t.n,
+    on: t.key === grupoActive,
+    cor: t.cor,
+    bg: t.bg,
+  })).join('');
+}
+
+/** Sub-estados só na aba Em curso (os 4 estados do pipeline activo). */
+function prosEstadoSubtabsHtml(base, subActive) {
+  const curso = base.filter(p => PROS_EM_CURSO.includes(p.estado));
+  const pills = [
+    { key: '', label: 'Todos', cor: '#6b7280', bg: '#f3f4f6', n: curso.length },
+  ].concat(PROS_EM_CURSO.map(k => ({
+    key: k,
+    label: PROS_ESTADOS[k].label,
+    cor: PROS_ESTADOS[k].cor,
+    bg: PROS_ESTADOS[k].bg,
+    n: curso.filter(p => p.estado === k).length,
+  })));
+  return pills.map(t => {
+    const on = (t.key || '') === (subActive || '');
+    // Pills um pouco mais compactas
+    return `<button type="button" onclick="prosSetEstadoSub('${t.key}')" style="border:1px solid ${on ? t.cor : '#e5e7eb'};background:${on ? t.bg : '#fff'};color:${t.cor};border-radius:999px;padding:4px 11px;font-size:11.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;">
+      ${t.label}
+      <span style="background:${on ? 'rgba(0,0,0,.06)' : t.bg};border-radius:999px;padding:0 6px;font-size:10.5px;font-weight:700;">${t.n}</span>
     </button>`;
   }).join('');
 }
@@ -15790,7 +15857,8 @@ function renderPros() {
   const nomeQ = prosNormSearch(document.getElementById('pros-filtro-nome')?.value || '');
   const vendedor = document.getElementById('pros-filtro-vendedor')?.value || '';
   const segmento = document.getElementById('pros-filtro-segmento')?.value || '';
-  const estadoTab = prosEstadoTab || 'todos';
+  const grupo = prosGrupoTab || 'em_curso';
+  const sub = prosEstadoSub || '';
 
   // Base: nome / vendedor / segmento (serve para contagens das abas e resumo).
   const base = prosData.filter(p => {
@@ -15808,8 +15876,16 @@ function renderPros() {
     return true;
   });
 
-  // Lista: só o estado da aba activa.
-  const dados = estadoTab === 'todos' ? base : base.filter(p => p.estado === estadoTab);
+  // Lista: aba Em curso (com sub-estado) / Ganho / Perdido
+  let dados;
+  if (grupo === 'ganho') {
+    dados = base.filter(p => p.estado === 'ganho');
+  } else if (grupo === 'perdido') {
+    dados = base.filter(p => p.estado === 'perdido');
+  } else {
+    dados = base.filter(p => PROS_EM_CURSO.includes(p.estado));
+    if (sub) dados = dados.filter(p => p.estado === sub);
+  }
 
   // info
   const ativos   = prosData.filter(p => p.estado !== 'ganho' && p.estado !== 'perdido').length;
@@ -15822,11 +15898,22 @@ function renderPros() {
     `<span style="font-weight:600">${prosData.length}</span> leads · ${escHtml(canalNome)} &nbsp;·&nbsp;
      <span style="color:#16a34a;font-weight:600">${ganhos} ganhos</span> &nbsp;·&nbsp;
      <span style="color:#dc2626;">${perdidos} perdidos</span> &nbsp;·&nbsp;
-     <span style="font-weight:600">${ativos} ativos</span> &nbsp;·&nbsp;
+     <span style="font-weight:600">${ativos} em curso</span> &nbsp;·&nbsp;
      Potencial: ${totalCaps.toLocaleString('pt-BR')} caps/mês${totalKg>0?' + '+totalKg.toFixed(1)+' Kg/mês':''}`;
 
   const tabsEl = document.getElementById('pros-estado-tabs');
-  if (tabsEl) tabsEl.innerHTML = prosEstadoTabsHtml(base, estadoTab);
+  if (tabsEl) tabsEl.innerHTML = prosEstadoTabsHtml(base, grupo);
+
+  const subEl = document.getElementById('pros-estado-subtabs');
+  if (subEl) {
+    if (grupo === 'em_curso') {
+      subEl.style.display = 'flex';
+      subEl.innerHTML = prosEstadoSubtabsHtml(base, sub);
+    } else {
+      subEl.style.display = 'none';
+      subEl.innerHTML = '';
+    }
+  }
 
   const cont = document.getElementById('pros-content');
   renderProsList(cont, dados, base);
@@ -15948,9 +16035,15 @@ function renderProsList(cont, dados, base) {
   const summaryHtml = renderProsSummary(base || dados);
   if (!dados.length) {
     const emptyBase = !(base && base.length);
-    const msg = emptyBase
-      ? `Nenhum lead em ${escHtml(prosCanalActivoNome())}. Usa «+ Novo Lead» para começar a construir a prospeção deste canal.`
-      : 'Nenhum lead neste estado.';
+    const nomeFilt = (document.getElementById('pros-filtro-nome')?.value || '').trim();
+    let msg;
+    if (emptyBase && nomeFilt) {
+      msg = `Nenhum lead com «${escHtml(nomeFilt)}».`;
+    } else if (emptyBase) {
+      msg = `Nenhum lead em ${escHtml(prosCanalActivoNome())}. Usa «+ Novo Lead» para começar a construir a prospeção deste canal.`;
+    } else {
+      msg = 'Nenhum lead neste estado.';
+    }
     cont.innerHTML = summaryHtml + `<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px;">${msg}</div>`;
     return;
   }
