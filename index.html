@@ -3605,11 +3605,16 @@ var _unused_placeholder = 1;
           <span style="font-size:22px;">💰</span>
           <div>
             <div style="font-weight:600;font-size:15px;">Carregar Dívidas</div>
-            <div style="font-size:12px;color:var(--muted);">Excel de dívidas — usa a coluna G (total em aberto: vencida ou a vencer).</div>
+            <div style="font-size:12px;color:var(--muted);">Excel de dívidas — usa a coluna G (total em aberto: vencida ou a vencer). Fica no Supabase para todos os PCs.</div>
           </div>
         </div>
         <input type="file" id="dados-dividas-input" accept=".xlsx,.xls" style="display:none" onchange="handleSCDividasImport(event)">
-        <button class="btn btn-primary btn-sm" onclick="document.getElementById('dados-dividas-input').click()">📂 Selecionar ficheiro</button>
+        <div id="dividas-load-status" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px;">
+          <div id="dividas-status-text" style="font-size:13px;"></div>
+        </div>
+        <div id="dividas-result" style="display:none;font-size:13px;padding:10px 14px;border-radius:8px;margin-bottom:10px;"></div>
+        <button class="btn btn-primary btn-sm" id="dividas-select-btn" onclick="document.getElementById('dados-dividas-input').click()">📂 Selecionar ficheiro</button>
+        <div id="dividas-ultima-carga" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
       </div>
 
       <!-- CÓDIGOS RELACIONADOS -->
@@ -5084,6 +5089,14 @@ async function desbloquearDadosContent() {
   loadCodRelacionados();
   loadVendasCobertura(false);
   try { if (typeof distCargaEquipRefreshStats === 'function') distCargaEquipRefreshStats(); } catch (_) {}
+  try {
+    if (typeof carregarDividasMetaRemoto === 'function') {
+      const meta = await carregarDividasMetaRemoto();
+      if (typeof renderUltimaCargaDividas === 'function') renderUltimaCargaDividas(meta);
+    } else if (typeof renderUltimaCargaDividas === 'function') {
+      renderUltimaCargaDividas();
+    }
+  } catch (_) {}
 }
 
 function toggleFiltroInvalidos() {
@@ -6017,13 +6030,22 @@ function getValorDivida(div) {
 async function _scLoadDividasFetch() {
   try {
     loadDividasRefDate();
-    const res = await fetch(
-      'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico?select=*&limit=5000',
-      { headers: HEADERS }
-    );
-    if (!res.ok) { console.error('scLoadDividas HTTP:', res.status); return false; }
-    const data = await res.json();
-    if (!Array.isArray(data) || !data.length) {
+    const data = [];
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      const to = from + pageSize - 1;
+      const res = await fetch(
+        `${typeof DIVIDAS_SUPA_URL !== 'undefined' ? DIVIDAS_SUPA_URL : 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico'}?select=*`,
+        { headers: { ...HEADERS, Range: `${from}-${to}`, Prefer: 'count=exact' } }
+      );
+      if (!res.ok) { console.error('scLoadDividas HTTP:', res.status); return false; }
+      const chunk = await res.json();
+      if (!Array.isArray(chunk) || !chunk.length) break;
+      data.push(...chunk);
+      if (chunk.length < pageSize) break;
+      if (from + pageSize >= 20000) break; // segurança
+    }
+    if (!data.length) {
       console.warn('scLoadDividas: tabela vazia');
       return false;
     }
@@ -6078,122 +6100,293 @@ function bloquearEncerramentoSeDivida(cod) {
   return false;
 }
 
+const DIVIDAS_SUPA_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico';
+const DIVIDAS_META_SUPA_ID = 'dividas_meta';
+const DIVIDAS_ULTIMA_LS_KEY = 'delta_dividas_ultima_carga';
+
+function setDividasStatus(msg, visible) {
+  const box = document.getElementById('dividas-load-status');
+  const txt = document.getElementById('dividas-status-text');
+  if (!box || !txt) return;
+  if (visible === false) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  txt.innerHTML = msg || '';
+}
+
+function setDividasResult(ok, msg) {
+  const el = document.getElementById('dividas-result');
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = msg;
+  if (ok) {
+    el.style.border = '1px solid #c8e6c9';
+    el.style.background = '#e8f5e9';
+    el.style.color = '#2e7d32';
+  } else {
+    el.style.border = '1px solid #ffcdd2';
+    el.style.background = '#ffebee';
+    el.style.color = '#c62828';
+  }
+}
+
+function renderUltimaCargaDividas(meta) {
+  const el = document.getElementById('dividas-ultima-carga');
+  if (!el) return;
+  try {
+    let info = meta;
+    if (!info) {
+      const s = localStorage.getItem(DIVIDAS_ULTIMA_LS_KEY);
+      info = s ? JSON.parse(s) : null;
+    }
+    if (!info || !info.data) {
+      el.textContent = 'Nenhuma carga de dívidas registada.';
+      return;
+    }
+    const d = new Date(info.data);
+    const n = info.total != null ? Number(info.total) : 0;
+    const sync = info.supabaseOk === false
+      ? '<span style="color:#c62828">⚠ NÃO sincronizou no Supabase</span>'
+      : '<span style="color:#2e7d32">Supabase OK</span>';
+    el.innerHTML = `<strong>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</strong>`
+      + (info.ficheiro ? ` &nbsp;·&nbsp; ${escHtml(info.ficheiro)}` : '')
+      + ` &nbsp;·&nbsp; <span style="color:#2e7d32">${n.toLocaleString('pt-BR')} clientes com dívida</span>`
+      + ` &nbsp;·&nbsp; ${sync}`;
+  } catch (_) {
+    el.textContent = '—';
+  }
+}
+
+async function publicarDividasMetaSupabase(meta) {
+  try {
+    const iso = meta.data || new Date().toISOString();
+    const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
+      method: 'POST',
+      headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ id: DIVIDAS_META_SUPA_ID, data: meta, atualizado_em: iso }),
+    });
+    return !!res.ok;
+  } catch (_) { return false; }
+}
+
+async function carregarDividasMetaRemoto() {
+  try {
+    const res = await fetch(
+      `${LISTA_CLIENTES_SUPA_URL}?id=eq.${DIVIDAS_META_SUPA_ID}&select=data,atualizado_em`,
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    const data = Array.isArray(rows) && rows[0] && rows[0].data ? rows[0].data : null;
+    if (data && typeof data === 'object') {
+      try { localStorage.setItem(DIVIDAS_ULTIMA_LS_KEY, JSON.stringify(data)); } catch (_) {}
+      return data;
+    }
+  } catch (_) {}
+  return null;
+}
+
 async function handleSCDividasImport(event) {
   const file = event.target.files[0];
   if (!file) return;
-  if (!window.XLSX) {
-    await new Promise((res,rej) => { const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s); });
-  }
-  toast('A processar dívidas...');
-  const buf = await file.arrayBuffer();
-  const wb = window.XLSX.read(buf, { type: 'array' });
+  const btn = document.getElementById('dividas-select-btn');
+  const resultEl = document.getElementById('dividas-result');
+  if (resultEl) resultEl.style.display = 'none';
+  if (btn) { btn.disabled = true; btn.textContent = 'A processar…'; }
 
-  // Procura aba "COLAR PENDENTES"
-  const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes('COLAR') || n.toUpperCase().includes('PENDENTE')) || wb.SheetNames[0];
-  const ws = wb.Sheets[sheetName];
-  const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1 });
-  const headers = (rows[0] || []).map(h => String(h || '').trim());
-  const normH = h => String(h || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  const headersUp = headers.map(normH);
-
-  const iCodigo  = headers.findIndex(h => /^(c[oó]digo|codigo)$/i.test(String(h || '').trim()));
-  const iVencido = headersUp.findIndex(h => h === 'VENCIDO');
-  const iAVencer = headersUp.findIndex(h => h === 'A VENCER' || h === 'AVENCER' || /^A\s*VENCER$/.test(h));
-  const iTotal   = headersUp.findIndex(h => h === 'TOTAL' || h === 'SALDO' || h === 'DIVIDA' || /^TOTAL\b/.test(h));
-  const i0_15    = headers.findIndex(h => h === '0-15');
-  const i15_30   = headers.findIndex(h => h === '15-30');
-  const i30_60   = headers.findIndex(h => h === '30-60');
-  const i60_90   = headers.findIndex(h => h === '60-90');
-  const i90_120  = headers.findIndex(h => h === '90-120');
-  const i120     = headers.findIndex(h => h === '+ 120' || h === '+120');
-  const iVencim  = headers.findIndex(h => /vencim/i.test(h) && !/^vencido$/i.test(h));
-  const iDias    = headers.findIndex(h => /^dias$/i.test(h) || /dias\s*atraso/i.test(h) || /maior\s*atraso/i.test(h));
-  const COL_G = 6; // Coluna G do Excel
-
-  if (iCodigo === -1) {
-    toast('Coluna CÓDIGO não encontrada no ficheiro de dívidas.', 'error');
-    event.target.value = ''; return;
-  }
-
-  setDividasRefDate(new Date());
-  const novasDividas = {};
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row || row[iCodigo] == null || row[iCodigo] === '') continue;
-    const cod = String(row[iCodigo]).trim();
-    const colG = parseValorDivida(row[COL_G]);
-    const aVencer = iAVencer >= 0 ? parseValorDivida(row[iAVencer]) : 0;
-    const vencidoCol = iVencido >= 0 ? parseValorDivida(row[iVencido]) : 0;
-    const totalHdr = iTotal >= 0 ? parseValorDivida(row[iTotal]) : 0;
-    // Dívida = em aberto (vencida ou a vencer). Coluna G + soma A VENCER/VENCIDO quando existirem.
-    let total = 0;
-    if (iAVencer >= 0 && iVencido >= 0) total = aVencer + vencidoCol;
-    else if (iAVencer >= 0) total = aVencer + (vencidoCol || colG);
-    else if (totalHdr !== 0) total = totalHdr;
-    else if (colG !== 0) total = colG; // coluna G
-    else total = vencidoCol;
-    if (total === 0) continue;
-    const vencimento = iVencim >= 0 ? parseExcelDateFlexible(row[iVencim]) : null;
-    const diasAtrasoRelatorio = iDias >= 0 ? (parseValorDivida(row[iDias]) || null) : null;
-    novasDividas[cod] = {
-      total,
-      vencido: total, // todos os menus: dívida total (não só vencida)
-      aVencer,
-      vencidoAging: vencidoCol,
-      a0_15:   i0_15 >= 0 ? parseValorDivida(row[i0_15]) : 0,
-      a15_30:  i15_30 >= 0 ? parseValorDivida(row[i15_30]) : 0,
-      a30_60:  i30_60 >= 0 ? parseValorDivida(row[i30_60]) : 0,
-      a60_90:  i60_90 >= 0 ? parseValorDivida(row[i60_90]) : 0,
-      a90_120: i90_120 >= 0 ? parseValorDivida(row[i90_120]) : 0,
-      a120:    i120 >= 0 ? parseValorDivida(row[i120]) : 0,
-      vencimento,
-      diasAtrasoRelatorio,
-    };
-  }
-
-  // Guarda no Supabase: apaga tudo e reescreve
-  toast('A actualizar dívidas no servidor...');
   try {
-    // 1. Apaga todos os registos existentes
-    const delRes = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico?vencido=gte.0', {
-      method: 'DELETE',
-      headers: HEADERS
-    });
-    if (!delRes.ok) console.warn('DELETE dividas:', delRes.status);
-
-    // 2. Insere os novos em lotes de 100 (campo vencido = dívida total em aberto)
-    const rowsIns = Object.entries(novasDividas).map(([cod, d]) => ({
-      cod_cliente: cod, vencido: d.total,
-      aging_0_15: d.a0_15||0, aging_15_30: d.a15_30||0,
-      aging_30_60: d.a30_60||0, aging_60_90: d.a60_90||0,
-      aging_90_120: d.a90_120||0, aging_120: d.a120||0,
-    }));
-    let inserted = 0;
-    for (let i = 0; i < rowsIns.length; i += 100) {
-      const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico', {
-        method: 'POST',
-        headers: { ...HEADERS, 'Prefer': 'return=minimal' },
-        body: JSON.stringify(rowsIns.slice(i, i + 100))
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error('Supabase INSERT: ' + (err.message || err.hint || res.status));
-      }
-      inserted += rowsIns.slice(i, i + 100).length;
+    setDividasStatus('⏳ A carregar biblioteca Excel…', true);
+    try {
+      await ensureXLSX();
+    } catch (_) {
+      const msg = 'Não foi possível carregar a biblioteca Excel. Verifica a rede e tenta de novo.';
+      setDividasResult(false, '❌ ' + msg);
+      toast(msg, 'error');
+      return;
     }
-    scDividasData = novasDividas;
-    scDividasLoaded = true;
-    sessionCacheTouch('dividas');
-    toast(`✅ ${inserted} clientes com dívida (vencida ou a vencer) guardados`);
-  } catch(e) {
-    // Fallback: guarda só em memória se Supabase falhar
-    scDividasData = novasDividas;
-    scDividasLoaded = true;
-    sessionCacheTouch('dividas');
-    toast(`✅ ${Object.keys(scDividasData).length} clientes carregados (só memória)`);
+
+    setDividasStatus(`⏳ A ler ficheiro <b>${escHtml(file.name)}</b>…`, true);
+    toast('A processar dívidas…');
+    const buf = await file.arrayBuffer();
+    const wb = window.XLSX.read(buf, { type: 'array' });
+
+    // Procura aba "COLAR PENDENTES"
+    const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes('COLAR') || n.toUpperCase().includes('PENDENTE')) || wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+    const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1 });
+    const headers = (rows[0] || []).map(h => String(h || '').trim());
+    const normH = h => String(h || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const headersUp = headers.map(normH);
+
+    const iCodigo  = headers.findIndex(h => /^(c[oó]digo|codigo)$/i.test(String(h || '').trim()));
+    const iVencido = headersUp.findIndex(h => h === 'VENCIDO');
+    const iAVencer = headersUp.findIndex(h => h === 'A VENCER' || h === 'AVENCER' || /^A\s*VENCER$/.test(h));
+    const iTotal   = headersUp.findIndex(h => h === 'TOTAL' || h === 'SALDO' || h === 'DIVIDA' || /^TOTAL\b/.test(h));
+    const i0_15    = headers.findIndex(h => h === '0-15');
+    const i15_30   = headers.findIndex(h => h === '15-30');
+    const i30_60   = headers.findIndex(h => h === '30-60');
+    const i60_90   = headers.findIndex(h => h === '60-90');
+    const i90_120  = headers.findIndex(h => h === '90-120');
+    const i120     = headers.findIndex(h => h === '+ 120' || h === '+120');
+    const iVencim  = headers.findIndex(h => /vencim/i.test(h) && !/^vencido$/i.test(h));
+    const iDias    = headers.findIndex(h => /^dias$/i.test(h) || /dias\s*atraso/i.test(h) || /maior\s*atraso/i.test(h));
+    const COL_G = 6; // Coluna G do Excel
+
+    if (iCodigo === -1) {
+      const msg = 'Coluna CÓDIGO não encontrada no ficheiro de dívidas.';
+      setDividasStatus('', false);
+      setDividasResult(false, '❌ ' + msg);
+      toast(msg, 'error');
+      return;
+    }
+
+    setDividasStatus(`⏳ A processar linhas da aba <b>${escHtml(sheetName)}</b>…`, true);
+    setDividasRefDate(new Date());
+    const novasDividas = {};
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || row[iCodigo] == null || row[iCodigo] === '') continue;
+      const cod = String(row[iCodigo]).trim();
+      const colG = parseValorDivida(row[COL_G]);
+      const aVencer = iAVencer >= 0 ? parseValorDivida(row[iAVencer]) : 0;
+      const vencidoCol = iVencido >= 0 ? parseValorDivida(row[iVencido]) : 0;
+      const totalHdr = iTotal >= 0 ? parseValorDivida(row[iTotal]) : 0;
+      // Dívida = em aberto (vencida ou a vencer). Coluna G + soma A VENCER/VENCIDO quando existirem.
+      let total = 0;
+      if (iAVencer >= 0 && iVencido >= 0) total = aVencer + vencidoCol;
+      else if (iAVencer >= 0) total = aVencer + (vencidoCol || colG);
+      else if (totalHdr !== 0) total = totalHdr;
+      else if (colG !== 0) total = colG; // coluna G
+      else total = vencidoCol;
+      if (total === 0) continue;
+      const vencimento = iVencim >= 0 ? parseExcelDateFlexible(row[iVencim]) : null;
+      const diasAtrasoRelatorio = iDias >= 0 ? (parseValorDivida(row[iDias]) || null) : null;
+      novasDividas[cod] = {
+        total,
+        vencido: total, // todos os menus: dívida total (não só vencida)
+        aVencer,
+        vencidoAging: vencidoCol,
+        a0_15:   i0_15 >= 0 ? parseValorDivida(row[i0_15]) : 0,
+        a15_30:  i15_30 >= 0 ? parseValorDivida(row[i15_30]) : 0,
+        a30_60:  i30_60 >= 0 ? parseValorDivida(row[i30_60]) : 0,
+        a60_90:  i60_90 >= 0 ? parseValorDivida(row[i60_90]) : 0,
+        a90_120: i90_120 >= 0 ? parseValorDivida(row[i90_120]) : 0,
+        a120:    i120 >= 0 ? parseValorDivida(row[i120]) : 0,
+        vencimento,
+        diasAtrasoRelatorio,
+      };
+    }
+
+    const nLocal = Object.keys(novasDividas).length;
+    if (!nLocal) {
+      const msg = 'Nenhum cliente com dívida > 0 encontrado no ficheiro.';
+      setDividasStatus('', false);
+      setDividasResult(false, '❌ ' + msg);
+      toast(msg, 'error');
+      return;
+    }
+
+    // Guarda no Supabase: apaga tudo e reescreve
+    setDividasStatus(`⏳ A actualizar Supabase… (${nLocal.toLocaleString('pt-BR')} clientes)`, true);
+    toast('A actualizar dívidas no servidor…');
+    try {
+      // 1. Apaga todos os registos existentes (qualquer valor)
+      const delRes = await fetch(`${DIVIDAS_SUPA_URL}?cod_cliente=not.is.null`, {
+        method: 'DELETE',
+        headers: { ...HEADERS, Prefer: 'return=minimal' },
+      });
+      // Fallback se filtro falhar
+      if (!delRes.ok) {
+        const del2 = await fetch(`${DIVIDAS_SUPA_URL}?vencido=gte.-999999999`, {
+          method: 'DELETE',
+          headers: { ...HEADERS, Prefer: 'return=minimal' },
+        });
+        if (!del2.ok) {
+          const errText = await del2.text().catch(() => '');
+          throw new Error('DELETE falhou (HTTP ' + del2.status + ')' + (errText ? ': ' + errText.slice(0, 120) : ''));
+        }
+      }
+
+      // 2. Insere os novos em lotes de 100
+      const rowsIns = Object.entries(novasDividas).map(([cod, d]) => ({
+        cod_cliente: cod, vencido: d.total,
+        aging_0_15: d.a0_15||0, aging_15_30: d.a15_30||0,
+        aging_30_60: d.a30_60||0, aging_60_90: d.a60_90||0,
+        aging_90_120: d.a90_120||0, aging_120: d.a120||0,
+      }));
+      let inserted = 0;
+      for (let i = 0; i < rowsIns.length; i += 100) {
+        const slice = rowsIns.slice(i, i + 100);
+        setDividasStatus(
+          `⏳ A gravar no Supabase… ${Math.min(i + slice.length, rowsIns.length).toLocaleString('pt-BR')} / ${rowsIns.length.toLocaleString('pt-BR')}`,
+          true
+        );
+        const res = await fetch(DIVIDAS_SUPA_URL, {
+          method: 'POST',
+          headers: { ...HEADERS, Prefer: 'return=minimal' },
+          body: JSON.stringify(slice),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          const errText = err.message || err.hint || err.error || ('HTTP ' + res.status);
+          throw new Error('INSERT falhou: ' + errText);
+        }
+        inserted += slice.length;
+      }
+      scDividasData = novasDividas;
+      scDividasLoaded = true;
+      sessionCacheTouch('dividas');
+
+      const meta = {
+        data: new Date().toISOString(),
+        ficheiro: file.name,
+        total: inserted,
+        sheet: sheetName,
+        supabaseOk: true,
+      };
+      try { localStorage.setItem(DIVIDAS_ULTIMA_LS_KEY, JSON.stringify(meta)); } catch (_) {}
+      await publicarDividasMetaSupabase(meta);
+      renderUltimaCargaDividas(meta);
+
+      const msg = `✅ Dívidas actualizadas: ${inserted.toLocaleString('pt-BR')} clientes com dívida guardados no Supabase (aba «${sheetName}»). Todos os PCs passam a ver estes valores.`;
+      setDividasStatus('', false);
+      setDividasResult(true, msg);
+      toast(msg);
+    } catch (e) {
+      // Memória local só para não perder o trabalho neste PC — NÃO é sucesso multi-PC
+      scDividasData = novasDividas;
+      scDividasLoaded = true;
+      sessionCacheTouch('dividas');
+      const meta = {
+        data: new Date().toISOString(),
+        ficheiro: file.name,
+        total: nLocal,
+        sheet: sheetName,
+        supabaseOk: false,
+        erro: String(e && e.message || e),
+      };
+      try { localStorage.setItem(DIVIDAS_ULTIMA_LS_KEY, JSON.stringify(meta)); } catch (_) {}
+      renderUltimaCargaDividas(meta);
+      const msg = `❌ FALHA ao gravar no Supabase: ${e.message || e}. `
+        + `Neste PC ficaram ${nLocal.toLocaleString('pt-BR')} clientes em memória, mas a Andrea e outros PCs NÃO vão ver esta carga. Tenta de novo.`;
+      setDividasStatus('', false);
+      setDividasResult(false, msg);
+      toast(msg, 'error');
+    }
+    try { renderSemCompras(); } catch (_) {}
+    try {
+      if (typeof _afSubActiva !== 'undefined' && _afSubActiva === 'divida-sem-compras' && typeof loadAfDividaSemCompras === 'function') {
+        loadAfDividaSemCompras();
+      }
+    } catch (_) {}
+  } catch (e) {
+    const msg = 'Erro ao processar dívidas: ' + (e.message || e);
+    setDividasStatus('', false);
+    setDividasResult(false, '❌ ' + msg);
+    toast(msg, 'error');
+  } finally {
+    event.target.value = '';
+    if (btn) { btn.disabled = false; btn.textContent = '📂 Selecionar ficheiro'; }
   }
-  renderSemCompras();
-  event.target.value = '';
 }
 
 function formatEur(v) {
