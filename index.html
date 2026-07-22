@@ -15087,6 +15087,17 @@ async function setEscritorioContencioso(cod, escritorio, opts) {
     sel.value = nome;
   }
   if (!(opts && opts.skipSupa)) await persistEscritorioContenciosoSupabase(k, nome);
+  // Actualizar resumo AF Contencioso se estiver aberto
+  if (Array.isArray(_afCcLista) && _afCcLista.length) {
+    const row = _afCcLista.find(c => normCod(c.cod) === k);
+    if (row) row.escritorio = nome;
+    if (typeof _afSubActiva !== 'undefined' && _afSubActiva === 'contencioso'
+      && (typeof _afCcSub === 'undefined' || _afCcSub === 'lista')
+      && document.getElementById('af-cc-content')
+      && typeof renderAfContenciosoLista === 'function') {
+      renderAfContenciosoLista();
+    }
+  }
 }
 
 function htmlSelectEscritorioContencioso(cod) {
@@ -20602,8 +20613,7 @@ async function loadAfContencioso() {
         return { ...c, vencido: div ? (div.vencido || 0) : 0, escritorio };
       })
       .sort((a, b) => (b.vencido || 0) - (a.vencido || 0) || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
-    const totalDiv = listaCc.reduce((s, c) => s + (c.vencido || 0), 0);
-    const nComEsc = listaCc.filter(c => c.escritorio).length;
+    _afCcLista = listaCc;
     const nPddFora = (typeof readContenciosoPddExtra === 'function' ? readContenciosoPddExtra() : []).length;
     const pddTab = document.getElementById('af-cc-tab-pdd');
     if (pddTab) {
@@ -20611,45 +20621,144 @@ async function loadAfContencioso() {
         ? `Só no PDD (fora da app) · ${nPddFora}`
         : 'Só no PDD (fora da app)';
     }
-    if (ccInfo) {
-      ccInfo.innerHTML = listaCc.length
-        ? `<span style="color:#7f1d1d;font-weight:600;">${listaCc.length}</span> cliente(s) no Contencioso (lista SAP)`
-          + (totalDiv > 0 ? ` · Dívida: <b>${formatEur(totalDiv)}</b>` : '')
-          + ` · Escritório: <b>${nComEsc}</b>/${listaCc.length}`
-        : 'Nenhum cliente Contencioso na lista carregada (carrega Lista SAP em Dados).';
-    }
-    if (ccEl) {
-      if (!listaCc.length) {
-        ccEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Sem clientes Contencioso. Carrega a Lista SAP em Dados se necessário.</div>';
-      } else {
-        const rows = listaCc.map(c => {
-          const escVal = c.escritorio || '';
-          return `<tr style="border-bottom:1px solid #fecaca;background:#fef2f2;">
-          <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(c.cod || '—')}</td>
-          <td style="padding:8px 10px;font-size:12px;font-weight:500;">${escHtml(c.nome || '—')}</td>
-          <td style="padding:8px 10px;font-size:12px;" data-sort="${escHtml(escVal)}" data-filter-text="${escHtml(escVal).replace(/"/g, '&quot;')}">${htmlSelectEscritorioContencioso(c.cod)}</td>
-          <td style="padding:8px 10px;font-size:12px;">${escHtml(c.canal || '—')}</td>
-          <td style="padding:8px 10px;font-size:12px;">${escHtml(c.vendedor || '—')}</td>
-          <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;color:#7f1d1d;" data-sort="${c.vencido || 0}">${c.vencido ? formatEur(c.vencido) : '—'}</td>
-        </tr>`;
-        }).join('');
-        ccEl.innerHTML = `<div class="table-wrap"><table class="data-table" style="width:100%;">
-          <thead><tr style="background:#fee2e2;">
-            <th>Cód.</th><th>Nome</th><th>Escritório</th><th>Canal</th><th>Vendedor</th><th>Dívida vencida</th>
-          </tr></thead><tbody>${rows}</tbody></table></div>`;
-        const ccTbl = ccEl.querySelector('table');
-        if (ccTbl) {
-          const infoBase = ccInfo ? ccInfo.innerHTML : '';
-          enableTableColFilters(ccTbl, { infoId: 'af-cc-info', total: listaCc.length, infoBase });
-          enableTableSort(ccTbl);
-        }
-      }
-    }
+    renderAfContenciosoLista();
     if (typeof showAfContenciosoSub === 'function') showAfContenciosoSub(_afCcSub || 'lista');
   } catch (e) {
     if (cpEl) cpEl.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro: ${escHtml(e.message)}</div>`;
   }
 }
+
+let _afCcLista = [];
+let _afCcEscFiltro = ''; // '' = todos; '—' = sem escritório; senão nome exacto
+
+function afCcEscKey(c) {
+  return String(c && c.escritorio || '').trim() || '—';
+}
+
+function afCcFiltrarResumo(escEnc) {
+  _afCcEscFiltro = (!escEnc || escEnc === 'todos') ? '' : decodeURIComponent(escEnc);
+  renderAfContenciosoLista();
+}
+
+function afCcLimparFiltro() {
+  _afCcEscFiltro = '';
+  renderAfContenciosoLista();
+}
+
+function renderAfContenciosoLista() {
+  const ccEl = document.getElementById('af-cc-content');
+  const ccInfo = document.getElementById('af-cc-info');
+  if (!ccEl) return;
+  const listaCc = Array.isArray(_afCcLista) ? _afCcLista : [];
+  const totalDiv = listaCc.reduce((s, c) => s + (c.vencido || 0), 0);
+  const nComEsc = listaCc.filter(c => String(c.escritorio || '').trim()).length;
+  if (ccInfo) {
+    ccInfo.innerHTML = listaCc.length
+      ? `<span style="color:#7f1d1d;font-weight:600;">${listaCc.length}</span> cliente(s) no Contencioso (lista SAP)`
+        + (totalDiv > 0 ? ` · Dívida: <b>${formatEur(totalDiv)}</b>` : '')
+        + ` · Escritório: <b>${nComEsc}</b>/${listaCc.length}`
+      : 'Nenhum cliente Contencioso na lista carregada (carrega Lista SAP em Dados).';
+  }
+  if (!listaCc.length) {
+    ccEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Sem clientes Contencioso. Carrega a Lista SAP em Dados se necessário.</div>';
+    return;
+  }
+
+  const resumoEsc = {};
+  listaCc.forEach(c => {
+    const e = afCcEscKey(c);
+    if (!resumoEsc[e]) resumoEsc[e] = { n: 0, divida: 0 };
+    resumoEsc[e].n++;
+    resumoEsc[e].divida += Number(c.vencido) || 0;
+  });
+  const resumoRows = Object.entries(resumoEsc).sort((a, b) => {
+    // Sem escritório no fim
+    if (a[0] === '—' && b[0] !== '—') return 1;
+    if (b[0] === '—' && a[0] !== '—') return -1;
+    return b[1].divida - a[1].divida || a[0].localeCompare(b[0], 'pt');
+  });
+
+  const filtered = _afCcEscFiltro
+    ? listaCc.filter(c => afCcEscKey(c) === _afCcEscFiltro)
+    : listaCc;
+
+  const banner = _afCcEscFiltro
+    ? `<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:12px;background:#fef2f2;border:1px solid #fecaca;color:#7f1d1d;padding:4px 10px;border-radius:16px;font-weight:600;">Filtro: ${_afCcEscFiltro === '—' ? 'Sem escritório' : escHtml(_afCcEscFiltro)}</span>
+        <button type="button" onclick="afCcLimparFiltro()" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">✕ Limpar filtro</button>
+      </div>`
+    : '';
+
+  const resumoHtml = `<div style="margin-bottom:20px;display:inline-block;min-width:420px;max-width:100%;">
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por escritório <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica nos números para filtrar)</span></div>
+    <table style="border-collapse:collapse;font-size:13px;width:100%;" id="af-cc-resumo-tbl">
+      <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+        <th style="padding:7px 14px;text-align:left;font-weight:600;">Escritório</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;">Clientes</th>
+        <th style="padding:7px 14px;text-align:right;font-weight:600;">Dívida total</th>
+      </tr></thead>
+      <tbody>
+        ${resumoRows.map(([e, d], i) => {
+          const ee = encodeURIComponent(e);
+          const isActive = _afCcEscFiltro === e;
+          const label = e === '—' ? 'Sem escritório' : e;
+          const nClick = d.n > 0
+            ? `cursor:pointer;text-decoration:underline;text-underline-offset:2px;`
+            : `cursor:default;color:var(--muted);`;
+          const divClick = d.divida > 0
+            ? `cursor:pointer;text-decoration:underline;text-underline-offset:2px;`
+            : `cursor:default;`;
+          const activeBg = isActive ? 'background:#fef2f2;outline:2px solid #fca5a5;outline-offset:-2px;' : '';
+          return `<tr style="border-bottom:1px solid #f0f0f0;background:${i % 2 === 0 ? '#fff' : '#fafafa'};${activeBg}">
+            <td style="padding:7px 14px;font-weight:500;cursor:pointer;" onclick="afCcFiltrarResumo('${ee}')" title="Filtrar este escritório">🔍 ${escHtml(label)}</td>
+            <td style="padding:7px 14px;text-align:center;font-weight:600;${nClick}" ${d.n > 0 ? `onclick="afCcFiltrarResumo('${ee}')" title="Ver estes clientes"` : ''}>${d.n > 0 ? d.n : '—'}</td>
+            <td style="padding:7px 14px;text-align:right;font-weight:${d.divida > 0 ? '600' : '400'};color:${d.divida > 0 ? '#7f1d1d' : 'var(--muted)'};${divClick}" ${d.divida > 0 ? `onclick="afCcFiltrarResumo('${ee}')" title="Ver estes clientes"` : ''}>${d.divida > 0 ? formatEur(d.divida) : '—'}</td>
+          </tr>`;
+        }).join('')}
+        <tr style="border-top:2px solid var(--border);background:#f9f9f9;">
+          <td style="padding:7px 14px;font-weight:700;cursor:pointer;" onclick="afCcLimparFiltro()" title="Mostrar todos">🔍 Total</td>
+          <td style="padding:7px 14px;text-align:center;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="afCcLimparFiltro()">${listaCc.length}</td>
+          <td style="padding:7px 14px;text-align:right;font-weight:700;color:#7f1d1d;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="afCcLimparFiltro()">${totalDiv > 0 ? formatEur(totalDiv) : '—'}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
+
+  const rows = filtered.map(c => {
+    const escVal = c.escritorio || '';
+    return `<tr style="border-bottom:1px solid #fecaca;background:#fef2f2;">
+      <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(c.cod || '—')}</td>
+      <td style="padding:8px 10px;font-size:12px;font-weight:500;">${escHtml(c.nome || '—')}</td>
+      <td style="padding:8px 10px;font-size:12px;" data-sort="${escHtml(escVal)}" data-filter-text="${escHtml(escVal).replace(/"/g, '&quot;')}">${htmlSelectEscritorioContencioso(c.cod)}</td>
+      <td style="padding:8px 10px;font-size:12px;">${escHtml(c.canal || '—')}</td>
+      <td style="padding:8px 10px;font-size:12px;">${escHtml(c.vendedor || '—')}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;color:#7f1d1d;" data-sort="${c.vencido || 0}">${c.vencido ? formatEur(c.vencido) : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  const infoBase = ccInfo ? ccInfo.innerHTML : '';
+  const detalheLabel = _afCcEscFiltro
+    ? `${filtered.length} de ${listaCc.length} cliente(s)`
+    : `${filtered.length} cliente(s)`;
+
+  ccEl.innerHTML = `${banner}${resumoHtml}
+    <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;">Lista detalhada — ${detalheLabel}</div>
+    <div class="table-wrap"><table class="data-table" id="af-cc-table" style="width:100%;">
+      <thead><tr style="background:#fee2e2;">
+        <th>Cód.</th><th>Nome</th><th>Escritório</th><th>Canal</th><th>Vendedor</th><th>Dívida vencida</th>
+      </tr></thead><tbody>${rows || '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--muted);">Sem linhas para este filtro.</td></tr>'}</tbody></table></div>`;
+
+  const ccTbl = document.getElementById('af-cc-table') || ccEl.querySelector('#af-cc-table');
+  if (ccTbl && filtered.length) {
+    enableTableColFilters(ccTbl, { infoId: 'af-cc-info', total: filtered.length, infoBase });
+    enableTableSort(ccTbl);
+  }
+}
+
+window.afCcFiltrarResumo = afCcFiltrarResumo;
+window.afCcLimparFiltro = afCcLimparFiltro;
+window.renderAfContenciosoLista = renderAfContenciosoLista;
 
 let _afDscLista = [];
 let _afDscVendFiltro = '';
