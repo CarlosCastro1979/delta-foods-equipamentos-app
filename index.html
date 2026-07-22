@@ -8043,6 +8043,17 @@ async function confirmarCargaSAP() {
   // Lista "Clientes no Contencioso" (vendedor 99520013) — canais 03/04 deixam de contar nos registos
   const listaContencioso = deduplicarListaSAPPorCod(_sapImportBuffer.listaContencioso || []);
   guardarListaContencioso(listaContencioso);
+  // Publicar Contencioso no Supabase (Área Financeira em qualquer PC)
+  try {
+    const pubCc = await publicarListaContenciosoSupabase(listaContencioso);
+    if (pubCc && pubCc.ok) {
+      console.log('Contencioso publicado no Supabase:', pubCc.total);
+    } else {
+      console.warn('Falha a publicar Contencioso:', pubCc && pubCc.error);
+    }
+  } catch (e) {
+    console.warn('publicarListaContenciosoSupabase:', e);
+  }
   foraSPCache = null;
   clearRegistosCache();
 
@@ -14746,6 +14757,11 @@ const CONTENCIOSO_VENDEDOR = '99520013';
 const CONTENCIOSO_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/clientes_contencioso';
 const CONTENCIOSO_LS_KEY = 'delta_contencioso_pendentes';
 const CONTENCIOSO_LISTA_KEY = 'delta_clientes_contencioso';
+const CONTENCIOSO_LISTA_TS_KEY = 'delta_clientes_contencioso_ts';
+/** Registo na tabela lista_clientes (mesmo padrão da lista SAP) para sync multi-browser. */
+const CONTENCIOSO_LISTA_SUPA_ID = 'contencioso';
+/** Meta PDD/opts em lista_clientes (não usar localStorage). */
+const CONTENCIOSO_META_SUPA_ID = 'contencioso_meta';
 let _contenciosoCliente = null;
 let scContenciosoPendentes = new Map();
 
@@ -14839,11 +14855,130 @@ function contenciosoPertenceAoCanalApp(cli, canalId) {
   return false;
 }
 
-function getListaContenciosoRaw() {
+/** Cache em memória — fonte de verdade = Supabase (lista_clientes id=contencioso). */
+let _listaContenciosoCache = null; // null = ainda não hidratado
+let _listaContenciosoTs = 0;
+let _sapContenciosoCods = []; // códigos *13 (exclusão registos)
+
+function limparLegacyContenciosoListaLS() {
+  try {
+    localStorage.removeItem(CONTENCIOSO_LISTA_KEY);
+    localStorage.removeItem(CONTENCIOSO_LISTA_TS_KEY);
+    localStorage.removeItem('delta_sap_contencioso');
+  } catch (_) {}
+}
+
+/** Migração única: se o browser ainda tiver lista antiga em localStorage, usa e apaga. */
+function migrarListaContenciosoDeLocalStorage() {
+  if (Array.isArray(_listaContenciosoCache) && _listaContenciosoCache.length) return;
   try {
     const s = localStorage.getItem(CONTENCIOSO_LISTA_KEY);
-    return s ? JSON.parse(s) : [];
-  } catch (e) { return []; }
+    if (!s) return;
+    const arr = JSON.parse(s);
+    if (Array.isArray(arr) && arr.length) {
+      _listaContenciosoCache = arr;
+      _listaContenciosoTs = parseInt(localStorage.getItem(CONTENCIOSO_LISTA_TS_KEY) || '0', 10) || Date.now();
+      console.log('Contencioso: migrado de localStorage → memória/Supabase:', arr.length);
+    }
+  } catch (_) {}
+  limparLegacyContenciosoListaLS();
+}
+
+function getListaContenciosoRaw() {
+  if (!Array.isArray(_listaContenciosoCache)) {
+    migrarListaContenciosoDeLocalStorage();
+    if (!Array.isArray(_listaContenciosoCache)) _listaContenciosoCache = [];
+  }
+  return _listaContenciosoCache;
+}
+
+function getListaContenciosoLocalTs() {
+  return _listaContenciosoTs || 0;
+}
+
+function getSapContenciosoCods() {
+  if (Array.isArray(_sapContenciosoCods) && _sapContenciosoCods.length) return _sapContenciosoCods;
+  try {
+    const legacy = JSON.parse(localStorage.getItem('delta_sap_contencioso') || '[]');
+    if (Array.isArray(legacy) && legacy.length) {
+      _sapContenciosoCods = legacy.map(normCod).filter(Boolean);
+      try { localStorage.removeItem('delta_sap_contencioso'); } catch (_) {}
+    }
+  } catch (_) {}
+  return _sapContenciosoCods || [];
+}
+
+/** Publica a lista Contencioso (SAP *13) no Supabase para todos os browsers. */
+async function publicarListaContenciosoSupabase(lista) {
+  try {
+    const arr = (Array.isArray(lista) ? lista : []).map(c =>
+      (typeof compactClienteSap === 'function' ? compactClienteSap(c) : c)
+    );
+    const iso = new Date().toISOString();
+    const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
+      method: 'POST',
+      headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({
+        id: CONTENCIOSO_LISTA_SUPA_ID,
+        data: arr,
+        atualizado_em: iso,
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.warn('publicarListaContenciosoSupabase HTTP', res.status, errText.slice(0, 200));
+      return { ok: false, error: 'HTTP ' + res.status };
+    }
+    _listaContenciosoTs = Date.parse(iso) || Date.now();
+    limparLegacyContenciosoListaLS();
+    return { ok: true, total: arr.length };
+  } catch (e) {
+    console.warn('publicarListaContenciosoSupabase:', e.message || e);
+    return { ok: false, error: e.message || String(e) };
+  }
+}
+
+/**
+ * Sincroniza lista Contencioso SAP *13 (só Supabase; memória é cache de sessão):
+ * - Se remoto existir e for mais recente (ou memória vazia) → puxa
+ * - Se memória/legado tiver dados e remoto vazio → publica (bootstrap)
+ */
+async function sincronizarListaContencioso() {
+  try {
+    migrarListaContenciosoDeLocalStorage();
+    const local = getListaContenciosoRaw();
+    const localTs = getListaContenciosoLocalTs();
+    const res = await fetch(
+      `${LISTA_CLIENTES_SUPA_URL}?id=eq.${CONTENCIOSO_LISTA_SUPA_ID}&select=data,atualizado_em`,
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+    );
+    if (!res.ok) {
+      if (local.length) await publicarListaContenciosoSupabase(local);
+      return !!local.length;
+    }
+    const rows = await res.json();
+    const remoteRow = Array.isArray(rows) && rows[0] ? rows[0] : null;
+    const remote = remoteRow && Array.isArray(remoteRow.data) ? remoteRow.data : null;
+    const remoteTs = remoteRow && remoteRow.atualizado_em
+      ? (Date.parse(remoteRow.atualizado_em) || 0)
+      : 0;
+
+    if ((!remote || !remote.length) && local.length) {
+      await publicarListaContenciosoSupabase(local);
+      return true;
+    }
+    if (remote && remote.length && (!local.length || remoteTs >= localTs)) {
+      guardarListaContencioso(remote, { ts: remoteTs || Date.now(), skipLegacyClear: false });
+      _listaContenciosoTs = remoteTs || Date.now();
+      limparLegacyContenciosoListaLS();
+      console.log('Lista Contencioso sincronizada do Supabase:', remote.length);
+      return true;
+    }
+    return !!(local.length || (remote && remote.length));
+  } catch (e) {
+    console.warn('sincronizarListaContencioso:', e.message || e);
+    return false;
+  }
 }
 
 /**
@@ -14901,23 +15036,29 @@ function getRegistosActivos(data) {
   return src.filter(r => !cont.has(normCod(r.cod)));
 }
 
-function guardarListaContencioso(lista) {
+function guardarListaContencioso(lista, opts) {
   const arr = Array.isArray(lista) ? lista : [];
-  try { localStorage.setItem(CONTENCIOSO_LISTA_KEY, JSON.stringify(arr)); } catch (e) {}
-  // Códigos Contencioso do canal activo (ou 03/04) — exclusão dos registos activos
+  _listaContenciosoCache = arr;
+  _listaContenciosoTs = (opts && opts.ts) ? opts.ts : Date.now();
+  // Códigos Contencioso do canal activo (ou 03/04) — exclusão dos registos activos (memória)
   try {
     const cods = arr.filter(c => contenciosoPertenceAoCanalApp(c, _canalActivo || 'horeca'))
       .map(c => normCod(c.cod)).filter(Boolean);
-    localStorage.setItem('delta_sap_contencioso', JSON.stringify(cods));
-  } catch (e) {}
+    _sapContenciosoCods = cods;
+  } catch (e) {
+    _sapContenciosoCods = [];
+  }
+  if (!(opts && opts.skipLegacyClear)) limparLegacyContenciosoListaLS();
 }
 
 // ─── Contencioso: escritório de advogados (PDD) ──────
+/** Legacy keys — migração única; depois apagadas. */
 const CONTENCIOSO_ESCRITORIOS_KEY = 'delta_contencioso_escritorios';
 const CONTENCIOSO_ESCRITORIOS_OPTS_KEY = 'delta_contencioso_escritorios_opts';
 const CONTENCIOSO_PDD_EXTRA_KEY = 'delta_contencioso_pdd_extra';
 const CONTENCIOSO_PDD_SOURCE_KEY = 'delta_contencioso_pdd_source';
 const CONTENCIOSO_ESCRITORIOS_URL = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/contencioso_escritorios';
+let _contenciosoMetaTs = 0;
 const CONTENCIOSO_PDD_SEED_MAP = {"400327":"PDD Advogado Rezende","401761":"PDD Advogado Rezende","401763":"PDD Advogado Rezende","401842":"PDD Advogado Rezende","401958":"PDD Advogado Rezende","401964":"PDD Advogado Rezende","402646":"PDD Advogado Rezende","402718":"PDD Advogado Rezende","402902":"PDD Advogado Rezende","403253":"PDD Advogado Rezende","403960":"PDD Advogado Rezende","404156":"PDD Advogado Rezende","406168":"PDD Advogado Rezende","406172":"PDD Advogado Rezende","406964":"PDD Advogado Rezende","407276":"PDD Advogado Rezende","407917":"PDD Advogado Rezende","409207":"PDD Advogado Rezende","410367":"PDD Advogado Rezende","415444":"PDD Advogado Rezende","418255":"PDD Advogado Rezende","418495":"PDD Advogado Rezende","418497":"PDD Advogado Rezende","418506":"PDD Advogado Rezende","418568":"PDD Advogado Rezende","418591":"PDD Advogado Rezende","418668":"PDD Advogado Rezende","422938":"PDD Advogado Rezende","423872":"PDD Advogado Rezende","424365":"PDD Advogado Rezende","427914":"PDD Advogado Rezende","748872":"PDD Advogado Rezende","749288":"PDD - Advogado Henrique","749650":"PDD Advogado Rezende","765613":"PDD Advogado Rezende","766422":"PDD Advogado Rezende","767023":"PDD Advogado Rezende","771827":"PDD - Advogado Felipe","773391":"PDD Advogado Rezende","777527":"PDD Advogado Rezende","778367":"PDD Advogado Rezende","779050":"PDD Advogado Rezende","790473":"PDD Advogado Rezende","790599":"PDD Advogado Rezende","791646":"PDD Advogado Rezende","792640":"PDD Advogado Rezende","793504":"PDD Advogado Rezende","794479":"PDD Advogado Rezende","797061":"PDD Advogado Rezende","799075":"PDD Advogado Rezende"};
 const CONTENCIOSO_PDD_SEED_ROWS = [{"cod":"400327","nome":"RESTAURANTE AMORE GUSTO E","escritorio":"PDD Advogado Rezende","divida":550.17,"raw":{"Conta do Razão":"1104010101","Codigo":400327,"Cliente":"RESTAURANTE AMORE GUSTO E","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":550.17,"2025":0,"2026":0,"Total":550.17,"PECLD":-550.17,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"401761","nome":"JPCRIS BAR RESTAURANTE E","escritorio":"PDD Advogado Rezende","divida":339.74,"raw":{"Conta do Razão":"1104010101","Codigo":401761,"Cliente":"JPCRIS BAR RESTAURANTE E","2019":0,"2020":0,"2021":0,"2022":0,"2023":339.74,"2024":0,"2025":0,"2026":0,"Total":339.74,"PECLD":-339.74,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"401763","nome":"MS BAR E RESTAURANTE LTDA","escritorio":"PDD Advogado Rezende","divida":339.74,"raw":{"Conta do Razão":"1104010101","Codigo":401763,"Cliente":"MS BAR E RESTAURANTE LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":339.74,"2024":0,"2025":0,"2026":0,"Total":339.74,"PECLD":-339.74,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"401842","nome":"NANCY SNACKBAR LTDA","escritorio":"PDD Advogado Rezende","divida":377.13,"raw":{"Conta do Razão":"1104010101","Codigo":401842,"Cliente":"NANCY SNACKBAR LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":0,"2025":377.13,"2026":0,"Total":377.13,"PECLD":-377.13,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"401958","nome":"SEMPRE FRESCO COM.DE ALIM","escritorio":"PDD Advogado Rezende","divida":339.74,"raw":{"Conta do Razão":"1104010101","Codigo":401958,"Cliente":"SEMPRE FRESCO COM.DE ALIM","2019":0,"2020":0,"2021":0,"2022":0,"2023":339.74,"2024":0,"2025":0,"2026":0,"Total":339.74,"PECLD":-339.74,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"401964","nome":"OR KOSHER SERVICE E RESTA","escritorio":"PDD Advogado Rezende","divida":603.41,"raw":{"Conta do Razão":"1104010101","Codigo":401964,"Cliente":"OR KOSHER SERVICE E RESTA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":603.41,"2025":0,"2026":0,"Total":603.41,"PECLD":-603.41,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"402646","nome":"NAGO GASTROBAR LTDA","escritorio":"PDD Advogado Rezende","divida":339.74,"raw":{"Conta do Razão":"1104010101","Codigo":402646,"Cliente":"NAGO GASTROBAR LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":339.74,"2024":0,"2025":0,"2026":0,"Total":339.74,"PECLD":-339.74,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"402718","nome":"BAR SANTINHOS LTDA","escritorio":"PDD Advogado Rezende","divida":352.08,"raw":{"Conta do Razão":"1104010101","Codigo":402718,"Cliente":"BAR SANTINHOS LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.08,"2025":0,"2026":0,"Total":352.08,"PECLD":-352.08,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"402902","nome":"EMBARXADOR CHOPERIA LTDA","escritorio":"PDD Advogado Rezende","divida":352.56,"raw":{"Conta do Razão":"1104010101","Codigo":402902,"Cliente":"EMBARXADOR CHOPERIA LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.56,"2025":0,"2026":0,"Total":352.56,"PECLD":-352.56,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"403253","nome":"BODEGAS","escritorio":"PDD Advogado Rezende","divida":655.89,"raw":{"Conta do Razão":"1104010101","Codigo":403253,"Cliente":"BODEGAS","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":655.89,"2025":0,"2026":0,"Total":655.89,"PECLD":-655.89,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"403960","nome":"ILHA DO PATO- BAR E CHOPE","escritorio":"PDD Advogado Rezende","divida":679.48,"raw":{"Conta do Razão":"1104010101","Codigo":403960,"Cliente":"ILHA DO PATO- BAR E CHOPE","2019":0,"2020":0,"2021":0,"2022":0,"2023":679.48,"2024":0,"2025":0,"2026":0,"Total":679.48,"PECLD":-679.48,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"404156","nome":"EURO PIRACICABA PR.ALIMEN","escritorio":"PDD Advogado Rezende","divida":1567.53,"raw":{"Conta do Razão":"1104010101","Codigo":404156,"Cliente":"EURO PIRACICABA PR.ALIMEN","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":1567.53,"2025":0,"2026":0,"Total":1567.53,"PECLD":-1567.53,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"406168","nome":"LIDIA COMERCIO DE ALIMENT","escritorio":"PDD Advogado Rezende","divida":241.24,"raw":{"Conta do Razão":"1104010101","Codigo":406168,"Cliente":"LIDIA COMERCIO DE ALIMENT","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":241.24,"2025":0,"2026":0,"Total":241.24,"PECLD":-241.24,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"406172","nome":"MISS SAIGON RESTAURANTE L","escritorio":"PDD Advogado Rezende","divida":803.73,"raw":{"Conta do Razão":"1104010101","Codigo":406172,"Cliente":"MISS SAIGON RESTAURANTE L","2019":0,"2020":0,"2021":0,"2022":0,"2023":803.73,"2024":0,"2025":0,"2026":0,"Total":803.73,"PECLD":-803.73,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"406964","nome":"MAKENAILS CABELEIREIROS E","escritorio":"PDD Advogado Rezende","divida":359.73,"raw":{"Conta do Razão":"1104010101","Codigo":406964,"Cliente":"MAKENAILS CABELEIREIROS E","2019":0,"2020":0,"2021":0,"2022":0,"2023":359.73,"2024":0,"2025":0,"2026":0,"Total":359.73,"PECLD":-359.73,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"407276","nome":"REINALDO SILVA MATIAS","escritorio":"PDD Advogado Rezende","divida":956.4300000000001,"raw":{"Conta do Razão":"1104010101","Codigo":407276,"Cliente":"REINALDO SILVA MATIAS","2019":0,"2020":0,"2021":0,"2022":0,"2023":423.71,"2024":532.72,"2025":0,"2026":0,"Total":956.4300000000001,"PECLD":-956.4300000000001,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"407917","nome":"E-MONTEIRO DIST.ALIM.FOOD","escritorio":"PDD Advogado Rezende","divida":17845.81,"raw":{"Conta do Razão":"1104010101","Codigo":407917,"Cliente":"E-MONTEIRO DIST.ALIM.FOOD","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":17845.81,"2025":0,"2026":0,"Total":17845.81,"PECLD":-17845.81,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"409207","nome":"GIIRO RESTAURANTE LTDA","escritorio":"PDD Advogado Rezende","divida":1416.75,"raw":{"Conta do Razão":"1104010101","Codigo":409207,"Cliente":"GIIRO RESTAURANTE LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":1416.75,"2025":0,"2026":0,"Total":1416.75,"PECLD":-1416.75,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"410367","nome":"GASTRO BAR AMIGOS SÃO CAE","escritorio":"PDD Advogado Rezende","divida":783.77,"raw":{"Conta do Razão":"1104010101","Codigo":410367,"Cliente":"GASTRO BAR AMIGOS SÃO CAE","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":783.77,"2025":0,"2026":0,"Total":783.77,"PECLD":-783.77,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"415444","nome":"AVANTI FIT ACADEMIA LTDA","escritorio":"PDD Advogado Rezende","divida":1167.82,"raw":{"Conta do Razão":"1104010101","Codigo":415444,"Cliente":"AVANTI FIT ACADEMIA LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":1167.82,"2025":0,"2026":0,"Total":1167.82,"PECLD":-1167.82,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418255","nome":"BAR RESTAURANT ESQUINA DA","escritorio":"PDD Advogado Rezende","divida":367.93,"raw":{"Conta do Razão":"1104010101","Codigo":418255,"Cliente":"BAR RESTAURANT ESQUINA DA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":367.93,"2025":0,"2026":0,"Total":367.93,"PECLD":-367.93,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418495","nome":"53.428.020 WILMA MARTINS","escritorio":"PDD Advogado Rezende","divida":352.58,"raw":{"Conta do Razão":"1104010101","Codigo":418495,"Cliente":"53.428.020 WILMA MARTINS","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.58,"2025":0,"2026":0,"Total":352.58,"PECLD":-352.58,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418497","nome":"BUTECO LION BEER 2 LTDA","escritorio":"PDD Advogado Rezende","divida":352.58,"raw":{"Conta do Razão":"1104010101","Codigo":418497,"Cliente":"BUTECO LION BEER 2 LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.58,"2025":0,"2026":0,"Total":352.58,"PECLD":-352.58,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418506","nome":"CABRAL ASSADOS NA PARRILL","escritorio":"PDD Advogado Rezende","divida":655.89,"raw":{"Conta do Razão":"1104010101","Codigo":418506,"Cliente":"CABRAL ASSADOS NA PARRILL","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":655.89,"2025":0,"2026":0,"Total":655.89,"PECLD":-655.89,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418568","nome":"SANTO BOLINHO LTDA","escritorio":"PDD Advogado Rezende","divida":352.08,"raw":{"Conta do Razão":"1104010101","Codigo":418568,"Cliente":"SANTO BOLINHO LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.08,"2025":0,"2026":0,"Total":352.08,"PECLD":-352.08,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418591","nome":"F.A.N. MOLINA","escritorio":"PDD Advogado Rezende","divida":507.9,"raw":{"Conta do Razão":"1104010101","Codigo":418591,"Cliente":"F.A.N. MOLINA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":507.9,"2025":0,"2026":0,"Total":507.9,"PECLD":-507.9,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"418668","nome":"TIAGO PESSOA DE LIMA","escritorio":"PDD Advogado Rezende","divida":352.56,"raw":{"Conta do Razão":"1104010101","Codigo":418668,"Cliente":"TIAGO PESSOA DE LIMA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":352.56,"2025":0,"2026":0,"Total":352.56,"PECLD":-352.56,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"422938","nome":"ATHENA-BAR, REST.E EVENTO","escritorio":"PDD Advogado Rezende","divida":502.09,"raw":{"Conta do Razão":"1104010101","Codigo":422938,"Cliente":"ATHENA-BAR, REST.E EVENTO","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":502.09,"2025":0,"2026":0,"Total":502.09,"PECLD":-502.09,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"423872","nome":"KAZUKA SUSHI LTDA","escritorio":"PDD Advogado Rezende","divida":783.76,"raw":{"Conta do Razão":"1104010101","Codigo":423872,"Cliente":"KAZUKA SUSHI LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":783.76,"2025":0,"2026":0,"Total":783.76,"PECLD":-783.76,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"424365","nome":"ELIZABETH ZAIDA TORRES PA","escritorio":"PDD Advogado Rezende","divida":532.72,"raw":{"Conta do Razão":"1104010101","Codigo":424365,"Cliente":"ELIZABETH ZAIDA TORRES PA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":532.72,"2025":0,"2026":0,"Total":532.72,"PECLD":-532.72,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"427914","nome":"LAMERAS BAR LTDA","escritorio":"PDD Advogado Rezende","divida":492.54,"raw":{"Conta do Razão":"1104010101","Codigo":427914,"Cliente":"LAMERAS BAR LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":0,"2025":492.54,"2026":0,"Total":492.54,"PECLD":-492.54,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"748872","nome":"FREITAS BAR E RESTAURANTE","escritorio":"PDD Advogado Rezende","divida":1903.49,"raw":{"Conta do Razão":"1104010101","Codigo":748872,"Cliente":"FREITAS BAR E RESTAURANTE","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":1903.49,"2025":0,"2026":0,"Total":1903.49,"PECLD":-1903.49,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"749288","nome":"N. T. DELTA NORTE COMERCI","escritorio":"PDD - Advogado Henrique","divida":48626.880000000005,"raw":{"Conta do Razão":"1104010101","Codigo":749288,"Cliente":"N. T. DELTA NORTE COMERCI","2019":1863.58,"2020":42596.46,"2021":0,"2022":0,"2023":0,"2024":4166.84,"2025":0,"2026":0,"Total":48626.880000000005,"PECLD":-48626.880000000005,"Observação Delta":"PDD - Advogado Henriqte"}},{"cod":"749650","nome":"LHE E ALIMENTOS, LTDA","escritorio":"PDD Advogado Rezende","divida":3180.92,"raw":{"Conta do Razão":"1104010101","Codigo":749650,"Cliente":"LHE E ALIMENTOS, LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":3180.92,"2025":0,"2026":0,"Total":3180.92,"PECLD":-3180.92,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"765613","nome":"REST.E CHOPERIA VILA ROST","escritorio":"PDD Advogado Rezende","divida":414.64,"raw":{"Conta do Razão":"1104010101","Codigo":765613,"Cliente":"REST.E CHOPERIA VILA ROST","2019":0,"2020":0,"2021":0,"2022":0,"2023":414.64,"2024":0,"2025":0,"2026":0,"Total":414.64,"PECLD":-414.64,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"766422","nome":"STRONG WASH MOTORCYCLE LA","escritorio":"PDD Advogado Rezende","divida":345.52,"raw":{"Conta do Razão":"1104010101","Codigo":766422,"Cliente":"STRONG WASH MOTORCYCLE LA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":345.52,"2025":0,"2026":0,"Total":345.52,"PECLD":-345.52,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"767023","nome":"MONTEIRO DIST.ALIM.FOOD S","escritorio":"PDD Advogado Rezende","divida":3088.53,"raw":{"Conta do Razão":"1104010101","Codigo":767023,"Cliente":"MONTEIRO DIST.ALIM.FOOD S","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":3088.53,"2025":0,"2026":0,"Total":3088.53,"PECLD":-3088.53,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"771827","nome":"FERREIRA COM REPR LTDA","escritorio":"PDD - Advogado Felipe","divida":142383.53,"raw":{"Conta do Razão":"1104010101","Codigo":771827,"Cliente":"FERREIRA COM REPR LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":89050.38,"2024":53333.15,"2025":0,"2026":0,"Total":142383.53,"PECLD":-142383.53000000003,"Observação Delta":"PDD - Advogado Felipe"}},{"cod":"773391","nome":"EMPORIO DAS CAPSULAS LTDA","escritorio":"PDD Advogado Rezende","divida":2377.94,"raw":{"Conta do Razão":"1104010101","Codigo":773391,"Cliente":"EMPORIO DAS CAPSULAS LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":2377.94,"2024":0,"2025":0,"2026":0,"Total":2377.94,"PECLD":-2377.94,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"777527","nome":"DENILSON ALMEIDA DOS SANT","escritorio":"PDD Advogado Rezende","divida":27305.92,"raw":{"Conta do Razão":"1104010101","Codigo":777527,"Cliente":"DENILSON ALMEIDA DOS SANT","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":27759.24,"2025":-453.32000000000335,"2026":0,"Total":27305.92,"PECLD":-27305.920000000002,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"778367","nome":"RESTAUR.BICOLOR CULINARIA","escritorio":"PDD Advogado Rezende","divida":532.39,"raw":{"Conta do Razão":"1104010101","Codigo":778367,"Cliente":"RESTAUR.BICOLOR CULINARIA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":532.39,"2025":0,"2026":0,"Total":532.39,"PECLD":-532.39,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"779050","nome":"REST.NUTRICORPO NUTR.EQUI","escritorio":"PDD Advogado Rezende","divida":1135.46,"raw":{"Conta do Razão":"1104010101","Codigo":779050,"Cliente":"REST.NUTRICORPO NUTR.EQUI","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":1135.46,"2025":0,"2026":0,"Total":1135.46,"PECLD":-1135.46,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"790473","nome":"SANTO DICA LTDA","escritorio":"PDD Advogado Rezende","divida":1671.6200000000001,"raw":{"Conta do Razão":"1104010101","Codigo":790473,"Cliente":"SANTO DICA LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":1671.6200000000001,"2024":0,"2025":0,"2026":0,"Total":1671.6200000000001,"PECLD":-1671.6200000000001,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"790599","nome":"NOOWA COMERCIO DE ALIMENT","escritorio":"PDD Advogado Rezende","divida":783.77,"raw":{"Conta do Razão":"1104010101","Codigo":790599,"Cliente":"NOOWA COMERCIO DE ALIMENT","2019":0,"2020":0,"2021":0,"2022":0,"2023":783.77,"2024":0,"2025":0,"2026":0,"Total":783.77,"PECLD":-783.77,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"791646","nome":"CANTINA DO NAGATA MOOCA L","escritorio":"PDD Advogado Rezende","divida":930.31,"raw":{"Conta do Razão":"1104010101","Codigo":791646,"Cliente":"CANTINA DO NAGATA MOOCA L","2019":0,"2020":0,"2021":0,"2022":0,"2023":930.31,"2024":0,"2025":0,"2026":0,"Total":930.31,"PECLD":-930.31,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"792640","nome":"ZPN RESTAURANTE LTDA","escritorio":"PDD Advogado Rezende","divida":705.39,"raw":{"Conta do Razão":"1104010101","Codigo":792640,"Cliente":"ZPN RESTAURANTE LTDA","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":705.39,"2025":0,"2026":0,"Total":705.39,"PECLD":-705.39,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"793504","nome":"ROMEZAL PADARIA PORTUGUES","escritorio":"PDD Advogado Rezende","divida":3957.1799999999994,"raw":{"Conta do Razão":"1104010101","Codigo":793504,"Cliente":"ROMEZAL PADARIA PORTUGUES","2019":0,"2020":0,"2021":0,"2022":0,"2023":0,"2024":0,"2025":3957.1799999999994,"2026":0,"Total":3957.1799999999994,"PECLD":-3957.1799999999994,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"794479","nome":"B B N-BIWA BIRO DE NEGÓCI","escritorio":"PDD Advogado Rezende","divida":1420.58,"raw":{"Conta do Razão":"1104010101","Codigo":794479,"Cliente":"B B N-BIWA BIRO DE NEGÓCI","2019":0,"2020":0,"2021":0,"2022":0,"2023":1420.58,"2024":0,"2025":0,"2026":0,"Total":1420.58,"PECLD":-1420.58,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"797061","nome":"M&P UNIMAX DISTRIB.ALIMEN","escritorio":"PDD Advogado Rezende","divida":21501.78,"raw":{"Conta do Razão":"1104010101","Codigo":797061,"Cliente":"M&P UNIMAX DISTRIB.ALIMEN","2019":0,"2020":0,"2021":0,"2022":0,"2023":21501.78,"2024":0,"2025":0,"2026":0,"Total":21501.78,"PECLD":-21501.78,"Observação Delta":"PDD Advogado Rezende"}},{"cod":"799075","nome":"LB PARRILLA RESTAURANTE L","escritorio":"PDD Advogado Rezende","divida":532.72,"raw":{"Conta do Razão":"1104010101","Codigo":799075,"Cliente":"LB PARRILLA RESTAURANTE L","2019":0,"2020":0,"2021":0,"2022":0,"2023":532.72,"2024":0,"2025":0,"2026":0,"Total":532.72,"PECLD":-532.72,"Observação Delta":"PDD Advogado Rezende"}}];
 let _afCcSub = 'lista'; // lista | pdd
@@ -14927,19 +15068,48 @@ let _contenciosoPddExtra = null; // [{cod, escritorio, ...cols}]
 let _contenciosoPddSource = null; // linhas PDD (seed ou última importação)
 let _contenciosoEscritoriosSupaOk = null; // null | true | false
 
+function limparLegacyContenciosoMetaLS() {
+  try {
+    localStorage.removeItem(CONTENCIOSO_ESCRITORIOS_KEY);
+    localStorage.removeItem(CONTENCIOSO_ESCRITORIOS_OPTS_KEY);
+    localStorage.removeItem(CONTENCIOSO_PDD_EXTRA_KEY);
+    localStorage.removeItem(CONTENCIOSO_PDD_SOURCE_KEY);
+  } catch (_) {}
+}
+
+/** Migração única de escritorios/PDD/opts do localStorage para memória. */
+function migrarContenciosoMetaDeLocalStorage() {
+  try {
+    if (!_contenciosoEscritoriosCache) {
+      const m = JSON.parse(localStorage.getItem(CONTENCIOSO_ESCRITORIOS_KEY) || 'null');
+      if (m && typeof m === 'object') _contenciosoEscritoriosCache = m;
+    }
+    if (!_contenciosoEscritoriosOpts) {
+      const o = JSON.parse(localStorage.getItem(CONTENCIOSO_ESCRITORIOS_OPTS_KEY) || 'null');
+      if (Array.isArray(o) && o.length) _contenciosoEscritoriosOpts = o.filter(Boolean);
+    }
+    if (!_contenciosoPddExtra) {
+      const e = JSON.parse(localStorage.getItem(CONTENCIOSO_PDD_EXTRA_KEY) || 'null');
+      if (Array.isArray(e)) _contenciosoPddExtra = e;
+    }
+    if (!_contenciosoPddSource) {
+      const s = JSON.parse(localStorage.getItem(CONTENCIOSO_PDD_SOURCE_KEY) || 'null');
+      if (Array.isArray(s) && s.length) _contenciosoPddSource = s;
+    }
+  } catch (_) {}
+  limparLegacyContenciosoMetaLS();
+}
+
 function readContenciosoEscritoriosMap() {
   if (_contenciosoEscritoriosCache) return _contenciosoEscritoriosCache;
-  try {
-    _contenciosoEscritoriosCache = JSON.parse(localStorage.getItem(CONTENCIOSO_ESCRITORIOS_KEY) || '{}') || {};
-  } catch (_) {
-    _contenciosoEscritoriosCache = {};
-  }
+  migrarContenciosoMetaDeLocalStorage();
+  if (!_contenciosoEscritoriosCache) _contenciosoEscritoriosCache = {};
   return _contenciosoEscritoriosCache;
 }
 
 function writeContenciosoEscritoriosMap(map) {
   _contenciosoEscritoriosCache = map || {};
-  try { localStorage.setItem(CONTENCIOSO_ESCRITORIOS_KEY, JSON.stringify(_contenciosoEscritoriosCache)); } catch (_) {}
+  limparLegacyContenciosoMetaLS();
 }
 
 function getEscritorioContencioso(cod) {
@@ -14949,14 +15119,14 @@ function getEscritorioContencioso(cod) {
 }
 
 function readContenciosoEscritoriosOpts() {
-  if (_contenciosoEscritoriosOpts) return _contenciosoEscritoriosOpts;
-  try {
-    const arr = JSON.parse(localStorage.getItem(CONTENCIOSO_ESCRITORIOS_OPTS_KEY) || '[]');
-    _contenciosoEscritoriosOpts = Array.isArray(arr) ? arr.filter(Boolean) : [];
-  } catch (_) {
-    _contenciosoEscritoriosOpts = [];
+  if (_contenciosoEscritoriosOpts) {
+    const fromMap = Object.values(readContenciosoEscritoriosMap()).filter(Boolean);
+    const set = new Set([..._contenciosoEscritoriosOpts, ...fromMap].map(s => String(s).trim()).filter(Boolean));
+    _contenciosoEscritoriosOpts = [...set].sort((a, b) => a.localeCompare(b, 'pt'));
+    return _contenciosoEscritoriosOpts;
   }
-  // Incluir nomes já atribuídos
+  migrarContenciosoMetaDeLocalStorage();
+  if (!_contenciosoEscritoriosOpts) _contenciosoEscritoriosOpts = [];
   const fromMap = Object.values(readContenciosoEscritoriosMap()).filter(Boolean);
   const set = new Set([..._contenciosoEscritoriosOpts, ...fromMap].map(s => String(s).trim()).filter(Boolean));
   _contenciosoEscritoriosOpts = [...set].sort((a, b) => a.localeCompare(b, 'pt'));
@@ -14971,32 +15141,24 @@ function addEscritorioOpt(nome) {
     opts.push(n);
     opts.sort((a, b) => a.localeCompare(b, 'pt'));
     _contenciosoEscritoriosOpts = opts;
-    try { localStorage.setItem(CONTENCIOSO_ESCRITORIOS_OPTS_KEY, JSON.stringify(opts)); } catch (_) {}
   }
 }
 
 function readContenciosoPddExtra() {
   if (_contenciosoPddExtra) return _contenciosoPddExtra;
-  try {
-    const arr = JSON.parse(localStorage.getItem(CONTENCIOSO_PDD_EXTRA_KEY) || '[]');
-    _contenciosoPddExtra = Array.isArray(arr) ? arr : [];
-  } catch (_) {
-    _contenciosoPddExtra = [];
-  }
+  migrarContenciosoMetaDeLocalStorage();
+  if (!_contenciosoPddExtra) _contenciosoPddExtra = [];
   return _contenciosoPddExtra;
 }
 
 function writeContenciosoPddExtra(rows) {
   _contenciosoPddExtra = Array.isArray(rows) ? rows : [];
-  try { localStorage.setItem(CONTENCIOSO_PDD_EXTRA_KEY, JSON.stringify(_contenciosoPddExtra)); } catch (_) {}
+  limparLegacyContenciosoMetaLS();
 }
 
 function readContenciosoPddSource() {
   if (_contenciosoPddSource) return _contenciosoPddSource;
-  try {
-    const arr = JSON.parse(localStorage.getItem(CONTENCIOSO_PDD_SOURCE_KEY) || 'null');
-    if (Array.isArray(arr) && arr.length) _contenciosoPddSource = arr;
-  } catch (_) {}
+  migrarContenciosoMetaDeLocalStorage();
   if (!_contenciosoPddSource) {
     _contenciosoPddSource = (typeof CONTENCIOSO_PDD_SEED_ROWS !== 'undefined' && CONTENCIOSO_PDD_SEED_ROWS) || [];
   }
@@ -15005,12 +15167,96 @@ function readContenciosoPddSource() {
 
 function writeContenciosoPddSource(rows) {
   _contenciosoPddSource = Array.isArray(rows) ? rows : [];
-  try { localStorage.setItem(CONTENCIOSO_PDD_SOURCE_KEY, JSON.stringify(_contenciosoPddSource)); } catch (_) {}
+  limparLegacyContenciosoMetaLS();
+}
+
+function compactPddSourceRow(r) {
+  if (!r || typeof r !== 'object') return r;
+  return {
+    cod: r.cod || '',
+    nome: r.nome || '',
+    escritorio: r.escritorio || '',
+    divida: r.divida != null ? r.divida : null,
+    canal: r.canal || '',
+    vendedor: r.vendedor || '',
+  };
+}
+
+/** Publica opts + PDD (fonte/extra) em lista_clientes id=contencioso_meta. */
+async function publicarContenciosoMetaSupabase() {
+  try {
+    const iso = new Date().toISOString();
+    const payload = {
+      opts: readContenciosoEscritoriosOpts(),
+      pddSource: (readContenciosoPddSource() || []).map(compactPddSourceRow),
+      pddExtra: (readContenciosoPddExtra() || []).map(compactPddSourceRow),
+    };
+    const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
+      method: 'POST',
+      headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ id: CONTENCIOSO_META_SUPA_ID, data: payload, atualizado_em: iso }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.warn('publicarContenciosoMetaSupabase HTTP', res.status, errText.slice(0, 200));
+      return { ok: false };
+    }
+    _contenciosoMetaTs = Date.parse(iso) || Date.now();
+    limparLegacyContenciosoMetaLS();
+    return { ok: true };
+  } catch (e) {
+    console.warn('publicarContenciosoMetaSupabase:', e.message || e);
+    return { ok: false };
+  }
+}
+
+/** Puxa meta Contencioso do Supabase; se remoto vazio e há dados em memória/legado, publica. */
+async function sincronizarContenciosoMeta() {
+  try {
+    migrarContenciosoMetaDeLocalStorage();
+    const res = await fetch(
+      `${LISTA_CLIENTES_SUPA_URL}?id=eq.${CONTENCIOSO_META_SUPA_ID}&select=data,atualizado_em`,
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+    );
+    if (!res.ok) {
+      await publicarContenciosoMetaSupabase();
+      return;
+    }
+    const rows = await res.json();
+    const remoteRow = Array.isArray(rows) && rows[0] ? rows[0] : null;
+    const data = remoteRow && remoteRow.data && typeof remoteRow.data === 'object' ? remoteRow.data : null;
+    const remoteTs = remoteRow && remoteRow.atualizado_em ? (Date.parse(remoteRow.atualizado_em) || 0) : 0;
+    const hasRemote = !!(data && (
+      (Array.isArray(data.opts) && data.opts.length)
+      || (Array.isArray(data.pddSource) && data.pddSource.length)
+      || (Array.isArray(data.pddExtra) && data.pddExtra.length)
+    ));
+    const hasLocal = !!(
+      (_contenciosoEscritoriosOpts && _contenciosoEscritoriosOpts.length)
+      || (_contenciosoPddSource && _contenciosoPddSource.length)
+      || (_contenciosoPddExtra && _contenciosoPddExtra.length)
+    );
+    if (!hasRemote && hasLocal) {
+      await publicarContenciosoMetaSupabase();
+      return;
+    }
+    if (hasRemote && (!_contenciosoMetaTs || remoteTs >= _contenciosoMetaTs)) {
+      if (Array.isArray(data.opts)) _contenciosoEscritoriosOpts = data.opts.filter(Boolean);
+      if (Array.isArray(data.pddSource) && data.pddSource.length) _contenciosoPddSource = data.pddSource;
+      if (Array.isArray(data.pddExtra)) _contenciosoPddExtra = data.pddExtra;
+      _contenciosoMetaTs = remoteTs || Date.now();
+      limparLegacyContenciosoMetaLS();
+    }
+  } catch (e) {
+    console.warn('sincronizarContenciosoMeta:', e.message || e);
+  }
 }
 
 async function loadContenciosoEscritoriosFromSupabase() {
   if (_contenciosoEscritoriosSupaOk === false) return;
   try {
+    // Se tabela vazia e há mapa legado em memória, publica (bootstrap)
+    migrarContenciosoMetaDeLocalStorage();
     const res = await fetch(`${CONTENCIOSO_ESCRITORIOS_URL}?select=cod,escritorio&limit=5000`, { headers: HEADERS });
     if (res.status === 404 || res.status === 406) {
       _contenciosoEscritoriosSupaOk = false;
@@ -15023,7 +15269,26 @@ async function loadContenciosoEscritoriosFromSupabase() {
     const dados = await res.json();
     if (!Array.isArray(dados)) return;
     _contenciosoEscritoriosSupaOk = true;
-    const map = { ...readContenciosoEscritoriosMap() };
+    if (!dados.length) {
+      const localMap = readContenciosoEscritoriosMap();
+      const entries = Object.entries(localMap).filter(([k, v]) => k && k !== '0' && String(v || '').trim());
+      if (entries.length) {
+        for (let i = 0; i < entries.length; i += 50) {
+          const lote = entries.slice(i, i + 50).map(([cod, escritorio]) => ({
+            cod, escritorio: String(escritorio).trim(), updated_at: new Date().toISOString(),
+          }));
+          try {
+            await fetch(CONTENCIOSO_ESCRITORIOS_URL, {
+              method: 'POST',
+              headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+              body: JSON.stringify(lote),
+            });
+          } catch (_) { break; }
+        }
+      }
+      return;
+    }
+    const map = {};
     dados.forEach(r => {
       const k = normCod(r.cod);
       const e = String(r.escritorio || '').trim();
@@ -15086,7 +15351,10 @@ async function setEscritorioContencioso(cod, escritorio, opts) {
     }
     sel.value = nome;
   }
-  if (!(opts && opts.skipSupa)) await persistEscritorioContenciosoSupabase(k, nome);
+  if (!(opts && opts.skipSupa)) {
+    await persistEscritorioContenciosoSupabase(k, nome);
+    try { await publicarContenciosoMetaSupabase(); } catch (_) {}
+  }
 }
 
 function htmlSelectEscritorioContencioso(cod) {
@@ -15358,6 +15626,7 @@ async function importAfPddAdvogados(ev) {
 
   const nMap = Object.keys(parsed.map).length;
   const nFora = result.nFora;
+  try { await publicarContenciosoMetaSupabase(); } catch (_) {}
   toast(`PDD importado: ${nMap} com escritório · ${nFora} só no Excel (fora da lista Contencioso).`);
   if (typeof loadAfContencioso === 'function') await loadAfContencioso();
   if (nFora > 0) showAfContenciosoSub('pdd');
@@ -15429,13 +15698,22 @@ window.importAfPddAdvogados = importAfPddAdvogados;
 window.onAfEscritorioChange = onAfEscritorioChange;
 window.setEscritorioContencioso = setEscritorioContencioso;
 
-function readContenciosoLocal() {
-  try { return JSON.parse(localStorage.getItem(CONTENCIOSO_LS_KEY) || '[]'); }
-  catch(e) { return []; }
+function limparLegacyContenciosoPendentesLS() {
+  try { localStorage.removeItem(CONTENCIOSO_LS_KEY); } catch (_) {}
 }
 
-function writeContenciosoLocal(lista) {
-  try { localStorage.setItem(CONTENCIOSO_LS_KEY, JSON.stringify(lista)); } catch(e) {}
+/** Migração única: pedidos locais → memória; depois só Supabase. */
+function migrarContenciosoPendentesDeLocalStorage() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(CONTENCIOSO_LS_KEY) || '[]');
+    if (Array.isArray(arr) && arr.length) {
+      for (const d of arr) {
+        const k = normCod(d && d.cod);
+        if (k && !scContenciosoPendentes.has(k)) scContenciosoPendentes.set(k, d);
+      }
+    }
+  } catch (_) {}
+  limparLegacyContenciosoPendentesLS();
 }
 
 function clienteTemContenciosoPendente(cod) {
@@ -15460,10 +15738,11 @@ async function loadSCContenciosoPendentes(forceRefresh = false) {
   }
   return sessionCacheRun('contencioso', async () => {
     scContenciosoPendentes = new Map();
+    migrarContenciosoPendentesDeLocalStorage();
     const idsApagar = [];
     const seen = new Set();
     const contenciosoSap = new Set(
-      (JSON.parse(localStorage.getItem('delta_sap_contencioso') || '[]')).map(normCod)
+      (typeof getSapContenciosoCods === 'function' ? getSapContenciosoCods() : []).map(normCod)
     );
 
     const ingest = (lista) => {
@@ -15483,6 +15762,11 @@ async function loadSCContenciosoPendentes(forceRefresh = false) {
       }
     };
 
+    // Re-ingest migrated memory first (antes do fetch, para ids órfãos)
+    const migrated = [...scContenciosoPendentes.values()];
+    scContenciosoPendentes = new Map();
+    ingest(migrated);
+
     try {
       const res = await fetch(`${CONTENCIOSO_URL}?select=*&order=criado_em.desc`, { headers: HEADERS });
       if (res.ok) {
@@ -15493,12 +15777,26 @@ async function loadSCContenciosoPendentes(forceRefresh = false) {
       console.warn('loadSCContenciosoPendentes supabase:', e.message);
     }
 
-    // Fallback / merge localStorage
-    const local = readContenciosoLocal();
-    ingest(local.filter(d => !scContenciosoPendentes.has(normCod(d.cod))));
+    // Bootstrap: se Supabase vazio e há migrados, republica
+    if (!scContenciosoPendentes.size && migrated.length) {
+      for (const p of migrated) {
+        try {
+          await fetch(CONTENCIOSO_URL, {
+            method: 'POST',
+            headers: { ...HEADERS, Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              cod: p.cod, nome: p.nome, vendedor: p.vendedor,
+              valor_divida: p.valor_divida, dias_atraso: p.dias_atraso,
+              ultima_compra: p.ultima_compra, observacoes: p.observacoes || '',
+              solicitado_por: p.solicitado_por, criado_em: p.criado_em,
+            }),
+          });
+        } catch (_) {}
+      }
+      ingest(migrated);
+    }
 
-    // Persist cleaned local mirror
-    writeContenciosoLocal([...scContenciosoPendentes.values()]);
+    limparLegacyContenciosoPendentesLS();
     sessionCacheTouch('contencioso');
     if (idsApagar.length) await apagarContenciosoPorIds(idsApagar);
   });
@@ -15507,9 +15805,6 @@ async function loadSCContenciosoPendentes(forceRefresh = false) {
 async function guardarPedidoContencioso(pedido) {
   const k = normCod(pedido.cod);
   scContenciosoPendentes.set(k, pedido);
-  const local = readContenciosoLocal().filter(d => normCod(d.cod) !== k);
-  local.unshift(pedido);
-  writeContenciosoLocal(local);
   try {
     const res = await fetch(CONTENCIOSO_URL, {
       method: 'POST',
@@ -15531,7 +15826,6 @@ async function guardarPedidoContencioso(pedido) {
       if (Array.isArray(rows) && rows[0]?.id) {
         pedido.id = rows[0].id;
         scContenciosoPendentes.set(k, pedido);
-        writeContenciosoLocal([...scContenciosoPendentes.values()]);
       }
     }
   } catch(e) {
@@ -15550,7 +15844,6 @@ async function removerPedidosContenciosoPorCods(cods) {
     if (d.id) ids.push(d.id);
     removidos++;
   }
-  writeContenciosoLocal([...scContenciosoPendentes.values()]);
   if (ids.length) await apagarContenciosoPorIds(ids);
   // também por código (caso sem id)
   for (const c of set) {
@@ -20555,6 +20848,8 @@ async function loadAfContencioso() {
       typeof loadSCContenciosoPendentes === 'function' ? loadSCContenciosoPendentes() : Promise.resolve(),
       typeof scLoadDividasFromSupabase === 'function' ? scLoadDividasFromSupabase() : Promise.resolve(),
       typeof loadContenciosoEscritoriosFromSupabase === 'function' ? loadContenciosoEscritoriosFromSupabase() : Promise.resolve(),
+      typeof sincronizarListaContencioso === 'function' ? sincronizarListaContencioso() : Promise.resolve(),
+      typeof sincronizarContenciosoMeta === 'function' ? sincronizarContenciosoMeta() : Promise.resolve(),
     ]);
     if (typeof applyContenciosoPddSeed === 'function') applyContenciosoPddSeed();
     const pend = [...(scContenciosoPendentes?.values?.() || [])]
@@ -20616,11 +20911,11 @@ async function loadAfContencioso() {
         ? `<span style="color:#7f1d1d;font-weight:600;">${listaCc.length}</span> cliente(s) no Contencioso (lista SAP)`
           + (totalDiv > 0 ? ` · Dívida: <b>${formatEur(totalDiv)}</b>` : '')
           + ` · Escritório: <b>${nComEsc}</b>/${listaCc.length}`
-        : 'Nenhum cliente Contencioso na lista carregada (carrega Lista SAP em Dados).';
+        : 'Nenhum cliente Contencioso na lista (sincroniza do Supabase ao abrir; ou carrega Lista SAP em Dados).';
     }
     if (ccEl) {
       if (!listaCc.length) {
-        ccEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Sem clientes Contencioso. Carrega a Lista SAP em Dados se necessário.</div>';
+        ccEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">Sem clientes Contencioso. A lista SAP *13 sincroniza entre PCs — abre esta página noutro browser onde já exista, ou carrega a Lista SAP em Dados.</div>';
       } else {
         const rows = listaCc.map(c => {
           const escVal = c.escritorio || '';
@@ -21278,6 +21573,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   voltarHome(); // abre na seleção de canais (+ Dados)
   try { await carregarListaClientesLocalAsync(); } catch (_) {}
   await sincronizarListaClientes();
+  try { await sincronizarListaContencioso(); } catch (_) {}
+  try { await sincronizarContenciosoMeta(); } catch (_) {}
   try {
     const res = await fetch(SUPA_URL + '?select=id&limit=1', { headers: HEADERS });
     const data = await res.json();
