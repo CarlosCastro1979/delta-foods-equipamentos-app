@@ -11039,11 +11039,7 @@ async function renderClientesContencioso() {
 
 async function exportClientesContenciosoExcel() {
   let lista = window._clientesContenciosoView || getListaContenciosoActiva(document.getElementById('cc-canal')?.value || '');
-  // Respeitar filtros de coluna da tabela visível (se existirem)
-  const tbl = document.querySelector('#panel-contencioso table, #contencioso-content table, #cc-table, table.data-table');
-  // Preferir tabela dentro do bloco Contencioso do canal
-  const ccRoot = document.getElementById('contencioso-lista') || document.getElementById('clientes-contencioso') || document.querySelector('[id*="contencioso"]');
-  const tblCc = (ccRoot && ccRoot.querySelector('table')) || document.querySelector('#cc-content table') || null;
+  const tblCc = document.querySelector('#cc-content table');
   if (typeof filterRowsToVisibleTable === 'function' && tblCc) {
     lista = filterRowsToVisibleTable(lista, tblCc, c => c.cod, 0);
   }
