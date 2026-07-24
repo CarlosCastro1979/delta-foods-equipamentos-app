@@ -3257,7 +3257,7 @@ var _unused_placeholder = 1;
           </select>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" onclick="visCarregarRota()" style="height:36px;">↺ Actualizar</button>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="visExportRotaExcel()" style="height:36px;" title="Exportar lista (código, nome, endereço, rota)">⬇ Excel</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="visExportRotaExcel()" style="height:36px;" title="Exportar lista (código, nome, endereço, rota, prazo de pagamento)">⬇ Excel</button>
       </div>
       <div id="vis-locked-msg" class="vis-locked-banner" style="display:none;">
         🔒 Dia fechado — visitas históricas não podem ser editadas. Só consulta.
@@ -4367,7 +4367,7 @@ function deduplicarListaSAPPorCod(lista) {
 }
 
 // Se o Excel novo vier sem colunas de morada/contacto, não apagar o que já estava na lista.
-const SAP_CAMPOS_RICOS = ['cnpj', 'canal', 'rua', 'nro', 'bairro', 'supl', 'cidade', 'uf', 'email', 'tel1', 'tel2', 'ie', 'zd'];
+const SAP_CAMPOS_RICOS = ['cnpj', 'canal', 'rua', 'nro', 'bairro', 'supl', 'cidade', 'uf', 'email', 'tel1', 'tel2', 'ie', 'zd', 'pagto'];
 const SAP_DETALHE_KEY = 'delta_sap_detalhe';
 const CLIENTES_LS_KEY = 'delta_clientes_sistema';
 const CLIENTES_TS_KEY = 'delta_clientes_ts';
@@ -7982,6 +7982,8 @@ async function carregarListaSAP(event) {
   const iIE     = findH(/inscr.*estad|^ie$|insc\.?\s*est|i\.?\s*e\.?$/);
   // Rota do vendedor (export SAP BR: coluna ZD)
   const iZD     = findH(/^zd$|^z\.?\s*d\.?$|zona\s*de\s*distrib|rota\s*(zd|sap)?$/);
+  // Prazo / condição de pagamento (ZTERM, Cond. pagamento, …)
+  const iPagto  = findH(/cond\.?\s*pag|condi[cç][aã]o(es)?\s*de\s*pag|prazo\s*(de\s*)?pag|zterm|^cpgto$|^pagto$/);
   const getCell = (row, i) => i >= 0 ? String(row[i] ?? '').trim() : '';
 
   if (iCliente === -1 || iNomeFinal === -1) {
@@ -7991,7 +7993,8 @@ async function carregarListaSAP(event) {
 
   // Diagnóstico das colunas (aparece no ecrã de confirmação)
   const colDiag = [
-    ['CNPJ/Fiscal', iCNPJ], ['Canal', iCanal], ['ZD/Rota', iZD], ['Rua', iRua], ['Nº', iNroCol],
+    ['CNPJ/Fiscal', iCNPJ], ['Canal', iCanal], ['ZD/Rota', iZD], ['Prazo pagto', iPagto],
+    ['Rua', iRua], ['Nº', iNroCol],
     ['Bairro', iBairro], ['Cidade', iCidade], ['Email', iEmail], ['Tel', iTel1], ['IE', iIE],
   ];
 
@@ -8027,6 +8030,7 @@ async function carregarListaSAP(event) {
     const rowObj = {
       cod, nome, cep, cnpj, canal,
       zd: getCell(row, iZD),
+      pagto: getCell(row, iPagto),
       rua, nro,
       bairro: getCell(row, iBairro),
       supl:   getCell(row, iCompl),
@@ -8170,6 +8174,7 @@ function mesclarSapNoCadastro(cadOrig, sap, opts) {
   set('canal', pgCanalFromSap(sap.canal), 'Canal');
   set('vendedor', pgVendedorSapFromNome(sap.vendedor), 'Vendedor');
   set('regiao', pgRegiaoFromCep(sap.cep), 'Região');
+  set('pagto', sap.pagto, 'Cond. Pagamento');
   return { cad, changed: campos.length > 0, campos };
 }
 
@@ -9986,6 +9991,35 @@ function visEnderecoCliente(cliOrCod) {
   return [ruaNro, c.bairro, c.cep, c.cidade, c.uf].filter(Boolean).join(' — ');
 }
 
+/** Prazo / condição de pagamento (lista SAP → detalhe → cadastro do registo). */
+function visPrazoPagamentoCliente(cliOrCod) {
+  const k = normCod(cliOrCod && typeof cliOrCod === 'object' ? cliOrCod.cod : cliOrCod);
+  let c = cliOrCod && typeof cliOrCod === 'object' ? cliOrCod : null;
+  if (!c || !c.pagto) {
+    const lista = (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : []) || [];
+    c = lista.find(x => normCod(x.cod) === k) || c;
+  }
+  if ((!c || !c.pagto) && typeof getSapDetalhe === 'function') {
+    try {
+      const det = getSapDetalhe(k);
+      if (det) c = { ...(c || {}), ...det };
+    } catch (_) {}
+  }
+  let pagto = String(c?.pagto || c?.prazo || c?.zterm || '').trim();
+  if (!pagto && typeof allData !== 'undefined' && Array.isArray(allData)) {
+    const reg = allData.find(r => normCod(r.cod) === k);
+    const cad = (reg?.cadastro_json && typeof reg.cadastro_json === 'object') ? reg.cadastro_json : null;
+    if (cad?.pagto) pagto = String(cad.pagto).trim();
+  }
+  if (!pagto) return '';
+  // Se vier só o código SAP (ex. BRD3), acrescentar descrição conhecida
+  const code = pagto.split(/\s+/)[0];
+  if (typeof PRAZOS_PAGAMENTO !== 'undefined' && PRAZOS_PAGAMENTO[code] && !pagto.includes(' - ')) {
+    return typeof prazoPagtoLabel === 'function' ? prazoPagtoLabel(code) : `${code} - ${PRAZOS_PAGAMENTO[code]}`;
+  }
+  return pagto;
+}
+
 function visFillRotaSelect() {
   const el = document.getElementById('vis-rota-zd');
   if (!el) return;
@@ -11035,7 +11069,7 @@ async function visExportStatsExcel() {
   toast('Excel exportado (evolução + detalhe).');
 }
 
-/** Excel da rota do dia: código, nome, endereço, rota (lista visível). */
+/** Excel da rota do dia: código, nome, endereço, rota, prazo de pagamento. */
 async function visExportRotaExcel() {
   const vend = document.getElementById('vis-vendedor')?.value || '';
   if (!vend) { toast('Selecciona o vendedor primeiro.', 'warn'); return; }
@@ -11047,19 +11081,20 @@ async function visExportRotaExcel() {
   await ensureXLSX();
   const data = visDataISO('vis-data') || '';
   const zd = document.getElementById('vis-rota-zd')?.value || '';
-  const aoa = [['Cód. Cliente', 'Nome', 'Endereço', 'Rota']];
+  const aoa = [['Cód. Cliente', 'Nome', 'Endereço', 'Rota', 'Prazo de pagamento']];
   rows.forEach(r => {
     aoa.push([
       r.cod || '',
       r.nome || '',
       visEnderecoCliente(r.cod) || '',
       r.zd || zd || '',
+      visPrazoPagamentoCliente(r.cod) || '',
     ]);
   });
   const vendSafe = String(vend).replace(/[^\w\-]+/g, '_').slice(0, 40);
   const rotaSafe = zd ? String(zd).replace(/[^\w\-]+/g, '_') : 'todas';
   const fname = `Rota_${vendSafe}_${rotaSafe}_${data || 'lista'}.xlsx`;
-  writeXlsxDownload(aoa, 'Rota', fname, [{ wch: 14 }, { wch: 40 }, { wch: 55 }, { wch: 12 }]);
+  writeXlsxDownload(aoa, 'Rota', fname, [{ wch: 14 }, { wch: 40 }, { wch: 55 }, { wch: 12 }, { wch: 22 }]);
   toast(`Excel exportado (${rows.length} clientes).`);
 }
 
