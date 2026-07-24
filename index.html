@@ -3253,10 +3253,11 @@ var _unused_placeholder = 1;
         <div>
           <label style="display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;">ROTA (ZD)</label>
           <select id="vis-rota-zd" class="form-input" style="min-width:160px;height:36px;" onchange="visCarregarRota()">
-            <option value="">— Selecionar —</option>
+            <option value="">— Todas as rotas —</option>
           </select>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" onclick="visCarregarRota()" style="height:36px;">↺ Actualizar</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="visExportRotaExcel()" style="height:36px;" title="Exportar lista (código, nome, endereço, rota)">⬇ Excel</button>
       </div>
       <div id="vis-locked-msg" class="vis-locked-banner" style="display:none;">
         🔒 Dia fechado — visitas históricas não podem ser editadas. Só consulta.
@@ -3268,13 +3269,14 @@ var _unused_placeholder = 1;
             <tr>
               <th style="width:90px;">Cód.</th>
               <th>Cliente</th>
+              <th style="width:90px;">Rota</th>
               <th style="width:110px;text-align:center;">Visitado</th>
               <th style="width:110px;text-align:center;">Comprou</th>
               <th style="min-width:220px;">Motivo (se não comprou)</th>
             </tr>
           </thead>
           <tbody id="vis-rota-body">
-            <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted);">Selecciona vendedor, rota (ZD) e data.</td></tr>
+            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Selecciona o vendedor (e opcionalmente a rota).</td></tr>
           </tbody>
         </table>
       </div>
@@ -9956,13 +9958,28 @@ function visClientesDaRota(vendedor, zd) {
     .sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
 }
 
+/** Morada a partir da lista SAP (rua, nº, bairro, CEP, cidade). */
+function visEnderecoCliente(cliOrCod) {
+  let c = cliOrCod && typeof cliOrCod === 'object' ? cliOrCod : null;
+  if (!c) {
+    const k = normCod(cliOrCod);
+    const lista = (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : []) || [];
+    c = lista.find(x => normCod(x.cod) === k) || null;
+  }
+  if (!c && typeof getSapDetalhe === 'function') {
+    try { c = getSapDetalhe(cliOrCod); } catch (_) { c = null; }
+  }
+  if (!c) return '';
+  const ruaNro = [c.rua, c.nro].filter(Boolean).join(', ');
+  return [ruaNro, c.bairro, c.cep, c.cidade, c.uf].filter(Boolean).join(' — ');
+}
+
 function visFillRotaSelect() {
   const el = document.getElementById('vis-rota-zd');
   if (!el) return;
   const vend = document.getElementById('vis-vendedor')?.value || '';
   const cur = el.value;
   const rotas = visRotasDoVendedor(vend);
-  el.innerHTML = '<option value="">— Selecionar —</option>';
   if (!vend) {
     el.innerHTML = '<option value="">— Escolhe o vendedor —</option>';
     return;
@@ -9971,6 +9988,7 @@ function visFillRotaSelect() {
     el.innerHTML = '<option value="">— Sem ZD na lista SAP —</option>';
     return;
   }
+  el.innerHTML = '<option value="">— Todas as rotas —</option>';
   rotas.forEach(z => {
     el.innerHTML += `<option value="${String(z).replace(/"/g, '&quot;')}">${String(z).replace(/</g, '&lt;')}</option>`;
   });
@@ -10620,31 +10638,34 @@ async function visCarregarRota() {
   const info = document.getElementById('vis-rota-info');
   if (!vend) {
     _visitasRota = [];
-    if (body) body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted);">Selecciona o vendedor.</td></tr>';
+    if (body) body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Selecciona o vendedor.</td></tr>';
     if (info) info.textContent = '';
     return;
   }
-  if (!zd) {
+
+  // Sem ZD → todas as rotas do vendedor; com ZD → só essa rota
+  const clientes = zd ? visClientesDaRota(vend, zd) : visClientesDoVendedor(vend);
+  if (!clientes.length) {
     _visitasRota = [];
     const rotas = visRotasDoVendedor(vend);
     if (body) {
       body.innerHTML = rotas.length
-        ? '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted);">Selecciona a rota (ZD) para carregar os clientes.</td></tr>'
-        : '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted);">Lista SAP sem campo ZD. Recarrega o ficheiro de clientes em <b>Dados</b>.</td></tr>';
+        ? '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Nenhum cliente' + (zd ? ' nesta rota ZD' : ' para este vendedor') + '.</td></tr>'
+        : '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Lista SAP sem campo ZD. Recarrega o ficheiro de clientes em <b>Dados</b>.</td></tr>';
     }
     if (info) info.textContent = '';
     return;
   }
 
-  const clientes = visClientesDaRota(vend, zd);
   const want = visNormVend(vend);
   const byCod = new Map();
   (_visitasCache || []).forEach(r => {
     if (r.data === data && visNormVend(r.vendedor) === want) byCod.set(normCod(r.cod), r);
   });
 
-  // Dia editável: garantir linha de visita para cada cliente da rota ZD
-  if (!locked && clientes.length) {
+  // Dia editável + rota específica: garantir linha de visita para cada cliente
+  // (em "Todas as rotas" não cria em massa — evita centenas de inserts; cria ao marcar)
+  if (!locked && zd && clientes.length) {
     const missing = clientes.filter(c => !byCod.has(normCod(c.cod)));
     if (missing.length) {
       for (const c of missing) {
@@ -10667,21 +10688,29 @@ async function visCarregarRota() {
     }
   }
 
-  // Só clientes da rota ZD (lista SAP)
   _visitasRota = clientes.map(c => {
     const prev = byCod.get(normCod(c.cod));
+    const rotaZd = (prev && prev.zd) || visZdCliente(c) || zd || '';
     return prev
-      ? { ...prev, nome: prev.nome || c.nome || '', zd: prev.zd || visZdCliente(c) || zd }
+      ? { ...prev, nome: prev.nome || c.nome || '', zd: rotaZd }
       : {
-          data, vendedor: vend, cod: String(c.cod), nome: c.nome || '', zd,
+          data, vendedor: vend, cod: String(c.cod), nome: c.nome || '', zd: rotaZd,
           visitado: null, comprou: null, motivo_nao_compra: null, canal: 'horeca',
         };
-  }).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+  }).sort((a, b) => {
+    const z = String(a.zd || '').localeCompare(String(b.zd || ''), 'pt', { numeric: true });
+    if (z) return z;
+    return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt');
+  });
 
   const nVis = _visitasRota.filter(r => r.visitado === true).length;
   const nComp = _visitasRota.filter(r => r.comprou === true).length;
+  const nRotas = new Set(_visitasRota.map(r => r.zd).filter(Boolean)).size;
   if (info) {
-    info.innerHTML = `Rota <strong>${String(zd).replace(/</g, '&lt;')}</strong> · <strong>${_visitasRota.length}</strong> clientes`
+    const rotaLabel = zd
+      ? `Rota <strong>${String(zd).replace(/</g, '&lt;')}</strong>`
+      : `<strong>${nRotas}</strong> rota(s)`;
+    info.innerHTML = `${rotaLabel} · <strong>${_visitasRota.length}</strong> clientes`
       + ` · <span style="color:#166534">${nVis} visitados</span>`
       + ` · <span style="color:#1d4ed8">${nComp} compraram</span>`
       + (locked ? ' · <em>histórico</em>' : '');
@@ -10689,16 +10718,18 @@ async function visCarregarRota() {
 
   if (!body) return;
   if (!_visitasRota.length) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted);">Nenhum cliente nesta rota ZD.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Nenhum cliente nesta selecção.</td></tr>';
     return;
   }
 
   body.innerHTML = _visitasRota.map(r => {
     const cod = String(r.cod || '');
     const codEsc = cod.replace(/'/g, "\\'");
+    const rota = String(r.zd || '—').replace(/</g, '&lt;');
     return `<tr data-cod="${cod.replace(/"/g, '&quot;')}">
       <td style="font-family:var(--font-mono);font-size:12px;">${cod}</td>
       <td style="font-weight:500;">${(r.nome || '—').replace(/</g, '&lt;')}</td>
+      <td style="font-family:var(--font-mono);font-size:12px;">${rota}</td>
       <td style="text-align:center;">${visDotHtml('visitado', r.visitado, locked, codEsc)}</td>
       <td style="text-align:center;">${visDotHtml('comprou', r.comprou, locked, codEsc)}</td>
       <td>${visMotivoCellHtml(r, locked, codEsc)}</td>
@@ -10706,15 +10737,34 @@ async function visCarregarRota() {
   }).join('');
 }
 
-async function visSetCampo(cod, field, value) {
+/** Garante linha de visita em memória (útil em vista "Todas as rotas"). */
+function visEnsureRow(cod) {
   const data = visDataISO('vis-data');
-  if (visIsLocked(data)) { toast('Dia histórico — não editável.', 'error'); return; }
   const vend = document.getElementById('vis-vendedor')?.value || '';
+  if (!vend || !cod) return null;
   let row = (_visitasCache || []).find(r =>
     r.data === data && visNormVend(r.vendedor) === visNormVend(vend) && normCod(r.cod) === normCod(cod)
   );
+  if (row) return { ...row };
+  const fromRota = (_visitasRota || []).find(r => normCod(r.cod) === normCod(cod));
+  return {
+    data,
+    vendedor: vend,
+    cod: String(fromRota?.cod || cod),
+    nome: fromRota?.nome || '',
+    zd: fromRota?.zd || '',
+    visitado: null,
+    comprou: null,
+    motivo_nao_compra: null,
+    canal: 'horeca',
+  };
+}
+
+async function visSetCampo(cod, field, value) {
+  const data = visDataISO('vis-data');
+  if (visIsLocked(data)) { toast('Dia histórico — não editável.', 'error'); return; }
+  let row = visEnsureRow(cod);
   if (!row) return;
-  row = { ...row };
   // Clique no valor já activo → desmarcar (null); Comprou independente de Visitado
   row[field] = row[field] === value ? null : value;
   row.atualizado_em = new Date().toISOString();
@@ -10754,10 +10804,7 @@ async function visSetMotivoOutro(cod, texto) {
 async function visSetMotivo(cod, motivo) {
   const data = visDataISO('vis-data');
   if (visIsLocked(data)) return;
-  const vend = document.getElementById('vis-vendedor')?.value || '';
-  let row = (_visitasCache || []).find(r =>
-    r.data === data && visNormVend(r.vendedor) === visNormVend(vend) && normCod(r.cod) === normCod(cod)
-  );
+  let row = visEnsureRow(cod);
   if (!row) return;
   row = { ...row, motivo_nao_compra: motivo || null, atualizado_em: new Date().toISOString(), atualizado_por: getUtilizadorAtual() };
   await visUpsertRow(row);
@@ -10974,6 +11021,34 @@ async function visExportStatsExcel() {
     setTimeout(() => writeXlsxJsonDownload(detalhe, 'Detalhe', `Visitas_Detalhe_${de}_${ate}.xlsx`), 400);
   }
   toast('Excel exportado (evolução + detalhe).');
+}
+
+/** Excel da rota do dia: código, nome, endereço, rota (lista visível). */
+async function visExportRotaExcel() {
+  const vend = document.getElementById('vis-vendedor')?.value || '';
+  if (!vend) { toast('Selecciona o vendedor primeiro.', 'warn'); return; }
+  const rows = Array.isArray(_visitasRota) ? _visitasRota : [];
+  if (!rows.length) {
+    toast('Sem clientes para exportar. Selecciona o vendedor (e actualiza).', 'warn');
+    return;
+  }
+  await ensureXLSX();
+  const data = visDataISO('vis-data') || '';
+  const zd = document.getElementById('vis-rota-zd')?.value || '';
+  const aoa = [['Cód. Cliente', 'Nome', 'Endereço', 'Rota']];
+  rows.forEach(r => {
+    aoa.push([
+      r.cod || '',
+      r.nome || '',
+      visEnderecoCliente(r.cod) || '',
+      r.zd || zd || '',
+    ]);
+  });
+  const vendSafe = String(vend).replace(/[^\w\-]+/g, '_').slice(0, 40);
+  const rotaSafe = zd ? String(zd).replace(/[^\w\-]+/g, '_') : 'todas';
+  const fname = `Rota_${vendSafe}_${rotaSafe}_${data || 'lista'}.xlsx`;
+  writeXlsxDownload(aoa, 'Rota', fname, [{ wch: 14 }, { wch: 40 }, { wch: 55 }, { wch: 12 }]);
+  toast(`Excel exportado (${rows.length} clientes).`);
 }
 
 // Sub-menu Análise: Resumo / Sem Compras / Encerramento / Contencioso / Fora SP (só Horeca)
