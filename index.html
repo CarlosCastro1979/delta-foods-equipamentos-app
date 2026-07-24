@@ -3273,13 +3273,14 @@ var _unused_placeholder = 1;
               <th style="width:90px;">Cód.</th>
               <th>Cliente</th>
               <th style="width:90px;">Rota</th>
+              <th style="width:130px;">Prazo pagto</th>
               <th style="width:110px;text-align:center;">Visitado</th>
               <th style="width:110px;text-align:center;">Comprou</th>
               <th style="min-width:220px;">Motivo (se não comprou)</th>
             </tr>
           </thead>
           <tbody id="vis-rota-body">
-            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Selecciona o vendedor (e opcionalmente a rota).</td></tr>
+            <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted);">Selecciona o vendedor (e opcionalmente a rota).</td></tr>
           </tbody>
         </table>
       </div>
@@ -10720,7 +10721,7 @@ async function visCarregarRota() {
   const info = document.getElementById('vis-rota-info');
   if (!vend) {
     _visitasRota = [];
-    if (body) body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Selecciona o vendedor.</td></tr>';
+    if (body) body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted);">Selecciona o vendedor.</td></tr>';
     if (info) info.textContent = '';
     return;
   }
@@ -10732,8 +10733,8 @@ async function visCarregarRota() {
     const rotas = visRotasDoVendedor(vend);
     if (body) {
       body.innerHTML = rotas.length
-        ? '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Nenhum cliente' + (zd ? ' nesta rota ZD' : ' para este vendedor') + '.</td></tr>'
-        : '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Lista SAP sem campo ZD. Recarrega o ficheiro de clientes em <b>Dados</b>.</td></tr>';
+        ? '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted);">Nenhum cliente' + (zd ? ' nesta rota ZD' : ' para este vendedor') + '.</td></tr>'
+        : '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted);">Lista SAP sem campo ZD. Recarrega o ficheiro de clientes em <b>Dados</b>.</td></tr>';
     }
     if (info) info.textContent = '';
     return;
@@ -10800,7 +10801,7 @@ async function visCarregarRota() {
 
   if (!body) return;
   if (!_visitasRota.length) {
-    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted);">Nenhum cliente nesta selecção.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted);">Nenhum cliente nesta selecção.</td></tr>';
     return;
   }
 
@@ -10808,10 +10809,13 @@ async function visCarregarRota() {
     const cod = String(r.cod || '');
     const codEsc = cod.replace(/'/g, "\\'");
     const rota = String(r.zd || '—').replace(/</g, '&lt;');
+    const prazo = (typeof visPrazoPagamentoCliente === 'function' ? visPrazoPagamentoCliente(cod) : '') || '—';
+    const prazoEsc = String(prazo).replace(/</g, '&lt;');
     return `<tr data-cod="${cod.replace(/"/g, '&quot;')}">
       <td style="font-family:var(--font-mono);font-size:12px;">${cod}</td>
       <td style="font-weight:500;">${(r.nome || '—').replace(/</g, '&lt;')}</td>
       <td style="font-family:var(--font-mono);font-size:12px;">${rota}</td>
+      <td style="font-size:12px;white-space:nowrap;" title="${prazoEsc}">${prazoEsc}</td>
       <td style="text-align:center;">${visDotHtml('visitado', r.visitado, locked, codEsc)}</td>
       <td style="text-align:center;">${visDotHtml('comprou', r.comprou, locked, codEsc)}</td>
       <td>${visMotivoCellHtml(r, locked, codEsc)}</td>
