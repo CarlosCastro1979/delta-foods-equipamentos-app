@@ -7985,8 +7985,8 @@ async function carregarListaSAP(event) {
   const iIE     = findH(/inscr.*estad|^ie$|insc\.?\s*est|i\.?\s*e\.?$/);
   // Rota do vendedor (export SAP BR: coluna ZD)
   const iZD     = findH(/^zd$|^z\.?\s*d\.?$|zona\s*de\s*distrib|rota\s*(zd|sap)?$/);
-  // Prazo / condição de pagamento (ZTERM, Cond. pagamento, …)
-  const iPagto  = findH(/cond\.?\s*pag|condi[cç][aã]o(es)?\s*de\s*pag|prazo\s*(de\s*)?pag|zterm|^cpgto$|^pagto$/);
+  // Prazo / condição de pagamento (SAP BR: coluna CPgt; também ZTERM, Cond. pagamento, …)
+  const iPagto  = findH(/^cpgt$|^cpgto$|cond\.?\s*pag|condi[cç][aã]o(es)?\s*de\s*pag|prazo\s*(de\s*)?pag|zterm|^pagto$/);
   const getCell = (row, i) => i >= 0 ? String(row[i] ?? '').trim() : '';
 
   if (iCliente === -1 || iNomeFinal === -1) {
@@ -7996,7 +7996,7 @@ async function carregarListaSAP(event) {
 
   // Diagnóstico das colunas (aparece no ecrã de confirmação)
   const colDiag = [
-    ['CNPJ/Fiscal', iCNPJ], ['Canal', iCanal], ['ZD/Rota', iZD], ['Prazo pagto', iPagto],
+    ['CNPJ/Fiscal', iCNPJ], ['Canal', iCanal], ['ZD/Rota', iZD], ['CPgt/Prazo', iPagto],
     ['Rua', iRua], ['Nº', iNroCol],
     ['Bairro', iBairro], ['Cidade', iCidade], ['Email', iEmail], ['Tel', iTel1], ['IE', iIE],
   ];
