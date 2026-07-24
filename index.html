@@ -1226,12 +1226,15 @@
   }
   .vcob-cell.vcob-ok { background: #e8f5e9; border-color: #a5d6a7; }
   .vcob-cell.vcob-miss { background: #fee2e2; border-color: #fca5a5; }
+  .vcob-cell.vcob-parcial { background: #fffbeb; border-color: #fcd34d; }
   .vcob-cell.vcob-na { background: transparent; border-color: transparent; opacity: 0.35; }
   .vcob-mes { font-size: 10px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.02em; }
   .vcob-cell.vcob-ok .vcob-mes { color: #166534; }
   .vcob-cell.vcob-miss .vcob-mes { color: #991b1b; }
+  .vcob-cell.vcob-parcial .vcob-mes { color: #92400e; }
   .vcob-n { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); line-height: 1.2; }
   .vcob-cell.vcob-miss .vcob-n { color: #991b1b; }
+  .vcob-cell.vcob-parcial .vcob-n { color: #92400e; }
   .vcob-sub { font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .vcob-summary {
     background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
@@ -3578,8 +3581,8 @@ var _unused_placeholder = 1;
             <div>
               <div style="font-weight:600;font-size:15px;">Cobertura temporal de vendas</div>
               <div style="font-size:12px;color:var(--muted);line-height:1.5;">
-                Meses com pelo menos 1 registo no Supabase (Set/2019 → mês actual).<br>
-                Não prova que o mês está 100% completo face ao SAP — só que há dados carregados.
+                Resumo guardado (não relê as ~500k linhas a cada entrada).<br>
+                Destaca meses <strong>em falta</strong> e o mês actual como <strong>em curso</strong> (ainda incompleto).
               </div>
             </div>
           </div>
@@ -12467,6 +12470,8 @@ const VENDAS_STORE = 'delta_vendas_v1'; // kept for migration
 const SUPA_VENDAS = 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/vendas';
 const VENDAS_COBERTURA_INICIO = { y: 2019, m: 9 }; // Set/2019
 const VENDAS_MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const VENDAS_COBERTURA_LS_KEY = 'delta_vendas_cobertura_v1';
+const VENDAS_COBERTURA_SUPA_ID = 'vendas_cobertura';
 
 /** Lista YYYY-MM de Set/2019 até ao mês actual (inclusive). */
 function listVendasCoberturaMeses() {
@@ -12482,6 +12487,15 @@ function listVendasCoberturaMeses() {
     if (m > 12) { m = 1; y++; }
   }
   return out;
+}
+
+function vendasMesActualYM() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function isVendasMesActual(ym) {
+  return String(ym) === vendasMesActualYM();
 }
 
 function formatVendasMesLabel(ym) {
@@ -12529,6 +12543,141 @@ function aggregateVendasPorMes(rows) {
   return out;
 }
 
+function vendasCoberturaMapToObj(map) {
+  const o = {};
+  if (!map) return o;
+  for (const [ym, v] of map) {
+    o[ym] = { linhas: +(v?.linhas || 0), clientes: +(v?.clientes || 0) };
+  }
+  return o;
+}
+
+function vendasCoberturaObjToMap(obj) {
+  const map = new Map();
+  if (!obj || typeof obj !== 'object') return map;
+  for (const [ym, v] of Object.entries(obj)) {
+    if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+    map.set(ym, { linhas: +(v?.linhas || 0), clientes: +(v?.clientes || 0) });
+  }
+  return map;
+}
+
+/** Guarda o resumo mensal (local + Supabase) — evita reler 500k linhas. */
+async function salvarVendasCoberturaPersistida(map) {
+  const payload = {
+    atualizado_em: new Date().toISOString(),
+    meses: vendasCoberturaMapToObj(map),
+  };
+  window._vendasCoberturaCache = map;
+  window._vendasCoberturaMeta = payload;
+  sessionCacheTouch('vendasCobertura');
+  try { localStorage.setItem(VENDAS_COBERTURA_LS_KEY, JSON.stringify(payload)); } catch (_) {}
+  try { if (typeof idbSet === 'function') await idbSet(VENDAS_COBERTURA_LS_KEY, payload); } catch (_) {}
+  try {
+    await fetch(LISTA_CLIENTES_SUPA_URL, {
+      method: 'POST',
+      headers: { ...HEADERS, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ id: VENDAS_COBERTURA_SUPA_ID, data: payload, atualizado_em: payload.atualizado_em }),
+    });
+  } catch (e) {
+    console.warn('salvarVendasCoberturaPersistida (supa):', e.message || e);
+  }
+  return payload;
+}
+
+async function lerVendasCoberturaPersistida() {
+  if (window._vendasCoberturaCache instanceof Map && window._vendasCoberturaCache.size) {
+    return {
+      map: window._vendasCoberturaCache,
+      atualizado_em: window._vendasCoberturaMeta?.atualizado_em || null,
+      fonte: 'memoria',
+    };
+  }
+  let payload = null;
+  let fonte = null;
+  try {
+    if (typeof idbGet === 'function') {
+      payload = await idbGet(VENDAS_COBERTURA_LS_KEY);
+      if (payload?.meses) fonte = 'idb';
+    }
+  } catch (_) {}
+  if (!payload?.meses) {
+    try {
+      payload = JSON.parse(localStorage.getItem(VENDAS_COBERTURA_LS_KEY) || 'null');
+      if (payload?.meses) fonte = 'local';
+    } catch (_) { payload = null; }
+  }
+  if (!payload?.meses) {
+    try {
+      const res = await fetch(
+        `${LISTA_CLIENTES_SUPA_URL}?id=eq.${VENDAS_COBERTURA_SUPA_ID}&select=data,atualizado_em`,
+        { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        if (rows?.[0]?.data?.meses) {
+          payload = rows[0].data;
+          if (!payload.atualizado_em && rows[0].atualizado_em) payload.atualizado_em = rows[0].atualizado_em;
+          fonte = 'supabase';
+          try { localStorage.setItem(VENDAS_COBERTURA_LS_KEY, JSON.stringify(payload)); } catch (_) {}
+          try { if (typeof idbSet === 'function') await idbSet(VENDAS_COBERTURA_LS_KEY, payload); } catch (_) {}
+        }
+      }
+    } catch (e) {
+      console.warn('lerVendasCoberturaPersistida (supa):', e.message || e);
+    }
+  }
+  if (!payload?.meses) return null;
+  const map = vendasCoberturaObjToMap(payload.meses);
+  if (!map.size) return null;
+  window._vendasCoberturaCache = map;
+  window._vendasCoberturaMeta = payload;
+  sessionCacheTouch('vendasCobertura');
+  return { map, atualizado_em: payload.atualizado_em || null, fonte };
+}
+
+/** Contagem rápida só do mês actual (Content-Range) — sem ler 500k linhas. */
+async function countVendasMes(ym) {
+  const [y, m] = String(ym).split('-').map(Number);
+  if (!y || !m) return null;
+  let ny = y, nm = m + 1;
+  if (nm > 12) { nm = 1; ny++; }
+  const de = `${y}-${String(m).padStart(2, '0')}-01`;
+  const ate = `${ny}-${String(nm).padStart(2, '0')}-01`;
+  const res = await fetch(
+    `${SUPA_VENDAS}?select=cod&data=gte.${de}&data=lt.${ate}`,
+    { headers: { ...HEADERS, Prefer: 'count=exact', Range: '0-0' } }
+  );
+  if (!res.ok && res.status !== 416) throw new Error('HTTP ' + res.status);
+  const cr = res.headers.get('content-range') || res.headers.get('Content-Range') || '';
+  const mTot = cr.match(/\/(\d+|\*)/);
+  if (!mTot || mTot[1] === '*') return null;
+  return parseInt(mTot[1], 10) || 0;
+}
+
+async function refreshVendasCoberturaMesActual(map) {
+  if (!(map instanceof Map)) return map;
+  const ym = vendasMesActualYM();
+  try {
+    const n = await countVendasMes(ym);
+    if (n == null) return map;
+    const prev = map.get(ym) || { linhas: 0, clientes: 0 };
+    map.set(ym, { linhas: n, clientes: prev.clientes || 0 });
+    window._vendasCoberturaCache = map;
+    // Actualizar só o mês actual no payload persistido (best-effort, sem full scan)
+    try {
+      const meta = window._vendasCoberturaMeta || { meses: {} };
+      meta.meses = { ...(meta.meses || {}), [ym]: { linhas: n, clientes: prev.clientes || 0 } };
+      meta.atualizado_em = new Date().toISOString();
+      window._vendasCoberturaMeta = meta;
+      localStorage.setItem(VENDAS_COBERTURA_LS_KEY, JSON.stringify(meta));
+    } catch (_) {}
+  } catch (e) {
+    console.warn('refreshVendasCoberturaMesActual:', e.message || e);
+  }
+  return map;
+}
+
 /** Fetch leve só data+cod (ou reutiliza cache de getVendas). */
 async function fetchVendasCoberturaRows(forceRefresh = false, onProgress) {
   if (!forceRefresh && window._vendasMemCache && Array.isArray(window._vendasMemCache)) {
@@ -12565,21 +12714,24 @@ async function getVendasCoberturaMap(forceRefresh = false, onProgress) {
     const map = aggregateVendasPorMes(rows);
     window._vendasCoberturaCache = map;
     sessionCacheTouch('vendasCobertura');
+    await salvarVendasCoberturaPersistida(map);
     return map;
   });
 }
 
 function invalidateVendasCoberturaCache() {
   window._vendasCoberturaCache = null;
+  window._vendasCoberturaMeta = null;
   sessionCacheInvalidate('vendasCobertura');
 }
 
-function renderVendasCobertura(map) {
+function renderVendasCobertura(map, opts = {}) {
   const el = document.getElementById('dados-vendas-cobertura');
   if (!el) return;
   const meses = listVendasCoberturaMeses();
   const total = meses.length;
   const faltas = [];
+  const mesActual = vendasMesActualYM();
   let comDados = 0;
   let totalLinhas = 0;
 
@@ -12588,7 +12740,7 @@ function renderVendasCobertura(map) {
     const n = info ? info.linhas : 0;
     totalLinhas += n;
     if (n > 0) comDados++;
-    else faltas.push(ym);
+    else if (!isVendasMesActual(ym)) faltas.push(ym);
   }
 
   const byYear = new Map();
@@ -12607,34 +12759,61 @@ function renderVendasCobertura(map) {
     }
     for (const ym of yms) {
       const info = map.get(ym) || { linhas: 0, clientes: 0 };
-      const ok = info.linhas > 0;
-      const title = ok
-        ? `${formatVendasMesLabel(ym)}: ${info.linhas.toLocaleString('pt-BR')} linha(s), ${info.clientes.toLocaleString('pt-BR')} cliente(s)`
-        : `${formatVendasMesLabel(ym)}: sem vendas carregadas`;
+      const actual = isVendasMesActual(ym);
+      const ok = info.linhas > 0 && !actual;
+      const parcial = actual && info.linhas > 0;
+      const miss = info.linhas <= 0;
+      const cls = parcial ? 'vcob-parcial' : (ok ? 'vcob-ok' : 'vcob-miss');
+      const title = actual
+        ? `${formatVendasMesLabel(ym)}: mês em curso — ${info.linhas.toLocaleString('pt-BR')} linha(s) (ainda incompleto)`
+        : (ok
+          ? `${formatVendasMesLabel(ym)}: ${info.linhas.toLocaleString('pt-BR')} linha(s), ${info.clientes.toLocaleString('pt-BR')} cliente(s)`
+          : `${formatVendasMesLabel(ym)}: sem vendas carregadas`);
+      const sub = actual
+        ? (info.linhas > 0 ? 'em curso' : 'sem dados')
+        : (ok ? `${formatVendasCountShort(info.clientes)} cl.` : 'em falta');
       cells.push(
-        `<div class="vcob-cell ${ok ? 'vcob-ok' : 'vcob-miss'}" title="${title}">
+        `<div class="vcob-cell ${cls}" title="${title}">
           <span class="vcob-mes">${VENDAS_MES_ABREV[parseInt(ym.slice(5), 10) - 1]}</span>
-          <span class="vcob-n">${ok ? formatVendasCountShort(info.linhas) : '—'}</span>
-          ${ok ? `<span class="vcob-sub">${formatVendasCountShort(info.clientes)} cl.</span>` : '<span class="vcob-sub">em falta</span>'}
+          <span class="vcob-n">${info.linhas > 0 ? formatVendasCountShort(info.linhas) : '—'}</span>
+          <span class="vcob-sub">${sub}</span>
         </div>`
       );
     }
     gridHtml += `<div class="vcob-year"><div class="vcob-year-label">${year}</div><div class="vcob-months">${cells.join('')}</div></div>`;
   }
 
-  const faltasHtml = faltas.length
-    ? `<div class="vcob-faltas"><strong>${faltas.length} mês(es) em falta:</strong> ${faltas.map(formatVendasMesLabel).join(', ')}</div>`
-    : `<div class="vcob-faltas" style="color:#166534"><strong>Nenhum mês em falta</strong> — todos os períodos têm pelo menos 1 registo.</div>`;
+  const alertas = [];
+  if (faltas.length) {
+    alertas.push(`<div class="vcob-faltas"><strong>${faltas.length} mês(es) em falta:</strong> ${faltas.map(formatVendasMesLabel).join(', ')}</div>`);
+  }
+  const infoAct = map.get(mesActual) || { linhas: 0 };
+  alertas.push(
+    `<div class="vcob-faltas" style="color:#92400e"><strong>${formatVendasMesLabel(mesActual)} em curso</strong> — `
+    + `${infoAct.linhas.toLocaleString('pt-BR')} linha(s) carregadas; o mês ainda não acabou (dados incompletos).</div>`
+  );
+  if (!faltas.length) {
+    alertas.unshift(`<div class="vcob-faltas" style="color:#166534"><strong>Nenhum mês fechado em falta</strong> — períodos anteriores têm dados.</div>`);
+  }
+
+  const ts = opts.atualizado_em ? new Date(opts.atualizado_em) : null;
+  const tsTxt = ts && !isNaN(ts.getTime())
+    ? ts.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+    : '';
+  const fonteTxt = opts.fromCache
+    ? `Resumo em cache${tsTxt ? ' · actualizado ' + tsTxt : ''}${opts.fonte ? ' (' + opts.fonte + ')' : ''}. Usa «Actualizar» só quando carregares vendas novas.`
+    : `Resumo recalculado${tsTxt ? ' · ' + tsTxt : ''}.`;
 
   el.innerHTML = `
     <div class="vcob-summary">
       <strong>${comDados}</strong> de <strong>${total}</strong> meses com dados
-      &nbsp;·&nbsp; <strong style="color:${faltas.length ? '#991b1b' : '#166534'}">${faltas.length}</strong> mês(es) em falta
+      &nbsp;·&nbsp; <strong style="color:${faltas.length ? '#991b1b' : '#166534'}">${faltas.length}</strong> mês(es) fechados em falta
       &nbsp;·&nbsp; ${totalLinhas.toLocaleString('pt-BR')} linhas no período
     </div>
     ${gridHtml}
-    ${faltasHtml}
-    <div class="vcob-note">Cobertura = há ≥1 registo de venda nesse mês. Não garante que o mês esteja completo face ao Excel SAP.</div>
+    ${alertas.join('')}
+    <div class="vcob-note">${fonteTxt}<br>
+      Cobertura = há ≥1 registo nesse mês. Mês actual = sempre «em curso». Não garante completude face ao Excel SAP.</div>
   `;
 }
 
@@ -12646,13 +12825,35 @@ async function loadVendasCobertura(forceRefresh = false) {
   const setProgress = (n, fromCache) => {
     el.innerHTML = fromCache
       ? `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> A agregar ${n.toLocaleString('pt-BR')} linhas (cache)…</div>`
-      : `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> A ler vendas… ${n.toLocaleString('pt-BR')} linhas</div>`;
+      : `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> A ler vendas… ${n.toLocaleString('pt-BR')} linhas (só na 1ª vez / Actualizar)</div>`;
   };
-  el.innerHTML = `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> A analisar cobertura mês a mês…</div>`;
   try {
-    if (forceRefresh) invalidateVendasCoberturaCache();
-    const map = await getVendasCoberturaMap(forceRefresh, setProgress);
-    renderVendasCobertura(map);
+    if (!forceRefresh) {
+      const persisted = await lerVendasCoberturaPersistida();
+      if (persisted?.map?.size) {
+        renderVendasCobertura(persisted.map, {
+          fromCache: true,
+          atualizado_em: persisted.atualizado_em,
+          fonte: persisted.fonte,
+        });
+        // Actualiza só o mês corrente em background (rápido)
+        refreshVendasCoberturaMesActual(persisted.map).then(map => {
+          renderVendasCobertura(map, {
+            fromCache: true,
+            atualizado_em: window._vendasCoberturaMeta?.atualizado_em || persisted.atualizado_em,
+            fonte: persisted.fonte,
+          });
+        }).catch(() => {});
+        return;
+      }
+      el.innerHTML = `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> Primeira análise — a construir resumo mensal (demora uma vez)…</div>`;
+    } else {
+      invalidateVendasCoberturaCache();
+      el.innerHTML = `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> A recalcular cobertura mês a mês…</div>`;
+    }
+    const map = await getVendasCoberturaMap(true, setProgress);
+    const meta = await salvarVendasCoberturaPersistida(map);
+    renderVendasCobertura(map, { fromCache: false, atualizado_em: meta?.atualizado_em });
   } catch (e) {
     console.warn('loadVendasCobertura:', e);
     el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao carregar cobertura: ${e.message || e}
