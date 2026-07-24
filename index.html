@@ -7958,6 +7958,20 @@ async function carregarListaSAP(event) {
   const _hn = headers.map(h => String(h || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim());
   const findH = (re, excludeIdx = -1) => _hn.findIndex((h, idx) => idx !== excludeIdx && re.test(h));
   const findAll = re => _hn.map((h, idx) => re.test(h) ? idx : -1).filter(i => i >= 0);
+  /** CPgt / prazo — tolera quebras de linha, espaços e maiúsculas (export SAP BR). */
+  const findSapColunaPagto = () => {
+    for (let i = 0; i < headers.length; i++) {
+      const raw = String(headers[i] ?? '');
+      const low = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const compact = low.replace(/[^a-z0-9]+/g, '');
+      const first = low.split(/[\n\r]+/)[0].replace(/\s+/g, ' ').trim();
+      if (compact === 'cpgt' || compact === 'cpgto' || compact.startsWith('cpgt')) return i;
+      if (/\bcpgt\b/.test(low) || /^cpgt\b/.test(first)) return i;
+      if (compact === 'zterm' || compact === 'pagto' || compact === 'condpagto') return i;
+      if (/cond\.?\s*pag|condi[cç]?[aã]?o(es)?\s*de\s*pag|prazo\s*(de\s*)?pag/.test(low)) return i;
+    }
+    return -1;
+  };
 
   const iCliente = findH(/^cliente$/);
   const iNome    = findH(/^nome\b|nome\s*(1|do\s*cliente)?$/);
@@ -7985,10 +7999,10 @@ async function carregarListaSAP(event) {
   const iIE     = findH(/inscr.*estad|^ie$|insc\.?\s*est|i\.?\s*e\.?$/);
   // Rota do vendedor (export SAP BR: coluna ZD)
   const iZD     = findH(/^zd$|^z\.?\s*d\.?$|zona\s*de\s*distrib|rota\s*(zd|sap)?$/);
-  // Prazo / condição de pagamento (SAP BR: coluna CPgt; também ZTERM, Cond. pagamento, …)
-  const iPagto  = findH(/^cpgt$|^cpgto$|cond\.?\s*pag|condi[cç][aã]o(es)?\s*de\s*pag|prazo\s*(de\s*)?pag|zterm|^pagto$/);
+  // Prazo / condição de pagamento — coluna SAP BR «CPgt»
+  const iPagto  = findSapColunaPagto();
   const getCell = (row, i) => i >= 0 ? String(row[i] ?? '').trim() : '';
-
+  const pagtoHeaderNome = iPagto >= 0 ? String(headers[iPagto] || '').trim() : '';
   if (iCliente === -1 || iNomeFinal === -1) {
     toast('Colunas "Cliente" e "Nome" não encontradas. Verifica o ficheiro.', 'error');
     return;
@@ -8083,6 +8097,7 @@ async function carregarListaSAP(event) {
   const nComTel = novaLista.filter(c => c.tel1).length;
   const nComCanal = novaLista.filter(c => c.canal).length;
   const nComZd = novaLista.filter(c => c.zd).length;
+  const nComPagto = novaLista.filter(c => c.pagto).length;
   const colsOk = colDiag.filter(([, i]) => i >= 0).map(([n]) => n);
   const colsMiss = colDiag.filter(([, i]) => i < 0).map(([n]) => n);
 
@@ -8112,10 +8127,21 @@ async function carregarListaSAP(event) {
     }
   } catch (_) {}
   statusHtml += `<br><span style="color:${nComRua && nComCnpj ? '#166534' : '#b45309'}">Dados ricos no ficheiro: `
-    + `morada ${nComRua}/${novaLista.length} · CNPJ ${nComCnpj} · email ${nComEmail} · tel ${nComTel} · canal ${nComCanal} · ZD/rota ${nComZd}</span>`;
+    + `morada ${nComRua}/${novaLista.length} · CNPJ ${nComCnpj} · email ${nComEmail} · tel ${nComTel} · canal ${nComCanal} · ZD/rota ${nComZd}`
+    + ` · <b style="color:${nComPagto ? '#166534' : '#b91c1c'}">CPgt/prazo ${nComPagto}/${novaLista.length}</b></span>`;
   statusHtml += `<br><span style="color:var(--muted);font-size:12px">Colunas OK: ${colsOk.join(', ') || '—'}`
     + (colsMiss.length ? ` · <b style="color:#b45309">não encontradas: ${colsMiss.join(', ')}</b>` : '')
     + `</span>`;
+  if (iPagto >= 0) {
+    statusHtml += `<br><span style="color:#166534;font-size:12px">✓ Coluna prazo encontrada: <b>${String(pagtoHeaderNome).replace(/</g,'&lt;')}</b>`
+      + (nComPagto ? ` · exemplos: ${novaLista.filter(c => c.pagto).slice(0, 3).map(c => c.pagto).join(', ')}` : ' · mas todas as células estão vazias')
+      + `</span>`;
+  } else {
+    const hints = headers.filter(h => /cpg|pag|zterm|prazo|cond/i.test(String(h || ''))).slice(0, 8);
+    statusHtml += `<br><span style="color:#b91c1c;font-weight:600">⚠ Coluna CPgt (prazo de pagamento) NÃO encontrada neste Excel.`
+      + (hints.length ? ` Cabeçalhos parecidos: ${hints.map(h => String(h).replace(/</g,'&lt;')).join(' · ')}` : '')
+      + `</span>`;
+  }
   if (!nComRua && !nComCnpj && !nComEmail) {
     statusHtml += `<br><span style="color:#b91c1c;font-weight:600">⚠ Este Excel não tem morada/CNPJ/email — o cadastro automático fica incompleto. Usa o export SAP com endereço e contactos.</span>`;
   }
@@ -9997,22 +10023,29 @@ function visEnderecoCliente(cliOrCod) {
 /** Prazo / condição de pagamento (lista SAP → detalhe → cadastro do registo). */
 function visPrazoPagamentoCliente(cliOrCod) {
   const k = normCod(cliOrCod && typeof cliOrCod === 'object' ? cliOrCod.cod : cliOrCod);
+  const pickPagto = (obj) => {
+    if (!obj || typeof obj !== 'object') return '';
+    return String(
+      obj.pagto || obj.cpgt || obj.CPgt || obj.CPGT || obj.zterm || obj.prazo || ''
+    ).trim();
+  };
+  let pagto = '';
   let c = cliOrCod && typeof cliOrCod === 'object' ? cliOrCod : null;
-  if (!c || !c.pagto) {
-    const lista = (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : []) || [];
-    c = lista.find(x => normCod(x.cod) === k) || c;
+  pagto = pickPagto(c);
+  if (!pagto) {
+    const lista = (typeof getListaClientesCompleta === 'function'
+      ? getListaClientesCompleta()
+      : (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : [])) || [];
+    c = lista.find(x => normCod(x.cod) === k) || null;
+    pagto = pickPagto(c);
   }
-  if ((!c || !c.pagto) && typeof getSapDetalhe === 'function') {
-    try {
-      const det = getSapDetalhe(k);
-      if (det) c = { ...(c || {}), ...det };
-    } catch (_) {}
+  if (!pagto && typeof getSapDetalhe === 'function') {
+    try { pagto = pickPagto(getSapDetalhe(k)); } catch (_) {}
   }
-  let pagto = String(c?.pagto || c?.prazo || c?.zterm || '').trim();
   if (!pagto && typeof allData !== 'undefined' && Array.isArray(allData)) {
     const reg = allData.find(r => normCod(r.cod) === k);
     const cad = (reg?.cadastro_json && typeof reg.cadastro_json === 'object') ? reg.cadastro_json : null;
-    if (cad?.pagto) pagto = String(cad.pagto).trim();
+    pagto = pickPagto(cad);
   }
   if (!pagto) return '';
   // Se vier só o código SAP (ex. BRD3), acrescentar descrição conhecida
