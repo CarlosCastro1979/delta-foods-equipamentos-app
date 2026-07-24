@@ -7258,11 +7258,16 @@ async function loadContratosPorRegistar() {
       }
     }
 
-    // Popula filtro vendedor = só os do canal activo
+    // Horeca: vendedor logado só vê os seus
+    const porRegistarScoped = typeof filterByUtilizadorActivo === 'function'
+      ? filterByUtilizadorActivo(porRegistar)
+      : porRegistar;
+
+    // Popula filtro vendedor = só os do canal activo (ou só o próprio se scoped)
     if (typeof fillVendedorSelectCanal === 'function') {
       fillVendedorSelectCanal('contratos-pr-vendedor', { emptyLabel: 'Todos os vendedores' });
     } else {
-      const vendedores = [...new Set(porRegistar.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
+      const vendedores = [...new Set(porRegistarScoped.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
       const selV = document.getElementById('contratos-pr-vendedor');
       if (selV) {
         selV.innerHTML = '<option value="">Todos os vendedores</option>' +
@@ -7270,7 +7275,7 @@ async function loadContratosPorRegistar() {
       }
     }
 
-    window._contratosPorRegistar = porRegistar;
+    window._contratosPorRegistar = porRegistarScoped;
     renderContratosPorRegistar();
   } catch(e) {
     cont.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">Erro: ${e.message}</div>`;
@@ -7281,7 +7286,8 @@ function renderContratosPorRegistar() {
   const cont = document.getElementById('contratos-por-registar-content');
   if (!cont || !window._contratosPorRegistar) return;
 
-  const vendFilt = document.getElementById('contratos-pr-vendedor')?.value || '';
+  const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
+  const vendFilt = scope || document.getElementById('contratos-pr-vendedor')?.value || '';
   let lista = window._contratosPorRegistar;
   if (vendFilt) {
     const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vendFilt) : vendFilt;
@@ -15306,6 +15312,14 @@ function aplicarUtilizador(nome) {
   if (typeof visFillVendedorSelects === 'function' && typeof isCanalHorecaActivo === 'function' && isCanalHorecaActivo()) {
     try { visFillVendedorSelects(); } catch (_) {}
   }
+  // Se Prospeção estiver aberta, reaplicar escopo + re-render (evita ver leads de todos)
+  try {
+    if (document.getElementById('panel-prospeccao')?.classList.contains('active')) {
+      if (typeof prosApplyCanalScope === 'function') prosApplyCanalScope();
+      if (typeof prosPopulateCanalUI === 'function') prosPopulateCanalUI();
+      if (typeof renderPros === 'function') renderPros();
+    }
+  } catch (_) {}
   atualizarHomeCanais();
 }
 
@@ -17129,14 +17143,20 @@ function prosPopulateCanalUI() {
   const title = document.getElementById('pros-panel-title');
   if (title) title.textContent = `🎯 Prospeção · ${canalNome}`;
 
-  prosFillSelectOptions(document.getElementById('pros-filtro-vendedor'), vends, {
-    emptyLabel: 'Todos os vendedores',
-  });
+  // Filtro vendedor: usa fillVendedorSelectCanal (respeita escopo Horeca / disabled)
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('pros-filtro-vendedor', { emptyLabel: 'Todos os vendedores' });
+    fillVendedorSelectCanal('pros-f-vendedor', { emptyLabel: 'Selecionar...' });
+  } else {
+    prosFillSelectOptions(document.getElementById('pros-filtro-vendedor'), vends, {
+      emptyLabel: 'Todos os vendedores',
+    });
+    prosFillSelectOptions(document.getElementById('pros-f-vendedor'), vends, {
+      emptyLabel: 'Selecionar...',
+    });
+  }
   prosFillSelectOptions(document.getElementById('pros-filtro-segmento'), segs, {
     emptyLabel: 'Todos os segmentos',
-  });
-  prosFillSelectOptions(document.getElementById('pros-f-vendedor'), vends, {
-    emptyLabel: 'Selecionar...',
   });
   prosFillSelectOptions(document.getElementById('pros-f-segmento'), segs, {
     emptyLabel: 'Selecionar...',
@@ -17151,7 +17171,12 @@ function prosPopulateCanalUI() {
 
 function prosApplyCanalScope() {
   const canalId = prosCanalActivoId();
-  prosData = (prosDataAll || []).filter(p => prosLeadCanalApp(p) === canalId);
+  let rows = (prosDataAll || []).filter(p => prosLeadCanalApp(p) === canalId);
+  // Horeca: vendedor logado só vê os seus leads (admin / Filipe vêem todos)
+  if (typeof filterByUtilizadorActivo === 'function') {
+    rows = filterByUtilizadorActivo(rows, p => p && p.vendedor);
+  }
+  prosData = rows;
 }
 
 /** Marca leads sem canal_app como horeca (local + PATCH se a coluna existir). */
@@ -17530,13 +17555,16 @@ function prosEstadoTabsHtml(base, active) {
 }
 
 function renderPros() {
-  const vendedor = document.getElementById('pros-filtro-vendedor')?.value || '';
+  const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
+  const vendedorSel = document.getElementById('pros-filtro-vendedor')?.value || '';
+  const vendedor = scope || vendedorSel;
   const segmento = document.getElementById('pros-filtro-segmento')?.value || '';
   const estadoTab = prosEstadoTab || 'todos';
+  const norm = typeof normNomeUtilizador === 'function' ? normNomeUtilizador : (s => String(s || ''));
 
   // Base: aplica filtros de vendedor/segmento (serve para contagens das abas e resumo).
-  const base = prosData.filter(p => {
-    if (vendedor && p.vendedor !== vendedor) return false;
+  const base = (prosData || []).filter(p => {
+    if (vendedor && norm(p.vendedor) !== norm(vendedor)) return false;
     if (segmento && p.segmento !== segmento) return false;
     return true;
   });
@@ -17544,15 +17572,17 @@ function renderPros() {
   // Lista: só o estado da aba activa.
   const dados = estadoTab === 'todos' ? base : base.filter(p => p.estado === estadoTab);
 
-  // info
-  const ativos   = prosData.filter(p => p.estado !== 'ganho' && p.estado !== 'perdido').length;
-  const ganhos   = prosData.filter(p => p.estado === 'ganho').length;
-  const perdidos = prosData.filter(p => p.estado === 'perdido').length;
-  const totalCaps = prosData.filter(p=>p.estado!=='perdido').reduce((s,p)=>s+(p.potencial_caps||0),0);
-  const totalKg   = prosData.filter(p=>p.estado!=='perdido').reduce((s,p)=>s+(parseFloat(p.potencial_kg)||0),0);
+  // info — contagens sobre a base filtrada (não sobre todos os leads do canal)
+  const ativos   = base.filter(p => p.estado !== 'ganho' && p.estado !== 'perdido').length;
+  const ganhos   = base.filter(p => p.estado === 'ganho').length;
+  const perdidos = base.filter(p => p.estado === 'perdido').length;
+  const totalCaps = base.filter(p=>p.estado!=='perdido').reduce((s,p)=>s+(p.potencial_caps||0),0);
+  const totalKg   = base.filter(p=>p.estado!=='perdido').reduce((s,p)=>s+(parseFloat(p.potencial_kg)||0),0);
   const canalNome = prosCanalActivoNome();
   document.getElementById('pros-info').innerHTML =
-    `<span style="font-weight:600">${prosData.length}</span> leads · ${escHtml(canalNome)} &nbsp;·&nbsp;
+    `<span style="font-weight:600">${base.length}</span> leads · ${escHtml(canalNome)}` +
+    (scope ? ` · <span style="color:var(--muted)">só ${escHtml(scope)}</span>` : '') +
+    ` &nbsp;·&nbsp;
      <span style="color:#16a34a;font-weight:600">${ganhos} ganhos</span> &nbsp;·&nbsp;
      <span style="color:#dc2626;">${perdidos} perdidos</span> &nbsp;·&nbsp;
      <span style="font-weight:600">${ativos} ativos</span> &nbsp;·&nbsp;
@@ -20809,7 +20839,11 @@ async function exportProsExcel() {
   await ensureXLSX();
   const canalId = prosCanalActivoId();
   const canalNome = prosCanalActivoNome();
-  const rows = prosData.map(p => ({
+  let src = prosData || [];
+  if (typeof filterByUtilizadorActivo === 'function') {
+    src = filterByUtilizadorActivo(src, p => p && p.vendedor);
+  }
+  const rows = src.map(p => ({
     'Canal':          canalNome,
     'Nome':           p.nome,
     'Vendedor':       p.vendedor,
