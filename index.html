@@ -13174,6 +13174,13 @@ async function clearVendas() {
     localStorage.removeItem(VENDAS_STORE);
     window._vendasMemCache = null;
     invalidateVendasCoberturaCache();
+    try { localStorage.removeItem(VENDAS_COBERTURA_LS_KEY); } catch (_) {}
+    try { if (typeof idbSet === 'function') await idbSet(VENDAS_COBERTURA_LS_KEY, null); } catch (_) {}
+    try {
+      await fetch(`${LISTA_CLIENTES_SUPA_URL}?id=eq.${VENDAS_COBERTURA_SUPA_ID}`, {
+        method: 'DELETE', headers: HEADERS,
+      });
+    } catch (_) {}
     (document.getElementById('dados-vendas-status') || document.getElementById('vendas-status')).innerHTML =
       '<div style="color:var(--danger);font-size:12px">🗑 Dados eliminados do servidor e cache limpo.</div>';
     loadContratosTab();
