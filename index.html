@@ -4344,6 +4344,11 @@ function clearSessionDataCaches() {
   try { allData = []; } catch (_) {}
   try { scEncerramentosPendentes = new Map(); } catch (_) {}
   try { scContenciosoPendentes = new Map(); } catch (_) {}
+  try { foraSPCache = null; } catch (_) {}
+  try { contratosCache = null; } catch (_) {}
+  try { window._contratosAllRows = null; } catch (_) {}
+  try { window._contratosPorRegistar = null; } catch (_) {}
+  try { window._clientesContenciosoView = null; } catch (_) {}
 }
 
 // Normalizar código SAP (001234 vs 1234)
@@ -4997,9 +5002,19 @@ function clienteTemEncerramentoPendente(cod) {
 }
 
 function getSCEncerramentosPendentesLista(vendFilt) {
-  return [...scEncerramentosPendentes.values()]
-    .filter(d => !vendFilt || d.vendedor === vendFilt)
-    .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
+  const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
+  const vend = scope || vendFilt || '';
+  let lista = [...scEncerramentosPendentes.values()];
+  if (typeof filterByUtilizadorActivo === 'function') {
+    lista = filterByUtilizadorActivo(lista, d => d && d.vendedor);
+  }
+  if (vend) {
+    const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vend) : vend;
+    lista = lista.filter(d =>
+      (typeof normNomeUtilizador === 'function' ? normNomeUtilizador(d.vendedor) : d.vendedor) === vn
+    );
+  }
+  return lista.sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
 }
 
 function buildSCEncerramentosPendentesHtml(lista, opts) {
@@ -5340,8 +5355,21 @@ function writeXlsxJsonDownload(items, sheetName, filename) {
 
 async function exportExcel() {
   await ensureXLSX();
+  let activos = getRegistosActivos(allData).filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+  if (typeof filterByUtilizadorActivo === 'function') activos = filterByUtilizadorActivo(activos);
+  const vend = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('filtro-vendedor-lista')
+    : (document.getElementById('filtro-vendedor-lista')?.value || '');
+  if (vend) {
+    const vn = normNomeUtilizador(vend);
+    activos = activos.filter(r => normNomeUtilizador(r.vendedor) === vn);
+  }
+  const codFilt = document.getElementById('filtro-cod')?.value?.trim()?.toLowerCase() || '';
+  const nomeFilt = document.getElementById('filtro-nome')?.value?.trim()?.toLowerCase() || '';
+  if (codFilt) activos = activos.filter(r => (r.cod||'').toLowerCase().includes(codFilt));
+  if (nomeFilt) activos = activos.filter(r => (r.nome||'').toLowerCase().includes(nomeFilt));
   const rows = [['Vendedor','Cód. Cliente','Nome','CEP','N Contrato','Equipamento','Tag','Data']];
-  allData.forEach(r => {
+  activos.forEach(r => {
     const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [{}];
     equips.forEach(e => rows.push([r.vendedor||'',r.cod||'',r.nome||'',r.cep||'',r.contrato||'',e.tipo||'',e.tag||'',r.data||'']));
   });
@@ -6640,7 +6668,9 @@ function renderSemCompras() {
   updateSCFaixasUI();
   fillSCVendedorSelect();
 
-  const vendFilt = document.getElementById('sc-vendedor')?.value || '';
+  const vendFilt = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('sc-vendedor')
+    : (document.getElementById('sc-vendedor')?.value || '');
   const isVarejo = (typeof _canalActivo !== 'undefined' && _canalActivo === 'varejo');
   const filtroEquipProf = !isVarejo && scFiltroEquipProf && scTemFaixaCurtaActiva();
   const hoje = scDataRef || new Date();
@@ -6670,7 +6700,7 @@ function renderSemCompras() {
 
   const resultado = [];
   for (const cli of listaCanal) {
-    if (vendFilt && cli.vendedor !== vendFilt) continue;
+    if (vendFilt && normNomeUtilizador(cli.vendedor) !== normNomeUtilizador(vendFilt)) continue;
     if (clienteTemEncerramentoPendente(cli.cod)) continue;
     const ultimaCompra = getUltimaCompraFamilia(cli.cod);
 
@@ -6928,7 +6958,9 @@ function renderSemCompras() {
 async function exportSCExcel() {
   if (!scLoaded) { toast('Carrega primeiro um ficheiro de vendas.', 'error'); return; }
   await ensureXLSX();
-  const vendFilt = document.getElementById('sc-vendedor')?.value || '';
+  const vendFilt = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('sc-vendedor')
+    : (document.getElementById('sc-vendedor')?.value || '');
   const filtroEquipProf = scFiltroEquipProf && scTemFaixaCurtaActiva();
   const hoje = scDataRef || new Date();
 
@@ -6936,7 +6968,7 @@ async function exportSCExcel() {
   if (filtroEquipProf) headers.splice(4, 0, 'Equipamento profissional');
   const rows = [headers];
   for (const cli of getListaClientesActiva()) {
-    if (vendFilt && cli.vendedor !== vendFilt) continue;
+    if (vendFilt && normNomeUtilizador(cli.vendedor) !== normNomeUtilizador(vendFilt)) continue;
     if (clienteTemEncerramentoPendente(cli.cod)) continue;
     const ultimaCompra = getUltimaCompraFamilia(cli.cod);
     if (!ultimaCompra) continue;
@@ -7055,11 +7087,19 @@ function renderForaSP() {
   const cont = document.getElementById('fsp-content');
   if (!cont || !foraSPCache) return;
 
-  const vendFilt   = document.getElementById('fsp-vendedor')?.value || '';
+  const vendFilt   = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('fsp-vendedor')
+    : (document.getElementById('fsp-vendedor')?.value || '');
   const estadoFilt = document.getElementById('fsp-estado')?.value || '';
 
   let lista = foraSPCache;
-  if (vendFilt)   lista = lista.filter(c => c.vendedor === vendFilt);
+  if (typeof filterByUtilizadorActivo === 'function') {
+    lista = filterByUtilizadorActivo(lista, c => c && c.vendedor);
+  }
+  if (vendFilt) {
+    const vn = normNomeUtilizador(vendFilt);
+    lista = lista.filter(c => normNomeUtilizador(c.vendedor) === vn);
+  }
   if (estadoFilt) lista = lista.filter(c => c.estado === estadoFilt);
 
   const totalVendas = lista.reduce((s, c) => s + (c.vendas2025 || 0), 0);
@@ -7145,10 +7185,18 @@ function renderForaSP() {
 
 async function exportForaSPExcel() {
   await ensureXLSX();
-  const vendFilt   = document.getElementById('fsp-vendedor')?.value || '';
+  const vendFilt   = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('fsp-vendedor')
+    : (document.getElementById('fsp-vendedor')?.value || '');
   const estadoFilt = document.getElementById('fsp-estado')?.value || '';
   let lista = foraSPCache || [];
-  if (vendFilt)   lista = lista.filter(c => c.vendedor === vendFilt);
+  if (typeof filterByUtilizadorActivo === 'function') {
+    lista = filterByUtilizadorActivo(lista, c => c && c.vendedor);
+  }
+  if (vendFilt) {
+    const vn = normNomeUtilizador(vendFilt);
+    lista = lista.filter(c => normNomeUtilizador(c.vendedor) === vn);
+  }
   if (estadoFilt) lista = lista.filter(c => c.estado === estadoFilt);
 
   const rows = [['Estado','Nome Estado','Cód.','Nome','Vendedor','CEP','Vendas 2025 (R$)']];
@@ -7356,8 +7404,13 @@ function renderContratosPorRegistar() {
 async function exportContratosPorRegistarExcel() {
   if (!window._contratosPorRegistar) return;
   await ensureXLSX();
-  const vendFilt = document.getElementById('contratos-pr-vendedor')?.value || '';
+  const vendFilt = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('contratos-pr-vendedor')
+    : (document.getElementById('contratos-pr-vendedor')?.value || '');
   let lista = window._contratosPorRegistar;
+  if (typeof filterByUtilizadorActivo === 'function') {
+    lista = filterByUtilizadorActivo(lista, r => r && r.vendedor);
+  }
   if (vendFilt) {
     const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vendFilt) : vendFilt;
     lista = lista.filter(r =>
@@ -7750,9 +7803,14 @@ function renderDistContratosFalta() {
 
 function renderPendentes() {
   const search = document.getElementById('pending-search')?.value?.trim()?.toLowerCase() || '';
-  const vendFilt = document.getElementById('pending-filter-vendedor')?.value || '';
+  const vendFilt = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('pending-filter-vendedor')
+    : (document.getElementById('pending-filter-vendedor')?.value || '');
   const canalId = resolveCanalActivoId();
   let filtered = pendentesData.filter(c => !canalId || clientePertenceAoCanal(c, canalId));
+  if (typeof filterByUtilizadorActivo === 'function') {
+    filtered = filterByUtilizadorActivo(filtered, c => c && c.vendedor);
+  }
   if (search) filtered = filtered.filter(c => c.nome.toLowerCase().includes(search) || c.cod.toLowerCase().includes(search) || (c.vendedor||'').toLowerCase().includes(search));
   if (vendFilt) filtered = filtered.filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vendFilt));
 
@@ -8968,7 +9026,10 @@ async function loadResumoCont() {
     });
     const registosRaw = await res.json();
     if (!Array.isArray(registosRaw)) return;
-    const registos = getRegistosActivos(registosRaw).filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+    let registos = getRegistosActivos(registosRaw).filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+    if (typeof filterByUtilizadorActivo === 'function') {
+      registos = filterByUtilizadorActivo(registos);
+    }
 
     const stats = {};
     for (const r of registos) {
@@ -10169,7 +10230,9 @@ function visOnStatsVendedorChange() {
 function visFillStatsZdSelect() {
   const el = document.getElementById('vis-stats-zd');
   if (!el) return;
-  const vend = document.getElementById('vis-stats-vendedor')?.value || '';
+  const vend = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('vis-stats-vendedor')
+    : (document.getElementById('vis-stats-vendedor')?.value || '');
   const cur = el.value;
   const set = new Set();
   (vend ? visClientesDoVendedor(vend) : (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : []) || [])
@@ -10513,9 +10576,13 @@ function visAjustesCollectChanges() {
   const byCod = new Map();
   const lista = (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : []) || [];
   lista.forEach(c => byCod.set(String(c.cod || '').trim(), c));
-  // Fallback: lista completa se o código não estiver na activa
+  // Fallback: lista completa se o código não estiver na activa (sempre com escopo Horeca)
   if (typeof getListaClientesCompleta === 'function') {
-    (getListaClientesCompleta() || []).forEach(c => {
+    let completa = getListaClientesCompleta() || [];
+    if (typeof filterByUtilizadorActivo === 'function') {
+      completa = filterByUtilizadorActivo(completa, c => c && c.vendedor);
+    }
+    completa.forEach(c => {
       const k = String(c.cod || '').trim();
       if (k && !byCod.has(k)) byCod.set(k, c);
     });
@@ -10964,9 +11031,14 @@ async function visUpsertRow(row) {
 function visStatsFilteredRows() {
   const de = visDataISO('vis-stats-de');
   const ate = visDataISO('vis-stats-ate');
-  const vendFilt = document.getElementById('vis-stats-vendedor')?.value || '';
+  const vendFilt = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('vis-stats-vendedor')
+    : (document.getElementById('vis-stats-vendedor')?.value || '');
   const zdFilt = document.getElementById('vis-stats-zd')?.value || '';
   let rows = (_visitasCache || []).filter(r => r.data >= de && r.data <= ate);
+  if (typeof filterByUtilizadorActivo === 'function') {
+    rows = filterByUtilizadorActivo(rows, r => r && r.vendedor);
+  }
   if (vendFilt) rows = rows.filter(r => visNormVend(r.vendedor) === visNormVend(vendFilt));
   if (zdFilt) {
     rows = rows.filter(r => {
@@ -11248,6 +11320,9 @@ async function renderClientesContencioso() {
 
 async function exportClientesContenciosoExcel() {
   let lista = window._clientesContenciosoView || getListaContenciosoActiva(document.getElementById('cc-canal')?.value || '');
+  if (typeof filterByUtilizadorActivo === 'function') {
+    lista = filterByUtilizadorActivo(lista, c => c && c.vendedor);
+  }
   const tblCc = document.querySelector('#cc-content table');
   if (typeof filterRowsToVisibleTable === 'function' && tblCc) {
     lista = filterRowsToVisibleTable(lista, tblCc, c => c.cod, 0);
@@ -13370,7 +13445,10 @@ function genId() {
 }
 
 async function loadATResumo() {
-  const chamados = getATChamados();
+  let chamados = getATChamados();
+  if (typeof filterByUtilizadorActivo === 'function') {
+    chamados = filterByUtilizadorActivo(chamados, c => c && c.vendedor);
+  }
   const cont = document.getElementById('at-resumo-content');
   if (!cont) return;
   if (!chamados.length) {
@@ -13415,7 +13493,10 @@ async function loadATResumo() {
 }
 
 async function exportATExcel() {
-  const chamados = getATChamados();
+  let chamados = getATChamados();
+  if (typeof filterByUtilizadorActivo === 'function') {
+    chamados = filterByUtilizadorActivo(chamados, c => c && c.vendedor);
+  }
   if (!chamados.length) { toast('Nenhum chamado para exportar.', 'error'); return; }
   await ensureXLSX();
   const rows = [['Data','Hora','Vendedor','Cód. Cliente','Cliente','Equipamento','Tag','Tipo Avaria','Descrição','Urgência','Tipo Equip']];
@@ -13529,6 +13610,8 @@ async function loadContratosTab(forceRefresh = false) {
   // Usa cache se disponível e não forçar refresh
   if (contratosCache && !forceRefresh) {
     renderContratosFromCache(contratosCache);
+    // Reaplicar escopo Horeca (cache HTML pode ser de outro utilizador / all-vendors)
+    try { if (typeof filtrarContratosVendedor === 'function') filtrarContratosVendedor(); } catch (_) {}
     return;
   }
 
@@ -13547,6 +13630,11 @@ async function loadContratosTab(forceRefresh = false) {
       registos = filterByCanalActivoVendedor(registos);
     } else if (typeof vendedorPertenceAoCanalActivo === 'function') {
       registos = registos.filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+    }
+
+    // Horeca: vendedor logado só vê os seus (antes do cache)
+    if (typeof filterByUtilizadorActivo === 'function') {
+      registos = filterByUtilizadorActivo(registos);
     }
 
     // Apply vendedor filter if active
@@ -13862,9 +13950,14 @@ function buildContratosResumoHtml(scopeRows, activeNivel) {
 }
 
 function filtrarContratosVendedor() {
-  const vendFilt = document.getElementById('contratos-vendedor')?.value || '';
-  const allRows = window._contratosAllRows;
+  const vendFilt = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('contratos-vendedor')
+    : (document.getElementById('contratos-vendedor')?.value || '');
+  let allRows = window._contratosAllRows;
   if (!allRows) { loadContratosTab(true); return; }
+  if (typeof filterByUtilizadorActivo === 'function') {
+    allRows = filterByUtilizadorActivo(allRows, r => r && r.vendedor);
+  }
 
   const codFilt  = (document.getElementById('contratos-search-cod')?.value||'').trim().toLowerCase();
   const nomeFilt = (document.getElementById('contratos-search-nome')?.value||'').trim().toLowerCase();
@@ -14342,12 +14435,19 @@ async function exportContratosExcel() {
   if (!allRows?.length) { toast('Nenhum dado para exportar.', 'error'); return; }
   await ensureXLSX();
 
-  const vendFilt = document.getElementById('contratos-vendedor')?.value || '';
+  if (typeof filterByUtilizadorActivo === 'function') {
+    allRows = filterByUtilizadorActivo(allRows, r => r && r.vendedor);
+  }
+  const vendFilt = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('contratos-vendedor')
+    : (document.getElementById('contratos-vendedor')?.value || '');
   const codFilt  = (document.getElementById('contratos-search-cod')?.value||'').trim().toLowerCase();
   const nomeFilt = (document.getElementById('contratos-search-nome')?.value||'').trim().toLowerCase();
   const numFilt  = (document.getElementById('contratos-search-num')?.value||'').trim().toLowerCase();
 
-  let rows = vendFilt ? allRows.filter(r => r.vendedor === vendFilt) : [...allRows];
+  let rows = vendFilt
+    ? allRows.filter(r => normNomeUtilizador(r.vendedor) === normNomeUtilizador(vendFilt))
+    : [...allRows];
   if (codFilt)  rows = rows.filter(r => String(r.cod||'').toLowerCase().includes(codFilt));
   if (nomeFilt) rows = rows.filter(r => String(r.nome||'').toLowerCase().includes(nomeFilt));
   if (numFilt)  rows = rows.filter(r => String(r.contrato||'').toLowerCase().includes(numFilt));
@@ -15184,6 +15284,16 @@ function filterByUtilizadorActivo(rows, getVend = r => r && r.vendedor) {
   return rows.filter(r => normNomeUtilizador(getVend(r)) === sn);
 }
 
+/**
+ * Filtro vendedor efectivo: no Horeca o login (getVendedorScope) manda sobre o select
+ * (evita «Todos» / select vazio a mostrar dados de outros vendedores).
+ */
+function resolveVendFilt(selectId) {
+  const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
+  if (scope) return scope;
+  return (selectId && document.getElementById(selectId)?.value) || '';
+}
+
 function podeAcederCanal(canalId) {
   if (isAdmin()) return true;
   const lista = CANAL_ACESSO[canalId] || [];
@@ -15320,6 +15430,14 @@ function aplicarUtilizador(nome) {
       if (typeof renderPros === 'function') renderPros();
     }
   } catch (_) {}
+  // Invalidar caches partilhados (evita HTML/dados de outro utilizador após login)
+  try {
+    if (typeof clearContratosCache === 'function') clearContratosCache();
+    window._contratosAllRows = null;
+    window._contratosPorRegistar = null;
+    window._clientesContenciosoView = null;
+    foraSPCache = null;
+  } catch (_) {}
   atualizarHomeCanais();
 }
 
@@ -15351,7 +15469,9 @@ async function renderEncerramentoPendente() {
   el.innerHTML = '<div style="color:var(--muted);font-size:13px;">A carregar...</div>';
   try {
     await loadSCEncerramentosPendentes();
-    const vendFilt = document.getElementById('ep-vendedor')?.value || '';
+    const vendFilt = typeof resolveVendFilt === 'function'
+      ? resolveVendFilt('ep-vendedor')
+      : (document.getElementById('ep-vendedor')?.value || '');
     const lista = getSCEncerramentosPendentesLista(vendFilt);
     if (info) {
       info.innerHTML = lista.length
@@ -16736,12 +16856,18 @@ async function renderContenciosoPendente() {
   el.innerHTML = '<div style="color:var(--muted);font-size:13px;">A carregar...</div>';
   try {
     await loadSCContenciosoPendentes();
-    const vendFilt = document.getElementById('cp-vendedor')?.value || '';
+    const vendFilt = typeof resolveVendFilt === 'function'
+      ? resolveVendFilt('cp-vendedor')
+      : (document.getElementById('cp-vendedor')?.value || '');
     const nomesCanal = (typeof _canalActivo !== 'undefined' && _canalActivo && typeof getVendedoresNomesDoCanal === 'function')
       ? getVendedoresNomesDoCanal(_canalActivo) : [];
-    const lista = [...scContenciosoPendentes.values()]
+    let lista = [...scContenciosoPendentes.values()];
+    if (typeof filterByUtilizadorActivo === 'function') {
+      lista = filterByUtilizadorActivo(lista, d => d && d.vendedor);
+    }
+    lista = lista
       .filter(d => {
-        if (vendFilt && d.vendedor !== vendFilt) return false;
+        if (vendFilt && normNomeUtilizador(d.vendedor) !== normNomeUtilizador(vendFilt)) return false;
         // No canal activo: só pedidos dos vendedores desse canal
         if (nomesCanal.length) {
           return nomesCanal.includes(normNomeUtilizador(d.vendedor));
@@ -22731,8 +22857,32 @@ function renderATHistorico() {
 async function exportATHistoricoExcel() {
   if (!atHistData || !atHistData.length) { toast('Nenhum dado para exportar.', 'error'); return; }
   await ensureXLSX();
+  const vendFilt = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('at-hist-vendedor')
+    : (document.getElementById('at-hist-vendedor')?.value || '');
+  const canalId = typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : _canalActivo;
+  const isDist = canalId === 'distribuidores';
+  const canalVends = (canalId && typeof getVendedoresNomesDoCanal === 'function')
+    ? new Set(getVendedoresNomesDoCanal(canalId))
+    : null;
+  let pool = atHistData;
+  if (canalVends?.size) {
+    pool = atHistData.filter(c =>
+      canalVends.has(normNomeUtilizador(c.vendedor)) ||
+      (isDist && String(c.tipo_equip || '').startsWith('dist_'))
+    );
+  }
+  if (typeof filterByUtilizadorActivo === 'function') {
+    pool = filterByUtilizadorActivo(pool);
+  }
+  let data = pool;
+  if (vendFilt) {
+    const vn = normNomeUtilizador(vendFilt);
+    data = data.filter(c => normNomeUtilizador(c.vendedor) === vn);
+  }
+  if (!data.length) { toast('Nenhum dado para exportar.', 'error'); return; }
   const rows = [['Data','Hora','Vendedor','Cód. Cliente','Cliente','Equipamento/Peça','Tag/Material','Tipo Pedido','Avaria/Pedido','Descrição','Urgência','Tipo Equip','Modelo Dom']];
-  atHistData.forEach(c => rows.push([
+  data.forEach(c => rows.push([
     c.data||'', c.hora||'', c.vendedor||'', c.cliente_cod||'', c.cliente_nome||'',
     c.equip_tipo||'', c.equip_tag||'', atTipoPedidoLabel(c), c.avaria||'', c.descricao||'', c.urgencia||'',
     c.tipo_equip||'', c.modelo_dom||''
@@ -22882,7 +23032,14 @@ async function ctBuscarCliente() {
     const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/registos?cod=ilike.*' + encodeURIComponent(cod) + '*&limit=5', {
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
     });
-    const data = await res.json();
+    let data = await res.json();
+    if (Array.isArray(data)) {
+      if (typeof filterByCanalActivoVendedor === 'function') data = filterByCanalActivoVendedor(data);
+      else if (typeof vendedorPertenceAoCanalActivo === 'function') {
+        data = data.filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+      }
+      if (typeof filterByUtilizadorActivo === 'function') data = filterByUtilizadorActivo(data);
+    }
 
     // Também procurar CNPJ na lista SAP activa (tem o campo cnpj do Excel)
     const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
@@ -23422,12 +23579,27 @@ async function ctGuardarContratoSuapbase(data) {
   if (!cod) return;
 
   // Buscar o registo actual do cliente
-  const res = await fetch(SUPA_URL + '?cod=eq.' + encodeURIComponent(cod) + '&select=id,contratos', {
+  const res = await fetch(SUPA_URL + '?cod=eq.' + encodeURIComponent(cod) + '&select=id,contratos,vendedor', {
     headers: HEADERS
   });
   if (!res.ok) return;
-  const registos = await res.json();
-  if (!registos.length) return;
+  let registos = await res.json();
+  if (typeof filterByCanalActivoVendedor === 'function') {
+    registos = filterByCanalActivoVendedor(registos);
+  } else if (typeof vendedorPertenceAoCanalActivo === 'function') {
+    registos = registos.filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+  }
+  if (typeof filterByUtilizadorActivo === 'function') {
+    registos = filterByUtilizadorActivo(registos);
+  }
+  if (!registos.length) {
+    toast('Sem permissão para guardar contrato neste cliente.', 'error');
+    return;
+  }
+  if (typeof podeEditarRegisto === 'function' && !podeEditarRegisto(registos[0].vendedor)) {
+    toast('Sem permissão para guardar contrato neste cliente.', 'error');
+    return;
+  }
 
   const registo = registos[0];
   const contratosActuais = Array.isArray(registo.contratos) ? registo.contratos : [];
