@@ -9868,12 +9868,15 @@ async function visRefreshCache() {
 }
 
 function visNomesVendedoresUnicos() {
-  const set = new Set();
-  (getVendedoresCadastro() || []).forEach(v => {
-    if (v?.nome && !String(v.cod).endsWith('999')) set.add(String(v.nome).trim());
-  });
-  ['HÉLCIO GRÉGIO', 'PAULO FONTES', 'DANIELA SANTOS', 'FILIPE NEVES'].forEach(n => set.add(n));
-  return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt'));
+  // Visitas é só Horeca — nunca misturar Ecommerce / Varejo / Dist.
+  if (typeof getVendedoresCanalActivo === 'function') {
+    const canal = getVendedoresCanalActivo();
+    if (Array.isArray(canal) && canal.length) {
+      return canal.slice().sort((a, b) => a.localeCompare(b, 'pt'));
+    }
+  }
+  // Fallback Horeca clássico
+  return ['HÉLCIO GRÉGIO', 'PAULO FONTES', 'DANIELA SANTOS', 'FILIPE NEVES'];
 }
 
 function visFillVendedorSelects() {
