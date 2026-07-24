@@ -13122,6 +13122,7 @@ async function loadContratosTab(forceRefresh = false) {
           .reduce((sum, v) => sum + (parseFloat(v.qty) || 0), 0);
         const pct = consumoEsperado > 0 ? Math.round((consumoReal / consumoEsperado) * 100) : null;
         const pctTotal = totalContratado > 0 ? Math.round((consumoReal / totalContratado) * 100) : null;
+        const mediaReal = mesesDecorridos > 0 ? consumoReal / mesesDecorridos : null;
 
         // Format inicio
         const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -13150,7 +13151,7 @@ async function loadContratosTab(forceRefresh = false) {
           cod: r.cod, nome: r.nome, vendedor: r.vendedor || '—', contrato: r.contrato || '—',
           inicioFmt, duracao, fimFmt, unidade,
           totalContratado, consumoMes, mesesDecorridos,
-          consumoEsperado, consumoReal,
+          consumoEsperado, consumoReal, mediaReal,
           pct, pctTotal, tipo, alerta, mesesParaFim, pctConsumo
         });
       });
@@ -13202,6 +13203,7 @@ async function loadContratosTab(forceRefresh = false) {
         <th style="${TH2}text-align:right;min-width:100px">TOTAL</th>
         <th style="${TH2}text-align:right;min-width:110px">ESPERADO</th>
         <th style="${TH2}text-align:right;min-width:100px">REAL</th>
+        <th style="${TH2}text-align:right;min-width:100px" title="Consumo real ÷ meses decorridos">MÉDIA REAL</th>
         <th style="${TH2}text-align:center;min-width:80px">% TOTAL</th>
         <th style="${TH2}text-align:center;min-width:80px">% YTD</th>
         <th style="${TH2}text-align:center;min-width:200px">ALERTA</th>
@@ -13235,6 +13237,7 @@ async function loadContratosTab(forceRefresh = false) {
         <td style="${td}text-align:right">${fmtNum2(r.totalContratado,r.unidade)}</td>
         <td style="${td}text-align:right" title="${r.consumoEsperado!==null?fmtNum2(r.consumoEsperado,r.unidade):'—'}">${r.consumoEsperado!==null?fmtNum2(r.consumoEsperado,r.unidade):'—'}</td>
         <td style="${td}text-align:right;font-weight:600" title="${r.consumoReal!==null?fmtNum2(r.consumoReal,r.unidade):'—'}">${r.consumoReal!==null?fmtNum2(r.consumoReal,r.unidade):'—'}</td>
+        <td style="${td}text-align:right" title="${r.mediaReal!==null?fmtNum2(r.mediaReal,r.unidade)+' / mês ('+r.mesesDecorridos+' meses)':'—'}">${r.mediaReal!==null?fmtNum2(r.mediaReal,r.unidade):'—'}</td>
         <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal!==null?`<span style="background:${pctBg2(r.pctTotal)};color:${pctColor2(r.pctTotal)};padding:2px 8px;border-radius:10px;font-weight:700">${r.pctTotal}%</span>`:'—'}</td>
         <td style="${td}text-align:center;background:#F8FFF9">${r.pct!==null&&r.mesesDecorridos>0?`<span style="background:${pBg};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700">${r.pct}%</span>`:'—'}</td>
         <td style="${td}text-align:center;overflow:hidden;">${alertaHtml}</td>
@@ -13446,6 +13449,7 @@ function filtrarContratosVendedor() {
       <th style="${TH}text-align:right">TOTAL</th>
       <th style="${TH}text-align:right">ESPERADO</th>
       <th style="${TH}text-align:right">REAL</th>
+      <th style="${TH}text-align:right" title="Consumo real ÷ meses decorridos">MÉDIA REAL</th>
       <th style="${TH}text-align:center">% TOTAL</th>
       <th style="${TH}text-align:center">% YTD</th>
       <th style="${TH}text-align:center;min-width:160px">ALERTA</th>
@@ -13476,6 +13480,7 @@ function filtrarContratosVendedor() {
       <td style="${td}text-align:right">${fmtNum(r.totalContratado, r.unidade)}</td>
       <td style="${td}text-align:right">${r.consumoEsperado !== null ? fmtNum(r.consumoEsperado, r.unidade) : '—'}</td>
       <td style="${td}text-align:right;font-weight:600">${r.consumoReal !== null ? fmtNum(r.consumoReal, r.unidade) : '—'}</td>
+      <td style="${td}text-align:right" title="${r.mediaReal!==null?fmtNum(r.mediaReal,r.unidade)+' / mês ('+r.mesesDecorridos+' meses)':'—'}">${r.mediaReal !== null ? fmtNum(r.mediaReal, r.unidade) : '—'}</td>
       <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal !== null ? `<span style="background:${pctBg(r.pctTotal)};color:${pctColor(r.pctTotal)};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pctTotal}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
       <td style="${td}text-align:center;background:#F8FFF9">${r.pct !== null && r.mesesDecorridos > 0 ? `<span style="background:${pBg};color:${pCol};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pct}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
       <td style="${td}text-align:center">${alertaHtml}</td>
@@ -13856,15 +13861,18 @@ async function exportContratosExcel() {
   if (numFilt)  rows = rows.filter(r => String(r.contrato||'').toLowerCase().includes(numFilt));
   if (!rows.length) { toast('Nenhum dado para exportar.', 'error'); return; }
 
-  const header = ['Vendedor','Cód.','Cliente','Nº Contrato','Início','Duração (meses)','Fim','Unidade','Tipo produto','Cons./Mês','Total Contratado','Esperado YTD','Consumo Real','% Total','% YTD','Meses decorridos','Alerta'];
+  const header = ['Vendedor','Cód.','Cliente','Nº Contrato','Início','Duração (meses)','Fim','Unidade','Tipo produto','Cons./Mês','Total Contratado','Esperado YTD','Consumo Real','Média Real','% Total','% YTD','Meses decorridos','Alerta'];
   const aoa = [header];
   rows.forEach(r => {
+    const mediaReal = r.mediaReal != null
+      ? r.mediaReal
+      : (r.mesesDecorridos > 0 ? r.consumoReal / r.mesesDecorridos : '');
     aoa.push([
       r.vendedor, r.cod, r.nome, r.contrato,
       r.inicioFmt, r.duracao, r.fimFmt,
       r.unidade === 'Kg' ? 'Kg' : 'Cápsulas',
       r.tipo,
-      r.consumoMes, r.totalContratado, r.consumoEsperado, r.consumoReal,
+      r.consumoMes, r.totalContratado, r.consumoEsperado, r.consumoReal, mediaReal,
       r.pctTotal != null ? r.pctTotal + '%' : '',
       r.pct != null ? r.pct + '%' : '',
       r.mesesDecorridos,
@@ -13872,7 +13880,7 @@ async function exportContratosExcel() {
     ]);
   });
   writeXlsxDownload(aoa, 'Contratos Cumprimento', 'contratos_cumprimento.xlsx',
-    [{wch:20},{wch:10},{wch:35},{wch:14},{wch:10},{wch:8},{wch:10},{wch:10},{wch:12},{wch:12},{wch:14},{wch:14},{wch:14},{wch:10},{wch:10},{wch:10},{wch:28}]);
+    [{wch:20},{wch:10},{wch:35},{wch:14},{wch:10},{wch:8},{wch:10},{wch:10},{wch:12},{wch:12},{wch:14},{wch:14},{wch:14},{wch:12},{wch:10},{wch:10},{wch:10},{wch:28}]);
 }
 
 // ─── UTILIZADOR / LOGIN ──────────────────────────────
