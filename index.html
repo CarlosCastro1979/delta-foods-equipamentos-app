@@ -1847,7 +1847,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">⚙</span>
         <span>
           <div class="hd-title">Dados</div>
-          <div class="hd-desc">Carregar Lista SAP, Vendas, Dívidas e códigos relacionados — para todos os canais.</div>
+          <div class="hd-desc">Carregar Lista SAP, Vendas, Dívidas e códigos relacionados — para todos os canais. Acesso: Christian, Andrea, Daniela K. (+ admin).</div>
         </span>
       </button>
     </div>
@@ -9490,9 +9490,8 @@ async function abrirDadosHome() {
       toast('Selecciona o utilizador primeiro.', 'warn');
       return;
     }
-    // Dados: só admin (Carlos / Filipe)
-    if (!isAdmin()) {
-      toast('A área Dados é só para administradores.', 'error');
+    if (!podeAcederDados()) {
+      toast('Sem acesso à área Dados. Só Christian, Andrea, Daniela K. e admin.', 'error');
       return;
     }
     _canalActivo = null;
@@ -9527,6 +9526,9 @@ const AT_AREA_ACESSO = ['Fernando', 'Ricardo Vicente Silva', 'Marcelo'];
 /** Área Financeira: Christian, Andrea, Daniela Kucinski + admin Carlos. PIN à entrada. */
 const FIN_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski'];
 
+/** Área Dados (carregamentos SAP/Vendas/Dívidas): mesmo grupo da Financeira + admin. */
+const DADOS_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski'];
+
 function podeAcederAreaTecnica() {
   if (isAdmin()) return true;
   const atual = normNomeUtilizador(getUtilizadorAtual());
@@ -9539,6 +9541,13 @@ function podeAcederAreaFinanceira() {
   const atual = normNomeUtilizador(getUtilizadorAtual());
   if (!atual) return false;
   return FIN_AREA_ACESSO.some(n => normNomeUtilizador(n) === atual);
+}
+
+function podeAcederDados() {
+  if (isAdmin()) return true;
+  const atual = normNomeUtilizador(getUtilizadorAtual());
+  if (!atual) return false;
+  return DADOS_AREA_ACESSO.some(n => normNomeUtilizador(n) === atual);
 }
 
 async function abrirAreaTecnicaHome() {
@@ -14786,10 +14795,10 @@ function atualizarHomeCanais() {
   });
   const dadosCard = document.querySelector('.home-dados-card');
   if (dadosCard) {
-    const okDados = !nome || isAdmin();
+    const okDados = !nome || podeAcederDados();
     dadosCard.classList.toggle('hc-locked', !okDados);
     dadosCard.disabled = !okDados;
-    dadosCard.title = okDados ? '' : 'Só administradores';
+    dadosCard.title = okDados ? 'Dados — PIN do utilizador' : 'Só Christian, Andrea, Daniela K. e admin';
     dadosCard.style.opacity = okDados ? '' : '0.45';
     dadosCard.style.cursor = okDados ? '' : 'not-allowed';
   }
