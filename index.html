@@ -13149,6 +13149,37 @@ async function getVendas(forceRefresh = false) {
     }
   });
 }
+
+/**
+ * Só as chaves de dedup (cod+data+tipo) — mais leve que getVendas completo.
+ * onProgress(loaded, pageSize) actualiza a UI durante a validação (evita “preso” em A validar…).
+ */
+async function getVendasDedupKeySet(onProgress) {
+  if (window._vendasMemCache && Array.isArray(window._vendasMemCache) && window._vendasMemCache.length) {
+    const keys = new Set(window._vendasMemCache.map(v => vendaDedupKey(v.cod, v.data, v.tipo)));
+    if (typeof onProgress === 'function') onProgress(keys.size, keys.size);
+    return { keys, count: keys.size };
+  }
+  const keys = new Set();
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const to = from + pageSize - 1;
+    const res = await fetch(
+      `${SUPA_VENDAS}?select=cod,data,tipo&order=cod.asc,data.asc`,
+      { headers: { ...HEADERS, Range: `${from}-${to}` } }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' ao validar vendas existentes');
+    const page = await res.json();
+    if (!Array.isArray(page) || !page.length) break;
+    for (const v of page) keys.add(vendaDedupKey(v.cod, v.data, v.tipo));
+    from += page.length;
+    if (typeof onProgress === 'function') onProgress(from, pageSize);
+    if (page.length < pageSize) break;
+    if (from > 500000) break;
+  }
+  return { keys, count: keys.size };
+}
 async function saveVendas(arr) {
   // Migrate any localStorage vendas to Supabase
   try { localStorage.removeItem(VENDAS_STORE); } catch(e) {}
@@ -13212,11 +13243,16 @@ async function processVendasFile(event) {
       });
     }
 
-    // Carregar o que já existe no servidor (uma vez) — dedup normalizado
-    setStatus('<div style="color:var(--muted);font-size:12px">⏳ A validar registos já existentes no servidor...</div>');
-    const existingVendas = await getVendas(true);
-    const existingCount = existingVendas.length;
-    const existingKeys = new Set(existingVendas.map(v => vendaDedupKey(v.cod, v.data, v.tipo)));
+    // Carregar chaves já existentes (dedup) — com progresso (pode haver dezenas/centenas de milhares)
+    setStatus('<div style="color:var(--muted);font-size:12px">⏳ A validar registos já existentes no servidor… (0)</div>');
+    const { keys: existingKeys, count: existingCount } = await getVendasDedupKeySet((loaded) => {
+      setStatus(
+        `<div style="color:var(--muted);font-size:12px">⏳ A validar registos já existentes no servidor… `
+        + `<strong>${loaded.toLocaleString('pt-BR')}</strong> linhas`
+        + `<br><span style="font-size:11px">Isto pode demorar 1–3 min na 1.ª vez; não feches a página.</span></div>`
+      );
+    });
+    console.log('Dedup vendas:', existingCount, 'chaves no servidor');
 
     const newVendas = [];
     let linhasValidas = 0;
