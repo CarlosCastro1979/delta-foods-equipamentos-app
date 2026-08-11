@@ -13152,34 +13152,51 @@ async function getVendas(forceRefresh = false) {
 }
 
 /**
- * Só as chaves de dedup (cod+data+tipo) — mais leve que getVendas completo.
- * onProgress(loaded, pageSize) actualiza a UI durante a validação (evita “preso” em A validar…).
+ * Chaves de dedup (cod+data+tipo). Se de/ate (YYYY-MM-DD) forem dados,
+ * só lê esse intervalo no Supabase — ex.: Jul/Ago 2026, não a base toda desde 2019.
+ * onProgress(loaded) actualiza a UI.
  */
-async function getVendasDedupKeySet(onProgress) {
+async function getVendasDedupKeySet(opts) {
+  const onProgress = typeof opts === 'function' ? opts : opts?.onProgress;
+  const de = (opts && opts.de) || null;
+  const ate = (opts && opts.ate) || null;
+
+  // Cache completa em memória: filtrar por intervalo se pedido
   if (window._vendasMemCache && Array.isArray(window._vendasMemCache) && window._vendasMemCache.length) {
-    const keys = new Set(window._vendasMemCache.map(v => vendaDedupKey(v.cod, v.data, v.tipo)));
-    if (typeof onProgress === 'function') onProgress(keys.size, keys.size);
-    return { keys, count: keys.size };
+    const keys = new Set();
+    for (const v of window._vendasMemCache) {
+      const d = String(v.data || '').slice(0, 10);
+      if (de && d < de) continue;
+      if (ate && d > ate) continue;
+      keys.add(vendaDedupKey(v.cod, v.data, v.tipo));
+    }
+    if (typeof onProgress === 'function') onProgress(keys.size);
+    return { keys, count: keys.size, de, ate };
   }
+
   const keys = new Set();
   let from = 0;
   const pageSize = 1000;
+  const qs = ['select=cod,data,tipo', 'order=cod.asc,data.asc'];
+  if (de) qs.push(`data=gte.${encodeURIComponent(de)}`);
+  if (ate) qs.push(`data=lte.${encodeURIComponent(ate)}`);
+  const baseUrl = `${SUPA_VENDAS}?${qs.join('&')}`;
+
   while (true) {
     const to = from + pageSize - 1;
-    const res = await fetch(
-      `${SUPA_VENDAS}?select=cod,data,tipo&order=cod.asc,data.asc`,
-      { headers: { ...HEADERS, Range: `${from}-${to}` } }
-    );
+    const res = await fetch(baseUrl, {
+      headers: { ...HEADERS, Range: `${from}-${to}` }
+    });
     if (!res.ok) throw new Error('HTTP ' + res.status + ' ao validar vendas existentes');
     const page = await res.json();
     if (!Array.isArray(page) || !page.length) break;
     for (const v of page) keys.add(vendaDedupKey(v.cod, v.data, v.tipo));
     from += page.length;
-    if (typeof onProgress === 'function') onProgress(from, pageSize);
+    if (typeof onProgress === 'function') onProgress(from);
     if (page.length < pageSize) break;
     if (from > 500000) break;
   }
-  return { keys, count: keys.size };
+  return { keys, count: keys.size, de, ate };
 }
 async function saveVendas(arr) {
   // Migrate any localStorage vendas to Supabase
@@ -13244,22 +13261,15 @@ async function processVendasFile(event) {
       });
     }
 
-    // Carregar chaves já existentes (dedup) — com progresso (pode haver dezenas/centenas de milhares)
-    setStatus('<div style="color:var(--muted);font-size:12px">⏳ A validar registos já existentes no servidor… (0)</div>');
-    const { keys: existingKeys, count: existingCount } = await getVendasDedupKeySet((loaded) => {
-      setStatus(
-        `<div style="color:var(--muted);font-size:12px">⏳ A validar registos já existentes no servidor… `
-        + `<strong>${loaded.toLocaleString('pt-BR')}</strong> linhas`
-        + `<br><span style="font-size:11px">Isto pode demorar 1–3 min na 1.ª vez; não feches a página.</span></div>`
-      );
-    });
-    console.log('Dedup vendas:', existingCount, 'chaves no servidor');
-
+    // 1) Ler Excel(s) primeiro → descobrir o intervalo de datas
     const newVendas = [];
     let linhasValidas = 0;
     let jaExistentes = 0;
     let ficheirosOk = 0;
     const nomesFicheiros = [];
+    let dataMin = null;
+    let dataMax = null;
+    const candidatos = []; // linhas válidas antes do dedup contra o servidor
 
     for (let fIdx = 0; fIdx < files.length; fIdx++) {
       const file = files[fIdx];
@@ -13320,13 +13330,9 @@ async function processVendasFile(event) {
         const qty = isGraoCaps && !isNaN(peso) ? (tipo === 'GRÃO' ? peso : Math.round(peso / 0.0055)) : 0;
 
         linhasValidas++;
-        const dedupKey = vendaDedupKey(cod, dataStr, tipo);
-        if (existingKeys.has(dedupKey)) {
-          jaExistentes++;
-          continue;
-        }
-        existingKeys.add(dedupKey); // evita duplicar entre ficheiros desta carga
-        newVendas.push({ cod, data: dataStr, tipo, qty, peso: isNaN(peso) ? 0 : peso });
+        if (!dataMin || dataStr < dataMin) dataMin = dataStr;
+        if (!dataMax || dataStr > dataMax) dataMax = dataStr;
+        candidatos.push({ cod, data: dataStr, tipo, qty, peso: isNaN(peso) ? 0 : peso });
       }
     }
 
@@ -13336,12 +13342,51 @@ async function processVendasFile(event) {
       return;
     }
 
+    if (!candidatos.length) {
+      setStatus('<div style="color:var(--danger);font-size:12px">Nenhuma linha de venda válida nos ficheiros.</div>');
+      clearInput();
+      return;
+    }
+
+    // 2) Validar no Supabase SÓ o intervalo do Excel (ex.: Jul–Ago 2026)
+    const periodoTxt = dataMin === dataMax ? dataMin : `${dataMin} → ${dataMax}`;
+    setStatus(
+      `<div style="color:var(--muted);font-size:12px">⏳ A validar no servidor só o período <strong>${periodoTxt}</strong>… (0)</div>`
+    );
+    const { keys: existingKeys, count: existingInRange } = await getVendasDedupKeySet({
+      de: dataMin,
+      ate: dataMax,
+      onProgress: (loaded) => {
+        setStatus(
+          `<div style="color:var(--muted);font-size:12px">⏳ A validar no servidor só o período <strong>${periodoTxt}</strong>… `
+          + `<strong>${loaded.toLocaleString('pt-BR')}</strong> linhas`
+          + `<br><span style="font-size:11px">Não lê a base toda (só datas deste Excel).</span></div>`
+        );
+      }
+    });
+    console.log('Dedup vendas período', periodoTxt, '→', existingInRange, 'chaves');
+
+    // Dedup entre ficheiros desta carga + contra o servidor (só no intervalo)
+    const seenLocal = new Set();
+    for (const row of candidatos) {
+      const dedupKey = vendaDedupKey(row.cod, row.data, row.tipo);
+      if (seenLocal.has(dedupKey)) continue;
+      seenLocal.add(dedupKey);
+      if (existingKeys.has(dedupKey)) {
+        jaExistentes++;
+        continue;
+      }
+      existingKeys.add(dedupKey);
+      newVendas.push(row);
+    }
+
     if (!newVendas.length) {
       setStatus(
         `<div style="background:#fff3e0;border-radius:6px;padding:10px;font-size:12px;color:#e65100;line-height:1.6">
-          ℹ️ Nenhum novo registo — tudo já estava no servidor.<br>
-          • ${jaExistentes.toLocaleString('pt-BR')} linha(s) já existentes<br>
-          • Total no servidor: <strong>${existingCount.toLocaleString('pt-BR')}</strong>
+          ℹ️ Nenhum novo registo — tudo já estava no servidor neste período.<br>
+          • Período validado: <strong>${periodoTxt}</strong><br>
+          • ${jaExistentes.toLocaleString('pt-BR')} linha(s) já existentes no período<br>
+          • Já no servidor (período): <strong>${existingInRange.toLocaleString('pt-BR')}</strong>
         </div>`
       );
       localStorage.setItem('delta_vendas_ultima_carga', JSON.stringify({
@@ -13349,7 +13394,8 @@ async function processVendasFile(event) {
         ficheiro: nomesFicheiros.join(', '),
         novos: 0,
         ignorados: jaExistentes,
-        total: existingCount
+        periodo: periodoTxt,
+        noPeriodo: existingInRange
       }));
       renderUltimaVendasCarga();
       clearInput();
@@ -13383,7 +13429,7 @@ async function processVendasFile(event) {
       );
     }
 
-    const totalServidor = existingCount + inserted;
+    const noPeriodoDepois = existingInRange + inserted;
     window._vendasMemCache = null;
     sessionCacheInvalidate('vendasLinhas');
     invalidateVendasCoberturaCache();
@@ -13415,9 +13461,10 @@ async function processVendasFile(event) {
     setStatus(
       `<div style="background:#e8f5e9;border-radius:6px;padding:10px;font-size:12px;color:#2e7d32;line-height:1.6">
         ✅ Importação concluída (${ficheirosOk} ficheiro${ficheirosOk > 1 ? 's' : ''})!<br>
+        • Período: <strong>${periodoTxt}</strong><br>
         • <strong>${inserted.toLocaleString('pt-BR')}</strong> novos registos adicionados<br>
-        • <strong>${jaExistentes.toLocaleString('pt-BR')}</strong> já existentes (ignorados)<br>
-        • Total no servidor: <strong>${totalServidor.toLocaleString('pt-BR')}</strong>
+        • <strong>${jaExistentes.toLocaleString('pt-BR')}</strong> já existentes no período (ignorados)<br>
+        • No período no servidor: <strong>${noPeriodoDepois.toLocaleString('pt-BR')}</strong>
         ${histAtualizados ? `<br>• Histórico: ${histAtualizados} cliente(s) com última compra actualizada` : ''}
       </div>`
     );
@@ -13427,13 +13474,14 @@ async function processVendasFile(event) {
       ficheiro: nomesFicheiros.join(', '),
       novos: inserted,
       ignorados: jaExistentes,
-      total: totalServidor
+      periodo: periodoTxt,
+      noPeriodo: noPeriodoDepois
     }));
     renderUltimaVendasCarga();
     clearInput();
     try { loadContratosTab(); } catch (e) {}
     try { loadVendasCobertura(true); } catch (e) {}
-    toast(`✅ ${inserted.toLocaleString('pt-BR')} novos · ${jaExistentes.toLocaleString('pt-BR')} já existiam · total ${totalServidor.toLocaleString('pt-BR')}`);
+    toast(`✅ ${inserted.toLocaleString('pt-BR')} novos · ${jaExistentes.toLocaleString('pt-BR')} já existiam · período ${periodoTxt}`);
   } catch (e) {
     console.error('processVendasFile:', e);
     setStatus(`<div style="color:var(--danger);font-size:12px">Erro na importação: ${e.message || e}</div>`);
