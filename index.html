@@ -15095,7 +15095,10 @@ function getEmailUtilizador(nome) {
 const CC_FIXO_FILIPE = 'filipe.neves@deltafoodsbrasil.com.br';
 
 function isCanalHorecaActivo() {
-  return typeof _canalActivo !== 'undefined' && _canalActivo === 'horeca';
+  const id = typeof resolveCanalActivoId === 'function'
+    ? resolveCanalActivoId()
+    : (typeof _canalActivo !== 'undefined' ? _canalActivo : null);
+  return id === 'horeca';
 }
 
 // Monta CC. No Horeca inclui sempre o Filipe; noutros canais nunca o inclui.
@@ -15349,6 +15352,7 @@ function isAdmin() {
  * Escopo de dados no Horeca:
  * - null → vê todos (admin Carlos, Filipe, ou fora do Horeca)
  * - string → só esse vendedor (Hélcio, Paulo, Daniela, …)
+ * Usa resolveCanalActivoId (com rehidratação) — não só _canalActivo em memória.
  */
 function getVendedorScope() {
   if (typeof isAdmin === 'function' && isAdmin()) return null;
@@ -15357,7 +15361,10 @@ function getVendedorScope() {
   if (!atual) return null;
   const an = normNomeUtilizador(atual);
   if ((HORECA_VE_TUDO || []).some(n => normNomeUtilizador(n) === an)) return null;
-  return atual;
+  // Nome canónico do canal (ex.: "DANIELA SANTOS") para gravar/filtrar igual à lista
+  const vends = typeof getVendedoresCanalActivo === 'function' ? getVendedoresCanalActivo('horeca') : [];
+  const match = (vends || []).find(v => normNomeUtilizador(v) === an);
+  return match || atual;
 }
 
 /** Filtra linhas ao vendedor do utilizador logado (Horeca). Sem escopo → devolve tudo. */
@@ -18194,10 +18201,16 @@ function prosOpenModal() {
   prosSetMarca('');
   document.getElementById('pros-f-data-acao').value = '';
   document.getElementById('pros-f-nota').value = '';
-  document.getElementById('pros-f-vendedor').value = '';
   document.getElementById('pros-f-segmento').value = '';
   document.getElementById('pros-f-regiao').value = '';
   document.getElementById('pros-f-estado').value = 'identificado';
+  // Vendedor: se há escopo (vendedor Horeca), pré-preenche e bloqueia — NÃO limpar para ''.
+  // Sem escopo (admin/Filipe): limpa para "Selecionar...".
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('pros-f-vendedor', { emptyLabel: 'Selecionar...' });
+  } else {
+    document.getElementById('pros-f-vendedor').value = '';
+  }
   document.getElementById('pros-modal-hist').style.display = 'none';
   document.getElementById('pros-modal-status').textContent = '';
   document.getElementById('pg-cliente-cafe-sim').checked = false;
@@ -18227,17 +18240,28 @@ async function prosOpenEdit(id, initialTab) {
   prosActiveTab = initialTab || 'lead';
   prosSwitchTab(prosActiveTab);
   prosPopulateCanalUI();
-  // Garantir opções mesmo se o valor gravado não estiver na lista do canal
-  prosFillSelectOptions(document.getElementById('pros-f-vendedor'), prosGetVendedoresCanal(), {
-    emptyLabel: 'Selecionar...', selected: p.vendedor || '', keepExtra: true,
-  });
+  // Vendedor: respeitar escopo (pré-preenchido + disabled). keepExtra se o lead tiver outro nome.
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('pros-f-vendedor', {
+      emptyLabel: 'Selecionar...',
+      selected: p.vendedor || '',
+      keepExtra: true,
+    });
+  } else {
+    prosFillSelectOptions(document.getElementById('pros-f-vendedor'), prosGetVendedoresCanal(), {
+      emptyLabel: 'Selecionar...', selected: p.vendedor || '', keepExtra: true,
+    });
+  }
   prosFillSelectOptions(document.getElementById('pros-f-segmento'), prosGetSegmentosCanal(), {
     emptyLabel: 'Selecionar...', selected: p.segmento || '', keepExtra: true,
   });
   document.getElementById('pros-modal-title').textContent = `Editar Lead · ${prosCanalActivoNome()}`;
   document.getElementById('pros-f-nome').value      = p.nome || '';
   document.getElementById('pros-f-contato').value   = p.contacto || '';
-  document.getElementById('pros-f-vendedor').value  = p.vendedor || '';
+  // Com escopo, fillVendedorSelectCanal já fixou o valor; sem escopo, usa o do lead
+  if (!(typeof getVendedorScope === 'function' && getVendedorScope())) {
+    document.getElementById('pros-f-vendedor').value  = p.vendedor || '';
+  }
   document.getElementById('pros-f-segmento').value  = p.segmento || '';
   document.getElementById('pros-f-regiao').value    = p.regiao || '';
   document.getElementById('pros-f-cnpj').value      = p.cnpj || '';
@@ -18325,7 +18349,20 @@ async function prosCloseModal() {
 async function prosSave(opts = {}) {
   const { keepOpen = false, autosave = false } = opts;
   const nome     = document.getElementById('pros-f-nome').value.trim();
-  const vendedor = document.getElementById('pros-f-vendedor').value;
+  // Escopo Horeca: forçar o vendedor logado (campo pode estar disabled / vazio por bug antigo)
+  const scopeVend = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
+  let vendedor = document.getElementById('pros-f-vendedor').value;
+  if (scopeVend) {
+    vendedor = scopeVend;
+    const vendEl = document.getElementById('pros-f-vendedor');
+    if (vendEl && vendEl.value !== scopeVend) {
+      if (![...vendEl.options].some(o => o.value === scopeVend)) {
+        vendEl.innerHTML = `<option value="${String(scopeVend).replace(/"/g, '&quot;')}">${scopeVend}</option>`;
+      }
+      vendEl.value = scopeVend;
+      vendEl.disabled = true;
+    }
+  }
   const estado   = document.getElementById('pros-f-estado').value;
   const nota     = document.getElementById('pros-f-nota').value.trim();
   const st       = document.getElementById('pros-modal-status');
