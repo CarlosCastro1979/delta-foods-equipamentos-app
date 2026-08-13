@@ -12580,7 +12580,8 @@ Enviado via Delta Foods App`;
     equipTipo: equipTipoStr, equipTag: equipTagStr, avaria, descricao, urgencia, tipoEquip: atTipoEquip});
   saveATChamados(chamados);
 
-  window.location.href = mailtoUrl;
+  if (typeof openMailtoSafely === 'function') openMailtoSafely(mailtoUrl);
+  else window.open(mailtoUrl, '_blank', 'noopener');
   toast('✅ Chamado registado e email a abrir...');
 }
 
@@ -15132,15 +15133,17 @@ function ccMailtoParam(cc) {
   return 'cc=' + encodeURIComponent(ccString(cc));
 }
 
-// mailto de aprovação: abre com a conta corporativa do remetente (se configurada no Outlook)
+// mailto de aprovação. Nota: NÃO usar mailto:remetente?to=destinatario —
+// em vários Outlook/Windows isso falha (ecrã cinzento). To = destinatário real.
 function buildMailtoAprovacao({ remetenteNome, destinatario, cc = [], assunto, corpo }) {
   const to = destinatario || 'carlos.castro@deltafoodsbrasil.com.br';
   const remetenteEmail = getEmailUtilizador(remetenteNome);
-  const tail = `${ccMailtoParam(cc)}&subject=${assunto}&body=${corpo}`;
-  if (remetenteEmail) {
-    return `mailto:${mailtoAddr(remetenteEmail)}?to=${encodeURIComponent(to)}&${tail}`;
+  // Incluir o email do vendedor em CC (se existir) para o Outlook usar a conta certa no reply
+  const ccArr = Array.isArray(cc) ? cc.slice() : (cc ? [cc] : []);
+  if (remetenteEmail && !ccArr.some(e => String(e || '').toLowerCase() === remetenteEmail.toLowerCase())) {
+    ccArr.push(remetenteEmail);
   }
-  return `mailto:${mailtoAddr(to)}?${tail}`;
+  return `mailto:${mailtoAddr(to)}?${ccMailtoParam(ccArr)}&subject=${assunto}&body=${corpo}`;
 }
 
 // ─── Outlook: rascunho HTML + anexos (mailto não suporta HTML/anexos) ─────────
@@ -15183,6 +15186,73 @@ function outlookGuessMime(filename) {
 }
 
 const OUTLOOK_API_CACHE_KEY = 'delta_outlook_api_url';
+/** Windows/Edge: mailto > ~2000 chars falha → ecrã cinzento/em branco. */
+const MAILTO_MAX_LEN = 1800;
+
+/**
+ * Abre mailto SEM navegar a página (location.href deixa ecrã cinzento se o
+ * protocolo falhar ou a URL for demasiado longa).
+ */
+function openMailtoSafely(mailtoUrl) {
+  if (!mailtoUrl || !/^mailto:/i.test(mailtoUrl)) return false;
+  let url = String(mailtoUrl);
+  if (url.length > MAILTO_MAX_LEN) {
+    const bodyMark = 'body=';
+    const idx = url.indexOf(bodyMark);
+    if (idx > 0) {
+      const head = url.slice(0, idx + bodyMark.length);
+      const budget = Math.max(80, MAILTO_MAX_LEN - head.length - 60);
+      url = head + url.slice(idx + bodyMark.length, idx + bodyMark.length + budget)
+        + encodeURIComponent('\n\n[…] Corpo truncado — anexa o Excel / abre o .eml descarregado.');
+    } else {
+      url = url.slice(0, MAILTO_MAX_LEN);
+    }
+  }
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_self';
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return true;
+  } catch (_) {
+    try {
+      window.open(url, '_blank', 'noopener');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+/** Descarrega .eml (e tenta abrir) sem sair da app. */
+function outlookDownloadEml(eml, fileName) {
+  const name = fileName || 'Delta_rascunho_Outlook.eml';
+  const blob = new Blob([eml], { type: 'message/rfc822' });
+  try {
+    if (typeof triggerBlobDownload === 'function') {
+      triggerBlobDownload(blob, name);
+      return true;
+    }
+  } catch (_) {}
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 60000);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
 
 /** Endpoints da API local (serve.ps1) que abrem o rascunho no Outlook. */
 function outlookDraftApiUrls() {
@@ -15238,7 +15308,7 @@ async function outlookPostDraft(ep, eml, timeoutMs = 700) {
 /**
  * Abre rascunho no Outlook com corpo HTML e anexos.
  * Só status 204 da API local conta como sucesso (serve.ps1).
- * Se mailtoFallback for passado e a API falhar → abre mailto + descarrega os Excel.
+ * Se a API falhar: mailto seguro (sem ecrã cinzento) + .eml + Excel.
  */
 async function outlookAbrirRascunho({
   to, cc, subject, html, attachments = [],
@@ -15296,14 +15366,14 @@ async function outlookAbrirRascunho({
   // que fazem o Outlook abrir atrás do browser.
   const urls = outlookDraftApiUrls();
   let openedEp = null;
-  // 1) Endpoint em cache / primeiro da lista (rápido)
+  // 1) Endpoint em cache / primeiro da lista
   if (urls.length) {
-    openedEp = await outlookPostDraft(urls[0], eml, 2500);
+    openedEp = await outlookPostDraft(urls[0], eml, 4000);
   }
   // 2) Restantes em paralelo com timeout curto
   if (!openedEp && urls.length > 1) {
     const rest = urls.slice(1);
-    const raced = await Promise.all(rest.map(ep => outlookPostDraft(ep, eml, 600)));
+    const raced = await Promise.all(rest.map(ep => outlookPostDraft(ep, eml, 900)));
     openedEp = raced.find(Boolean) || null;
   }
   if (openedEp) {
@@ -15312,11 +15382,16 @@ async function outlookAbrirRascunho({
     return true;
   }
 
-  // Sem serve.ps1: abrir email real via mailto (+ Excel em download para anexar)
-  if (mailtoFallback && to) {
-    for (const att of (attachments || [])) {
-      if (att?.blob) triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx');
+  // Sem serve.ps1 / API falhou: NÃO usar location.href (ecrã cinzento nos PCs).
+  // 1) Descarregar Excel(s)  2) mailto seguro  3) .eml com HTML+anexos
+  for (const att of (attachments || [])) {
+    if (att?.blob) {
+      try { triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx'); } catch (_) {}
     }
+  }
+
+  let mailtoOk = false;
+  if (mailtoFallback && to) {
     const bodyTxt = mailtoFallback.body
       || String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
     const ccList = ccVal.split(/[,;]/).map(s => s.trim()).filter(Boolean);
@@ -15325,19 +15400,24 @@ async function outlookAbrirRascunho({
       ccMailtoParam(ccList) +
       '&subject=' + encodeURIComponent(subject || '') +
       '&body=' + encodeURIComponent(bodyTxt);
-    // location.href mantém o gesto do utilizador melhor que window.open em background
-    window.location.href = mailto;
-    toast(mailtoFallback.toastMsg || '📧 Outlook aberto. Anexa o Excel descarregado ao email.');
+    mailtoOk = openMailtoSafely(mailto);
+  }
+
+  const fileName = draftName || 'Delta_rascunho_Outlook.eml';
+  outlookDownloadEml(eml, fileName);
+
+  if (mailtoOk) {
+    toast(
+      (mailtoFallback && mailtoFallback.toastMsg)
+        || '📧 Outlook a abrir. Se não abrir, usa o ficheiro .eml descarregado (já com anexos).'
+    );
     return true;
   }
 
-  // Último recurso: .eml (não fingir que o Outlook abriu)
-  const fileName = draftName || 'Delta_rascunho_Outlook.eml';
-  const emlBytes = new Blob([eml], { type: 'message/rfc822' });
-  triggerBlobDownload(emlBytes, fileName);
   toast(
-    '📧 Foi descarregado um ficheiro .eml — abre-o, ou corre serve.ps1 '
-    + '(http://localhost:8088/delta-foods-equipamentos-app/) para abrir o Outlook automaticamente.',
+    '📧 Foi descarregado um ficheiro .eml — abre-o no Outlook. '
+    + 'Para abertura automática: corre serve.ps1 e usa '
+    + 'http://localhost:8088/delta-foods-equipamentos-app/',
     'warn'
   );
   return false;
@@ -15684,7 +15764,8 @@ ${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`;
     assunto,
     corpo: encodeURIComponent(corpoTxt),
   });
-  window.location.href = mailto;
+  if (typeof openMailtoSafely === 'function') openMailtoSafely(mailto);
+  else window.open(mailto, '_blank', 'noopener');
 
   // Marcar registo como encerramento pendente no Supabase (se tiver id)
   try {
@@ -17135,7 +17216,8 @@ ${getUtilizadorAtual()}`
     '?' + ccMailtoParam(['carlos.castro@deltafoodsbrasil.com.br']) +
     '&subject=' + assunto +
     '&body=' + corpo;
-  window.location.href = mailto;
+  if (typeof openMailtoSafely === 'function') openMailtoSafely(mailto);
+  else window.open(mailto, '_blank', 'noopener');
 
   const pedido = {
     cod: c.cod,
