@@ -139,18 +139,16 @@ function Activate-OutlookForeground {
 }
 
 function Start-EmlDraft([string]$emlPath) {
-    # Contar inspectors + ShellExecute já (antes de fechar HTTP → melhor chance de foco)
+    # IMPORTANTE: NÃO fazer New-Object Outlook.Application aqui.
+    # Cold-start do Outlook via COM pode demorar >2–10s e o browser aborta o POST
+    # (timeout) → cai no mailto e fica ecrã cinzento. ShellExecute do .eml é imediato;
+    # o COM só se usa depois (Complete-EmlDraftFocus) para trazer a janela à frente.
     $before = 0
     $outlook = $null
     try {
         $outlook = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
         $before = Get-OutlookInspectorCount $outlook
-    } catch {
-        try {
-            $outlook = New-Object -ComObject Outlook.Application
-            $before = Get-OutlookInspectorCount $outlook
-        } catch { }
-    }
+    } catch { }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $emlPath
     $psi.UseShellExecute = $true
@@ -166,12 +164,21 @@ function Complete-EmlDraftFocus($state) {
     $before = [int]$state.Before
     $outlook = $state.Outlook
     $activated = $false
-    for ($i = 0; $i -lt 50; $i++) {
-        Start-Sleep -Milliseconds 160
+    # Mais tempo: cold-start do Outlook após ShellExecute do .eml
+    for ($i = 0; $i -lt 80; $i++) {
+        Start-Sleep -Milliseconds 200
         try {
             if (-not $outlook) {
-                $outlook = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
+                try {
+                    $outlook = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
+                } catch {
+                    # Só agora (depois do ShellExecute) — não bloqueia o HTTP 204
+                    if ($i -ge 5) {
+                        try { $outlook = New-Object -ComObject Outlook.Application } catch { }
+                    }
+                }
             }
+            if (-not $outlook) { continue }
             $n = Get-OutlookInspectorCount $outlook
             if ($n -gt $before -or ($before -eq 0 -and $n -ge 1)) {
                 [void](Activate-OutlookInspector $outlook $n)
