@@ -12495,7 +12495,14 @@ async function enviarPedidoAT() {
   if (avariaTipo === 'Outra avaria' && !outraAvaria) { toast('Descreve a avaria.', 'error'); return; }
 
   const avaria      = avariaTipo === 'Outra avaria' ? outraAvaria : avariaTipo;
-  const clienteNome = clienteOpt?.dataset?.nome || window._atClienteNome || clienteOpt?.textContent?.replace(clienteSel.value + ' — ', '').trim() || clienteSel.value;
+  const optTxt = String(clienteOpt?.textContent || '').trim();
+  const clienteNome = (
+    clienteOpt?.dataset?.nome
+    || window._atClienteNome
+    || (optTxt.includes('—') ? optTxt.split('—').slice(1).join('—').trim() : '')
+    || optTxt.replace(new RegExp('^' + String(clienteSel.value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[—-]\\s*', 'i'), '').trim()
+    || clienteSel.value
+  );
   const clienteCod  = clienteSel.value;
   const clienteCep  = clienteOpt?.dataset?.cep || '';
   const data = new Date().toLocaleDateString('pt-BR');
@@ -12506,20 +12513,19 @@ async function enviarPedidoAT() {
   const tipoLabel = atTipoEquip === 'domestico' ? 'Doméstico' : 'Profissional';
 
   const morada = getMorada(clienteCod);
-  const moradaLine = (atTipoEquip === 'comercial' && morada)
-    ? `\nMorada: ${morada.rua}` : '';
-  const modeloLine = (atTipoEquip === 'domestico' && modeloDom) ? `\nModelo: ${modeloDom}` : '';
+  const moradaTxt = (atTipoEquip === 'comercial' && morada && morada.rua) ? String(morada.rua) : '';
+  const modeloTxt = (atTipoEquip === 'domestico' && modeloDom) ? String(modeloDom) : '';
 
-  // Build equipment list for email
-  const equipLines = selectedEquips.map((e, i) => {
-    const tagPart = e.tag ? ` — Tag #${e.tag}` : '';
-    return selectedEquips.length > 1 ? `  ${i+1}. ${e.tipo}${tagPart}` : `${e.tipo}${tagPart}`;
-  }).join('\n');
-  const equipHeader = selectedEquips.length > 1 ? 'Equipamentos:\n' + equipLines : 'Equipamento: ' + equipLines;
+  const urgenciaLabel = urgencia === 'Urgente' ? '🔴 URGENTE' : '🟢 Normal';
+  const esc = (typeof outlookEmailEsc === 'function')
+    ? outlookEmailEsc
+    : (s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'));
 
-const urgenciaLabel = urgencia === 'Urgente' ? '🔴 URGENTE' : '🟢 Normal';
+  const equipTxtLines = selectedEquips.map((e, i) => selectedEquips.length > 1
+    ? `  Equip. ${i + 1}  : ${e.tipo}${e.tag ? ' — Tag #' + e.tag : ''}`
+    : `  Equipamento: ${e.tipo}${e.tag ? ' — Tag #' + e.tag : ''}`).join('\n');
 
-const corpo = `PEDIDO DE ASSISTÊNCIA TÉCNICA — DELTA FOODS BRASIL
+  const corpo = `PEDIDO DE ASSISTÊNCIA TÉCNICA — DELTA FOODS BRASIL
 ${'='.repeat(50)}
 
   Data/Hora : ${data} às ${hora}
@@ -12532,14 +12538,12 @@ ${'─'.repeat(50)}
 ${'─'.repeat(50)}
   Nome      : ${clienteNome}
   Código    : ${clienteCod}
-  CEP       : ${clienteCep}${moradaLine ? '\n  Morada    : ' + moradaLine.replace('\nMorada: ','') : ''}
+  CEP       : ${clienteCep}${moradaTxt ? '\n  Morada    : ' + moradaTxt : ''}
 
 ${'─'.repeat(50)}
   EQUIPAMENTO
 ${'─'.repeat(50)}
-${selectedEquips.map((e,i) => selectedEquips.length > 1
-  ? `  Equip. ${i+1}  : ${e.tipo}${e.tag ? ' — Tag #'+e.tag : ''}`
-  : `  Equipamento: ${e.tipo}${e.tag ? ' — Tag #'+e.tag : ''}`).join('\n')}${modeloLine ? '\n  Modelo    : ' + modeloLine.replace('\nModelo: ','') : ''}
+${equipTxtLines}${modeloTxt ? '\n  Modelo    : ' + modeloTxt : ''}
 
 ${'─'.repeat(50)}
   AVARIA REPORTADA
@@ -12548,6 +12552,43 @@ ${'─'.repeat(50)}
 
 ${'='.repeat(50)}
 Enviado via Delta Foods App`;
+
+  const equipHtml = selectedEquips.map((e, i) => {
+    const label = selectedEquips.length > 1 ? `Equip. ${i + 1}` : 'Equipamento';
+    const val = `${e.tipo}${e.tag ? ' — Tag #' + e.tag : ''}`;
+    return `<tr><td style="padding:4px 8px;font-weight:600;width:140px;">${esc(label)}</td><td style="padding:4px 8px;">${esc(val)}</td></tr>`;
+  }).join('');
+
+  const html =
+`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
+<p style="font-weight:700;font-size:16px;margin:0 0 12px;">PEDIDO DE ASSISTÊNCIA TÉCNICA — DELTA FOODS BRASIL</p>
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
+  <tr><td style="padding:3px 8px;font-weight:600;">Data/Hora</td><td style="padding:3px 8px;">${esc(data)} às ${esc(hora)}</td></tr>
+  <tr><td style="padding:3px 8px;font-weight:600;">Urgência</td><td style="padding:3px 8px;">${esc(urgenciaLabel)}</td></tr>
+  <tr><td style="padding:3px 8px;font-weight:600;">Tipo</td><td style="padding:3px 8px;">${esc(tipoLabel)}</td></tr>
+  <tr><td style="padding:3px 8px;font-weight:600;">Vendedor</td><td style="padding:3px 8px;">${esc(vendedor)}</td></tr>
+</table>
+<p style="font-weight:700;margin:12px 0 6px;">DADOS DO CLIENTE</p>
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
+  <tr><td style="padding:3px 8px;font-weight:600;">Nome</td><td style="padding:3px 8px;">${esc(clienteNome)}</td></tr>
+  <tr><td style="padding:3px 8px;font-weight:600;">Código</td><td style="padding:3px 8px;">${esc(clienteCod)}</td></tr>
+  <tr><td style="padding:3px 8px;font-weight:600;">CEP</td><td style="padding:3px 8px;">${esc(clienteCep || '—')}</td></tr>
+  ${moradaTxt ? `<tr><td style="padding:3px 8px;font-weight:600;">Morada</td><td style="padding:3px 8px;">${esc(moradaTxt)}</td></tr>` : ''}
+</table>
+<p style="font-weight:700;margin:12px 0 6px;">EQUIPAMENTO</p>
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
+  ${equipHtml}
+  ${modeloTxt ? `<tr><td style="padding:3px 8px;font-weight:600;">Modelo</td><td style="padding:3px 8px;">${esc(modeloTxt)}</td></tr>` : ''}
+</table>
+<p style="font-weight:700;margin:12px 0 6px;">AVARIA REPORTADA</p>
+<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
+  <tr><td style="padding:3px 8px;font-weight:600;">Tipo</td><td style="padding:3px 8px;">${esc(avaria)}</td></tr>
+  ${descricao ? `<tr><td style="padding:3px 8px;font-weight:600;">Descrição</td><td style="padding:3px 8px;">${esc(descricao).replace(/\n/g, '<br>')}</td></tr>` : ''}
+</table>
+<p style="color:#6b7280;font-size:12px;margin-top:18px;">Enviado via Delta Foods App</p>
+</body></html>`;
 
   // Ask for confirmation
   if (!confirm('Confirmas que queres abrir o email e registar este chamado AT?')) return;
@@ -12559,9 +12600,7 @@ Enviado via Delta Foods App`;
     ? []
     : ['carlos.castro@deltafoodsbrasil.com.br', 'ricardo.vicentesilva@deltafoodsbrasil.com.br'];
   if (vendedorEmail) ccList.push(vendedorEmail);
-  const assunto = encodeURIComponent(`ABERTURA DE CHAMADO ${clienteCod} ${clienteNome}`);
-  // Não usar encodeURIComponent no endereço do mailto — no Outlook mobile %40 = "endereço inválido"
-  const mailtoUrl = `mailto:${mailtoAddr('info.br@gruponabeiro.com')}?${ccMailtoParam(ccList)}&subject=${assunto}&body=${encodeURIComponent(corpo)}`;
+  const subject = `ABERTURA DE CHAMADO ${clienteCod} ${clienteNome}`;
 
   // Save chamado to Supabase
   try {
@@ -12580,9 +12619,20 @@ Enviado via Delta Foods App`;
     equipTipo: equipTipoStr, equipTag: equipTagStr, avaria, descricao, urgencia, tipoEquip: atTipoEquip});
   saveATChamados(chamados);
 
-  if (typeof openMailtoSafely === 'function') openMailtoSafely(mailtoUrl);
-  else window.open(mailtoUrl, '_blank', 'noopener');
-  toast('✅ Chamado registado e email a abrir...');
+  // Mesmo fluxo dos outros emails AT: serve.ps1 → Outlook completo; senão .eml (sem truncar mailto)
+  const ccFinal = typeof ccString === 'function' ? ccString(ccList) : ccList.join('; ');
+  await outlookAbrirRascunho({
+    to: 'info.br@gruponabeiro.com',
+    cc: ccFinal,
+    subject,
+    html,
+    draftName: `AT_Abertura_${clienteCod || 'chamado'}.eml`,
+    toastMsg: '✅ Chamado registado — Outlook aberto com o pedido completo.',
+    mailtoFallback: {
+      body: corpo,
+      toastMsg: '✅ Chamado registado. Se o Outlook não abriu completo, usa o ficheiro .eml descarregado.',
+    },
+  });
 }
 
 // ─── VENDAS & CONTRATOS ──────────────────────────────
@@ -15192,22 +15242,13 @@ const MAILTO_MAX_LEN = 1800;
 /**
  * Abre mailto SEM navegar a página (location.href deixa ecrã cinzento se o
  * protocolo falhar ou a URL for demasiado longa).
+ * Se a URL for demasiado longa → devolve false (NÃO truncar o corpo — isso
+ * cortava chamados AT a meio). O caller deve usar .eml / serve.ps1.
  */
 function openMailtoSafely(mailtoUrl) {
   if (!mailtoUrl || !/^mailto:/i.test(mailtoUrl)) return false;
-  let url = String(mailtoUrl);
-  if (url.length > MAILTO_MAX_LEN) {
-    const bodyMark = 'body=';
-    const idx = url.indexOf(bodyMark);
-    if (idx > 0) {
-      const head = url.slice(0, idx + bodyMark.length);
-      const budget = Math.max(80, MAILTO_MAX_LEN - head.length - 60);
-      url = head + url.slice(idx + bodyMark.length, idx + bodyMark.length + budget)
-        + encodeURIComponent('\n\n[…] Corpo truncado — anexa o Excel / abre o .eml descarregado.');
-    } else {
-      url = url.slice(0, MAILTO_MAX_LEN);
-    }
-  }
+  const url = String(mailtoUrl);
+  if (url.length > MAILTO_MAX_LEN) return false;
   try {
     const a = document.createElement('a');
     a.href = url;
