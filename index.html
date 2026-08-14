@@ -15505,10 +15505,13 @@ function outlookDraftApiUrls() {
   return urls;
 }
 
-/** POST curto à API Outlook — timeout evita esperar portas mortas em background. */
-async function outlookPostDraft(ep, eml, timeoutMs = 700) {
+/** POST à API Outlook — timeout escala com o tamanho (MC00+Excel precisa de vários s). */
+async function outlookPostDraft(ep, eml, timeoutMs) {
+  const size = (typeof eml === 'string') ? eml.length : (eml?.byteLength || eml?.size || 0);
+  const autoMs = Math.min(90000, Math.max(15000, Math.ceil(size / 40) + 10000));
+  const ms = timeoutMs != null ? timeoutMs : autoMs;
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const t = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, timeoutMs) : null;
+  const t = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, ms) : null;
   try {
     const r = await fetch(ep, {
       method: 'POST',
@@ -15516,13 +15519,39 @@ async function outlookPostDraft(ep, eml, timeoutMs = 700) {
       body: eml,
       signal: ctrl ? ctrl.signal : undefined,
     });
-    if (r.status === 204) return ep;
+    if (r.status === 204 || r.ok) return ep;
     return null;
   } catch (_) {
     return null;
   } finally {
     if (t) clearTimeout(t);
   }
+}
+
+/** Descobre qual porta do serve.ps1 está viva (OPTIONS/GET rápido, sem body). */
+async function outlookFindLiveApi() {
+  const urls = outlookDraftApiUrls();
+  const probeOne = async (ep) => {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const t = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, 700) : null;
+    try {
+      let r = await fetch(ep, { method: 'OPTIONS', signal: ctrl ? ctrl.signal : undefined });
+      if (r.status === 204 || r.ok) return ep;
+      r = await fetch(ep, { method: 'GET', signal: ctrl ? ctrl.signal : undefined });
+      if (r.status === 204 || r.ok) return ep;
+    } catch (_) {}
+    finally { if (t) clearTimeout(t); }
+    return null;
+  };
+  if (urls[0]) {
+    const hit = await probeOne(urls[0]);
+    if (hit) return hit;
+    try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
+  }
+  const rest = urls.slice(1);
+  if (!rest.length) return null;
+  const raced = await Promise.all(rest.map(probeOne));
+  return raced.find(Boolean) || null;
 }
 
 /**
@@ -15621,28 +15650,26 @@ async function outlookAbrirRascunho({
   parts.push(`--${boundary}--`, '');
   const eml = parts.join('\r\n');
 
-  // serve.ps1: só 204 = Outlook aberto. Cache + timeout curto evita atrasos
-  // que fazem o Outlook abrir atrás do browser.
-  const urls = outlookDraftApiUrls();
+  // Probe rápido da porta viva → POST completo com timeout longo (anexos Excel).
+  // Timeouts curtos (900ms) abortavam o MC00 e forçavam descarga .eml em Transferências.
   let openedEp = null;
-  // 1) Endpoint em cache / primeiro da lista
-  if (urls.length) {
-    openedEp = await outlookPostDraft(urls[0], eml, 4000);
-  }
-  // 2) Restantes em paralelo com timeout curto
-  if (!openedEp && urls.length > 1) {
-    const rest = urls.slice(1);
-    const raced = await Promise.all(rest.map(ep => outlookPostDraft(ep, eml, 900)));
-    openedEp = raced.find(Boolean) || null;
+  const live = await outlookFindLiveApi();
+  if (live) openedEp = await outlookPostDraft(live, eml);
+  if (!openedEp) {
+    for (const ep of outlookDraftApiUrls()) {
+      if (live && ep === live) continue;
+      openedEp = await outlookPostDraft(ep, eml);
+      if (openedEp) break;
+    }
   }
   if (openedEp) {
     try { sessionStorage.setItem(OUTLOOK_API_CACHE_KEY, openedEp); } catch (_) {}
     toast(toastMsg || '📧 Outlook aberto com email e anexos.');
     return true;
   }
+  try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
-  // Sem serve.ps1 / API falhou: NÃO usar location.href (ecrã cinzento nos PCs).
-  // 1) Descarregar Excel(s)  2) mailto seguro  3) .eml com HTML+anexos
+  // Sem serve.ps1: Excel em download + mailto (se curto) + .eml completo
   for (const att of (attachments || [])) {
     if (att?.blob) {
       try { triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx'); } catch (_) {}
@@ -15654,8 +15681,9 @@ async function outlookAbrirRascunho({
     const bodyTxt = mailtoFallback.body
       || String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
     const ccList = ccVal.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+    const toMailto = String(to).split(/[,;]/).map(s => s.trim()).filter(Boolean).join(',');
     const mailto =
-      `mailto:${mailtoAddr(to)}?` +
+      `mailto:${mailtoAddr(toMailto)}?` +
       ccMailtoParam(ccList) +
       '&subject=' + encodeURIComponent(subject || '') +
       '&body=' + encodeURIComponent(bodyTxt);
@@ -15663,20 +15691,28 @@ async function outlookAbrirRascunho({
   }
 
   const fileName = draftName || 'Delta_rascunho_Outlook.eml';
-  outlookDownloadEml(eml, fileName);
+  const emlBlob = new Blob([eml], { type: 'message/rfc822' });
+  let openedLocal = false;
+  try {
+    if (navigator.msSaveOrOpenBlob) {
+      navigator.msSaveOrOpenBlob(emlBlob, fileName);
+      openedLocal = true;
+    }
+  } catch (_) {}
+  if (!openedLocal) outlookDownloadEml(eml, fileName);
 
-  if (mailtoOk) {
+  if (mailtoOk || openedLocal) {
     toast(
       (mailtoFallback && mailtoFallback.toastMsg)
-        || '📧 Outlook a abrir. Se não abrir, usa o ficheiro .eml descarregado (já com anexos).'
+        || '📧 Outlook a abrir com email e anexos.'
     );
     return true;
   }
 
   toast(
-    '📧 Foi descarregado um ficheiro .eml — abre-o no Outlook. '
-    + 'Para abertura automática: corre serve.ps1 e usa '
-    + 'http://localhost:8088/delta-foods-equipamentos-app/',
+    '📧 Para abrir o Outlook com o Excel em anexo: corre .\\serve.ps1 e abre '
+    + 'http://localhost:8088/delta-foods-equipamentos-app/ '
+    + '(foi descarregado um .eml de recurso).',
     'warn'
   );
   return false;
@@ -20770,7 +20806,7 @@ async function mc00Exportar() {
     if (st) {
       st.innerHTML = ok
         ? '<span style="color:#16a34a">Outlook aberto com MC00 em anexo.</span>'
-        : '<span style="color:#b45309">Email .eml descarregado — abre o ficheiro para o Outlook. Para abertura automática usa serve.ps1 (porta 8080).</span>';
+        : '<span style="color:#b45309">Outlook não abriu via API — corre .\\serve.ps1 e usa http://localhost:8088/delta-foods-equipamentos-app/ (abre directo com Excel anexo).</span>';
     }
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${escHtml(e.message)}</span>`;
