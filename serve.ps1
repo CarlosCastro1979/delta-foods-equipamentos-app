@@ -256,10 +256,11 @@ while ($listener.IsListening) {
 
         if ($isOutlookPath) {
             Set-CorsHeaders $res
-            if ($method -eq 'OPTIONS') {
+            if ($method -eq 'OPTIONS' -or $method -eq 'GET') {
+                # GET/OPTIONS = health-check do browser (outlookFindLiveApi), sem abrir Outlook
                 $res.StatusCode = 204
                 $res.ContentLength64 = 0
-                Write-Host "  204  OPTIONS $path (CORS)" -ForegroundColor DarkGray
+                Write-Host "  204  $method $path (CORS/health)" -ForegroundColor DarkGray
             } elseif ($method -eq 'POST') {
                 $ms = New-Object System.IO.MemoryStream
                 $ctx.Request.InputStream.CopyTo($ms)
