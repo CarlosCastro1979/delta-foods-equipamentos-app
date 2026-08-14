@@ -4245,6 +4245,14 @@ async function salvarRegisto(opts = {}) {
     allData = memRegs;
     try { setRegistosCache(allData); } catch (_) {}
     try { sessionCacheTouch('registos'); } catch (_) {}
+    // Confirmar no servidor (Prefer:return=minimal não devolve a linha)
+    try {
+      const verify = await findRegistoByCod(body.cod);
+      if (!verify) {
+        console.error('POST ok mas registo ausente no Supabase:', body.cod);
+        toast('⚠ Guarda não confirmada no servidor para ' + body.cod + '. Volta a guardar.', 'error');
+      }
+    } catch (ve) { console.warn('verify save:', ve); }
     limparForm();
     loadPendentes();
     if (isDist) {
@@ -4395,10 +4403,34 @@ function normCod(v) {
 }
 
 function formatSapCod(v) {
-  const s = String(v ?? '').trim();
+  if (v == null || v === '') return '';
+  // Excel/XLSX pode devolver número (incl. notação científica internamente)
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    if (Number.isInteger(v) || Math.abs(v - Math.round(v)) < 1e-9) return String(Math.round(v));
+    return String(v);
+  }
+  let s = String(v).trim();
   if (!s) return '';
   if (/^\d+\.0+$/.test(s)) return s.replace(/\.0+$/, '');
+  if (/^\d+(\.\d+)?e[+\-]?\d+$/i.test(s)) {
+    const n = Number(s);
+    if (Number.isFinite(n) && Math.abs(n - Math.round(n)) < 1e-6) return String(Math.round(n));
+  }
   return s;
+}
+
+/** Anulados (NPess *999) que NÃO têm linha activa no mesmo ficheiro — só esses podem apagar registo. */
+function filtrarAnuladosSemLinhaActiva(codsAnulados, novaLista) {
+  const activa = new Set((novaLista || []).map(c => normCod(c && c.cod)).filter(k => k && k !== '0'));
+  const out = [];
+  const seen = new Set();
+  for (const raw of (codsAnulados || [])) {
+    const k = normCod(raw);
+    if (!k || k === '0' || activa.has(k) || seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
 }
 
 // Chave única do cliente na lista SAP: código SAP (nunca muda; CNPJ pode repetir em códigos diferentes)
@@ -4982,9 +5014,20 @@ function removerVendedor(idx) {
 // ─── APAGAR ANULADOS DO SUPABASE ─────────────────────
 async function apagarAnuladosSupabase(codsAnulados) {
   if (!codsAnulados.length) return { apagados: 0, erros: 0 };
-  const alvoSet = new Set(codsAnulados.map(normCod));
+  const alvoSet = new Set(codsAnulados.map(normCod).filter(k => k && k !== '0'));
+  // Cinto de segurança: nunca apagar quem está na lista activa que acabámos de gravar
+  let protect = new Set();
+  try {
+    const lista = (typeof getListaClientesCompleta === 'function'
+      ? getListaClientesCompleta()
+      : getListaClientesActiva()) || [];
+    protect = new Set(lista.map(c => normCod(c.cod)).filter(k => k && k !== '0'));
+  } catch (_) {}
   const regs = await fetchRegistosPaginado('id,cod', 'cod.asc');
-  const ids = regs.filter(r => alvoSet.has(normCod(r.cod))).map(r => r.id).filter(Boolean);
+  const ids = regs.filter(r => {
+    const k = normCod(r.cod);
+    return alvoSet.has(k) && !protect.has(k);
+  }).map(r => r.id).filter(Boolean);
   if (!ids.length) return { apagados: 0, erros: 0 };
   let apagados = 0, erros = 0;
   const LOTE = 200;
@@ -5001,7 +5044,7 @@ async function apagarAnuladosSupabase(codsAnulados) {
     } catch(e) { erros += lote.length; }
   }
   clearRegistosCache();
-  await limparDadosExtrasAnulados(codsAnulados);
+  await limparDadosExtrasAnulados([...alvoSet].filter(k => !protect.has(k)));
   return { apagados, erros };
 }
 
@@ -8233,6 +8276,11 @@ async function carregarListaSAP(event) {
   // Remover linhas duplicadas do mesmo código no ficheiro (mantém a última)
   novaLista = deduplicarListaSAPPorCod(novaLista);
 
+  // Se o mesmo código aparece como activo E como *999 no Excel, prevalece o activo:
+  // nunca apagar o registo de um cliente que continua na lista.
+  const codsAnuladosSafe = filtrarAnuladosSemLinhaActiva(codsAnulados, novaLista);
+  const anuladosIgnoradosPorActivo = Math.max(0, new Set(codsAnulados.map(normCod)).size - codsAnuladosSafe.length);
+
   // Calcular diferenças em relação à lista completa (não filtrada por canal)
   const listaAtual = (typeof getListaClientesCompleta === 'function' ? getListaClientesCompleta() : getListaClientesActiva());
   const codAtual   = new Set(listaAtual.map(c => String(c.cod)));
@@ -8244,7 +8292,16 @@ async function carregarListaSAP(event) {
   // → precisam de revisão (serão assinalados em Por Registar)
   // Calculado depois da confirmação em loadPendentes
 
-  _sapImportBuffer = { novaLista, codsAnulados, codsContencioso, listaContencioso, fileName: file.name, colDiag };
+  _sapImportBuffer = {
+    novaLista,
+    codsAnulados: codsAnuladosSafe,
+    codsAnuladosRawCount: codsAnulados.length,
+    anuladosIgnoradosPorActivo,
+    codsContencioso,
+    listaContencioso,
+    fileName: file.name,
+    colDiag,
+  };
 
   const nComRua = novaLista.filter(c => c.rua).length;
   const nComCnpj = novaLista.filter(c => c.cnpj).length;
@@ -8300,26 +8357,33 @@ async function carregarListaSAP(event) {
   if (!nComRua && !nComCnpj && !nComEmail) {
     statusHtml += `<br><span style="color:#b91c1c;font-weight:600">⚠ Este Excel não tem morada/CNPJ/email — o cadastro automático fica incompleto. Usa o export SAP com endereço e contactos.</span>`;
   }
-  if (codsAnulados.length) {
-    statusHtml += `<br><span style="color:var(--muted)">${codsAnulados.length} anulado(s) no ficheiro SAP (vendedor 999)</span>`;
-    statusHtml += `<br><span id="sap-anulados-registo" style="color:#c62828">A verificar quantos têm registo na app...</span>`;
+  if (codsAnuladosSafe.length || anuladosIgnoradosPorActivo) {
+    statusHtml += `<br><span style="color:var(--muted)">${codsAnuladosSafe.length} anulado(s) só-999 no ficheiro SAP`
+      + (anuladosIgnoradosPorActivo
+        ? ` · <span style="color:#b45309">${anuladosIgnoradosPorActivo} com linha activa no mesmo ficheiro (registo preservado)</span>`
+        : '')
+      + `</span>`;
+    if (codsAnuladosSafe.length) {
+      statusHtml += `<br><span id="sap-anulados-registo" style="color:#c62828">A verificar quantos têm registo na app...</span>`;
+    }
   }
 
   document.getElementById('sap-status-text').innerHTML = statusHtml;
   document.getElementById('sap-load-status').style.display = 'block';
 
-  // Só apagar anulados que existem na app — não correr a lista toda do SAP
-  if (codsAnulados.length) {
+  // Só apagar anulados sem linha activa que existem na app — nunca códigos que ficam na lista
+  if (codsAnuladosSafe.length) {
     fetchRegistosPaginado('cod', 'cod.asc').then(regs => {
+      if (!_sapImportBuffer) return;
       const registadosSet = new Set(regs.map(r => normCod(r.cod)));
-      const comRegisto = codsAnulados.filter(c => registadosSet.has(normCod(c)));
+      const comRegisto = codsAnuladosSafe.filter(c => registadosSet.has(normCod(c)));
       _sapImportBuffer.codsParaApagar = comRegisto;
       const el = document.getElementById('sap-anulados-registo');
       if (!el) return;
       if (comRegisto.length) {
-        el.innerHTML = `⚠ <strong>${comRegisto.length}</strong> anulado(s) com registo na app serão apagados`;
+        el.innerHTML = `⚠ <strong>${comRegisto.length}</strong> anulado(s) sem linha activa e com registo serão apagados`;
       } else {
-        el.innerHTML = `✓ Nenhum anulado tem registo na app — nada a apagar`;
+        el.innerHTML = `✓ Nenhum anulado elegível tem registo na app — nada a apagar`;
         el.style.color = '#16a34a';
       }
     }).catch(() => {
@@ -8390,7 +8454,7 @@ async function reconciliarCadastrosComSAP(novaLista) {
 
 async function confirmarCargaSAP() {
   if (!_sapImportBuffer) return;
-  const { codsAnulados, fileName, codsContencioso = [] } = _sapImportBuffer;
+  const { fileName, codsContencioso = [] } = _sapImportBuffer;
   let novaLista = deduplicarListaSAPPorCod(_sapImportBuffer.novaLista);
   // Evita “voltar atrás”: Excel sem morada/email não deve apagar dados ricos já publicados.
   // Sempre lista completa (em Dados _canalActivo é null; se não, Activa filtraria e perderíamos outros canais).
@@ -8405,11 +8469,15 @@ async function confirmarCargaSAP() {
 
   try {
 
+  // Recomputar anulados contra a lista FINAL (activo no ficheiro / reposto → NUNCA apagar registo)
+  let codsAnulados = filtrarAnuladosSemLinhaActiva(_sapImportBuffer.codsAnulados || [], novaLista);
+
   // Manter na lista clientes já registados na app mesmo que o Excel novo os tenha omitido
   // (exceto anulados 999 e Contencioso *13).
   const repostos = await reporClientesRegistadosNaLista(novaLista, listaAntes, codsAnulados, codsContencioso);
   novaLista = deduplicarListaSAPPorCod(repostos.lista);
   acumularSapDetalhe(novaLista);
+  codsAnulados = filtrarAnuladosSemLinhaActiva(codsAnulados, novaLista);
 
   // 1. Guardar nova lista activa (memória + IndexedDB; localStorage best-effort)
   const listaTs = Date.now();
@@ -8427,13 +8495,18 @@ async function confirmarCargaSAP() {
   } catch (e) {
     console.warn('delta_sap_ultima_carga:', e);
   }
-  // Guardar códigos anulados com registo (lista curta) para o Por Registar os excluir da revisão
-  const codsParaApagar = _sapImportBuffer.codsParaApagar
-    || (codsAnulados.length ? await (async () => {
-      const regs = await fetchRegistosPaginado('cod', 'cod.asc');
-      const set = new Set(regs.map(r => normCod(r.cod)));
-      return codsAnulados.filter(c => set.has(normCod(c)));
-    })() : []);
+  // Fonte de verdade no confirm: voltar a cruzar com Supabase AGORA (após possíveis registos feitos
+  // entre "Carregar" e "Confirmar") e excluir sempre quem ficou na lista activa.
+  const activaKeys = new Set(novaLista.map(c => normCod(c.cod)).filter(k => k && k !== '0'));
+  let codsParaApagar = [];
+  if (codsAnulados.length) {
+    const regs = await fetchRegistosPaginado('cod', 'cod.asc');
+    const set = new Set(regs.map(r => normCod(r.cod)));
+    codsParaApagar = codsAnulados.filter(c => {
+      const k = normCod(c);
+      return k && set.has(k) && !activaKeys.has(k);
+    });
+  }
   try { localStorage.setItem('delta_sap_anulados', JSON.stringify(codsParaApagar.map(normCod))); } catch(e) {}
   // Lista "Clientes no Contencioso" (vendedor 99520013) — canais 03/04 deixam de contar nos registos
   const listaContencioso = deduplicarListaSAPPorCod(_sapImportBuffer.listaContencioso || []);
@@ -8454,9 +8527,11 @@ async function confirmarCargaSAP() {
   foraSPCache = null;
   clearRegistosCache();
 
-  // 2. Apagar só anulados que existem na app (passaram para vendedor 999)
+  // 2. Apagar só anulados elegíveis (999 sem linha activa) que existem na app
   let apagados = 0, erros = 0;
   if (codsParaApagar.length) {
+    console.info('SAP import — a apagar registos anulados:', codsParaApagar.slice(0, 30),
+      codsParaApagar.length > 30 ? `(+${codsParaApagar.length - 30}…)` : '');
     const r = await apagarAnuladosSupabase(codsParaApagar);
     apagados = r.apagados; erros = r.erros;
   }
