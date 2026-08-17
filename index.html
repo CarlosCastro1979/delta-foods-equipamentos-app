@@ -15469,28 +15469,28 @@ function outlookIsStandaloneApp() {
  * Abre .eml no Outlook com anexos.
  * - PWA/tablet: Web Share (ficheiros) → Outlook
  * - Browser: window.open(blob) sem a.download (como o fluxo antigo)
+ * Devolve: 'shared' | 'opened' | 'downloaded' | false
  */
 async function outlookOpenEmlClient(eml, fileName) {
   const name = fileName || 'Delta_rascunho_Outlook.eml';
   const file = new File([eml], name, { type: 'message/rfc822' });
   const standalone = outlookIsStandaloneApp();
-  const mobile = outlookIsMobileClient();
 
   try {
     if (navigator.msSaveOrOpenBlob) {
       navigator.msSaveOrOpenBlob(file, name);
-      return true;
+      return 'opened';
     }
   } catch (_) {}
 
-  // PWA / Android: partilhar o .eml → o utilizador escolhe Outlook (abre com anexo)
+  // PWA / Android: partilhar o .eml → escolher Outlook (abre com anexo)
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({ files: [file], title: name });
-      return true;
+      return 'shared';
     }
   } catch (e) {
-    if (e && e.name === 'AbortError') return true; // cancelou a partilha
+    if (e && e.name === 'AbortError') return 'shared';
   }
 
   // Browser (não-PWA): abrir blob sem atributo download
@@ -15509,11 +15509,11 @@ async function outlookOpenEmlClient(eml, fileName) {
         a.remove();
       }
       setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
-      return true;
+      return 'opened';
     } catch (_) {}
   }
 
-  // PWA sem Share: descarregar e pedir para abrir com Outlook
+  // PWA sem Share: descarregar — utilizador toca e abre com Outlook
   try {
     const url = URL.createObjectURL(file);
     const a = document.createElement('a');
@@ -15524,10 +15524,7 @@ async function outlookOpenEmlClient(eml, fileName) {
     a.click();
     a.remove();
     setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
-    if (mobile || standalone) {
-      toast('📧 Ficheiro .eml descarregado — toca nele e escolhe Outlook (já leva o anexo).', 'warn');
-    }
-    return true;
+    return 'downloaded';
   } catch (_) {
     return false;
   }
@@ -15758,11 +15755,18 @@ async function outlookAbrirRascunho({
   try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
   // Sem serve.ps1: abrir .eml no Outlook (PC/tablet/PWA) — inclui HTML + anexos.
-  // NÃO usar mailto quando há anexos (mailto não leva Excel).
   const fileName = draftName || 'Delta_rascunho_Outlook.eml';
   const openedEml = await outlookOpenEmlClient(eml, fileName);
-  if (openedEml) {
+  if (openedEml === 'shared') {
+    toast('Escolha o Outlook na lista Partilhar — o anexo vai com o email.');
+    return true;
+  }
+  if (openedEml === 'opened') {
     toast(toastMsg || '📧 Outlook a abrir com email e anexos.');
+    return true;
+  }
+  if (openedEml === 'downloaded') {
+    toast('📧 Ficheiro .eml pronto — toca nele e escolhe Outlook (já leva o anexo).', 'warn');
     return true;
   }
 
