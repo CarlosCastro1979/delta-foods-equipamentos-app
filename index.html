@@ -15448,7 +15448,49 @@ function openMailtoSafely(mailtoUrl) {
   }
 }
 
-/** Descarrega .eml (e tenta abrir) sem sair da app. */
+/** True em telemóvel/tablet (Android Galaxy, iPad, etc.). */
+function outlookIsMobileClient() {
+  const ua = String(navigator.userAgent || '').toLowerCase();
+  return /android|iphone|ipad|ipod|mobile|tablet/.test(ua)
+    || ((navigator.maxTouchPoints || 0) > 1 && /mac/.test(ua));
+}
+
+/**
+ * Abre .eml no Outlook (desktop/tablet) SEM forçar "Guardar em Transferências".
+ * O fluxo antigo usava window.open(blob) / <a target=_blank> sem atributo download —
+ * no Samsung/Android o Outlook abre o rascunho já com anexos.
+ */
+function outlookOpenEmlClient(eml, fileName) {
+  const name = fileName || 'Delta_rascunho_Outlook.eml';
+  const file = new File([eml], name, { type: 'message/rfc822' });
+  try {
+    if (navigator.msSaveOrOpenBlob) {
+      navigator.msSaveOrOpenBlob(file, name);
+      return true;
+    }
+  } catch (_) {}
+  try {
+    const url = URL.createObjectURL(file);
+    let opened = null;
+    try { opened = window.open(url, '_blank'); } catch (_) {}
+    if (!opened) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      // NÃO pôr a.download — isso manda para Transferências em vez do Outlook
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Último recurso: gravar .eml em Transferências. */
 function outlookDownloadEml(eml, fileName) {
   const name = fileName || 'Delta_rascunho_Outlook.eml';
   const blob = new Blob([eml], { type: 'message/rfc822' });
@@ -15649,17 +15691,20 @@ async function outlookAbrirRascunho({
   }
   parts.push(`--${boundary}--`, '');
   const eml = parts.join('\r\n');
+  const hasAttachments = (attachments || []).some(a => a && a.blob);
+  const isMobile = typeof outlookIsMobileClient === 'function' && outlookIsMobileClient();
 
-  // Probe rápido da porta viva → POST completo com timeout longo (anexos Excel).
-  // Timeouts curtos (900ms) abortavam o MC00 e forçavam descarga .eml em Transferências.
+  // Windows + serve.ps1 (saltar probe lento em tablets — não há localhost bridge)
   let openedEp = null;
-  const live = await outlookFindLiveApi();
-  if (live) openedEp = await outlookPostDraft(live, eml);
-  if (!openedEp) {
-    for (const ep of outlookDraftApiUrls()) {
-      if (live && ep === live) continue;
-      openedEp = await outlookPostDraft(ep, eml);
-      if (openedEp) break;
+  if (!isMobile) {
+    const live = await outlookFindLiveApi();
+    if (live) openedEp = await outlookPostDraft(live, eml);
+    if (!openedEp) {
+      for (const ep of outlookDraftApiUrls()) {
+        if (live && ep === live) continue;
+        openedEp = await outlookPostDraft(ep, eml);
+        if (openedEp) break;
+      }
     }
   }
   if (openedEp) {
@@ -15669,15 +15714,17 @@ async function outlookAbrirRascunho({
   }
   try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
-  // Sem serve.ps1: Excel em download + mailto (se curto) + .eml completo
-  for (const att of (attachments || [])) {
-    if (att?.blob) {
-      try { triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx'); } catch (_) {}
-    }
+  // Sem serve.ps1: abrir .eml no Outlook (PC/tablet) — inclui HTML + anexos.
+  // NÃO usar mailto quando há anexos (mailto não leva Excel e “roubava” o fluxo nos tablets).
+  const fileName = draftName || 'Delta_rascunho_Outlook.eml';
+  const openedEml = outlookOpenEmlClient(eml, fileName);
+  if (openedEml) {
+    toast(toastMsg || '📧 Outlook a abrir com email e anexos.');
+    return true;
   }
 
-  let mailtoOk = false;
-  if (mailtoFallback && to) {
+  // Só texto / sem conseguir abrir .eml: mailto + Excel solto
+  if (mailtoFallback && to && !hasAttachments) {
     const bodyTxt = mailtoFallback.body
       || String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
     const ccList = ccVal.split(/[,;]/).map(s => s.trim()).filter(Boolean);
@@ -15687,32 +15734,20 @@ async function outlookAbrirRascunho({
       ccMailtoParam(ccList) +
       '&subject=' + encodeURIComponent(subject || '') +
       '&body=' + encodeURIComponent(bodyTxt);
-    mailtoOk = openMailtoSafely(mailto);
-  }
-
-  const fileName = draftName || 'Delta_rascunho_Outlook.eml';
-  const emlBlob = new Blob([eml], { type: 'message/rfc822' });
-  let openedLocal = false;
-  try {
-    if (navigator.msSaveOrOpenBlob) {
-      navigator.msSaveOrOpenBlob(emlBlob, fileName);
-      openedLocal = true;
+    if (openMailtoSafely(mailto)) {
+      toast((mailtoFallback && mailtoFallback.toastMsg) || '📧 Outlook a abrir.');
+      return true;
     }
-  } catch (_) {}
-  if (!openedLocal) outlookDownloadEml(eml, fileName);
-
-  if (mailtoOk || openedLocal) {
-    toast(
-      (mailtoFallback && mailtoFallback.toastMsg)
-        || '📧 Outlook a abrir com email e anexos.'
-    );
-    return true;
   }
 
+  for (const att of (attachments || [])) {
+    if (att?.blob) {
+      try { triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx'); } catch (_) {}
+    }
+  }
+  outlookDownloadEml(eml, fileName);
   toast(
-    '📧 Para abrir o Outlook com anexos automaticamente: no PC corre UMA VEZ '
-    + 'Instalar-Abertura-Automatica-Outlook.bat (arranca com o Windows). '
-    + 'Foi descarregado um .eml de recurso.',
+    '📧 Ficheiro .eml descarregado — toca nele para abrir no Outlook (já vai com anexo).',
     'warn'
   );
   return false;
@@ -20806,7 +20841,7 @@ async function mc00Exportar() {
     if (st) {
       st.innerHTML = ok
         ? '<span style="color:#16a34a">Outlook aberto com MC00 em anexo.</span>'
-        : '<span style="color:#b45309">Outlook não abriu — no PC corre UMA VEZ Instalar-Abertura-Automatica-Outlook.bat (depois funciona com o site online, sem cliques).</span>';
+        : '<span style="color:#b45309">Não foi possível abrir o Outlook. No tablet: se descarregou um .eml, toca no ficheiro para abrir. No PC Windows: Instalar-Abertura-Automatica-Outlook.bat (1×).</span>';
     }
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${escHtml(e.message)}</span>`;
