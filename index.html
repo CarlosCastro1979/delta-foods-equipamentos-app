@@ -15455,7 +15455,7 @@ function outlookIsMobileClient() {
     || ((navigator.maxTouchPoints || 0) > 1 && /mac/.test(ua));
 }
 
-/** App instalada (PWA standalone) — window.open costuma falhar; usar Share. */
+/** App instalada (PWA standalone). */
 function outlookIsStandaloneApp() {
   try {
     if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
@@ -15465,16 +15465,126 @@ function outlookIsStandaloneApp() {
   return window.navigator.standalone === true;
 }
 
+/** Tablet / PWA: sem serve.ps1 — mailto + Excel (não .eml). */
+function outlookIsTabletOrPwa() {
+  return outlookIsMobileClient() || outlookIsStandaloneApp();
+}
+
+function outlookHtmlToPlainText(html) {
+  return String(html || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/(div|h[1-6]|li)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 /**
- * Abre .eml no Outlook com anexos.
- * - PWA/tablet: Web Share (ficheiros) → Outlook
- * - Browser: window.open(blob) sem a.download (como o fluxo antigo)
- * Devolve: 'shared' | 'opened' | 'downloaded' | false
+ * Entrega o Excel/anexo para o utilizador anexar no Outlook.
+ * Preferência: descarregar .xlsx; se falhar (PWA), partilhar o ficheiro.
+ * Devolve: 'shared' | 'downloaded' | false
+ */
+async function outlookDeliverExcelAttachments(attachments) {
+  const list = (attachments || []).filter(a => a && a.blob);
+  if (!list.length) return false;
+
+  let downloaded = 0;
+  for (const att of list) {
+    try {
+      triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx');
+      downloaded++;
+    } catch (_) {}
+  }
+  if (downloaded) return 'downloaded';
+
+  const files = list.map(att => {
+    const name = att.filename || 'anexo.xlsx';
+    const mime = att.mime
+      || (/\.xlsx$/i.test(name)
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : ((typeof outlookGuessMime === 'function' && outlookGuessMime(name)) || 'application/octet-stream'));
+    return new File([att.blob], name, { type: mime });
+  });
+
+  try {
+    if (navigator.canShare && navigator.canShare({ files })) {
+      await navigator.share({ files, title: files[0].name });
+      return 'shared';
+    }
+    if (files.length === 1 && navigator.canShare && navigator.canShare({ files: [files[0]] })) {
+      await navigator.share({ files: [files[0]], title: files[0].name });
+      return 'shared';
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return 'shared';
+  }
+  return false;
+}
+
+/**
+ * Abre Outlook via mailto e entrega o Excel para anexar.
+ * Fluxo correcto em tablet/PWA (sem serve.ps1) — NÃO usa .eml.
+ */
+async function outlookOpenMailtoPlusExcel({
+  to, ccVal, subject, html, attachments, mailtoFallback,
+} = {}) {
+  if (!to) return false;
+
+  const hasExcel = (attachments || []).some(a => a && a.blob);
+  const excelStatus = hasExcel
+    ? await outlookDeliverExcelAttachments(attachments)
+    : false;
+
+  let bodyTxt = (mailtoFallback && mailtoFallback.body)
+    || outlookHtmlToPlainText(html)
+    || (hasExcel
+      ? 'Segue o Excel — anexa o ficheiro descarregado a este email.'
+      : '');
+  if (hasExcel && bodyTxt && !/anex/i.test(bodyTxt)) {
+    bodyTxt += '\n\n(Anexa o ficheiro Excel descarregado a este email.)';
+  }
+
+  const ccList = String(ccVal || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
+  const toMailto = String(to).split(/[,;]/).map(s => s.trim()).filter(Boolean).join(',');
+
+  const buildMailto = (body) =>
+    `mailto:${mailtoAddr(toMailto)}?` +
+    ccMailtoParam(ccList) +
+    '&subject=' + encodeURIComponent(subject || '') +
+    '&body=' + encodeURIComponent(body);
+
+  let mailto = buildMailto(bodyTxt);
+  if (mailto.length > MAILTO_MAX_LEN) {
+    mailto = buildMailto(
+      hasExcel
+        ? 'Pedido Delta Foods.\n\nAnexa o ficheiro Excel descarregado a este email.\n\nCumprimentos.'
+        : 'Pedido Delta Foods.\n\nCumprimentos.'
+    );
+  }
+  if (mailto.length > MAILTO_MAX_LEN) {
+    mailto = buildMailto(hasExcel ? 'Anexa o Excel descarregado.' : '');
+  }
+
+  const opened = openMailtoSafely(mailto);
+  if (!opened && !excelStatus) return false;
+  return { opened: !!opened, excelStatus };
+}
+
+/**
+ * Abre .eml no Outlook (PC Windows / browser desktop).
+ * Em tablet/PWA NÃO usar — preferir mailto + Excel.
+ * Devolve: 'opened' | 'downloaded' | false
  */
 async function outlookOpenEmlClient(eml, fileName) {
   const name = fileName || 'Delta_rascunho_Outlook.eml';
   const file = new File([eml], name, { type: 'message/rfc822' });
-  const standalone = outlookIsStandaloneApp();
 
   try {
     if (navigator.msSaveOrOpenBlob) {
@@ -15483,37 +15593,23 @@ async function outlookOpenEmlClient(eml, fileName) {
     }
   } catch (_) {}
 
-  // PWA / Android: partilhar o .eml → escolher Outlook (abre com anexo)
   try {
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: name });
-      return 'shared';
+    const url = URL.createObjectURL(file);
+    let opened = null;
+    try { opened = window.open(url, '_blank'); } catch (_) {}
+    if (!opened) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     }
-  } catch (e) {
-    if (e && e.name === 'AbortError') return 'shared';
-  }
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
+    return 'opened';
+  } catch (_) {}
 
-  // Browser (não-PWA): abrir blob sem atributo download
-  if (!standalone) {
-    try {
-      const url = URL.createObjectURL(file);
-      let opened = null;
-      try { opened = window.open(url, '_blank'); } catch (_) {}
-      if (!opened) {
-        const a = document.createElement('a');
-        a.href = url;
-        a.target = '_blank';
-        a.rel = 'noopener';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      }
-      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
-      return 'opened';
-    } catch (_) {}
-  }
-
-  // PWA sem Share: descarregar — utilizador toca e abre com Outlook
   try {
     const url = URL.createObjectURL(file);
     const a = document.createElement('a');
@@ -15670,7 +15766,7 @@ ${esc(texto).replace(/\n/g, '<br>')}
     mailtoFallback: {
       body: texto,
       toastMsg: mailtoToastMsg
-        || '📧 Email a abrir. Se o Outlook não mostrar o corpo completo, abre o ficheiro .eml descarregado.',
+        || '📧 Email a abrir.',
     },
   });
 }
@@ -15678,7 +15774,8 @@ ${esc(texto).replace(/\n/g, '<br>')}
 /**
  * Abre rascunho no Outlook com corpo HTML e anexos.
  * Só status 204 da API local conta como sucesso (serve.ps1).
- * Se a API falhar: mailto seguro (sem ecrã cinzento) + .eml + Excel.
+ * Tablet/PWA sem API: mailto + Excel para anexar (fluxo antigo — NÃO .eml).
+ * PC sem API: .eml com anexos, ou mailto + Excel.
  */
 async function outlookAbrirRascunho({
   to, cc, subject, html, attachments = [],
@@ -15686,7 +15783,6 @@ async function outlookAbrirRascunho({
   toastMsg,
   mailtoFallback = null,
 } = {}) {
-  const boundary = `DELTA_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   // Outlook PT-BR: vários endereços no CC separados por ponto-e-vírgula
   let ccVal = (cc == null || cc === '')
     ? (typeof ccString === 'function' ? ccString([]) : (isCanalHorecaActivo() ? CC_FIXO_FILIPE : ''))
@@ -15699,6 +15795,32 @@ async function outlookAbrirRascunho({
   if (ccVal) {
     ccVal = ccVal.split(/[,;]/).map(s => s.trim()).filter(Boolean).join('; ');
   }
+  const hasAttachments = (attachments || []).some(a => a && a.blob);
+  const isMobile = typeof outlookIsMobileClient === 'function' && outlookIsMobileClient();
+  const isTabletPwa = typeof outlookIsTabletOrPwa === 'function' && outlookIsTabletOrPwa();
+
+  // Tablet / PWA: mailto + Excel para anexar (como antes — sem .eml)
+  if (isTabletPwa && to) {
+    const result = await outlookOpenMailtoPlusExcel({
+      to, ccVal, subject, html, attachments, mailtoFallback,
+    });
+    if (result && (result.opened || result.excelStatus)) {
+      toast(
+        (mailtoFallback && mailtoFallback.toastMsg)
+        || (hasAttachments
+          ? '📧 Outlook a abrir. Anexa o Excel descarregado ao email.'
+          : '📧 Outlook a abrir.')
+      );
+      return true;
+    }
+    if (hasAttachments) {
+      try { await outlookDeliverExcelAttachments(attachments); } catch (_) {}
+      toast('📧 Excel descarregado — abre o Outlook e anexa o ficheiro ao email.', 'warn');
+      return true;
+    }
+  }
+
+  const boundary = `DELTA_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   const parts = [
     `To: ${to}`,
     `Cc: ${ccVal}`,
@@ -15731,8 +15853,6 @@ async function outlookAbrirRascunho({
   }
   parts.push(`--${boundary}--`, '');
   const eml = parts.join('\r\n');
-  const hasAttachments = (attachments || []).some(a => a && a.blob);
-  const isMobile = typeof outlookIsMobileClient === 'function' && outlookIsMobileClient();
 
   // Windows + serve.ps1 (saltar probe lento em tablets — não há localhost bridge)
   let openedEp = null;
@@ -15754,35 +15874,30 @@ async function outlookAbrirRascunho({
   }
   try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
-  // Sem serve.ps1: abrir .eml no Outlook (PC/tablet/PWA) — inclui HTML + anexos.
+  // PC desktop sem serve.ps1: abrir .eml (leva HTML + anexos)
   const fileName = draftName || 'Delta_rascunho_Outlook.eml';
   const openedEml = await outlookOpenEmlClient(eml, fileName);
-  if (openedEml === 'shared') {
-    toast('Escolha o Outlook na lista Partilhar — o anexo vai com o email.');
-    return true;
-  }
   if (openedEml === 'opened') {
     toast(toastMsg || '📧 Outlook a abrir com email e anexos.');
     return true;
   }
   if (openedEml === 'downloaded') {
-    toast('📧 Ficheiro .eml pronto — toca nele e escolhe Outlook (já leva o anexo).', 'warn');
+    toast('📧 Ficheiro .eml descarregado — abre-o no Outlook (já leva o anexo).', 'warn');
     return true;
   }
 
-  // Só texto / sem conseguir abrir .eml: mailto + Excel solto
-  if (mailtoFallback && to && !hasAttachments) {
-    const bodyTxt = mailtoFallback.body
-      || String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
-    const ccList = ccVal.split(/[,;]/).map(s => s.trim()).filter(Boolean);
-    const toMailto = String(to).split(/[,;]/).map(s => s.trim()).filter(Boolean).join(',');
-    const mailto =
-      `mailto:${mailtoAddr(toMailto)}?` +
-      ccMailtoParam(ccList) +
-      '&subject=' + encodeURIComponent(subject || '') +
-      '&body=' + encodeURIComponent(bodyTxt);
-    if (openMailtoSafely(mailto)) {
-      toast((mailtoFallback && mailtoFallback.toastMsg) || '📧 Outlook a abrir.');
+  // Fallback PC: mailto (+ Excel se houver)
+  if (to) {
+    const result = await outlookOpenMailtoPlusExcel({
+      to, ccVal, subject, html, attachments, mailtoFallback,
+    });
+    if (result && (result.opened || result.excelStatus)) {
+      toast(
+        (mailtoFallback && mailtoFallback.toastMsg)
+        || (hasAttachments
+          ? '📧 Outlook a abrir. Anexa o Excel descarregado ao email.'
+          : '📧 Outlook a abrir.')
+      );
       return true;
     }
   }
@@ -15794,7 +15909,7 @@ async function outlookAbrirRascunho({
   }
   outlookDownloadEml(eml, fileName);
   toast(
-    '📧 Ficheiro .eml descarregado — toca nele para abrir no Outlook (já vai com anexo).',
+    '📧 Ficheiro .eml descarregado — abre-o no Outlook (já vai com anexo).',
     'warn'
   );
   return false;
@@ -20888,7 +21003,7 @@ async function mc00Exportar() {
     if (st) {
       st.innerHTML = ok
         ? '<span style="color:#16a34a">Outlook aberto com MC00 em anexo.</span>'
-        : '<span style="color:#b45309">Não foi possível abrir o Outlook. No tablet: se descarregou um .eml, toca no ficheiro para abrir. No PC Windows: Instalar-Abertura-Automatica-Outlook.bat (1×).</span>';
+        : '<span style="color:#b45309">No tablet: Outlook abre o email e o Excel MC00 é descarregado — anexa o .xlsx ao email. No PC Windows: Instalar-Abertura-Automatica-Outlook.bat (1×).</span>';
     }
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${escHtml(e.message)}</span>`;
@@ -21135,6 +21250,17 @@ ${tabela}
 <p>Cumprimentos,<br>${mc00EmailEsc(remetente)}</p>
 </body></html>`;
 
+  const bodyTxt =
+`${saudacao} Carlos,
+
+Peço o carregamento das condições especiais de fornecimento (MC00) em anexo no ZDAB
+para o cliente ${d.nome || ''} (cód. ${d.cod || ''}).
+
+Anexa o ficheiro Excel MC00 descarregado a este email.
+
+Cumprimentos,
+${remetente}`;
+
   return outlookAbrirRascunho({
     to: 'carlos.castro@deltafoodsbrasil.com.br',
     // MC00 é fluxo Horeca — CC Filipe só nesse canal
@@ -21144,6 +21270,10 @@ ${tabela}
     attachments: excelBlob ? [{ blob: excelBlob, filename: excelFilename || 'MC00.xlsx' }] : [],
     draftName: 'MC00_rascunho_Outlook.eml',
     toastMsg: '📧 Outlook aberto com a tabela no corpo e Excel em anexo.',
+    mailtoFallback: {
+      body: bodyTxt,
+      toastMsg: '📧 Outlook a abrir. Anexa o Excel MC00 descarregado ao email.',
+    },
   });
 }
 
@@ -24263,6 +24393,18 @@ para assinatura digital por <strong>${outlookEmailEsc(data.ASSINA_NOME || '')}</
     attachments: docBlob ? [{ blob: docBlob, filename: filename || 'Contrato.docx' }] : [],
     draftName: 'Contrato_rascunho_Outlook.eml',
     toastMsg: '📧 Outlook aberto com o contrato em anexo.',
+    mailtoFallback: {
+      body:
+`Daniela,
+
+Segue em anexo o Contrato de Comodato Delta Q para o cliente ${data.COMOD_EMPRESA || ''} (${data.COMOD_CNPJ || ''}), para assinatura digital por ${data.ASSINA_NOME || ''} (${clientEmail}).
+
+Anexa o ficheiro do contrato descarregado a este email.
+
+Com os melhores cumprimentos,
+Delta Foods Brasil`,
+      toastMsg: '📧 Outlook a abrir. Anexa o contrato descarregado ao email.',
+    },
   });
 }
 
