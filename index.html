@@ -15417,17 +15417,16 @@ function outlookGuessMime(filename) {
 const OUTLOOK_API_CACHE_KEY = 'delta_outlook_api_url';
 /** Windows/Edge: mailto > ~2000 chars falha → ecrã cinzento/em branco. */
 const MAILTO_MAX_LEN = 1800;
+/** Pacote Android da app Outlook (força abrir Outlook, sem chooser Chrome/Gmail). */
+const OUTLOOK_ANDROID_PACKAGE = 'com.microsoft.office.outlook';
 
-/**
- * Abre mailto SEM navegar a página (location.href deixa ecrã cinzento se o
- * protocolo falhar ou a URL for demasiado longa).
- * Se a URL for demasiado longa → devolve false (NÃO truncar o corpo — isso
- * cortava chamados AT a meio). O caller deve usar .eml / serve.ps1.
- */
-function openMailtoSafely(mailtoUrl) {
-  if (!mailtoUrl || !/^mailto:/i.test(mailtoUrl)) return false;
-  const url = String(mailtoUrl);
-  if (url.length > MAILTO_MAX_LEN) return false;
+function outlookIsAndroid() {
+  return /android/i.test(String(navigator.userAgent || ''));
+}
+
+/** Dispara navegação a um URL (intent://, ms-outlook://, mailto:). */
+function outlookNavigateUrl(url) {
+  if (!url) return false;
   try {
     const a = document.createElement('a');
     a.href = url;
@@ -15440,11 +15439,87 @@ function openMailtoSafely(mailtoUrl) {
     return true;
   } catch (_) {
     try {
-      window.open(url, '_blank', 'noopener');
+      window.location.href = url;
       return true;
     } catch (_) {
       return false;
     }
+  }
+}
+
+/**
+ * Converte mailto:… num Intent Android que abre SÓ o Outlook
+ * (evita o diálogo «Abrir com» Chrome / Gmail).
+ */
+function outlookAndroidIntentFromMailto(mailtoUrl) {
+  const raw = String(mailtoUrl || '');
+  if (!/^mailto:/i.test(raw)) return null;
+  // intent://user@host?subject=…&body=…#Intent;scheme=mailto;package=…;end
+  // Codificar '#' no corpo — senão corta o Intent no meio.
+  const withoutScheme = raw.replace(/^mailto:/i, '').replace(/#/g, '%23');
+  return (
+    `intent://${withoutScheme}#Intent;` +
+    `scheme=mailto;` +
+    `package=${OUTLOOK_ANDROID_PACKAGE};` +
+    `action=android.intent.action.SENDTO;` +
+    `end`
+  );
+}
+
+/**
+ * Deep link nativo Outlook Android (compose).
+ * Formato: ms-outlook://emails/new?to=&cc=&subject=&body=
+ */
+function outlookAndroidMsComposeFromMailto(mailtoUrl) {
+  try {
+    const raw = String(mailtoUrl || '');
+    if (!/^mailto:/i.test(raw)) return null;
+    const noScheme = raw.slice(7); // after mailto:
+    const q = noScheme.indexOf('?');
+    const toPart = q >= 0 ? noScheme.slice(0, q) : noScheme;
+    const query = q >= 0 ? noScheme.slice(q + 1) : '';
+    const params = new URLSearchParams(query);
+    const to = decodeURIComponent(String(toPart || '').replace(/\+/g, '%20')).trim();
+    const subject = params.get('subject') || '';
+    const body = params.get('body') || '';
+    const cc = params.get('cc') || '';
+    let url = `ms-outlook://emails/new?to=${encodeURIComponent(to)}`;
+    if (cc) url += `&cc=${encodeURIComponent(cc)}`;
+    if (subject) url += `&subject=${encodeURIComponent(subject)}`;
+    if (body) url += `&body=${encodeURIComponent(body)}`;
+    return url;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Abre email no Outlook.
+ * - Android/tablet: Intent/package Outlook OU ms-outlook:// (NUNCA mailto genérico
+ *   — esse abre o diálogo «Abrir com» Chrome / Gmail).
+ * - Outros: mailto seguro (sem ecrã cinzento).
+ * URL demasiado longa → false (não truncar corpo).
+ */
+function openMailtoSafely(mailtoUrl) {
+  if (!mailtoUrl || !/^mailto:/i.test(mailtoUrl)) return false;
+  const url = String(mailtoUrl);
+  if (url.length > MAILTO_MAX_LEN) return false;
+
+  // Android: só Outlook — sem chooser Chrome/Gmail
+  if (outlookIsAndroid()) {
+    const intentUrl = outlookAndroidIntentFromMailto(url);
+    if (intentUrl) return outlookNavigateUrl(intentUrl);
+    const msUrl = outlookAndroidMsComposeFromMailto(url);
+    if (msUrl) return outlookNavigateUrl(msUrl);
+    return false;
+  }
+
+  if (outlookNavigateUrl(url)) return true;
+  try {
+    window.open(url, '_blank', 'noopener');
+    return true;
+  } catch (_) {
+    return false;
   }
 }
 
