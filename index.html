@@ -15455,35 +15455,78 @@ function outlookIsMobileClient() {
     || ((navigator.maxTouchPoints || 0) > 1 && /mac/.test(ua));
 }
 
+/** App instalada (PWA standalone) — window.open costuma falhar; usar Share. */
+function outlookIsStandaloneApp() {
+  try {
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+    if (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches) return true;
+    if (window.matchMedia && window.matchMedia('(display-mode: minimal-ui)').matches) return true;
+  } catch (_) {}
+  return window.navigator.standalone === true;
+}
+
 /**
- * Abre .eml no Outlook (desktop/tablet) SEM forçar "Guardar em Transferências".
- * O fluxo antigo usava window.open(blob) / <a target=_blank> sem atributo download —
- * no Samsung/Android o Outlook abre o rascunho já com anexos.
+ * Abre .eml no Outlook com anexos.
+ * - PWA/tablet: Web Share (ficheiros) → Outlook
+ * - Browser: window.open(blob) sem a.download (como o fluxo antigo)
  */
-function outlookOpenEmlClient(eml, fileName) {
+async function outlookOpenEmlClient(eml, fileName) {
   const name = fileName || 'Delta_rascunho_Outlook.eml';
   const file = new File([eml], name, { type: 'message/rfc822' });
+  const standalone = outlookIsStandaloneApp();
+  const mobile = outlookIsMobileClient();
+
   try {
     if (navigator.msSaveOrOpenBlob) {
       navigator.msSaveOrOpenBlob(file, name);
       return true;
     }
   } catch (_) {}
+
+  // PWA / Android: partilhar o .eml → o utilizador escolhe Outlook (abre com anexo)
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: name });
+      return true;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return true; // cancelou a partilha
+  }
+
+  // Browser (não-PWA): abrir blob sem atributo download
+  if (!standalone) {
+    try {
+      const url = URL.createObjectURL(file);
+      let opened = null;
+      try { opened = window.open(url, '_blank'); } catch (_) {}
+      if (!opened) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
+      return true;
+    } catch (_) {}
+  }
+
+  // PWA sem Share: descarregar e pedir para abrir com Outlook
   try {
     const url = URL.createObjectURL(file);
-    let opened = null;
-    try { opened = window.open(url, '_blank'); } catch (_) {}
-    if (!opened) {
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      // NÃO pôr a.download — isso manda para Transferências em vez do Outlook
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
+    if (mobile || standalone) {
+      toast('📧 Ficheiro .eml descarregado — toca nele e escolhe Outlook (já leva o anexo).', 'warn');
+    }
     return true;
   } catch (_) {
     return false;
@@ -15714,10 +15757,10 @@ async function outlookAbrirRascunho({
   }
   try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
-  // Sem serve.ps1: abrir .eml no Outlook (PC/tablet) — inclui HTML + anexos.
-  // NÃO usar mailto quando há anexos (mailto não leva Excel e “roubava” o fluxo nos tablets).
+  // Sem serve.ps1: abrir .eml no Outlook (PC/tablet/PWA) — inclui HTML + anexos.
+  // NÃO usar mailto quando há anexos (mailto não leva Excel).
   const fileName = draftName || 'Delta_rascunho_Outlook.eml';
-  const openedEml = outlookOpenEmlClient(eml, fileName);
+  const openedEml = await outlookOpenEmlClient(eml, fileName);
   if (openedEml) {
     toast(toastMsg || '📧 Outlook a abrir com email e anexos.');
     return true;
