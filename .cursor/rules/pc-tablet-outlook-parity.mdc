@@ -24,12 +24,15 @@ A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos,
 ### Tablet / PWA
 1. **Nunca** depender de `serve.ps1` / `127.0.0.1`.
 2. **Nunca** partilhar / forçar `.eml` como fluxo principal (não era o comportamento correcto).
-3. Abrir email **só no Outlook** (Android Intent `package=com.microsoft.office.outlook` / `ms-outlook://`) — **nunca** mailto genérico que mostra «Abrir com» Chrome/Gmail.
+3. Abrir email **só no Outlook**:
+   - Detetar tablet mesmo com UA «desktop» (Galaxy + teclado / site para computador) via PWA standalone / touch.
+   - Usar `ms-outlook://` + Intent `package=com.microsoft.office.outlook`.
+   - **Nunca** mailto genérico (mostra «Abrir com» Chrome/Gmail; Outlook muitas vezes nem entra na lista).
 4. **Descarregar o Excel (.xlsx)** (ou .docx) para o utilizador **anexar no Outlook**.
 5. Toast claro: *Anexa o Excel descarregado ao email.*
 
 Funções de referência em `index.html`:
-- `outlookIsTabletOrPwa()` / `outlookIsAndroid()` / `openMailtoSafely()` (Intent Outlook)
+- `outlookShouldForceOutlookApp()` / `outlookIsStandaloneApp()` / `openMailtoSafely()`
 - `outlookOpenMailtoPlusExcel()` / `outlookDeliverExcelAttachments()`
 - `outlookAbrirRascunho()` — ramo tablet **antes** de construir `.eml`
 
