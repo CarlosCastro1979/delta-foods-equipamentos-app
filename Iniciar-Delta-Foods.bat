@@ -5,13 +5,15 @@ cd /d "%~dp0"
 
 echo.
 echo  Delta Foods - Gestao de Equipamentos
-echo  A iniciar servidor local (Outlook + anexos)...
 echo.
+echo  Preferes nao fazer isto a cada sessao?
+echo  Corre UMA VEZ: Instalar-Abertura-Automatica-Outlook.bat
+echo  ^(arranca com o Windows, em silencio^)
+echo.
+echo  A iniciar servidor local agora...
 echo  Deixa esta janela aberta enquanto usas a app.
-echo  Fecha com Ctrl+C ou fechando a janela.
 echo.
 
-REM Abre o browser após ~2s (serve.ps1 a arrancar)
 start "" cmd /c "timeout /t 2 /nobreak >nul & start http://localhost:8088/delta-foods-equipamentos-app/"
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0serve.ps1"

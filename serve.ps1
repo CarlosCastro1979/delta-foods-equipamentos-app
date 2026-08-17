@@ -1,7 +1,18 @@
 $preferred = if ($env:PORT) { [int]$env:PORT } else { 8088 }
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$silent = ($env:DELTA_OUTLOOK_SILENT -eq '1')
 $appDir = Join-Path $root 'delta-foods-equipamentos-app'
 $syncFiles = @('index.html', 'manifest.json', 'sw.js', 'simulador-template.js', 'mc00-template.xlsx', 'icon-192.png', 'icon-512.png')
+
+function Write-Info([string]$msg, [string]$color = 'Gray') {
+    if ($silent) { return }
+    if ($color -eq 'Gray') { Write-Host $msg -ForegroundColor DarkGray }
+    elseif ($color -eq 'Green') { Write-Host $msg -ForegroundColor Green }
+    elseif ($color -eq 'Cyan') { Write-Host $msg -ForegroundColor Cyan }
+    elseif ($color -eq 'Yellow') { Write-Host $msg -ForegroundColor DarkYellow }
+    elseif ($color -eq 'Red') { Write-Host $msg -ForegroundColor Red }
+    else { Write-Host $msg }
+}
 
 function Sync-AppAssets {
     New-Item -ItemType Directory -Force -Path $appDir | Out-Null
@@ -207,10 +218,11 @@ function Open-EmlDraft([string]$emlPath) {
 }
 
 function Set-CorsHeaders($res) {
-    # Permite GitHub Pages / outro host chamar a API local para abrir o Outlook
+    # GitHub Pages (HTTPS público) → localhost: Chrome exige Private Network Access
     $res.Headers['Access-Control-Allow-Origin'] = '*'
     $res.Headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS, GET'
-    $res.Headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    $res.Headers['Access-Control-Allow-Headers'] = 'Content-Type, Access-Control-Request-Private-Network'
+    $res.Headers['Access-Control-Allow-Private-Network'] = 'true'
     $res.Headers['Access-Control-Max-Age'] = '86400'
 }
 
@@ -222,20 +234,20 @@ foreach ($tryPort in @($preferred, 8088, 8080, 8090, 5505)) {
         $port = $tryPort
         break
     } catch {
-        Write-Host "Porta $tryPort ocupada - a tentar outra..." -ForegroundColor DarkYellow
+        Write-Info "Porta $tryPort ocupada - a tentar outra..." 'Yellow'
     }
 }
 if (-not $listener) {
     throw "Nao foi possivel iniciar o servidor local (portas ocupadas). Fecha o processo na 8088/8080 ou define PORT."
 }
 
-Write-Host ''
-Write-Host 'Delta Foods - Gestao de Equipamentos' -ForegroundColor Green
-Write-Host "Local:  http://localhost:$port/delta-foods-equipamentos-app/" -ForegroundColor Cyan
-Write-Host 'API Outlook: POST /api/open-outlook-draft (CORS activo)' -ForegroundColor DarkGray
-Write-Host 'Online: https://carloscastro1979.github.io/delta-foods-equipamentos-app/' -ForegroundColor DarkGray
-Write-Host 'Ctrl+C para parar' -ForegroundColor DarkGray
-Write-Host ''
+Write-Info ''
+Write-Info 'Delta Foods - Gestao de Equipamentos' 'Green'
+Write-Info "Local:  http://localhost:$port/delta-foods-equipamentos-app/" 'Cyan'
+Write-Info 'API Outlook: POST /api/open-outlook-draft (CORS + Private Network)' 'Gray'
+Write-Info 'Online: https://carloscastro1979.github.io/delta-foods-equipamentos-app/' 'Gray'
+Write-Info 'Ctrl+C para parar' 'Gray'
+Write-Info ''
 
 while ($listener.IsListening) {
     $ctx = $listener.GetContext()
@@ -260,7 +272,7 @@ while ($listener.IsListening) {
                 # GET/OPTIONS = health-check do browser (outlookFindLiveApi), sem abrir Outlook
                 $res.StatusCode = 204
                 $res.ContentLength64 = 0
-                Write-Host "  204  $method $path (CORS/health)" -ForegroundColor DarkGray
+                Write-Info "  204  $method $path (CORS/health)" 'Gray'
             } elseif ($method -eq 'POST') {
                 $ms = New-Object System.IO.MemoryStream
                 $ctx.Request.InputStream.CopyTo($ms)
@@ -270,7 +282,7 @@ while ($listener.IsListening) {
                     $err = [Text.Encoding]::UTF8.GetBytes('Invalid draft')
                     $res.ContentLength64 = $err.Length
                     $res.OutputStream.Write($err, 0, $err.Length)
-                    Write-Host "  400  POST $path (draft invalido)" -ForegroundColor Yellow
+                    Write-Info "  400  POST $path (draft invalido)" 'Yellow'
                 } else {
                     $tmp = Join-Path $env:TEMP ("MC00_draft_{0}.eml" -f [guid]::NewGuid().ToString('N'))
                     [IO.File]::WriteAllBytes($tmp, $emlBytes)
@@ -278,7 +290,7 @@ while ($listener.IsListening) {
                     $openEmlKb = [math]::Round($emlBytes.Length / 1KB)
                     # ShellExecute ANTES do 204 — preserva melhor a cadeia de foco do clique
                     try { $openEmlState = Start-EmlDraft $openEmlPath } catch {
-                        Write-Host "  WARN Start-EmlDraft: $($_.Exception.Message)" -ForegroundColor Yellow
+                        Write-Info "  WARN Start-EmlDraft: $($_.Exception.Message)" 'Yellow'
                     }
                     $res.StatusCode = 204
                     $res.ContentLength64 = 0
@@ -308,19 +320,19 @@ while ($listener.IsListening) {
             }
         }
     } catch {
-        Write-Host "  ERR  $($_.Exception.Message)" -ForegroundColor Red
-        try { $res.StatusCode = 500 } catch { Write-Host '' }
+        Write-Info "  ERR  $($_.Exception.Message)" 'Red'
+        try { $res.StatusCode = 500 } catch { }
     }
 
-    try { $res.Close() } catch { Write-Host '' }
+    try { $res.Close() } catch { }
 
     # Trazer Outlook à frente depois do 204 (retries sem bloquear o browser)
     if ($openEmlPath) {
         try {
             Complete-EmlDraftFocus $openEmlState
-            Write-Host "  204  POST -> Outlook ($openEmlKb KB)" -ForegroundColor DarkGray
+            Write-Info "  204  POST -> Outlook ($openEmlKb KB)" 'Gray'
         } catch {
-            Write-Host "  WARN eml gravado mas Outlook nao abriu: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Info "  WARN eml gravado mas Outlook nao abriu: $($_.Exception.Message)" 'Yellow'
         }
     }
 }
