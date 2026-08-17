@@ -1,0 +1,49 @@
+---
+description: Emails/Outlook devem funcionar igual em PC Windows e tablets Android (PWA)
+alwaysApply: true
+---
+
+# PC + Tablet — paridade Outlook / anexos
+
+A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos, MC00, cadastro, contratos ou `serve.ps1` tem de servir **os dois**. O resultado para o utilizador deve ser o mesmo: **abrir o email no Outlook e ter o Excel (ou documento) para enviar**.
+
+## Ambientes
+
+| Ambiente | Como usam | Bridge local |
+|---|---|---|
+| **PC Windows** | Browser ou atalho; Outlook desktop | `serve.ps1` / `Iniciar-Delta-Foods.bat` / abertura automática |
+| **Tablet Android (Galaxy)** | App instalada (**PWA** standalone), **não** o Chrome | Não há `serve.ps1` nem localhost |
+
+## Fluxos obrigatórios (não misturar)
+
+### PC Windows
+1. Preferir API local `POST /api/open-outlook-draft` (`serve.ps1`) → Outlook abre com **HTML + anexos já incluídos**.
+2. Sem API: abrir `.eml` no desktop (leva anexos).
+3. Último recurso: mailto + descarregar Excel.
+
+### Tablet / PWA
+1. **Nunca** depender de `serve.ps1` / `127.0.0.1`.
+2. **Nunca** partilhar / forçar `.eml` como fluxo principal (não era o comportamento correcto).
+3. Abrir email via **mailto** (To / Assunto / Corpo).
+4. **Descarregar o Excel (.xlsx)** (ou .docx) para o utilizador **anexar no Outlook**.
+5. Toast claro: *Anexa o Excel descarregado ao email.*
+
+Funções de referência em `index.html`:
+- `outlookIsTabletOrPwa()` / `outlookIsMobileClient()` / `outlookIsStandaloneApp()`
+- `outlookOpenMailtoPlusExcel()` / `outlookDeliverExcelAttachments()`
+- `outlookAbrirRascunho()` — ramo tablet **antes** de construir `.eml`
+
+## Regras ao alterar código
+
+1. **Testar mentalmente os 2 caminhos** em cada mudança de email (com e sem anexo).
+2. Passar sempre `mailtoFallback` com corpo curto + toast quando há anexos (MC00, cadastro, contratos, ajustes de rota, …).
+3. Não “corrigir” o tablet com Web Share de `.eml` — o anexo correcto é o **Excel/documento**.
+4. Não assumir que `window.open(blob)` funciona na PWA standalone.
+5. Não bloquear o PC a pensar só no tablet, nem o contrário: o ramo PC (`serve.ps1`) mantém-se.
+6. Mensagens de erro / status devem distinguir: tablet → anexa Excel; PC → `Instalar-Abertura-Automatica-Outlook.bat` / `serve.ps1`.
+
+## Critério de aceite
+
+- **PC com bridge:** Outlook abre com Excel já em anexo.
+- **Tablet PWA:** Outlook abre o rascunho + Excel descarregado para anexar.
+- Mesmo botão / mesmo pedido (MC00, AT, cadastro, etc.) nos dois.
