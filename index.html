@@ -15565,7 +15565,9 @@ function openMailtoSafely(mailtoUrl) {
 function outlookIsMobileClient() {
   const ua = String(navigator.userAgent || '').toLowerCase();
   return /android|iphone|ipad|ipod|mobile|tablet/.test(ua)
-    || ((navigator.maxTouchPoints || 0) > 1 && /mac/.test(ua));
+    || ((navigator.maxTouchPoints || 0) > 1 && /mac/.test(ua))
+    // Galaxy Tab com teclado: UA «Linux x86_64» desktop, sem a palavra Android
+    || ((navigator.maxTouchPoints || 0) > 1 && /linux/.test(ua) && !/windows/.test(ua));
 }
 
 /** App instalada (PWA standalone). */
