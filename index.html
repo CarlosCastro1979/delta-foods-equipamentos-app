@@ -15424,9 +15424,36 @@ function outlookIsAndroid() {
   return /android/i.test(String(navigator.userAgent || ''));
 }
 
-/** Dispara navegação a um URL (intent://, ms-outlook://, mailto:). */
+/**
+ * Galaxy Tab com teclado / «site para computador» manda UA de desktop (sem «Android»).
+ * Nessas PWA o mailto genérico abre Chrome/Gmail — temos de forçar a app Outlook.
+ */
+function outlookShouldForceOutlookApp() {
+  if (outlookIsAndroid()) return true;
+  if (typeof outlookIsStandaloneApp === 'function' && outlookIsStandaloneApp()) return true;
+  if (typeof outlookIsMobileClient === 'function' && outlookIsMobileClient()) return true;
+  // Tablet touch sem UA mobile (Samsung desktop mode)
+  if ((navigator.maxTouchPoints || 0) > 1) {
+    const ua = String(navigator.userAgent || '').toLowerCase();
+    if (!/windows nt|wow64|win64/.test(ua)) return true;
+  }
+  return false;
+}
+
+/**
+ * Navega para intent:// / ms-outlook:// / mailto:.
+ * Em PWA Android, location.href/assign é mais fiável que click() num link.
+ */
 function outlookNavigateUrl(url) {
   if (!url) return false;
+  try {
+    window.location.assign(url);
+    return true;
+  } catch (_) {}
+  try {
+    window.location.href = url;
+    return true;
+  } catch (_) {}
   try {
     const a = document.createElement('a');
     a.href = url;
@@ -15438,37 +15465,31 @@ function outlookNavigateUrl(url) {
     a.remove();
     return true;
   } catch (_) {
-    try {
-      window.location.href = url;
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return false;
   }
 }
 
 /**
- * Converte mailto:… num Intent Android que abre SÓ o Outlook
- * (evita o diálogo «Abrir com» Chrome / Gmail).
+ * Intent Android que abre SÓ o Outlook (package fixo).
+ * Usa data=mailto:… no fragment — mais estável que intent://path.
  */
 function outlookAndroidIntentFromMailto(mailtoUrl) {
   const raw = String(mailtoUrl || '');
   if (!/^mailto:/i.test(raw)) return null;
-  // intent://user@host?subject=…&body=…#Intent;scheme=mailto;package=…;end
-  // Codificar '#' no corpo — senão corta o Intent no meio.
-  const withoutScheme = raw.replace(/^mailto:/i, '').replace(/#/g, '%23');
+  const data = encodeURIComponent(raw);
   return (
-    `intent://${withoutScheme}#Intent;` +
+    `intent:#Intent;` +
+    `action=android.intent.action.SENDTO;` +
+    `category=android.intent.category.DEFAULT;` +
+    `data=${data};` +
     `scheme=mailto;` +
     `package=${OUTLOOK_ANDROID_PACKAGE};` +
-    `action=android.intent.action.SENDTO;` +
     `end`
   );
 }
 
 /**
- * Deep link nativo Outlook Android (compose).
- * Formato: ms-outlook://emails/new?to=&cc=&subject=&body=
+ * Deep link nativo Outlook (Android/iOS): ms-outlook://emails/new?...
  */
 function outlookAndroidMsComposeFromMailto(mailtoUrl) {
   try {
@@ -15495,21 +15516,38 @@ function outlookAndroidMsComposeFromMailto(mailtoUrl) {
 
 /**
  * Abre email no Outlook.
- * - Android/tablet: Intent/package Outlook OU ms-outlook:// (NUNCA mailto genérico
- *   — esse abre o diálogo «Abrir com» Chrome / Gmail).
- * - Outros: mailto seguro (sem ecrã cinzento).
- * URL demasiado longa → false (não truncar corpo).
+ * - Tablet/PWA/Android: ms-outlook:// + Intent package (NUNCA mailto genérico —
+ *   esse mostra «Abrir com» Chrome/Gmail; Outlook muitas vezes nem aparece).
+ * - PC: mailto seguro.
  */
 function openMailtoSafely(mailtoUrl) {
   if (!mailtoUrl || !/^mailto:/i.test(mailtoUrl)) return false;
   const url = String(mailtoUrl);
   if (url.length > MAILTO_MAX_LEN) return false;
 
-  // Android: só Outlook — sem chooser Chrome/Gmail
-  if (outlookIsAndroid()) {
-    const intentUrl = outlookAndroidIntentFromMailto(url);
-    if (intentUrl) return outlookNavigateUrl(intentUrl);
+  if (outlookShouldForceOutlookApp()) {
+    // 1) Deep link Outlook (iframe — não navega a PWA se o scheme falhar)
     const msUrl = outlookAndroidMsComposeFromMailto(url);
+    if (msUrl) {
+      try {
+        const iframe = document.createElement('iframe');
+        iframe.setAttribute('style', 'position:fixed;width:0;height:0;border:0;visibility:hidden;pointer-events:none');
+        iframe.src = msUrl;
+        document.body.appendChild(iframe);
+        setTimeout(() => { try { iframe.remove(); } catch (_) {} }, 2500);
+      } catch (_) {}
+    }
+    // 2) Intent package Outlook (força a app instalada — salta Chrome/Gmail)
+    const intentUrl = outlookAndroidIntentFromMailto(url);
+    if (intentUrl) {
+      // Pequeno atraso: deixa o deep link tentar primeiro
+      setTimeout(() => {
+        try { window.location.href = intentUrl; } catch (_) {
+          try { outlookNavigateUrl(intentUrl); } catch (_) {}
+        }
+      }, 400);
+      return true;
+    }
     if (msUrl) return outlookNavigateUrl(msUrl);
     return false;
   }
