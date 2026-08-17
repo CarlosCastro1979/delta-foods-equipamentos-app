@@ -1,11 +1,13 @@
 ---
-description: Emails/Outlook devem funcionar igual em PC Windows e tablets Android (PWA)
+description: Emails/Outlook — paridade PC Windows + tablet Galaxy PWA (validado em produção)
 alwaysApply: true
 ---
 
-# PC + Tablet — paridade Outlook / anexos
+# PC + Tablet — paridade Outlook / anexos (VALIDADO)
 
-A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos, MC00, cadastro, contratos ou `serve.ps1` tem de servir **os dois**. O resultado para o utilizador deve ser o mesmo: **abrir o email no Outlook e ter o Excel (ou documento) para enviar**.
+A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos, MC00, cadastro, contratos, Pedido AT ou `serve.ps1` tem de servir **os dois**.
+
+**Validado em produção (Galaxy S9 / teclado, Ago 2026):** abrir só o Outlook na PWA, sem diálogo Chrome/Gmail.
 
 ## Ambientes
 
@@ -21,33 +23,46 @@ A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos,
 2. Sem API: abrir `.eml` no desktop (leva anexos).
 3. Último recurso: mailto + descarregar Excel.
 
-### Tablet / PWA
+### Tablet / PWA (fluxo correcto — NÃO alterar sem validar nos dois)
 1. **Nunca** depender de `serve.ps1` / `127.0.0.1`.
-2. **Nunca** partilhar / forçar `.eml` como fluxo principal (não era o comportamento correcto).
-3. Abrir email **só no Outlook**:
-   - Detetar tablet mesmo com UA «desktop» (Galaxy + teclado / site para computador) via PWA standalone / touch.
-   - Usar `ms-outlook://` + Intent `package=com.microsoft.office.outlook`.
-   - **Nunca** mailto genérico (mostra «Abrir com» Chrome/Gmail; Outlook muitas vezes nem entra na lista).
-4. **Descarregar o Excel (.xlsx)** (ou .docx) para o utilizador **anexar no Outlook**.
-5. Toast claro: *Anexa o Excel descarregado ao email.*
+2. **Nunca** partilhar / descarregar `.eml` como fluxo principal — o utilizador anexa o **Excel (.xlsx)** no email.
+3. Abrir email **só na app Outlook**:
+   - `ms-outlook://emails/new?…` + Intent `package=com.microsoft.office.outlook`
+   - Preferir `location.assign` / `location.href` (mais fiável que `<a>.click()` na PWA)
+   - **Nunca** `mailto:` genérico no tablet → mostra «Abrir com» **Chrome / Gmail** e o Outlook muitas vezes **nem aparece** (mesmo instalado e como padrão)
+4. **Descarregar o Excel** para o utilizador anexar no Outlook.
+5. Toast: *Anexa o Excel descarregado ao email.*
 
-Funções de referência em `index.html`:
-- `outlookShouldForceOutlookApp()` / `outlookIsStandaloneApp()` / `openMailtoSafely()`
+## Armadilha crítica (já nos custou tempo)
+
+Galaxy Tab **com teclado** / «site para computador» manda **User-Agent de desktop** (`Linux x86_64`, **sem** a palavra `Android`).
+
+- Se o código só fizer `/android/i.test(ua)`, trata o tablet como PC → `mailto:` → Chrome/Gmail.
+- Usar **sempre** `outlookShouldForceOutlookApp()` (PWA standalone + touch + Linux sem Windows + Android).
+- `outlookIsMobileClient()` também deteta touch + Linux desktop.
+
+**Não remover nem «simplificar» esta detecção.**
+
+## Funções de referência (`index.html`)
+
+- `outlookShouldForceOutlookApp()` — porta de entrada (não usar só `outlookIsAndroid()`)
+- `openMailtoSafely()` — força Outlook na PWA; mailto só no PC
 - `outlookOpenMailtoPlusExcel()` / `outlookDeliverExcelAttachments()`
 - `outlookAbrirRascunho()` — ramo tablet **antes** de construir `.eml`
+- Constante: `OUTLOOK_ANDROID_PACKAGE = 'com.microsoft.office.outlook'`
 
 ## Regras ao alterar código
 
-1. **Testar mentalmente os 2 caminhos** em cada mudança de email (com e sem anexo).
-2. Passar sempre `mailtoFallback` com corpo curto + toast quando há anexos (MC00, cadastro, contratos, ajustes de rota, …).
-3. Não “corrigir” o tablet com Web Share de `.eml` — o anexo correcto é o **Excel/documento**.
-4. Não assumir que `window.open(blob)` funciona na PWA standalone.
-5. Não bloquear o PC a pensar só no tablet, nem o contrário: o ramo PC (`serve.ps1`) mantém-se.
-6. Mensagens de erro / status devem distinguir: tablet → anexa Excel; PC → `Instalar-Abertura-Automatica-Outlook.bat` / `serve.ps1`.
+1. Testar mentalmente **PC + tablet** em cada mudança de email (com e sem anexo).
+2. Passar sempre `mailtoFallback` (corpo curto + toast) quando há anexos.
+3. Não “corrigir” o tablet com Web Share de `.eml`.
+4. Não assumir `window.open(blob)` na PWA standalone.
+5. Manter o ramo PC (`serve.ps1`) intacto.
+6. Mensagens: tablet → anexa Excel; PC → `Instalar-Abertura-Automatica-Outlook.bat` / `serve.ps1`.
+7. Regressão = diálogo «Abrir com» Chrome/Gmail no tablet → repor força Outlook.
 
 ## Critério de aceite
 
 - **PC com bridge:** Outlook abre com Excel já em anexo.
-- **Tablet PWA:** Outlook abre directamente (sem diálogo Chrome/Gmail) + Excel descarregado para anexar.
-- Mesmo botão / mesmo pedido (MC00, AT, cadastro, etc.) nos dois.
-- No Android, «Abrir com» a mostrar Chrome/Gmail = regressão — corrigir.
+- **Tablet PWA:** Outlook abre **directamente** (sem Chrome/Gmail) + Excel descarregado para anexar.
+- Mesmo botão / mesmo pedido (MC00, AT, cadastro, contratos, etc.) nos dois.
