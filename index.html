@@ -15710,9 +15710,9 @@ async function outlookAbrirRascunho({
   }
 
   toast(
-    '📧 Para abrir o Outlook com o Excel em anexo: corre .\\serve.ps1 e abre '
-    + 'http://localhost:8088/delta-foods-equipamentos-app/ '
-    + '(foi descarregado um .eml de recurso).',
+    '📧 Para abrir o Outlook com anexos automaticamente: no PC corre UMA VEZ '
+    + 'Instalar-Abertura-Automatica-Outlook.bat (arranca com o Windows). '
+    + 'Foi descarregado um .eml de recurso.',
     'warn'
   );
   return false;
@@ -20806,7 +20806,7 @@ async function mc00Exportar() {
     if (st) {
       st.innerHTML = ok
         ? '<span style="color:#16a34a">Outlook aberto com MC00 em anexo.</span>'
-        : '<span style="color:#b45309">Outlook não abriu via API — corre .\\serve.ps1 e usa http://localhost:8088/delta-foods-equipamentos-app/ (abre directo com Excel anexo).</span>';
+        : '<span style="color:#b45309">Outlook não abriu — no PC corre UMA VEZ Instalar-Abertura-Automatica-Outlook.bat (depois funciona com o site online, sem cliques).</span>';
     }
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${escHtml(e.message)}</span>`;
