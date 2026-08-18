@@ -3574,13 +3574,13 @@ var _unused_placeholder = 1;
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <label style="font-size:12px;color:var(--muted);">Ano
-            <select id="pv-ano" class="form-input" style="height:36px;min-width:90px;margin-left:6px;" onchange="pvRender()">
+            <select id="pv-ano" class="form-input" style="height:36px;min-width:90px;margin-left:6px;" onchange="pvEnsureCloudThenRender({reload:true})">
               <option value="2026" selected>2026</option>
               <option value="2025">2025</option>
             </select>
           </label>
           <label style="font-size:12px;color:var(--muted);" id="pv-mes-wrap">Mês
-            <select id="pv-mes" class="form-input" style="height:36px;min-width:110px;margin-left:6px;" onchange="pvRender()">
+            <select id="pv-mes" class="form-input" style="height:36px;min-width:110px;margin-left:6px;" onchange="pvEnsureCloudThenRender({reload:true})">
               <option value="0">Janeiro</option>
               <option value="1">Fevereiro</option>
               <option value="2">Março</option>
@@ -3596,6 +3596,7 @@ var _unused_placeholder = 1;
             </select>
           </label>
           <button type="button" class="btn btn-secondary btn-sm" onclick="pvExportarExcel()" style="min-height:36px;">⬇ Excel</button>
+          <button type="button" class="btn btn-primary btn-sm" id="pv-btn-publicar" onclick="pvPublicarProducao()" style="min-height:36px;" title="Envia MYR / Previsão / N do teu browser para a produção">☁ Publicar produção</button>
         </div>
       </div>
 
@@ -10286,6 +10287,118 @@ function pvStoreKeyV2(ano, mes) {
   return 'dfb_previsao_mapa_v2_' + String(ano || 2026) + '_' + String(mes ?? 7);
 }
 
+/** JSON partilhado em produção (Supabase Storage). */
+const PV_CLOUD_PATH = 'previsao/mapas_v3.json';
+const PV_CLOUD_URL = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/public/contratos/' + PV_CLOUD_PATH;
+let _pvCloudCache = null;
+let _pvCloudFetchedAt = 0;
+
+function pvCollectLocalMaps() {
+  const maps = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('dfb_previsao_mapa_v3_')) continue;
+      try {
+        const parsed = JSON.parse(localStorage.getItem(k));
+        if (parsed && Array.isArray(parsed.linhas)) maps[k] = parsed;
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return maps;
+}
+
+function pvApplyCloudLinhas(localLinhas, cloudLinhas) {
+  if (!Array.isArray(localLinhas) || !Array.isArray(cloudLinhas)) return localLinhas;
+  const byId = {};
+  cloudLinhas.forEach(r => { if (r && r.id) byId[r.id] = r; });
+  return localLinhas.map(row => {
+    const c = byId[row.id];
+    if (!c) return row;
+    const out = { ...row };
+    ['myr', 'prevFecho', 'n', 'n1', 'nMes', 'budget', 'acumN1', 'acumNYtd', 'budgetAcm'].forEach(k => {
+      if (c[k] != null && c[k] !== '') out[k] = c[k];
+    });
+    return out;
+  });
+}
+
+async function pvFetchCloudMaps(force) {
+  const now = Date.now();
+  if (!force && _pvCloudCache && (now - _pvCloudFetchedAt) < 30000) return _pvCloudCache;
+  try {
+    const res = await fetch(PV_CLOUD_URL + '?t=' + now, { cache: 'no-store' });
+    if (!res.ok) {
+      _pvCloudCache = { maps: {}, actualizadoEm: null };
+      _pvCloudFetchedAt = now;
+      return _pvCloudCache;
+    }
+    const data = await res.json();
+    _pvCloudCache = {
+      maps: (data && data.maps) ? data.maps : (data || {}),
+      actualizadoEm: data && data.actualizadoEm ? data.actualizadoEm : null,
+      actualizadoPor: data && data.actualizadoPor ? data.actualizadoPor : null,
+    };
+    // compat: se o ficheiro for só o dict de keys
+    if (!_pvCloudCache.maps || Array.isArray(_pvCloudCache.maps)) {
+      _pvCloudCache = { maps: data && !data.maps ? data : {}, actualizadoEm: null };
+    }
+    _pvCloudFetchedAt = now;
+    return _pvCloudCache;
+  } catch (e) {
+    console.warn('pvFetchCloudMaps', e);
+    return _pvCloudCache || { maps: {}, actualizadoEm: null };
+  }
+}
+
+async function pvPublicarProducao() {
+  if (!pvPodeEditar()) {
+    toast('Sem permissão para publicar.', 'error');
+    return;
+  }
+  const btn = document.getElementById('pv-btn-publicar');
+  if (btn) { btn.disabled = true; btn.textContent = '☁ A publicar…'; }
+  try {
+    // Garante o mês actual guardado
+    if (_pvData) pvSaveData();
+    const maps = pvCollectLocalMaps();
+    const nKeys = Object.keys(maps).length;
+    if (!nKeys) {
+      toast('Nada para publicar — preenche MYR/Previsão/N e tenta de novo.', 'warn');
+      return;
+    }
+    const payload = {
+      version: 3,
+      actualizadoEm: new Date().toISOString(),
+      actualizadoPor: typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '',
+      maps,
+    };
+    const STORAGE_BASE_UP = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
+    const res = await fetch(STORAGE_BASE_UP + '/contratos/' + PV_CLOUD_PATH, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPA_KEY,
+        'Authorization': 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        'x-upsert': 'true',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const errTxt = await res.text().catch(() => '');
+      throw new Error('Upload falhou (' + res.status + '): ' + errTxt.slice(0, 180));
+    }
+    _pvCloudCache = { maps, actualizadoEm: payload.actualizadoEm, actualizadoPor: payload.actualizadoPor };
+    _pvCloudFetchedAt = Date.now();
+    toast('☁ Publicado em produção (' + nKeys + ' mês/meses).');
+  } catch (e) {
+    console.error('pvPublicarProducao', e);
+    toast('Erro ao publicar: ' + (e.message || e), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '☁ Publicar produção'; }
+  }
+}
+
 function pvAcumNBase(row) {
   if (row.acumNYtd == null) return null;
   const nMes = row.nMes == null ? 0 : Number(row.nMes);
@@ -10416,6 +10529,7 @@ function pvLoadData(ano, mes) {
         parsed.linhas = pvNormalizeLinhas(parsed.linhas, false);
         parsed.linhas = pvMergeSeedIntoLinhas(parsed.linhas, y, m);
         _pvData = parsed;
+        pvOverlayCloudOnData(y, m);
         return _pvData;
       }
     }
@@ -10431,12 +10545,28 @@ function pvLoadData(ano, mes) {
         parsed.mes = Number(m);
         _pvData = parsed;
         try { localStorage.setItem(pvStoreKey(y, m), JSON.stringify(_pvData)); } catch (_) {}
+        pvOverlayCloudOnData(y, m);
         return _pvData;
       }
     }
   } catch (_) {}
   _pvData = pvDefaultMapa(y, m);
+  pvOverlayCloudOnData(y, m);
   return _pvData;
+}
+
+/** Aplica MYR/Previsão/N (e restantes) publicados na cloud sobre o mês actual. */
+function pvOverlayCloudOnData(ano, mes) {
+  if (!_pvData || !_pvCloudCache || !_pvCloudCache.maps) return;
+  const key = pvStoreKey(ano, mes);
+  const cloud = _pvCloudCache.maps[key];
+  if (!cloud || !Array.isArray(cloud.linhas)) return;
+  _pvData.linhas = pvApplyCloudLinhas(_pvData.linhas, cloud.linhas);
+  _pvData.linhas = pvNormalizeLinhas(_pvData.linhas, false);
+  _pvData.linhas = pvMergeSeedIntoLinhas(_pvData.linhas, ano, mes);
+  // Reaplica campos editáveis da cloud (seed não deve apagar MYR/previsão publicados)
+  _pvData.linhas = pvApplyCloudLinhas(_pvData.linhas, cloud.linhas);
+  try { localStorage.setItem(pvStoreKey(ano, mes), JSON.stringify(_pvData)); } catch (_) {}
 }
 
 function pvSaveData() {
@@ -10595,7 +10725,7 @@ async function abrirPrevisaoVendasHome() {
     const gate = document.getElementById('pv-pin-gate');
     const content = document.getElementById('pv-content');
     if (content && content.style.display === 'block') {
-      pvRender();
+      pvEnsureCloudThenRender();
       return;
     }
     if (gate) gate.style.display = '';
@@ -10619,7 +10749,7 @@ async function abrirPrevisaoVendasHome() {
     if (tabA) tabA.classList.remove('active');
     const mesWrap = document.getElementById('pv-mes-wrap');
     if (mesWrap) mesWrap.style.display = '';
-    pvRender();
+    await pvEnsureCloudThenRender();
   } catch (e) {
     console.error('abrirPrevisaoVendasHome', e);
     alert('Erro ao abrir Previsão de vendas: ' + (e && e.message ? e.message : e));
@@ -10652,7 +10782,12 @@ function pvShowView(view) {
   if (tabA) tabA.classList.toggle('active', _pvView === 'accuracy');
   const mesWrap = document.getElementById('pv-mes-wrap');
   if (mesWrap) mesWrap.style.display = _pvView === 'accuracy' ? 'none' : '';
-  pvRender();
+  pvEnsureCloudThenRender();
+}
+
+async function pvEnsureCloudThenRender(opts) {
+  try { await pvFetchCloudMaps(false); } catch (_) {}
+  pvRender(opts);
 }
 
 function pvRender(opts) {
@@ -10681,6 +10816,8 @@ function pvRender(opts) {
       : '· Modo consulta (exportar Excel)';
     modo.style.color = edit ? '#166534' : '#1d4ed8';
   }
+  const btnPub = document.getElementById('pv-btn-publicar');
+  if (btnPub) btnPub.style.display = edit ? '' : 'none';
 
   const mesNome = PV_MESES[m] || '—';
   const banner = document.getElementById('pv-banner');
@@ -10690,9 +10827,12 @@ function pvRender(opts) {
         Preenche Previsão e N no mapa mensal; aqui só vês o atingimento.
         <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
     } else {
+      const cloudHint = _pvCloudCache && _pvCloudCache.actualizadoEm
+        ? ` · Cloud: ${_pvCloudCache.actualizadoPor || '—'} ${new Date(_pvCloudCache.actualizadoEm).toLocaleString('pt-PT')}`
+        : '';
       banner.innerHTML = `<strong>${mesNome} ${ano}</strong> — N-1 = histórico · Budget = objectivo ·
         <strong>Previsão de fecho</strong> (autosave) · <strong>N</strong> = fecho real após fechar o mês ·
-        <strong>Acum. N</strong> = (YTD sem o mês) + Previsão · <strong>MYR</strong> à mão.
+        <strong>Acum. N</strong> = (YTD sem o mês) + Previsão · <strong>MYR</strong> à mão${cloudHint}.
         <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
     }
   }
