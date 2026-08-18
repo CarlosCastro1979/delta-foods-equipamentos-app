@@ -10007,10 +10007,63 @@ const PV_SEED_SETEMBRO_2026 = {
   ],
 };
 
+/**
+ * Seed Outubro 2026 (imagem Power BI — N-1 + Budget).
+ */
+const PV_SEED_OUTUBRO_2026 = {
+  mes: 9,
+  ano: 2026,
+  linhas: [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
+      n1: 2571524, nMes: null, budget: 3846753,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
+      n1: 611201, nMes: null, budget: 1269607,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
+      n1: 1194447, nMes: null, budget: 1170966,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
+      n1: 551371, nMes: null, budget: 473623,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
+      n1: 70554, nMes: null, budget: 602868,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
+      n1: 57704, nMes: null, budget: 246402,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
+      n1: 63836, nMes: null, budget: 59867,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
+      n1: 22412, nMes: null, budget: 23420,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
+      n1: 64043, nMes: null, budget: 223407,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
+      n1: 23558, nMes: null, budget: 138780,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
+      n1: 12609, nMes: null, budget: 56791,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
+      n1: 25669, nMes: null, budget: 25924,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
+      n1: 2207, nMes: null, budget: 1911,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'total', empresa: 'Total', tipo: 'total',
+      n1: 2635567, nMes: null, budget: 4070160,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+  ],
+};
+
 /** Seeds por ano+mês (0-based). */
 const PV_SEEDS = {
   '2026_7': PV_SEED_AGOSTO_2026,
   '2026_8': PV_SEED_SETEMBRO_2026,
+  '2026_9': PV_SEED_OUTUBRO_2026,
 };
 
 /** Estrutura de canais vazia (Out/Nov/Dez e meses sem imagem) — mesmo quadro. */
