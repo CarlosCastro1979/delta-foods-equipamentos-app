@@ -3568,7 +3568,7 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Mapa mensal · N = previsão de fecho (editável) · MYR à mão · Acum. N sem vendas do mês.
+            Mapa mensal · N = previsão fecho · Acum. N = acumulado + N · MYR à mão.
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
@@ -3601,8 +3601,9 @@ var _unused_placeholder = 1;
 
       <div id="pv-banner" style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e3a5f;margin-bottom:16px;">
         <strong>Agosto</strong> — N-1 = histórico · Budget = objectivo ·
-        <strong>N</strong> = previsão de fecho (editável, autosave) ·
-        <strong>Acum. N</strong> = YTD sem vendas do mês · <strong>MYR</strong> à mão (autosave).
+        <strong>N</strong> = previsão de fecho do mês (editável, autosave) ·
+        <strong>Acum. N</strong> = (YTD sem o mês) + N → previsão total de fecho ·
+        <strong>MYR</strong> à mão (autosave).
       </div>
 
       <div id="pv-canal-panels" style="overflow:auto;"></div>
@@ -9897,8 +9898,9 @@ const PV_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set',
 
 /**
  * Seed Agosto (imagem Power BI completa).
- * nMes = vendas reais do mês (só para Acum. N = acumNYtd − nMes; não aparece na coluna N).
- * Coluna N no mapa = previsão de fecho (editável, começa vazia).
+ * nMes = vendas reais do mês (só para base: acumNYtd − nMes).
+ * Coluna N = previsão de fecho do mês (editável).
+ * Acum. N = (acumNYtd − nMes) + N → previsão total de fecho.
  * Sem coluna "Previsão Fecho" — usa-se N.
  */
 const PV_SEED_AGOSTO_2026 = {
@@ -9958,10 +9960,24 @@ function pvStoreKey(ano, mes) {
   return 'dfb_previsao_mapa_v2_' + String(ano || 2026) + '_' + String(mes ?? 7);
 }
 
-function pvAcumNMapa(row) {
+function pvAcumNBase(row) {
+  // YTD sem as vendas reais do mês
   if (row.acumNYtd == null) return null;
   const nMes = row.nMes == null ? 0 : Number(row.nMes);
   return Number(row.acumNYtd) - nMes;
+}
+
+/** Previsão total de fecho = Acum. N (sem o mês) + N (previsão do mês). */
+function pvAcumNFecho(row) {
+  const base = pvAcumNBase(row);
+  if (base == null) return null;
+  const n = row.n == null || row.n === '' ? 0 : Number(row.n);
+  return base + (Number.isNaN(n) ? 0 : n);
+}
+
+// alias usado noutros sítios
+function pvAcumNMapa(row) {
+  return pvAcumNFecho(row);
 }
 
 function pvDefaultMapa(ano, mes) {
@@ -10223,8 +10239,9 @@ function pvRender(opts) {
   const banner = document.getElementById('pv-banner');
   if (banner) {
     banner.innerHTML = `<strong>${mesNome} ${ano}</strong> — N-1 = histórico · Budget = objectivo ·
-      <strong>N</strong> = previsão de fecho (autosave) ·
-      <strong>Acum. N</strong> = YTD sem vendas do mês · <strong>MYR</strong> à mão (autosave).
+      <strong>N</strong> = previsão de fecho do mês (autosave) ·
+      <strong>Acum. N</strong> = (YTD sem o mês) + N → previsão total de fecho ·
+      <strong>MYR</strong> à mão (autosave).
       <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
   }
 
@@ -10316,14 +10333,20 @@ function pvUpdateRowPercents(idx) {
   const baseMes = row.n != null && row.n !== '' ? Number(row.n) : null;
   if (cells[3]) cells[3].innerHTML = pvFmtPct(pvPct(baseMes, row.n1));
   if (cells[5]) cells[5].innerHTML = pvFmtPct(pvPct(baseMes, row.budget));
+  const acumN = pvAcumNFecho(row);
+  if (cells[8]) cells[8].innerHTML = pvFmtNum(acumN);
+  if (cells[9]) cells[9].innerHTML = pvFmtPct(pvPct(acumN, row.acumN1));
+  if (cells[11]) cells[11].innerHTML = pvFmtPct(pvPct(acumN, row.budgetAcm));
 }
 
 function pvRefreshSomasDom(campo) {
   (_pvData.linhas || []).forEach((row, idx) => {
-    if (row.tipo !== 'grupo' && row.tipo !== 'total') return;
-    const el = document.querySelector(`.pv-${campo}-soma[data-idx="${idx}"]`);
-    if (el) el.textContent = row[campo] == null ? '—' : pvFmtEdit(row[campo]);
-    pvUpdateRowPercents(idx);
+    if (row.tipo === 'grupo' || row.tipo === 'total') {
+      const el = document.querySelector(`.pv-${campo}-soma[data-idx="${idx}"]`);
+      if (el) el.textContent = row[campo] == null ? '—' : pvFmtEdit(row[campo]);
+    }
+    // Acum. N / % dependem de N em todas as linhas
+    if (campo === 'n') pvUpdateRowPercents(idx);
   });
 }
 
@@ -10334,7 +10357,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
   let rows = '';
   (_pvData.linhas || []).forEach((row, idx) => {
     const isGrupo = row.tipo === 'grupo' || row.tipo === 'total';
-    const acumN = pvAcumNMapa(row);
+    const acumN = pvAcumNFecho(row);
     const baseMes = row.n != null && row.n !== '' ? Number(row.n) : null;
     const pctNn1 = pvPct(baseMes, row.n1);
     const pctBud = pvPct(baseMes, row.budget);
@@ -10376,7 +10399,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
       <td style="text-align:right;">${pvFmtPct(pctBud)}</td>
       <td style="text-align:right;background:#fffbeb;font-variant-numeric:tabular-nums;">${myrCell}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.acumN1)}</td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(acumN)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;" title="(YTD sem o mês) + N">${pvFmtNum(acumN)}</td>
       <td style="text-align:right;">${pvFmtPct(pctAcumNn1)}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.budgetAcm)}</td>
       <td style="text-align:right;">${pvFmtPct(pctAcumBud)}</td>
@@ -10387,20 +10410,20 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Mapa ${mesNome} ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">N / MYR com autosave · somas empresa/Total · Acum. N sem o mês</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">Acum. N = acumulado + N (previsão total de fecho)</span>
       </div>
       <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1100px;">
         <thead>
           <tr>
             <th style="text-align:left;">Empresa</th>
             <th style="text-align:right;">N-1</th>
-            <th style="text-align:right;background:#dbeafe;" title="Previsão de fecho">N</th>
+            <th style="text-align:right;background:#dbeafe;" title="Previsão de fecho do mês">N</th>
             <th style="text-align:right;">N VS N-1 %</th>
             <th style="text-align:right;">Budget</th>
             <th style="text-align:right;">Var Bud %</th>
             <th style="text-align:right;background:#fef3c7;">MYR</th>
             <th style="text-align:right;">Acum. N-1</th>
-            <th style="text-align:right;">Acum. N</th>
+            <th style="text-align:right;" title="(YTD sem o mês) + N">Acum. N</th>
             <th style="text-align:right;">N VS N-1 % Ac.</th>
             <th style="text-align:right;">Budget Acm.</th>
             <th style="text-align:right;">Var Bud Ac %</th>
@@ -10468,6 +10491,8 @@ async function pvExportarExcel() {
       return;
     }
     const mesNome = PV_MESES[Number(mes)] || mes;
+    pvRecalcSomas('n');
+    pvRecalcSomas('myr');
     const rows = [[
       'Empresa', 'N-1', 'N (previsão fecho)', 'N VS N-1 %', 'Budget', 'Var Bud %',
       'MYR', 'Acum. N-1', 'Acum. N', 'N VS N-1 % Ac.', 'Budget Acm.', 'Var Bud Ac %',
