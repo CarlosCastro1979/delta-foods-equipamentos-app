@@ -10237,10 +10237,24 @@ function pvRender(opts) {
 }
 
 function pvParseNumInput(raw) {
-  const s = String(raw || '').trim().replace(/\s/g, '').replace(',', '.');
+  let s = String(raw || '').trim().replace(/\s/g, '');
   if (s === '') return null;
+  // Formato pt-BR como N-1: 1.883.085 ou 858.000 — pontos = milhares
+  if (s.includes(',')) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if ((s.match(/\./g) || []).length >= 1 && /^\d{1,3}(\.\d{3})+$/.test(s)) {
+    s = s.replace(/\./g, '');
+  } else if ((s.match(/\./g) || []).length > 1) {
+    s = s.replace(/\./g, '');
+  }
   const val = Number(s);
   return Number.isNaN(val) ? null : val;
+}
+
+/** Mesmo formato visual que N-1 (pontos de milhar). */
+function pvFmtEdit(v) {
+  if (v == null || v === '' || Number.isNaN(Number(v))) return '';
+  return Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 }
 
 let _pvAutosaveTimer = null;
@@ -10263,11 +10277,40 @@ function pvAutosave() {
   }, 150);
 }
 
+/** Soma N ou MYR: canais → empresa (grupo) → Total. */
+function pvRecalcSomas(campo) {
+  if (!_pvData || !Array.isArray(_pvData.linhas)) return;
+  const linhas = _pvData.linhas;
+  linhas.forEach(row => {
+    if (row.tipo !== 'grupo') return;
+    let sum = 0;
+    let any = false;
+    linhas.forEach(c => {
+      if (c.tipo === 'canal' && c.parent === row.id && c[campo] != null && c[campo] !== '') {
+        sum += Number(c[campo]);
+        any = true;
+      }
+    });
+    row[campo] = any ? sum : null;
+  });
+  const total = linhas.find(r => r.tipo === 'total');
+  if (total) {
+    let sum = 0;
+    let any = false;
+    linhas.forEach(r => {
+      if (r.tipo === 'grupo' && r[campo] != null && r[campo] !== '') {
+        sum += Number(r[campo]);
+        any = true;
+      }
+    });
+    total[campo] = any ? sum : null;
+  }
+}
+
 function pvUpdateRowPercents(idx) {
   const row = _pvData?.linhas?.[idx];
   if (!row) return;
-  const nInput = document.querySelector(`.pv-n-input[data-idx="${idx}"]`);
-  const tr = nInput && nInput.closest('tr');
+  const tr = document.querySelector(`tr[data-pv-idx="${idx}"]`);
   if (!tr) return;
   const cells = tr.children;
   const baseMes = row.n != null && row.n !== '' ? Number(row.n) : null;
@@ -10275,7 +10318,19 @@ function pvUpdateRowPercents(idx) {
   if (cells[5]) cells[5].innerHTML = pvFmtPct(pvPct(baseMes, row.budget));
 }
 
+function pvRefreshSomasDom(campo) {
+  (_pvData.linhas || []).forEach((row, idx) => {
+    if (row.tipo !== 'grupo' && row.tipo !== 'total') return;
+    const el = document.querySelector(`.pv-${campo}-soma[data-idx="${idx}"]`);
+    if (el) el.textContent = row[campo] == null ? '—' : pvFmtEdit(row[campo]);
+    pvUpdateRowPercents(idx);
+  });
+}
+
 function pvRenderMapaHtml(edit, ano, mesNome) {
+  pvRecalcSomas('n');
+  pvRecalcSomas('myr');
+
   let rows = '';
   (_pvData.linhas || []).forEach((row, idx) => {
     const isGrupo = row.tipo === 'grupo' || row.tipo === 'total';
@@ -10286,21 +10341,25 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     const pctAcumNn1 = pvPct(acumN, row.acumN1);
     const pctAcumBud = pvPct(acumN, row.budgetAcm);
 
-    const nVal = row.n == null || row.n === '' ? '' : String(row.n);
-    const nCell = edit
-      ? `<input type="number" class="form-input pv-n-input" data-idx="${idx}"
-          value="${nVal}" placeholder="—"
-          style="height:32px;width:100%;min-width:88px;text-align:right;padding:4px 6px;background:#eff6ff;"
-          oninput="pvOnNInput(this)" onchange="pvOnNInput(this)" title="Previsão de fecho (autosave)">`
-      : pvFmtNum(row.n);
-
-    const myrVal = row.myr == null || row.myr === '' ? '' : String(row.myr);
-    const myrCell = edit
-      ? `<input type="number" class="form-input pv-myr-input" data-idx="${idx}"
-          value="${myrVal}" placeholder="—"
-          style="height:32px;width:100%;min-width:88px;text-align:right;padding:4px 6px;"
-          oninput="pvOnMyrInput(this)" onchange="pvOnMyrInput(this)" title="MYR (autosave)">`
-      : pvFmtNum(row.myr);
+    let nCell;
+    let myrCell;
+    if (isGrupo) {
+      // Empresa / Total: soma automática (só leitura), formato igual a N-1
+      nCell = `<span class="pv-n-soma" data-idx="${idx}">${row.n == null ? '—' : pvFmtEdit(row.n)}</span>`;
+      myrCell = `<span class="pv-myr-soma" data-idx="${idx}">${row.myr == null ? '—' : pvFmtEdit(row.myr)}</span>`;
+    } else if (edit) {
+      nCell = `<input type="text" inputmode="numeric" class="form-input pv-n-input" data-idx="${idx}"
+          value="${pvFmtEdit(row.n)}" placeholder="—"
+          style="height:32px;width:100%;min-width:100px;text-align:right;padding:4px 6px;background:#eff6ff;font-variant-numeric:tabular-nums;"
+          oninput="pvOnNInput(this)" onblur="pvOnNBlur(this)" title="Previsão de fecho (autosave)">`;
+      myrCell = `<input type="text" inputmode="numeric" class="form-input pv-myr-input" data-idx="${idx}"
+          value="${pvFmtEdit(row.myr)}" placeholder="—"
+          style="height:32px;width:100%;min-width:100px;text-align:right;padding:4px 6px;font-variant-numeric:tabular-nums;"
+          oninput="pvOnMyrInput(this)" onblur="pvOnMyrBlur(this)" title="MYR (autosave)">`;
+    } else {
+      nCell = pvFmtNum(row.n);
+      myrCell = pvFmtNum(row.myr);
+    }
 
     const bg = row.tipo === 'total' ? '#f1f5f9'
       : row.tipo === 'grupo' ? '#f8fafc'
@@ -10308,18 +10367,18 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     const weight = isGrupo ? '700' : '400';
     const padLeft = row.tipo === 'canal' ? '18px' : '8px';
 
-    rows += `<tr style="background:${bg};font-weight:${weight};">
+    rows += `<tr data-pv-idx="${idx}" style="background:${bg};font-weight:${weight};">
       <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;">${row.empresa}</td>
-      <td style="text-align:right;">${pvFmtNum(row.n1)}</td>
-      <td style="text-align:right;background:#eff6ff;">${nCell}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.n1)}</td>
+      <td style="text-align:right;background:#eff6ff;font-variant-numeric:tabular-nums;">${nCell}</td>
       <td style="text-align:right;">${pvFmtPct(pctNn1)}</td>
-      <td style="text-align:right;">${pvFmtNum(row.budget)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.budget)}</td>
       <td style="text-align:right;">${pvFmtPct(pctBud)}</td>
-      <td style="text-align:right;background:#fffbeb;">${myrCell}</td>
-      <td style="text-align:right;">${pvFmtNum(row.acumN1)}</td>
-      <td style="text-align:right;">${pvFmtNum(acumN)}</td>
+      <td style="text-align:right;background:#fffbeb;font-variant-numeric:tabular-nums;">${myrCell}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.acumN1)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(acumN)}</td>
       <td style="text-align:right;">${pvFmtPct(pctAcumNn1)}</td>
-      <td style="text-align:right;">${pvFmtNum(row.budgetAcm)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.budgetAcm)}</td>
       <td style="text-align:right;">${pvFmtPct(pctAcumBud)}</td>
     </tr>`;
   });
@@ -10328,7 +10387,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Mapa ${mesNome} ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">N / MYR com autosave · Acum. N sem o mês</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">N / MYR com autosave · somas empresa/Total · Acum. N sem o mês</span>
       </div>
       <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1100px;">
         <thead>
@@ -10355,17 +10414,46 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
 function pvOnNInput(el) {
   if (!pvPodeEditar() || !_pvData) return;
   const idx = Number(el.getAttribute('data-idx'));
-  if (!_pvData.linhas[idx]) return;
+  if (!_pvData.linhas[idx] || _pvData.linhas[idx].tipo !== 'canal') return;
   _pvData.linhas[idx].n = pvParseNumInput(el.value);
+  pvRecalcSomas('n');
   pvUpdateRowPercents(idx);
+  pvRefreshSomasDom('n');
+  pvAutosave();
+}
+
+function pvOnNBlur(el) {
+  if (!pvPodeEditar() || !_pvData) return;
+  const idx = Number(el.getAttribute('data-idx'));
+  if (!_pvData.linhas[idx]) return;
+  const v = pvParseNumInput(el.value);
+  _pvData.linhas[idx].n = v;
+  el.value = pvFmtEdit(v);
+  pvRecalcSomas('n');
+  pvUpdateRowPercents(idx);
+  pvRefreshSomasDom('n');
   pvAutosave();
 }
 
 function pvOnMyrInput(el) {
   if (!pvPodeEditar() || !_pvData) return;
   const idx = Number(el.getAttribute('data-idx'));
-  if (!_pvData.linhas[idx]) return;
+  if (!_pvData.linhas[idx] || _pvData.linhas[idx].tipo !== 'canal') return;
   _pvData.linhas[idx].myr = pvParseNumInput(el.value);
+  pvRecalcSomas('myr');
+  pvRefreshSomasDom('myr');
+  pvAutosave();
+}
+
+function pvOnMyrBlur(el) {
+  if (!pvPodeEditar() || !_pvData) return;
+  const idx = Number(el.getAttribute('data-idx'));
+  if (!_pvData.linhas[idx]) return;
+  const v = pvParseNumInput(el.value);
+  _pvData.linhas[idx].myr = v;
+  el.value = pvFmtEdit(v);
+  pvRecalcSomas('myr');
+  pvRefreshSomasDom('myr');
   pvAutosave();
 }
 
