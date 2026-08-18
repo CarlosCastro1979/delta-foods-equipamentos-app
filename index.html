@@ -1851,7 +1851,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Canais, histórico, previsão e objectivos mês a mês. Acesso: Filipe, Diogo, Marcio, Massimo, Carlos (+ Chris consulta/exportar).</div>
+          <div class="hd-desc">Mapa mensal (N-1 / Budget / MYR). Acesso: Filipe, Diogo, Marcio, Massimo, Carlos (+ Chris consulta/exportar).</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -3568,36 +3568,47 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Por canal: histórico, objectivos e previsão mês a mês.
+            Previsão de fecho · N (fecho real) · Accuracy · MYR — autosave.
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <label style="font-size:12px;color:var(--muted);">Ano
             <select id="pv-ano" class="form-input" style="height:36px;min-width:90px;margin-left:6px;" onchange="pvRender()">
-              <option value="2026">2026</option>
+              <option value="2026" selected>2026</option>
               <option value="2025">2025</option>
-              <option value="2024">2024</option>
             </select>
           </label>
-          <button type="button" class="btn btn-secondary btn-sm" id="pv-btn-guardar" onclick="pvGuardar()" style="min-height:36px;display:none;">💾 Guardar previsões</button>
+          <label style="font-size:12px;color:var(--muted);" id="pv-mes-wrap">Mês
+            <select id="pv-mes" class="form-input" style="height:36px;min-width:110px;margin-left:6px;" onchange="pvRender()">
+              <option value="0">Janeiro</option>
+              <option value="1">Fevereiro</option>
+              <option value="2">Março</option>
+              <option value="3">Abril</option>
+              <option value="4">Maio</option>
+              <option value="5">Junho</option>
+              <option value="6">Julho</option>
+              <option value="7" selected>Agosto</option>
+              <option value="8">Setembro</option>
+              <option value="9">Outubro</option>
+              <option value="10">Novembro</option>
+              <option value="11">Dezembro</option>
+            </select>
+          </label>
           <button type="button" class="btn btn-secondary btn-sm" onclick="pvExportarExcel()" style="min-height:36px;">⬇ Excel</button>
         </div>
       </div>
 
+      <div class="sub-nav" style="margin-bottom:12px;flex-wrap:wrap;">
+        <button type="button" class="sub-tab active" id="pv-tab-mapa" onclick="pvShowView('mapa')">Mapa mensal</button>
+        <button type="button" class="sub-tab" id="pv-tab-accuracy" onclick="pvShowView('accuracy')">Accuracy de fecho</button>
+      </div>
+
       <div id="pv-banner" style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e3a5f;margin-bottom:16px;">
-        <strong>Cenário para validação</strong> — estrutura pronta. Os números (histórico / objectivos) serão preenchidos a partir das imagens que enviares a seguir. Podes já navegar pelos canais e testar o campo de previsão.
+        <strong>Agosto</strong> — Previsão de fecho + N (fecho real após fecho do mês) · Accuracy = N ÷ Previsão.
       </div>
 
-      <div class="sub-nav" style="margin-bottom:16px;flex-wrap:wrap;">
-        <button type="button" class="sub-tab active" id="pv-tab-horeca" onclick="pvShowCanal('horeca')">Horeca</button>
-        <button type="button" class="sub-tab" id="pv-tab-ecommerce" onclick="pvShowCanal('ecommerce')">Ecommerce</button>
-        <button type="button" class="sub-tab" id="pv-tab-varejo" onclick="pvShowCanal('varejo')">Varejo e Distr. Varejo</button>
-        <button type="button" class="sub-tab" id="pv-tab-distribuidores" onclick="pvShowCanal('distribuidores')">Distribuidores</button>
-        <button type="button" class="sub-tab" id="pv-tab-resumo" onclick="pvShowCanal('resumo')">Resumo</button>
-      </div>
-
-      <div id="pv-canal-panels"></div>
+      <div id="pv-canal-panels" style="overflow:auto;"></div>
     </div>
   </div>
 
@@ -9886,50 +9897,545 @@ const PREV_VENDAS_ACESSO = [
 const PREV_VENDAS_SO_CONSULTA = ['Christian Souza']; // Chris — consulta e exportar
 
 const PV_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-const PV_CANAIS = [
-  { id: 'horeca', nome: 'Horeca' },
-  { id: 'ecommerce', nome: 'Ecommerce' },
-  { id: 'varejo', nome: 'Varejo e Distr. Varejo' },
-  { id: 'distribuidores', nome: 'Distribuidores' },
-];
 
-/** Dados placeholder — serão substituídos pelas imagens do utilizador. */
-let _pvData = null;
-let _pvCanalActivo = 'horeca';
+/**
+ * Seed Agosto (imagem Power BI completa).
+ * nMes = vendas YTD do mês (base: acumNYtd − nMes).
+ * prevFecho = Previsão de fecho (editável).
+ * n = fecho real (preenchido após fechar o mês).
+ * Acum. N = (acumNYtd − nMes) + prevFecho → previsão total de fecho.
+ * Accuracy = n / prevFecho × 100 (atingimento).
+ */
+const PV_SEED_AGOSTO_2026 = {
+  mes: 7,
+  ano: 2026,
+  linhas: [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
+      n1: 1883085, nMes: 940210, budget: 2692407,
+      acumN1: 16318196, acumNYtd: 15597696, budgetAcm: 23622782 },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
+      n1: 648451, nMes: 510028, budget: 1092541,
+      acumN1: 4491885, acumNYtd: 5369619, budgetAcm: 8078169 },
+    { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
+      n1: 463538, nMes: 179680, budget: 584907,
+      acumN1: 4892323, acumNYtd: 4288806, budgetAcm: 6091469 },
+    { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
+      n1: 398985, nMes: 196631, budget: 386926,
+      acumN1: 3170203, acumNYtd: 2690371, budgetAcm: 3725120 },
+    { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
+      n1: 174741, nMes: 11218, budget: 323546,
+      acumN1: 1981489, acumNYtd: 2078826, budgetAcm: 3061351 },
+    { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
+      n1: 160042, nMes: 34377, budget: 251470,
+      acumN1: 1157472, acumNYtd: 863981, budgetAcm: 1868620 },
+    { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
+      n1: 22892, nMes: 4209, budget: 24990,
+      acumN1: 401647, acumNYtd: 157627, budgetAcm: 580214 },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
+      n1: 14437, nMes: 4067, budget: 28026,
+      acumN1: 223178, acumNYtd: 148465, budgetAcm: 217839 },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
+      n1: 242732, nMes: 152336, budget: 194247,
+      acumN1: 1095975, acumNYtd: 815124, budgetAcm: 1554683 },
+    { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
+      n1: 162779, nMes: null, budget: 141635,
+      acumN1: 746623, acumNYtd: 449173, budgetAcm: 1052458 },
+    { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
+      n1: 44453, nMes: 152336, budget: 30479,
+      acumN1: 167734, acumNYtd: 214288, budgetAcm: 288384 },
+    { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
+      n1: 35499, nMes: null, budget: 21179,
+      acumN1: 170586, acumNYtd: 147145, budgetAcm: 203897 },
+    { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: 955,
+      acumN1: 11031, acumNYtd: 4518, budgetAcm: 9944 },
+    { id: 'total', empresa: 'Total', tipo: 'total',
+      n1: 2125817, nMes: 1092546, budget: 2886654,
+      acumN1: 17414171, acumNYtd: 16412819, budgetAcm: 25177465 },
+  ],
+};
 
-function pvStoreKey(ano) {
-  return 'dfb_previsao_vendas_' + String(ano || new Date().getFullYear());
+/**
+ * Seed Setembro 2026 (imagem Power BI — N-1 + Budget; N/Acum. ainda por preencher).
+ */
+const PV_SEED_SETEMBRO_2026 = {
+  mes: 8,
+  ano: 2026,
+  linhas: [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
+      n1: 3018173, nMes: null, budget: 3317777,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
+      n1: 1711209, nMes: null, budget: 1256087,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
+      n1: 806897, nMes: null, budget: 1018168,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
+      n1: 387529, nMes: null, budget: 337827,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
+      n1: 81659, nMes: null, budget: 436848,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
+      n1: -10056, nMes: null, budget: 228648,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
+      n1: 16035, nMes: null, budget: 17709,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
+      n1: 24902, nMes: null, budget: 22490,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
+      n1: 84473, nMes: null, budget: 190086,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
+      n1: 33457, nMes: null, budget: 128780,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
+      n1: 40746, nMes: null, budget: 41152,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
+      n1: 10271, nMes: null, budget: 18491,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: 1662,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'total', empresa: 'Total', tipo: 'total',
+      n1: 3102646, nMes: null, budget: 3507862,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+  ],
+};
+
+/**
+ * Seed Outubro 2026 (imagem Power BI — N-1 + Budget).
+ */
+const PV_SEED_OUTUBRO_2026 = {
+  mes: 9,
+  ano: 2026,
+  linhas: [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
+      n1: 2571524, nMes: null, budget: 3846753,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
+      n1: 611201, nMes: null, budget: 1269607,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
+      n1: 1194447, nMes: null, budget: 1170966,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
+      n1: 551371, nMes: null, budget: 473623,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
+      n1: 70554, nMes: null, budget: 602868,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
+      n1: 57704, nMes: null, budget: 246402,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
+      n1: 63836, nMes: null, budget: 59867,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
+      n1: 22412, nMes: null, budget: 23420,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
+      n1: 64043, nMes: null, budget: 223407,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
+      n1: 23558, nMes: null, budget: 138780,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
+      n1: 12609, nMes: null, budget: 56791,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
+      n1: 25669, nMes: null, budget: 25924,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
+      n1: 2207, nMes: null, budget: 1911,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'total', empresa: 'Total', tipo: 'total',
+      n1: 2635567, nMes: null, budget: 4070160,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+  ],
+};
+
+/**
+ * Seed Novembro 2026 (imagem Power BI — N-1 + Budget).
+ */
+const PV_SEED_NOVEMBRO_2026 = {
+  mes: 10,
+  ano: 2026,
+  linhas: [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
+      n1: 2174884, nMes: null, budget: 4427436,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
+      n1: 958097, nMes: null, budget: 2534421,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
+      n1: 582346, nMes: null, budget: 615899,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
+      n1: 208871, nMes: null, budget: 420022,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
+      n1: 219926, nMes: null, budget: 355076,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
+      n1: 116721, nMes: null, budget: 325074,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
+      n1: 63613, nMes: null, budget: 141216,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
+      n1: 25310, nMes: null, budget: 35728,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
+      n1: null, nMes: null, budget: 240535,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: 183090,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: 33449,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: 22990,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: 1005,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'total', empresa: 'Total', tipo: 'total',
+      n1: 2174884, nMes: null, budget: 4667971,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+  ],
+};
+
+/**
+ * Seed Dezembro 2026 (imagem Power BI — N-1 + Budget por canal).
+ * Coluna N vazia = mês ainda sem fecho (normal).
+ */
+const PV_SEED_DEZEMBRO_2026 = {
+  mes: 11,
+  ano: 2026,
+  linhas: [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
+      n1: 2092130, nMes: null, budget: 2966949,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
+      n1: 799766, nMes: null, budget: 1268936,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
+      n1: 633700, nMes: null, budget: 677552,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
+      n1: 374289, nMes: null, budget: 446631,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
+      n1: -6650, nMes: null, budget: 266007,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
+      n1: 244278, nMes: null, budget: 186471,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
+      n1: 45576, nMes: null, budget: 100391,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
+      n1: 1171, nMes: null, budget: 20961,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
+      n1: 128751, nMes: null, budget: 155636,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
+      n1: 78443, nMes: null, budget: 105025,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: 25058,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
+      n1: 50308, nMes: null, budget: 24447,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: 1106,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'total', empresa: 'Total', tipo: 'total',
+      n1: 2220881, nMes: null, budget: 3122585,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+  ],
+};
+
+
+/**
+ * Seed Julho 2026 — mês FECHADO (imagem Power BI completa).
+ * N = fecho real; Previsão = N; nMes = N; MYR vazio para validares à mão.
+ */
+const PV_SEED_JULHO_2026 = {
+  mes: 6,
+  ano: 2026,
+  linhas: [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
+      n1: 2241917, nMes: 2194050, budget: 2847193,
+      acumN1: 14435112, acumNYtd: 14657486, budgetAcm: 20930375,
+      prevFecho: 2194050, n: 2194050 },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
+      n1: 583332, nMes: 637893, budget: 1028136,
+      acumN1: 3843434, acumNYtd: 4859591, budgetAcm: 6985628,
+      prevFecho: 637893, n: 637893 },
+    { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
+      n1: 555606, nMes: 742527, budget: 715001,
+      acumN1: 4428785, acumNYtd: 4109126, budgetAcm: 5506562,
+      prevFecho: 742527, n: 742527 },
+    { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
+      n1: 387227, nMes: 367249, budget: 418689,
+      acumN1: 2771218, acumNYtd: 2493740, budgetAcm: 3338194,
+      prevFecho: 367249, n: 367249 },
+    { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
+      n1: 517765, nMes: 313823, budget: 374483,
+      acumN1: 1806748, acumNYtd: 2067608, budgetAcm: 2737805,
+      prevFecho: 313823, n: 313823 },
+    { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
+      n1: 148488, nMes: 83657, budget: 253130,
+      acumN1: 997430, acumNYtd: 829604, budgetAcm: 1617150,
+      prevFecho: 83657, n: 83657 },
+    { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
+      n1: 30865, nMes: 14829, budget: 42759,
+      acumN1: 378755, acumNYtd: 153418, budgetAcm: 555224,
+      prevFecho: 14829, n: 14829 },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
+      n1: 18634, nMes: 34073, budget: 14995,
+      acumN1: 208741, acumNYtd: 144398, budgetAcm: 189813,
+      prevFecho: 34073, n: 34073 },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
+      n1: 182779, nMes: 27566, budget: 201931,
+      acumN1: 853243, acumNYtd: 662788, budgetAcm: 1360436,
+      prevFecho: 27566, n: 27566 },
+    { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
+      n1: 102696, nMes: -4254, budget: 142570,
+      acumN1: 583844, acumNYtd: 449173, budgetAcm: 910823,
+      prevFecho: -4254, n: -4254 },
+    { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
+      n1: 44715, nMes: null, budget: 35277,
+      acumN1: 123281, acumNYtd: 61952, budgetAcm: 257905,
+      prevFecho: null, n: null },
+    { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
+      n1: 24337, nMes: 31820, budget: 22917,
+      acumN1: 135087, acumNYtd: 147145, budgetAcm: 182718,
+      prevFecho: 31820, n: 31820 },
+    { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
+      n1: 11031, nMes: null, budget: 1167,
+      acumN1: 11031, acumNYtd: 4518, budgetAcm: 8989,
+      prevFecho: null, n: null },
+    { id: 'total', empresa: 'Total', tipo: 'total',
+      n1: 2424696, nMes: 2221616, budget: 3049124,
+      acumN1: 15288355, acumNYtd: 15320273, budgetAcm: 22290811,
+      prevFecho: 2221616, n: 2221616 },
+  ],
+};
+/** Seeds por ano+mês (0-based). */
+const PV_SEEDS = {
+  '2026_6': PV_SEED_JULHO_2026,
+  '2026_7': PV_SEED_AGOSTO_2026,
+  '2026_8': PV_SEED_SETEMBRO_2026,
+  '2026_9': PV_SEED_OUTUBRO_2026,
+  '2026_10': PV_SEED_NOVEMBRO_2026,
+  '2026_11': PV_SEED_DEZEMBRO_2026,
+};
+
+/** Estrutura de canais vazia (Out/Nov/Dez e meses sem imagem) — mesmo quadro. */
+function pvLinhasEstruturaVazia() {
+  return PV_SEED_AGOSTO_2026.linhas.map(r => ({
+    id: r.id,
+    empresa: r.empresa,
+    tipo: r.tipo,
+    parent: r.parent || undefined,
+    n1: null,
+    nMes: null,
+    budget: null,
+    acumN1: null,
+    acumNYtd: null,
+    budgetAcm: null,
+  }));
 }
 
-function pvDefaultData(ano) {
-  const y = Number(ano) || new Date().getFullYear();
-  const canais = {};
-  PV_CANAIS.forEach(c => {
-    canais[c.id] = {
-      nome: c.nome,
-      // histórico / objectivo: null até importar das imagens
-      historico: PV_MESES.map(() => null),
-      objectivo: PV_MESES.map(() => null),
-      previsao: PV_MESES.map(() => null),
-      real: PV_MESES.map(() => null),
+function pvSeedLinhas(ano, mes) {
+  const key = String(ano) + '_' + String(mes);
+  const seed = PV_SEEDS[key];
+  if (seed && Array.isArray(seed.linhas)) {
+    // Preserva prevFecho/n/myr do seed (ex.: Julho fechado já vem com fecho)
+    return seed.linhas.map(r => ({
+      ...r,
+      prevFecho: r.prevFecho ?? null,
+      n: r.n ?? null,
+      myr: r.myr ?? null,
+    }));
+  }
+  // Sem seed: estrutura vazia (não apaga seeds Out/Nov/Dez já registados em PV_SEEDS)
+  if (Number(ano) === 2026 && Number(mes) >= 9 && Number(mes) <= 11) {
+    return pvLinhasEstruturaVazia().map(r => ({ ...r, prevFecho: null, n: null, myr: null }));
+  }
+  return [];
+}
+
+let _pvData = null;
+let _pvView = 'mapa'; // 'mapa' | 'accuracy'
+
+function pvStoreKey(ano, mes) {
+  return 'dfb_previsao_mapa_v3_' + String(ano || 2026) + '_' + String(mes ?? 7);
+}
+function pvStoreKeyV2(ano, mes) {
+  return 'dfb_previsao_mapa_v2_' + String(ano || 2026) + '_' + String(mes ?? 7);
+}
+
+function pvAcumNBase(row) {
+  if (row.acumNYtd == null) return null;
+  const nMes = row.nMes == null ? 0 : Number(row.nMes);
+  return Number(row.acumNYtd) - nMes;
+}
+
+/** Previsão total de fecho = base + Previsão de fecho. */
+function pvAcumNFecho(row) {
+  const base = pvAcumNBase(row);
+  if (base == null) return null;
+  const p = row.prevFecho == null || row.prevFecho === '' ? 0 : Number(row.prevFecho);
+  return base + (Number.isNaN(p) ? 0 : p);
+}
+
+function pvAcumNMapa(row) { return pvAcumNFecho(row); }
+
+/** Accuracy % = fecho real N / Previsão de fecho × 100. */
+function pvAccuracyPct(row) {
+  const prev = row.prevFecho;
+  const real = row.n;
+  if (prev == null || prev === '' || Number(prev) === 0) return null;
+  if (real == null || real === '') return null;
+  return (Number(real) / Number(prev)) * 100;
+}
+
+/** Var % Previsão vs MYR = (Previsão − MYR) / MYR × 100. */
+function pvVarPrevMyrPct(row) {
+  return pvPct(row.prevFecho, row.myr);
+}
+
+/** Var % Real (N) vs MYR = (N − MYR) / MYR × 100. */
+function pvVarNMyrPct(row) {
+  return pvPct(row.n, row.myr);
+}
+
+function pvFmtAccuracy(v) {
+  if (v == null || Number.isNaN(Number(v))) return '—';
+  const n = Number(v);
+  const txt = n.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + '%';
+  // ≥85% verde, <85% vermelho
+  const color = n >= 85 ? '#15803d' : '#b91c1c';
+  return `<span style="color:${color};font-weight:600;">${txt}</span>`;
+}
+
+/** Média dos meses com Accuracy preenchida (ignora null). */
+function pvAccuracyMedia(meses) {
+  if (!meses) return null;
+  let sum = 0;
+  let n = 0;
+  for (let m = 0; m < 12; m++) {
+    const v = meses[m];
+    if (v == null || Number.isNaN(Number(v))) continue;
+    sum += Number(v);
+    n++;
+  }
+  return n ? (sum / n) : null;
+}
+
+function pvNormalizeLinhas(linhas, fromV2) {
+  return (linhas || []).map(r => {
+    let prevFecho = r.prevFecho;
+    let n = r.n;
+    if (fromV2) {
+      // v2: campo n era a previsão de fecho
+      prevFecho = r.prevFecho != null ? r.prevFecho : r.n;
+      n = null;
+    }
+    return {
+      ...r,
+      prevFecho: prevFecho == null || prevFecho === '' ? null : Number(prevFecho),
+      n: n == null || n === '' ? null : Number(n),
+      myr: r.myr == null || r.myr === '' ? null : Number(r.myr),
     };
   });
-  return { ano: y, canais, actualizadoEm: null, actualizadoPor: null };
 }
 
-function pvLoadData(ano) {
-  const y = String(ano || document.getElementById('pv-ano')?.value || new Date().getFullYear());
+function pvDefaultMapa(ano, mes) {
+  const y = Number(ano) || 2026;
+  const m = Number(mes);
+  const mesIdx = Number.isFinite(m) ? m : 7;
+  const linhas = pvSeedLinhas(y, mesIdx);
+  return { ano: y, mes: mesIdx, linhas, actualizadoEm: null, actualizadoPor: null };
+}
+
+function pvMergeSeedIntoLinhas(linhas, ano, mes) {
+  const seedLinhas = pvSeedLinhas(ano, mes);
+  if (!seedLinhas.length || !Array.isArray(linhas)) return linhas;
+  const byId = {};
+  seedLinhas.forEach(s => { byId[s.id] = s; });
+  const STATIC = ['n1', 'nMes', 'budget', 'acumN1', 'acumNYtd', 'budgetAcm', 'empresa', 'tipo', 'parent'];
+  const merged = linhas.map(row => {
+    const s = byId[row.id];
+    if (!s) return row;
+    const out = { ...row };
+    STATIC.forEach(k => {
+      if ((out[k] == null || out[k] === '') && s[k] != null && s[k] !== '') out[k] = s[k];
+    });
+    // Fecho/previsão do seed (mês fechado) se ainda vazios no browser
+    if ((out.n == null || out.n === '') && s.n != null) out.n = s.n;
+    if ((out.prevFecho == null || out.prevFecho === '') && s.prevFecho != null) out.prevFecho = s.prevFecho;
+    // Forçar refresh de Julho: se seed tem n e local tem n mas seed é mais completo nos canais — 
+    // atualizar campos estáticos sempre a partir do seed (não o MYR)
+    ['n1', 'nMes', 'budget', 'acumN1', 'acumNYtd', 'budgetAcm'].forEach(k => {
+      if (s[k] != null && s[k] !== '') out[k] = s[k];
+    });
+    if (s.n != null) out.n = s.n;
+    if (s.prevFecho != null) out.prevFecho = s.prevFecho;
+    return out;
+  });
+  // garantir ordem/ids do seed
+  const have = new Set(merged.map(r => r.id));
+  seedLinhas.forEach(s => {
+    if (!have.has(s.id)) merged.push({ ...s, myr: null });
+  });
+  const order = seedLinhas.map(s => s.id);
+  merged.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  return merged;
+}
+
+function pvLoadData(ano, mes) {
+  const y = String(ano || document.getElementById('pv-ano')?.value || 2026);
+  const m = String(mes ?? document.getElementById('pv-mes')?.value ?? 7);
   try {
-    const raw = localStorage.getItem(pvStoreKey(y));
+    const raw = localStorage.getItem(pvStoreKey(y, m));
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.canais) {
+      if (parsed && Array.isArray(parsed.linhas) && parsed.linhas.length) {
+        parsed.linhas = pvNormalizeLinhas(parsed.linhas, false);
+        parsed.linhas = pvMergeSeedIntoLinhas(parsed.linhas, y, m);
         _pvData = parsed;
         return _pvData;
       }
     }
   } catch (_) {}
-  _pvData = pvDefaultData(y);
+  // migrar v2 (n → prevFecho)
+  try {
+    const raw2 = localStorage.getItem(pvStoreKeyV2(y, m));
+    if (raw2) {
+      const parsed = JSON.parse(raw2);
+      if (parsed && Array.isArray(parsed.linhas) && parsed.linhas.length) {
+        parsed.linhas = pvNormalizeLinhas(parsed.linhas, true);
+        parsed.ano = Number(y);
+        parsed.mes = Number(m);
+        _pvData = parsed;
+        try { localStorage.setItem(pvStoreKey(y, m), JSON.stringify(_pvData)); } catch (_) {}
+        return _pvData;
+      }
+    }
+  } catch (_) {}
+  _pvData = pvDefaultMapa(y, m);
   return _pvData;
 }
 
@@ -9938,7 +10444,7 @@ function pvSaveData() {
   _pvData.actualizadoEm = new Date().toISOString();
   _pvData.actualizadoPor = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
   try {
-    localStorage.setItem(pvStoreKey(_pvData.ano), JSON.stringify(_pvData));
+    localStorage.setItem(pvStoreKey(_pvData.ano, _pvData.mes), JSON.stringify(_pvData));
     return true;
   } catch (e) {
     console.warn('pvSaveData', e);
@@ -10103,8 +10609,17 @@ async function abrirPrevisaoVendasHome() {
     if (gate) gate.style.display = 'none';
     if (content) content.style.display = 'block';
     const anoEl = document.getElementById('pv-ano');
-    if (anoEl && !anoEl.value) anoEl.value = String(new Date().getFullYear());
-    pvShowCanal('horeca');
+    if (anoEl) anoEl.value = '2026';
+    const mesEl = document.getElementById('pv-mes');
+    if (mesEl) mesEl.value = '7';
+    _pvView = 'mapa';
+    const tabM = document.getElementById('pv-tab-mapa');
+    const tabA = document.getElementById('pv-tab-accuracy');
+    if (tabM) tabM.classList.add('active');
+    if (tabA) tabA.classList.remove('active');
+    const mesWrap = document.getElementById('pv-mes-wrap');
+    if (mesWrap) mesWrap.style.display = '';
+    pvRender();
   } catch (e) {
     console.error('abrirPrevisaoVendasHome', e);
     alert('Erro ao abrir Previsão de vendas: ' + (e && e.message ? e.message : e));
@@ -10116,95 +10631,262 @@ function pvFmtNum(v) {
   return Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 }
 
-function pvShowCanal(canalId) {
-  _pvCanalActivo = canalId || 'horeca';
-  ['horeca', 'ecommerce', 'varejo', 'distribuidores', 'resumo'].forEach(id => {
-    const tab = document.getElementById('pv-tab-' + id);
-    if (tab) tab.classList.toggle('active', id === _pvCanalActivo);
-  });
+function pvFmtPct(v) {
+  if (v == null || Number.isNaN(Number(v))) return '—';
+  const n = Number(v);
+  const txt = (n > 0 ? '+' : '') + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + '%';
+  const color = n > 0 ? '#15803d' : (n < 0 ? '#b91c1c' : 'inherit');
+  return `<span style="color:${color};font-weight:600;">${txt}</span>`;
+}
+
+function pvPct(a, b) {
+  if (a == null || b == null || Number(b) === 0) return null;
+  return ((Number(a) - Number(b)) / Number(b)) * 100;
+}
+
+function pvShowView(view) {
+  _pvView = view === 'accuracy' ? 'accuracy' : 'mapa';
+  const tabM = document.getElementById('pv-tab-mapa');
+  const tabA = document.getElementById('pv-tab-accuracy');
+  if (tabM) tabM.classList.toggle('active', _pvView === 'mapa');
+  if (tabA) tabA.classList.toggle('active', _pvView === 'accuracy');
+  const mesWrap = document.getElementById('pv-mes-wrap');
+  if (mesWrap) mesWrap.style.display = _pvView === 'accuracy' ? 'none' : '';
   pvRender();
 }
 
-function pvRender() {
+function pvRender(opts) {
   const host = document.getElementById('pv-canal-panels');
   if (!host) return;
-  const ano = document.getElementById('pv-ano')?.value || String(new Date().getFullYear());
-  pvLoadData(ano);
-  if (_pvData) _pvData.ano = Number(ano);
+  const ano = document.getElementById('pv-ano')?.value || '2026';
+  const mes = document.getElementById('pv-mes')?.value ?? '7';
+  const y = Number(ano);
+  const m = Number(mes);
+  const forceReload = !!(opts && opts.reload);
+  if (_pvView === 'mapa') {
+    if (forceReload || !_pvData || Number(_pvData.ano) !== y || Number(_pvData.mes) !== m) {
+      pvLoadData(ano, mes);
+    }
+    if (_pvData) {
+      _pvData.ano = y;
+      _pvData.mes = m;
+    }
+  }
 
   const edit = pvPodeEditar();
-  const btnG = document.getElementById('pv-btn-guardar');
-  if (btnG) btnG.style.display = edit ? '' : 'none';
   const modo = document.getElementById('pv-modo-label');
   if (modo) {
     modo.textContent = edit
-      ? '· Modo edição (podes preencher a previsão)'
+      ? '· Edição com autosave'
       : '· Modo consulta (exportar Excel)';
     modo.style.color = edit ? '#166534' : '#1d4ed8';
   }
 
-  if (_pvCanalActivo === 'resumo') {
-    host.innerHTML = pvRenderResumoHtml(edit);
+  const mesNome = PV_MESES[m] || '—';
+  const banner = document.getElementById('pv-banner');
+  if (banner) {
+    if (_pvView === 'accuracy') {
+      banner.innerHTML = `<strong>Accuracy de fecho ${ano}</strong> — % = <strong>N (fecho real)</strong> ÷ <strong>Previsão de fecho</strong> × 100, por canal e mês.
+        Preenche Previsão e N no mapa mensal; aqui só vês o atingimento.
+        <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
+    } else {
+      banner.innerHTML = `<strong>${mesNome} ${ano}</strong> — N-1 = histórico · Budget = objectivo ·
+        <strong>Previsão de fecho</strong> (autosave) · <strong>N</strong> = fecho real após fechar o mês ·
+        <strong>Acum. N</strong> = (YTD sem o mês) + Previsão · <strong>MYR</strong> à mão.
+        <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
+    }
+  }
+
+  if (_pvView === 'accuracy') {
+    host.innerHTML = pvRenderAccuracyHtml(edit, ano);
     return;
   }
 
-  const canal = (_pvData.canais || {})[_pvCanalActivo];
-  if (!canal) {
-    host.innerHTML = '<p style="color:var(--muted);font-size:13px;">Canal sem dados.</p>';
+  if (!_pvData || !_pvData.linhas || !_pvData.linhas.length) {
+    host.innerHTML = `<p style="color:var(--muted);font-size:13px;padding:24px 0;">Ainda sem dados para ${mesNome} ${ano}. Envia a imagem deste mês para eu carregar.</p>`;
     return;
   }
-  host.innerHTML = pvRenderCanalHtml(_pvCanalActivo, canal, edit, ano);
+
+  host.innerHTML = pvRenderMapaHtml(edit, ano, mesNome);
 }
 
-function pvRenderCanalHtml(canalId, canal, edit, ano) {
-  const anoAnt = Number(ano) - 1;
+function pvParseNumInput(raw) {
+  let s = String(raw || '').trim().replace(/\s/g, '');
+  if (s === '') return null;
+  if (s.includes(',')) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if ((s.match(/\./g) || []).length >= 1 && /^\d{1,3}(\.\d{3})+$/.test(s)) {
+    s = s.replace(/\./g, '');
+  } else if ((s.match(/\./g) || []).length > 1) {
+    s = s.replace(/\./g, '');
+  }
+  const val = Number(s);
+  return Number.isNaN(val) ? null : val;
+}
+
+function pvFmtEdit(v) {
+  if (v == null || v === '' || Number.isNaN(Number(v))) return '';
+  return Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+}
+
+let _pvAutosaveTimer = null;
+let _pvAutosaveHintTimer = null;
+
+function pvFlashAutosave(ok) {
+  const hint = document.getElementById('pv-autosave-hint');
+  if (!hint) return;
+  hint.textContent = ok ? '✓ guardado' : 'erro ao guardar';
+  hint.style.color = ok ? '#15803d' : '#b91c1c';
+  clearTimeout(_pvAutosaveHintTimer);
+  _pvAutosaveHintTimer = setTimeout(() => { hint.textContent = ''; }, 1200);
+}
+
+function pvAutosave() {
+  if (!pvPodeEditar() || !_pvData) return;
+  clearTimeout(_pvAutosaveTimer);
+  _pvAutosaveTimer = setTimeout(() => {
+    pvFlashAutosave(pvSaveData());
+  }, 150);
+}
+
+function pvRecalcSomas(campo) {
+  if (!_pvData || !Array.isArray(_pvData.linhas)) return;
+  pvRecalcSomasOn(_pvData.linhas, campo);
+}
+
+function pvUpdateRowPercents(idx) {
+  const row = _pvData?.linhas?.[idx];
+  if (!row) return;
+  const tr = document.querySelector(`tr[data-pv-idx="${idx}"]`);
+  if (!tr) return;
+  const cells = tr.children;
+  // 0 Emp, 1 N-1, 2 Prev, 3 N, 4 %Nn1, 5 Bud, 6 VarBud, 7 MYR, 8 VarPrevMyr, 9 VarNMyr, 10 AcumN1, 11 AcumN, 12 %Ac, 13 BudAcm, 14 %BudAc, 15 Acc
+  const baseMes = row.prevFecho != null && row.prevFecho !== '' ? Number(row.prevFecho) : null;
+  if (cells[4]) cells[4].innerHTML = pvFmtPct(pvPct(baseMes, row.n1));
+  if (cells[6]) cells[6].innerHTML = pvFmtPct(pvPct(baseMes, row.budget));
+  if (cells[8]) cells[8].innerHTML = pvFmtPct(pvVarPrevMyrPct(row));
+  if (cells[9]) cells[9].innerHTML = pvFmtPct(pvVarNMyrPct(row));
+  const acumN = pvAcumNFecho(row);
+  if (cells[11]) cells[11].innerHTML = pvFmtNum(acumN);
+  if (cells[12]) cells[12].innerHTML = pvFmtPct(pvPct(acumN, row.acumN1));
+  if (cells[14]) cells[14].innerHTML = pvFmtPct(pvPct(acumN, row.budgetAcm));
+  const accEl = document.querySelector(`.pv-acc-cell[data-idx="${idx}"]`);
+  if (accEl) accEl.innerHTML = pvFmtAccuracy(pvAccuracyPct(row));
+}
+
+function pvRefreshSomasDom(campo) {
+  (_pvData.linhas || []).forEach((row, idx) => {
+    if (row.tipo === 'grupo' || row.tipo === 'total') {
+      const el = document.querySelector(`.pv-${campo}-soma[data-idx="${idx}"]`);
+      if (el) el.textContent = row[campo] == null ? '—' : pvFmtEdit(row[campo]);
+    }
+    if (campo === 'prevFecho' || campo === 'n' || campo === 'myr' || campo === 'n1' || campo === 'budget') {
+      pvUpdateRowPercents(idx);
+    }
+  });
+}
+
+function pvEditCell(campo, idx, row, edit, bg) {
+  const isGrupo = row.tipo === 'grupo' || row.tipo === 'total';
+  if (isGrupo) {
+    return `<span class="pv-${campo}-soma" data-idx="${idx}">${row[campo] == null ? '—' : pvFmtEdit(row[campo])}</span>`;
+  }
+  if (!edit) return pvFmtNum(row[campo]);
+  const handlers = {
+    prevFecho: 'pvOnPrevInput(this)" onblur="pvOnPrevBlur(this)',
+    n: 'pvOnRealNInput(this)" onblur="pvOnRealNBlur(this)',
+    myr: 'pvOnMyrInput(this)" onblur="pvOnMyrBlur(this)',
+    n1: 'pvOnN1Input(this)" onblur="pvOnN1Blur(this)',
+    budget: 'pvOnBudgetInput(this)" onblur="pvOnBudgetBlur(this)',
+  };
+  const titles = {
+    prevFecho: 'Previsão de fecho (autosave)',
+    n: 'Fecho real N (após fechar o mês)',
+    myr: 'MYR (autosave)',
+    n1: 'N-1 histórico (autosave)',
+    budget: 'Budget / objectivo (autosave)',
+  };
+  return `<input type="text" inputmode="numeric" class="form-input pv-${campo}-input" data-idx="${idx}"
+      value="${pvFmtEdit(row[campo])}" placeholder="—"
+      style="height:32px;width:100%;min-width:96px;text-align:right;padding:4px 6px;background:${bg};font-variant-numeric:tabular-nums;"
+      oninput="${handlers[campo]}" title="${titles[campo]}">`;
+}
+
+function pvRenderMapaHtml(edit, ano, mesNome) {
+  pvRecalcSomas('prevFecho');
+  pvRecalcSomas('n');
+  pvRecalcSomas('myr');
+
   let rows = '';
-  PV_MESES.forEach((mes, i) => {
-    const hist = canal.historico?.[i];
-    const obj = canal.objectivo?.[i];
-    const prev = canal.previsao?.[i];
-    const real = canal.real?.[i];
-    const prevVal = prev == null ? '' : String(prev);
-    const prevCell = edit
-      ? `<input type="number" class="form-input pv-prev-input" data-canal="${canalId}" data-mes="${i}"
-          value="${prevVal}" placeholder="—" style="height:34px;width:100%;min-width:90px;text-align:right;"
-          onchange="pvOnPrevisaoChange(this)">`
-      : `<span>${pvFmtNum(prev)}</span>`;
-    rows += `<tr>
-      <td style="font-weight:600;">${mes}</td>
-      <td style="text-align:right;color:var(--muted);">${pvFmtNum(hist)}</td>
-      <td style="text-align:right;">${pvFmtNum(obj)}</td>
-      <td style="text-align:right;">${prevCell}</td>
-      <td style="text-align:right;color:var(--muted);">${pvFmtNum(real)}</td>
+  (_pvData.linhas || []).forEach((row, idx) => {
+    const isGrupo = row.tipo === 'grupo' || row.tipo === 'total';
+    const acumN = pvAcumNFecho(row);
+    const baseMes = row.prevFecho != null && row.prevFecho !== '' ? Number(row.prevFecho) : null;
+    const pctNn1 = pvPct(baseMes, row.n1);
+    const pctBud = pvPct(baseMes, row.budget);
+    const pctAcumNn1 = pvPct(acumN, row.acumN1);
+    const pctAcumBud = pvPct(acumN, row.budgetAcm);
+    const varPrevMyr = pvVarPrevMyrPct(row);
+    const varNMyr = pvVarNMyrPct(row);
+    const acc = pvAccuracyPct(row);
+
+    const prevCell = pvEditCell('prevFecho', idx, row, edit, '#eff6ff');
+    const nCell = pvEditCell('n', idx, row, edit, '#f0fdf4');
+    const myrCell = pvEditCell('myr', idx, row, edit, '#fffbeb');
+    const n1Cell = pvEditCell('n1', idx, row, edit, '#f8fafc');
+    const budCell = pvEditCell('budget', idx, row, edit, '#f8fafc');
+
+    const bg = row.tipo === 'total' ? '#f1f5f9'
+      : row.tipo === 'grupo' ? '#f8fafc'
+      : 'transparent';
+    const weight = isGrupo ? '700' : '400';
+    const padLeft = row.tipo === 'canal' ? '18px' : '8px';
+
+    rows += `<tr data-pv-idx="${idx}" style="background:${bg};font-weight:${weight};">
+      <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;">${row.empresa}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${n1Cell}</td>
+      <td style="text-align:right;background:#eff6ff;font-variant-numeric:tabular-nums;">${prevCell}</td>
+      <td style="text-align:right;background:#f0fdf4;font-variant-numeric:tabular-nums;">${nCell}</td>
+      <td style="text-align:right;">${pvFmtPct(pctNn1)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${budCell}</td>
+      <td style="text-align:right;">${pvFmtPct(pctBud)}</td>
+      <td style="text-align:right;background:#fffbeb;font-variant-numeric:tabular-nums;">${myrCell}</td>
+      <td style="text-align:right;" class="pv-var-prev-myr-cell" data-idx="${idx}" title="(Previsão − MYR) / MYR">${pvFmtPct(varPrevMyr)}</td>
+      <td style="text-align:right;" class="pv-var-n-myr-cell" data-idx="${idx}" title="(N − MYR) / MYR">${pvFmtPct(varNMyr)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.acumN1)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;" title="(YTD sem o mês) + Previsão">${pvFmtNum(acumN)}</td>
+      <td style="text-align:right;">${pvFmtPct(pctAcumNn1)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.budgetAcm)}</td>
+      <td style="text-align:right;">${pvFmtPct(pctAcumBud)}</td>
+      <td style="text-align:right;" class="pv-acc-cell" data-idx="${idx}">${pvFmtAccuracy(acc)}</td>
     </tr>`;
   });
-  const sum = (arr) => (arr || []).reduce((a, v) => a + (v == null || v === '' ? 0 : Number(v) || 0), 0);
-  const hasHist = (canal.historico || []).some(v => v != null);
-  const hasObj = (canal.objectivo || []).some(v => v != null);
-  rows += `<tr style="background:#f8fafc;font-weight:700;">
-    <td>Total</td>
-    <td style="text-align:right;">${hasHist ? pvFmtNum(sum(canal.historico)) : '—'}</td>
-    <td style="text-align:right;">${hasObj ? pvFmtNum(sum(canal.objectivo)) : '—'}</td>
-    <td style="text-align:right;">${pvFmtNum(sum(canal.previsao))}</td>
-    <td style="text-align:right;">${pvFmtNum(sum(canal.real))}</td>
-  </tr>`;
 
   return `
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
-      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:15px;font-weight:600;">${canal.nome || canalId}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Ano ${ano} · Histórico ${anoAnt} (a preencher com as imagens)</div>
-        </div>
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
+        Mapa ${mesNome} ${ano}
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">Var Prev/MYR % = (Previsão − MYR) / MYR · Var N/MYR % = (N − MYR) / MYR · Accuracy = N÷Previsão</span>
       </div>
-      <table class="ct-table" style="width:100%;margin:0;">
+      <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1380px;">
         <thead>
           <tr>
-            <th style="text-align:left;">Mês</th>
-            <th style="text-align:right;">Histórico ${anoAnt}</th>
-            <th style="text-align:right;">Objectivo ${ano}</th>
-            <th style="text-align:right;">Previsão ${ano}</th>
-            <th style="text-align:right;">Real / Acomp. ${ano}</th>
+            <th style="text-align:left;">Empresa</th>
+            <th style="text-align:right;">N-1</th>
+            <th style="text-align:right;background:#dbeafe;">Previsão de fecho</th>
+            <th style="text-align:right;background:#bbf7d0;">N</th>
+            <th style="text-align:right;">N VS N-1 %</th>
+            <th style="text-align:right;">Budget</th>
+            <th style="text-align:right;">Var Bud %</th>
+            <th style="text-align:right;background:#fef3c7;">MYR</th>
+            <th style="text-align:right;" title="(Previsão − MYR) / MYR">Var Prev/MYR %</th>
+            <th style="text-align:right;" title="(N − MYR) / MYR — real vs MYR">Var N/MYR %</th>
+            <th style="text-align:right;">Acum. N-1</th>
+            <th style="text-align:right;" title="(YTD sem o mês) + Previsão">Acum. N</th>
+            <th style="text-align:right;">N VS N-1 % Ac.</th>
+            <th style="text-align:right;">Budget Acm.</th>
+            <th style="text-align:right;">Var Bud Ac %</th>
+            <th style="text-align:right;" title="N ÷ Previsão">Accuracy</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -10212,99 +10894,236 @@ function pvRenderCanalHtml(canalId, canal, edit, ano) {
     </div>`;
 }
 
-function pvRenderResumoHtml(edit) {
-  const ano = _pvData?.ano || new Date().getFullYear();
+/** Carrega todos os meses do ano para o mapa de accuracy. */
+function pvLoadAnoMeses(ano) {
+  const y = Number(ano) || 2026;
+  const byId = {};
+  for (let m = 0; m < 12; m++) {
+    let data = null;
+    try {
+      const raw = localStorage.getItem(pvStoreKey(y, m));
+      if (raw) data = JSON.parse(raw);
+    } catch (_) {}
+    if (!data || !Array.isArray(data.linhas) || !data.linhas.length) {
+      try {
+        const raw2 = localStorage.getItem(pvStoreKeyV2(y, m));
+        if (raw2) {
+          data = JSON.parse(raw2);
+          if (data && Array.isArray(data.linhas)) data.linhas = pvNormalizeLinhas(data.linhas, true);
+        }
+      } catch (_) {}
+    } else {
+      data.linhas = pvNormalizeLinhas(data.linhas, false);
+    }
+    if (!data || !Array.isArray(data.linhas)) continue;
+    pvRecalcSomasOn(data.linhas, 'prevFecho');
+    pvRecalcSomasOn(data.linhas, 'n');
+    data.linhas.forEach(row => {
+      if (row.tipo !== 'canal' && row.tipo !== 'grupo' && row.tipo !== 'total') return;
+      if (!byId[row.id]) {
+        byId[row.id] = { id: row.id, empresa: row.empresa, tipo: row.tipo, parent: row.parent, meses: {} };
+      }
+      byId[row.id].meses[m] = pvAccuracyPct(row);
+    });
+  }
+  // ordem = seed Agosto (estrutura estável)
+  const ordem = (PV_SEED_AGOSTO_2026.linhas || []).map(r => r.id);
+  const list = [];
+  ordem.forEach(id => { if (byId[id]) list.push(byId[id]); });
+  Object.keys(byId).forEach(id => {
+    if (!ordem.includes(id)) list.push(byId[id]);
+  });
+  return list;
+}
+
+/** Soma grupos/total a partir dos canais.
+ *  n1/budget: só recalcula se TODOS os canais do grupo tiverem valor
+ *  (protege totais do seed em Dezembro quando só Dist. Retalho tem N-1). */
+function pvRecalcSomasOn(linhas, campo) {
+  if (!Array.isArray(linhas)) return;
+  const exigeTodos = (campo === 'n1' || campo === 'budget');
+  linhas.forEach(row => {
+    if (row.tipo !== 'grupo') return;
+    const filhos = linhas.filter(c => c.tipo === 'canal' && c.parent === row.id);
+    if (!filhos.length) return;
+    let sum = 0;
+    let filled = 0;
+    filhos.forEach(c => {
+      if (c[campo] != null && c[campo] !== '') {
+        sum += Number(c[campo]);
+        filled++;
+      }
+    });
+    if (exigeTodos) {
+      if (filled === filhos.length) row[campo] = sum;
+    } else if (filled > 0) {
+      row[campo] = sum;
+    }
+  });
+  const total = linhas.find(r => r.tipo === 'total');
+  if (total) {
+    const grupos = linhas.filter(r => r.tipo === 'grupo');
+    let sum = 0;
+    let filled = 0;
+    grupos.forEach(r => {
+      if (r[campo] != null && r[campo] !== '') {
+        sum += Number(r[campo]);
+        filled++;
+      }
+    });
+    if (exigeTodos) {
+      if (filled === grupos.length) total[campo] = sum;
+    } else if (filled > 0) {
+      total[campo] = sum;
+    }
+  }
+}
+
+function pvRenderAccuracyHtml(edit, ano) {
+  const list = pvLoadAnoMeses(ano);
+  if (!list.length) {
+    return `<p style="color:var(--muted);font-size:13px;padding:24px 0;">Ainda sem Previsão / N guardados em ${ano}. Preenche no mapa mensal e volta aqui.</p>`;
+  }
   let rows = '';
-  PV_CANAIS.forEach(c => {
-    const canal = (_pvData.canais || {})[c.id] || {};
-    const sum = (arr) => (arr || []).reduce((a, v) => a + (v == null || v === '' ? 0 : Number(v) || 0), 0);
-    const has = (arr) => (arr || []).some(v => v != null && v !== '');
-    rows += `<tr>
-      <td style="font-weight:600;">${c.nome}</td>
-      <td style="text-align:right;">${has(canal.historico) ? pvFmtNum(sum(canal.historico)) : '—'}</td>
-      <td style="text-align:right;">${has(canal.objectivo) ? pvFmtNum(sum(canal.objectivo)) : '—'}</td>
-      <td style="text-align:right;">${pvFmtNum(sum(canal.previsao))}</td>
-      <td style="text-align:right;">${pvFmtNum(sum(canal.real))}</td>
-      <td><button type="button" class="btn btn-secondary btn-sm" onclick="pvShowCanal('${c.id}')">Abrir</button></td>
+  list.forEach(item => {
+    const isGrupo = item.tipo === 'grupo' || item.tipo === 'total';
+    const bg = item.tipo === 'total' ? '#f1f5f9' : item.tipo === 'grupo' ? '#f8fafc' : 'transparent';
+    const weight = isGrupo ? '700' : '400';
+    const padLeft = item.tipo === 'canal' ? '18px' : '8px';
+    let cells = '';
+    for (let m = 0; m < 12; m++) {
+      cells += `<td style="text-align:center;">${pvFmtAccuracy(item.meses[m])}</td>`;
+    }
+    const media = pvAccuracyMedia(item.meses);
+    cells += `<td style="text-align:center;background:#f8fafc;">${pvFmtAccuracy(media)}</td>`;
+    rows += `<tr style="background:${bg};font-weight:${weight};">
+      <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;">${item.empresa}</td>
+      ${cells}
     </tr>`;
   });
+  const thMes = PV_MESES.map(m => `<th style="text-align:center;">${m}</th>`).join('');
   return `
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
-      <div style="padding:12px 16px;border-bottom:1px solid var(--border);">
-        <div style="font-size:15px;font-weight:600;">Resumo por canal · ${ano}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Totais anuais (placeholder até importar histórico/objectivos)</div>
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
+        Accuracy de fecho ${ano}
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">% = N ÷ Previsão · ≥85% verde · &lt;85% vermelho · Média = meses com valor</span>
       </div>
-      <table class="ct-table" style="width:100%;margin:0;">
+      <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:980px;">
         <thead>
           <tr>
             <th style="text-align:left;">Canal</th>
-            <th style="text-align:right;">Histórico</th>
-            <th style="text-align:right;">Objectivo</th>
-            <th style="text-align:right;">Previsão</th>
-            <th style="text-align:right;">Real</th>
-            <th></th>
+            ${thMes}
+            <th style="text-align:center;background:#f1f5f9;" title="Média dos meses com Accuracy">Média</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
-    </div>
-    <p style="font-size:12px;color:var(--muted);margin-top:12px;">${edit ? 'Podes editar a previsão em cada canal e carregar em Guardar.' : 'Modo consulta — podes exportar Excel.'}</p>`;
+    </div>`;
 }
 
-function pvOnPrevisaoChange(el) {
+function pvOnCampoInput(el, campo) {
   if (!pvPodeEditar() || !_pvData) return;
-  const canalId = el.getAttribute('data-canal');
-  const mes = Number(el.getAttribute('data-mes'));
-  const raw = String(el.value || '').trim();
-  const val = raw === '' ? null : Number(raw);
-  if (!_pvData.canais[canalId]) return;
-  if (!Array.isArray(_pvData.canais[canalId].previsao)) {
-    _pvData.canais[canalId].previsao = PV_MESES.map(() => null);
+  const idx = Number(el.getAttribute('data-idx'));
+  if (!_pvData.linhas[idx] || _pvData.linhas[idx].tipo !== 'canal') return;
+  _pvData.linhas[idx][campo] = pvParseNumInput(el.value);
+  pvRecalcSomas(campo);
+  pvRefreshSomasDom(campo);
+  if (campo === 'prevFecho' || campo === 'n' || campo === 'n1' || campo === 'budget' || campo === 'myr') {
+    (_pvData.linhas || []).forEach((_, i) => pvUpdateRowPercents(i));
   }
-  _pvData.canais[canalId].previsao[mes] = (val == null || Number.isNaN(val)) ? null : val;
+  pvAutosave();
 }
 
-function pvGuardar() {
-  if (!pvPodeEditar()) {
-    toast('Sem permissão para editar previsões (consulta apenas).', 'warn');
-    return;
+function pvOnCampoBlur(el, campo) {
+  if (!pvPodeEditar() || !_pvData) return;
+  const idx = Number(el.getAttribute('data-idx'));
+  if (!_pvData.linhas[idx]) return;
+  const v = pvParseNumInput(el.value);
+  _pvData.linhas[idx][campo] = v;
+  el.value = pvFmtEdit(v);
+  pvRecalcSomas(campo);
+  pvRefreshSomasDom(campo);
+  if (campo === 'prevFecho' || campo === 'n' || campo === 'n1' || campo === 'budget' || campo === 'myr') {
+    (_pvData.linhas || []).forEach((_, i) => pvUpdateRowPercents(i));
   }
-  // Sync inputs visíveis
-  document.querySelectorAll('.pv-prev-input').forEach(el => pvOnPrevisaoChange(el));
-  if (pvSaveData()) {
-    toast('✅ Previsões guardadas.');
-    pvRender();
-  } else {
-    toast('Erro ao guardar previsões.', 'error');
-  }
+  pvAutosave();
 }
+
+function pvOnPrevInput(el) { pvOnCampoInput(el, 'prevFecho'); }
+function pvOnPrevBlur(el) { pvOnCampoBlur(el, 'prevFecho'); }
+function pvOnRealNInput(el) { pvOnCampoInput(el, 'n'); }
+function pvOnRealNBlur(el) { pvOnCampoBlur(el, 'n'); }
+function pvOnMyrInput(el) { pvOnCampoInput(el, 'myr'); }
+function pvOnMyrBlur(el) { pvOnCampoBlur(el, 'myr'); }
+function pvOnN1Input(el) { pvOnCampoInput(el, 'n1'); }
+function pvOnN1Blur(el) { pvOnCampoBlur(el, 'n1'); }
+function pvOnBudgetInput(el) { pvOnCampoInput(el, 'budget'); }
+function pvOnBudgetBlur(el) { pvOnCampoBlur(el, 'budget'); }
 
 async function pvExportarExcel() {
   try {
-    const ano = document.getElementById('pv-ano')?.value || String(new Date().getFullYear());
-    pvLoadData(ano);
+    const ano = document.getElementById('pv-ano')?.value || '2026';
+    const mes = document.getElementById('pv-mes')?.value ?? '7';
     if (typeof ensureXLSX === 'function') await ensureXLSX();
     if (!window.XLSX) {
       toast('Biblioteca Excel indisponível.', 'error');
       return;
     }
-    const rows = [['Canal', 'Mês', 'Histórico', 'Objectivo', 'Previsão', 'Real', 'Ano']];
-    PV_CANAIS.forEach(c => {
-      const canal = (_pvData.canais || {})[c.id] || {};
-      PV_MESES.forEach((mes, i) => {
-        rows.push([
-          c.nome,
-          mes,
-          canal.historico?.[i] ?? '',
-          canal.objectivo?.[i] ?? '',
-          canal.previsao?.[i] ?? '',
-          canal.real?.[i] ?? '',
-          Number(ano),
-        ]);
+    if (_pvView === 'accuracy') {
+      const list = pvLoadAnoMeses(ano);
+      const rows = [['Canal', ...PV_MESES, 'Média']];
+      list.forEach(item => {
+        const line = [item.empresa];
+        for (let m = 0; m < 12; m++) {
+          const v = item.meses[m];
+          line.push(v == null ? '' : Math.round(v));
+        }
+        const media = pvAccuracyMedia(item.meses);
+        line.push(media == null ? '' : Math.round(media));
+        rows.push(line);
       });
+      writeXlsxDownload(rows, 'Accuracy', `Accuracy_Fecho_${ano}.xlsx`,
+        [{ wch: 28 }, ...PV_MESES.map(() => ({ wch: 8 })), { wch: 8 }]);
+      toast('⬇ Excel Accuracy exportado.');
+      return;
+    }
+    pvLoadData(ano, mes);
+    const mesNome = PV_MESES[Number(mes)] || mes;
+    pvRecalcSomas('prevFecho');
+    pvRecalcSomas('n');
+    pvRecalcSomas('myr');
+    const rows = [[
+      'Empresa', 'N-1', 'Previsão de fecho', 'N', 'N VS N-1 %', 'Budget', 'Var Bud %',
+      'MYR', 'Var Prev/MYR %', 'Var N/MYR %', 'Acum. N-1', 'Acum. N', 'N VS N-1 % Ac.', 'Budget Acm.', 'Var Bud Ac %', 'Accuracy %',
+    ]];
+    (_pvData.linhas || []).forEach(row => {
+      const acumN = pvAcumNFecho(row);
+      const baseMes = row.prevFecho != null && row.prevFecho !== '' ? Number(row.prevFecho) : null;
+      const acc = pvAccuracyPct(row);
+      const varPrevMyr = pvVarPrevMyrPct(row);
+      const varNMyr = pvVarNMyrPct(row);
+      rows.push([
+        row.empresa,
+        row.n1 ?? '',
+        row.prevFecho ?? '',
+        row.n ?? '',
+        baseMes != null && row.n1 ? pvPct(baseMes, row.n1) : '',
+        row.budget ?? '',
+        baseMes != null && row.budget ? pvPct(baseMes, row.budget) : '',
+        row.myr ?? '',
+        varPrevMyr == null ? '' : varPrevMyr,
+        varNMyr == null ? '' : varNMyr,
+        row.acumN1 ?? '',
+        acumN ?? '',
+        acumN != null && row.acumN1 ? pvPct(acumN, row.acumN1) : '',
+        row.budgetAcm ?? '',
+        acumN != null && row.budgetAcm ? pvPct(acumN, row.budgetAcm) : '',
+        acc == null ? '' : Math.round(acc),
+      ]);
     });
-    writeXlsxDownload(rows, 'Previsao', `Previsao_Vendas_${ano}.xlsx`,
-      [{ wch: 22 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 6 }]);
+    writeXlsxDownload(rows, 'Mapa', `Previsao_Vendas_${mesNome}_${ano}.xlsx`,
+      [{ wch: 28 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
+       { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }]);
     toast('⬇ Excel exportado.');
   } catch (e) {
     console.error('pvExportarExcel', e);
@@ -10346,6 +11165,7 @@ window.entrarCanal = entrarCanal;
 window.abrirDadosHome = abrirDadosHome;
 window.abrirAreaTecnicaHome = abrirAreaTecnicaHome;
 window.abrirAreaFinanceiraHome = abrirAreaFinanceiraHome;
+window.abrirPrevisaoVendasHome = abrirPrevisaoVendasHome;
 window.voltarHome = voltarHome;
 window.irHomeCanais = irHomeCanais;
 window.cancelarCanalPin = cancelarCanalPin;
