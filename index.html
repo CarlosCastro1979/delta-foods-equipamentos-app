@@ -3595,15 +3595,14 @@ var _unused_placeholder = 1;
               <option value="11">Dezembro</option>
             </select>
           </label>
-          <button type="button" class="btn btn-secondary btn-sm" id="pv-btn-guardar" onclick="pvGuardar()" style="min-height:36px;display:none;">💾 Guardar N / MYR</button>
           <button type="button" class="btn btn-secondary btn-sm" onclick="pvExportarExcel()" style="min-height:36px;">⬇ Excel</button>
         </div>
       </div>
 
       <div id="pv-banner" style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e3a5f;margin-bottom:16px;">
         <strong>Agosto</strong> — N-1 = histórico · Budget = objectivo ·
-        <strong>N</strong> = previsão de fecho (editável, começa vazio) ·
-        <strong>Acum. N</strong> = YTD sem vendas do mês · <strong>MYR</strong> à mão.
+        <strong>N</strong> = previsão de fecho (editável, autosave) ·
+        <strong>Acum. N</strong> = YTD sem vendas do mês · <strong>MYR</strong> à mão (autosave).
       </div>
 
       <div id="pv-canal-panels" style="overflow:auto;"></div>
@@ -10194,34 +10193,39 @@ function pvPct(a, b) {
   return ((Number(a) - Number(b)) / Number(b)) * 100;
 }
 
-function pvRender() {
+function pvRender(opts) {
   const host = document.getElementById('pv-canal-panels');
   if (!host) return;
   const ano = document.getElementById('pv-ano')?.value || '2026';
   const mes = document.getElementById('pv-mes')?.value ?? '7';
-  pvLoadData(ano, mes);
+  const y = Number(ano);
+  const m = Number(mes);
+  // Só recarrega do storage ao mudar ano/mês ou na 1.ª abertura — senão apaga o que estás a escrever
+  const forceReload = !!(opts && opts.reload);
+  if (forceReload || !_pvData || Number(_pvData.ano) !== y || Number(_pvData.mes) !== m) {
+    pvLoadData(ano, mes);
+  }
   if (_pvData) {
-    _pvData.ano = Number(ano);
-    _pvData.mes = Number(mes);
+    _pvData.ano = y;
+    _pvData.mes = m;
   }
 
   const edit = pvPodeEditar();
-  const btnG = document.getElementById('pv-btn-guardar');
-  if (btnG) btnG.style.display = edit ? '' : 'none';
   const modo = document.getElementById('pv-modo-label');
   if (modo) {
     modo.textContent = edit
-      ? '· Modo edição (N = previsão de fecho · MYR)'
+      ? '· Edição com autosave (N / MYR)'
       : '· Modo consulta (exportar Excel)';
     modo.style.color = edit ? '#166534' : '#1d4ed8';
   }
 
-  const mesNome = PV_MESES[Number(mes)] || '—';
+  const mesNome = PV_MESES[m] || '—';
   const banner = document.getElementById('pv-banner');
   if (banner) {
     banner.innerHTML = `<strong>${mesNome} ${ano}</strong> — N-1 = histórico · Budget = objectivo ·
-      <strong>N</strong> = previsão de fecho (editável) ·
-      <strong>Acum. N</strong> = YTD sem vendas do mês · <strong>MYR</strong> à mão.`;
+      <strong>N</strong> = previsão de fecho (autosave) ·
+      <strong>Acum. N</strong> = YTD sem vendas do mês · <strong>MYR</strong> à mão (autosave).
+      <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
   }
 
   if (!_pvData.linhas || !_pvData.linhas.length) {
@@ -10233,10 +10237,42 @@ function pvRender() {
 }
 
 function pvParseNumInput(raw) {
-  const s = String(raw || '').trim();
+  const s = String(raw || '').trim().replace(/\s/g, '').replace(',', '.');
   if (s === '') return null;
   const val = Number(s);
   return Number.isNaN(val) ? null : val;
+}
+
+let _pvAutosaveTimer = null;
+let _pvAutosaveHintTimer = null;
+
+function pvFlashAutosave(ok) {
+  const hint = document.getElementById('pv-autosave-hint');
+  if (!hint) return;
+  hint.textContent = ok ? '✓ guardado' : 'erro ao guardar';
+  hint.style.color = ok ? '#15803d' : '#b91c1c';
+  clearTimeout(_pvAutosaveHintTimer);
+  _pvAutosaveHintTimer = setTimeout(() => { hint.textContent = ''; }, 1200);
+}
+
+function pvAutosave() {
+  if (!pvPodeEditar() || !_pvData) return;
+  clearTimeout(_pvAutosaveTimer);
+  _pvAutosaveTimer = setTimeout(() => {
+    pvFlashAutosave(pvSaveData());
+  }, 150);
+}
+
+function pvUpdateRowPercents(idx) {
+  const row = _pvData?.linhas?.[idx];
+  if (!row) return;
+  const nInput = document.querySelector(`.pv-n-input[data-idx="${idx}"]`);
+  const tr = nInput && nInput.closest('tr');
+  if (!tr) return;
+  const cells = tr.children;
+  const baseMes = row.n != null && row.n !== '' ? Number(row.n) : null;
+  if (cells[3]) cells[3].innerHTML = pvFmtPct(pvPct(baseMes, row.n1));
+  if (cells[5]) cells[5].innerHTML = pvFmtPct(pvPct(baseMes, row.budget));
 }
 
 function pvRenderMapaHtml(edit, ano, mesNome) {
@@ -10244,7 +10280,6 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
   (_pvData.linhas || []).forEach((row, idx) => {
     const isGrupo = row.tipo === 'grupo' || row.tipo === 'total';
     const acumN = pvAcumNMapa(row);
-    // % do mês com base em N (previsão de fecho)
     const baseMes = row.n != null && row.n !== '' ? Number(row.n) : null;
     const pctNn1 = pvPct(baseMes, row.n1);
     const pctBud = pvPct(baseMes, row.budget);
@@ -10256,7 +10291,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
       ? `<input type="number" class="form-input pv-n-input" data-idx="${idx}"
           value="${nVal}" placeholder="—"
           style="height:32px;width:100%;min-width:88px;text-align:right;padding:4px 6px;background:#eff6ff;"
-          onchange="pvOnNChange(this)" title="Previsão de fecho">`
+          oninput="pvOnNInput(this)" onchange="pvOnNInput(this)" title="Previsão de fecho (autosave)">`
       : pvFmtNum(row.n);
 
     const myrVal = row.myr == null || row.myr === '' ? '' : String(row.myr);
@@ -10264,7 +10299,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
       ? `<input type="number" class="form-input pv-myr-input" data-idx="${idx}"
           value="${myrVal}" placeholder="—"
           style="height:32px;width:100%;min-width:88px;text-align:right;padding:4px 6px;"
-          onchange="pvOnMyrChange(this)">`
+          oninput="pvOnMyrInput(this)" onchange="pvOnMyrInput(this)" title="MYR (autosave)">`
       : pvFmtNum(row.myr);
 
     const bg = row.tipo === 'total' ? '#f1f5f9'
@@ -10293,7 +10328,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Mapa ${mesNome} ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">N = previsão de fecho · Acum. N sem o mês · MYR manual</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">N / MYR com autosave · Acum. N sem o mês</span>
       </div>
       <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1100px;">
         <thead>
@@ -10317,41 +10352,21 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     </div>`;
 }
 
-function pvOnNChange(el) {
+function pvOnNInput(el) {
   if (!pvPodeEditar() || !_pvData) return;
   const idx = Number(el.getAttribute('data-idx'));
   if (!_pvData.linhas[idx]) return;
   _pvData.linhas[idx].n = pvParseNumInput(el.value);
-  pvRender();
+  pvUpdateRowPercents(idx);
+  pvAutosave();
 }
 
-function pvOnMyrChange(el) {
+function pvOnMyrInput(el) {
   if (!pvPodeEditar() || !_pvData) return;
   const idx = Number(el.getAttribute('data-idx'));
   if (!_pvData.linhas[idx]) return;
   _pvData.linhas[idx].myr = pvParseNumInput(el.value);
-  pvRender();
-}
-
-function pvGuardar() {
-  if (!pvPodeEditar()) {
-    toast('Sem permissão para editar (consulta apenas).', 'warn');
-    return;
-  }
-  document.querySelectorAll('.pv-n-input').forEach(el => {
-    const idx = Number(el.getAttribute('data-idx'));
-    if (_pvData?.linhas?.[idx]) _pvData.linhas[idx].n = pvParseNumInput(el.value);
-  });
-  document.querySelectorAll('.pv-myr-input').forEach(el => {
-    const idx = Number(el.getAttribute('data-idx'));
-    if (_pvData?.linhas?.[idx]) _pvData.linhas[idx].myr = pvParseNumInput(el.value);
-  });
-  if (pvSaveData()) {
-    toast('✅ N e MYR guardados.');
-    pvRender();
-  } else {
-    toast('Erro ao guardar.', 'error');
-  }
+  pvAutosave();
 }
 
 async function pvExportarExcel() {
