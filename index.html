@@ -9955,6 +9955,93 @@ const PV_SEED_AGOSTO_2026 = {
   ],
 };
 
+/**
+ * Seed Setembro 2026 (imagem Power BI — N-1 + Budget; N/Acum. ainda por preencher).
+ */
+const PV_SEED_SETEMBRO_2026 = {
+  mes: 8,
+  ano: 2026,
+  linhas: [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
+      n1: 3018173, nMes: null, budget: 3317777,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
+      n1: 1711209, nMes: null, budget: 1256087,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
+      n1: 806897, nMes: null, budget: 1018168,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
+      n1: 387529, nMes: null, budget: 337827,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
+      n1: 81659, nMes: null, budget: 436848,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
+      n1: -10056, nMes: null, budget: 228648,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
+      n1: 16035, nMes: null, budget: 17709,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
+      n1: 24902, nMes: null, budget: 22490,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
+      n1: 84473, nMes: null, budget: 190086,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
+      n1: 33457, nMes: null, budget: 128780,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
+      n1: 40746, nMes: null, budget: 41152,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
+      n1: 10271, nMes: null, budget: 18491,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: 1662,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'total', empresa: 'Total', tipo: 'total',
+      n1: 3102646, nMes: null, budget: 3507862,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+  ],
+};
+
+/** Seeds por ano+mês (0-based). */
+const PV_SEEDS = {
+  '2026_7': PV_SEED_AGOSTO_2026,
+  '2026_8': PV_SEED_SETEMBRO_2026,
+};
+
+/** Estrutura de canais vazia (Out/Nov/Dez e meses sem imagem) — mesmo quadro. */
+function pvLinhasEstruturaVazia() {
+  return PV_SEED_AGOSTO_2026.linhas.map(r => ({
+    id: r.id,
+    empresa: r.empresa,
+    tipo: r.tipo,
+    parent: r.parent || undefined,
+    n1: null,
+    nMes: null,
+    budget: null,
+    acumN1: null,
+    acumNYtd: null,
+    budgetAcm: null,
+  }));
+}
+
+function pvSeedLinhas(ano, mes) {
+  const key = String(ano) + '_' + String(mes);
+  const seed = PV_SEEDS[key];
+  if (seed && Array.isArray(seed.linhas)) {
+    return seed.linhas.map(r => ({ ...r, prevFecho: null, n: null, myr: null }));
+  }
+  // 2026 Set→Dez: quadro montado à espera de N-1/Budget/Acum.
+  if (Number(ano) === 2026 && Number(mes) >= 8 && Number(mes) <= 11) {
+    return pvLinhasEstruturaVazia().map(r => ({ ...r, prevFecho: null, n: null, myr: null }));
+  }
+  return [];
+}
+
 let _pvData = null;
 let _pvView = 'mapa'; // 'mapa' | 'accuracy'
 
@@ -10026,12 +10113,7 @@ function pvDefaultMapa(ano, mes) {
   const y = Number(ano) || 2026;
   const m = Number(mes);
   const mesIdx = Number.isFinite(m) ? m : 7;
-  let linhas;
-  if (y === 2026 && mesIdx === 7) {
-    linhas = PV_SEED_AGOSTO_2026.linhas.map(r => ({ ...r, prevFecho: null, n: null, myr: null }));
-  } else {
-    linhas = [];
-  }
+  const linhas = pvSeedLinhas(y, mesIdx);
   return { ano: y, mes: mesIdx, linhas, actualizadoEm: null, actualizadoPor: null };
 }
 
