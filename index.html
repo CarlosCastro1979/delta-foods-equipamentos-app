@@ -10111,12 +10111,67 @@ const PV_SEED_NOVEMBRO_2026 = {
   ],
 };
 
+/**
+ * Seed Dezembro 2026 (imagem Power BI — N-1 + Budget).
+ * Nota: na imagem só vieram claros os totais de grupo/Total e Dist. Retalho DFB (−6.650);
+ * canais sem valor na imagem ficam null (podes preencher ou enviar print completo).
+ */
+const PV_SEED_DEZEMBRO_2026 = {
+  mes: 11,
+  ano: 2026,
+  linhas: [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
+      n1: 2092130, nMes: null, budget: 2966949,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
+      n1: -6650, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
+      n1: 128751, nMes: null, budget: 155636,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'total', empresa: 'Total', tipo: 'total',
+      n1: 2220881, nMes: null, budget: 3122585,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+  ],
+};
+
 /** Seeds por ano+mês (0-based). */
 const PV_SEEDS = {
   '2026_7': PV_SEED_AGOSTO_2026,
   '2026_8': PV_SEED_SETEMBRO_2026,
   '2026_9': PV_SEED_OUTUBRO_2026,
   '2026_10': PV_SEED_NOVEMBRO_2026,
+  '2026_11': PV_SEED_DEZEMBRO_2026,
 };
 
 /** Estrutura de canais vazia (Out/Nov/Dez e meses sem imagem) — mesmo quadro. */
