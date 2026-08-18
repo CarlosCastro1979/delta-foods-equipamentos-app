@@ -10327,9 +10327,23 @@ function pvFmtAccuracy(v) {
   if (v == null || Number.isNaN(Number(v))) return '—';
   const n = Number(v);
   const txt = n.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + '%';
-  // ≥100% verde, 90–99 amarelo-ish, <90 vermelho
-  const color = n >= 100 ? '#15803d' : (n >= 90 ? '#a16207' : '#b91c1c');
+  // ≥85% verde, <85% vermelho
+  const color = n >= 85 ? '#15803d' : '#b91c1c';
   return `<span style="color:${color};font-weight:600;">${txt}</span>`;
+}
+
+/** Média dos meses com Accuracy preenchida (ignora null). */
+function pvAccuracyMedia(meses) {
+  if (!meses) return null;
+  let sum = 0;
+  let n = 0;
+  for (let m = 0; m < 12; m++) {
+    const v = meses[m];
+    if (v == null || Number.isNaN(Number(v))) continue;
+    sum += Number(v);
+    n++;
+  }
+  return n ? (sum / n) : null;
 }
 
 function pvNormalizeLinhas(linhas, fromV2) {
@@ -10982,6 +10996,8 @@ function pvRenderAccuracyHtml(edit, ano) {
     for (let m = 0; m < 12; m++) {
       cells += `<td style="text-align:center;">${pvFmtAccuracy(item.meses[m])}</td>`;
     }
+    const media = pvAccuracyMedia(item.meses);
+    cells += `<td style="text-align:center;background:#f8fafc;">${pvFmtAccuracy(media)}</td>`;
     rows += `<tr style="background:${bg};font-weight:${weight};">
       <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;">${item.empresa}</td>
       ${cells}
@@ -10992,13 +11008,14 @@ function pvRenderAccuracyHtml(edit, ano) {
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Accuracy de fecho ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">% atingimento = N (fecho real) ÷ Previsão de fecho</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">% = N ÷ Previsão · ≥85% verde · &lt;85% vermelho · Média = meses com valor</span>
       </div>
-      <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:900px;">
+      <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:980px;">
         <thead>
           <tr>
             <th style="text-align:left;">Canal</th>
             ${thMes}
+            <th style="text-align:center;background:#f1f5f9;" title="Média dos meses com Accuracy">Média</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -11056,17 +11073,19 @@ async function pvExportarExcel() {
     }
     if (_pvView === 'accuracy') {
       const list = pvLoadAnoMeses(ano);
-      const rows = [['Canal', ...PV_MESES]];
+      const rows = [['Canal', ...PV_MESES, 'Média']];
       list.forEach(item => {
         const line = [item.empresa];
         for (let m = 0; m < 12; m++) {
           const v = item.meses[m];
           line.push(v == null ? '' : Math.round(v));
         }
+        const media = pvAccuracyMedia(item.meses);
+        line.push(media == null ? '' : Math.round(media));
         rows.push(line);
       });
       writeXlsxDownload(rows, 'Accuracy', `Accuracy_Fecho_${ano}.xlsx`,
-        [{ wch: 28 }, ...PV_MESES.map(() => ({ wch: 8 }))]);
+        [{ wch: 28 }, ...PV_MESES.map(() => ({ wch: 8 })), { wch: 8 }]);
       toast('⬇ Excel Accuracy exportado.');
       return;
     }
