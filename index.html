@@ -1144,6 +1144,7 @@
     background: var(--surface);
   }
   .home-fin-card { border-color: #bbf7d0; }
+  .home-prev-card { border-color: #bfdbfe; }
   .home-dados-card .hd-icon,
   .home-at-card .hd-icon { font-size: 28px; line-height: 1; }
   .home-dados-card .hd-title,
@@ -1844,6 +1845,13 @@ var _unused_placeholder = 1;
         <span>
           <div class="hd-title">Área Financeira</div>
           <div class="hd-desc">Encerramentos, Contencioso e clientes com dívida sem compras ≥ 3 meses. Acesso: Christian, Andrea, Daniela K. (+ admin).</div>
+        </span>
+      </button>
+      <button type="button" class="home-at-card home-prev-card" id="home-prev-card" onclick="abrirPrevisaoVendasHome()">
+        <span class="hd-icon">📈</span>
+        <span>
+          <div class="hd-title">Previsão de vendas e acompanhamento</div>
+          <div class="hd-desc">Canais, histórico, previsão e objectivos mês a mês. Acesso: Filipe, Diogo, Marcio, Massimo, Carlos (+ Chris consulta/exportar).</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -3542,6 +3550,54 @@ var _unused_placeholder = 1;
         <div id="af-dsc-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
         <div id="af-dsc-content"><div style="color:var(--muted);font-size:13px;padding:20px 0;">A carregar…</div></div>
       </div>
+    </div>
+  </div>
+
+  <!-- PREVISÃO DE VENDAS E ACOMPANHAMENTO (home) -->
+  <div class="panel" id="panel-previsao-vendas">
+    <div id="pv-pin-gate" style="max-width:360px;margin:40px auto;text-align:center;">
+      <div style="font-size:48px;margin-bottom:16px;">📈</div>
+      <h2 style="font-size:18px;font-weight:600;margin-bottom:8px;">Previsão de vendas e acompanhamento</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Aguarda a autenticação por PIN…</p>
+      <button type="button" class="btn btn-secondary" style="margin-top:12px;" onclick="voltarHome()">← Voltar</button>
+    </div>
+
+    <div id="pv-content" style="display:none;">
+      <div style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;">
+        <div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
+          <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
+          <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
+            Por canal: histórico, objectivos e previsão mês a mês.
+            <span id="pv-modo-label" style="margin-left:6px;"></span>
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <label style="font-size:12px;color:var(--muted);">Ano
+            <select id="pv-ano" class="form-input" style="height:36px;min-width:90px;margin-left:6px;" onchange="pvRender()">
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
+              <option value="2024">2024</option>
+            </select>
+          </label>
+          <button type="button" class="btn btn-secondary btn-sm" id="pv-btn-guardar" onclick="pvGuardar()" style="min-height:36px;display:none;">💾 Guardar previsões</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="pvExportarExcel()" style="min-height:36px;">⬇ Excel</button>
+        </div>
+      </div>
+
+      <div id="pv-banner" style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e3a5f;margin-bottom:16px;">
+        <strong>Cenário para validação</strong> — estrutura pronta. Os números (histórico / objectivos) serão preenchidos a partir das imagens que enviares a seguir. Podes já navegar pelos canais e testar o campo de previsão.
+      </div>
+
+      <div class="sub-nav" style="margin-bottom:16px;flex-wrap:wrap;">
+        <button type="button" class="sub-tab active" id="pv-tab-horeca" onclick="pvShowCanal('horeca')">Horeca</button>
+        <button type="button" class="sub-tab" id="pv-tab-ecommerce" onclick="pvShowCanal('ecommerce')">Ecommerce</button>
+        <button type="button" class="sub-tab" id="pv-tab-varejo" onclick="pvShowCanal('varejo')">Varejo e Distr. Varejo</button>
+        <button type="button" class="sub-tab" id="pv-tab-distribuidores" onclick="pvShowCanal('distribuidores')">Distribuidores</button>
+        <button type="button" class="sub-tab" id="pv-tab-resumo" onclick="pvShowCanal('resumo')">Resumo</button>
+      </div>
+
+      <div id="pv-canal-panels"></div>
     </div>
   </div>
 
@@ -9615,7 +9671,7 @@ function vendedorPertenceAoCanalActivo(nomeVendedor) {
 }
 
 function setAppView(view) {
-  document.body.classList.remove('view-home', 'view-canal', 'view-dados', 'view-area-tecnica', 'view-area-financeira');
+  document.body.classList.remove('view-home', 'view-canal', 'view-dados', 'view-area-tecnica', 'view-area-financeira', 'view-previsao-vendas');
   document.body.classList.add('view-' + view);
   const home = document.getElementById('home-screen');
   if (home) {
@@ -9815,6 +9871,97 @@ const FIN_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kucin
 /** Área Dados (carregamentos SAP/Vendas/Dívidas): mesmo grupo da Financeira + admin. */
 const DADOS_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski'];
 
+/**
+ * Previsão de vendas e acompanhamento.
+ * Edição: Filipe, Diogo, Marcio, Massimo (+ admin Carlos).
+ * Consulta + exportar: Christian Souza («Chris»).
+ */
+const PREV_VENDAS_ACESSO = [
+  'Filipe Neves',
+  'Diogo Oliveira',
+  'Marcio Gorga',
+  'Massimo Bottello',
+  'Christian Souza',
+];
+const PREV_VENDAS_SO_CONSULTA = ['Christian Souza']; // Chris — consulta e exportar
+
+const PV_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const PV_CANAIS = [
+  { id: 'horeca', nome: 'Horeca' },
+  { id: 'ecommerce', nome: 'Ecommerce' },
+  { id: 'varejo', nome: 'Varejo e Distr. Varejo' },
+  { id: 'distribuidores', nome: 'Distribuidores' },
+];
+
+/** Dados placeholder — serão substituídos pelas imagens do utilizador. */
+let _pvData = null;
+let _pvCanalActivo = 'horeca';
+
+function pvStoreKey(ano) {
+  return 'dfb_previsao_vendas_' + String(ano || new Date().getFullYear());
+}
+
+function pvDefaultData(ano) {
+  const y = Number(ano) || new Date().getFullYear();
+  const canais = {};
+  PV_CANAIS.forEach(c => {
+    canais[c.id] = {
+      nome: c.nome,
+      // histórico / objectivo: null até importar das imagens
+      historico: PV_MESES.map(() => null),
+      objectivo: PV_MESES.map(() => null),
+      previsao: PV_MESES.map(() => null),
+      real: PV_MESES.map(() => null),
+    };
+  });
+  return { ano: y, canais, actualizadoEm: null, actualizadoPor: null };
+}
+
+function pvLoadData(ano) {
+  const y = String(ano || document.getElementById('pv-ano')?.value || new Date().getFullYear());
+  try {
+    const raw = localStorage.getItem(pvStoreKey(y));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.canais) {
+        _pvData = parsed;
+        return _pvData;
+      }
+    }
+  } catch (_) {}
+  _pvData = pvDefaultData(y);
+  return _pvData;
+}
+
+function pvSaveData() {
+  if (!_pvData) return false;
+  _pvData.actualizadoEm = new Date().toISOString();
+  _pvData.actualizadoPor = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
+  try {
+    localStorage.setItem(pvStoreKey(_pvData.ano), JSON.stringify(_pvData));
+    return true;
+  } catch (e) {
+    console.warn('pvSaveData', e);
+    return false;
+  }
+}
+
+function podeAcederPrevisaoVendas() {
+  if (typeof isAdmin === 'function' && isAdmin()) return true;
+  const atual = normNomeUtilizador(getUtilizadorAtual());
+  if (!atual) return false;
+  return PREV_VENDAS_ACESSO.some(n => normNomeUtilizador(n) === atual);
+}
+
+/** Chris (Christian) e outros em PREV_VENDAS_SO_CONSULTA: só leitura + export. */
+function pvPodeEditar() {
+  if (typeof isAdmin === 'function' && isAdmin()) return true;
+  const atual = normNomeUtilizador(getUtilizadorAtual());
+  if (!atual) return false;
+  if (PREV_VENDAS_SO_CONSULTA.some(n => normNomeUtilizador(n) === atual)) return false;
+  return PREV_VENDAS_ACESSO.some(n => normNomeUtilizador(n) === atual);
+}
+
 function podeAcederAreaTecnica() {
   if (isAdmin()) return true;
   const atual = normNomeUtilizador(getUtilizadorAtual());
@@ -9917,6 +10064,251 @@ async function abrirAreaFinanceiraHome() {
   } catch (e) {
     console.error('abrirAreaFinanceiraHome', e);
     alert('Erro ao abrir Área Financeira: ' + (e && e.message ? e.message : e));
+  }
+}
+
+async function abrirPrevisaoVendasHome() {
+  try {
+    if (!getUtilizadorAtual()) {
+      mostrarLoginModal();
+      toast('Selecciona o utilizador primeiro.', 'warn');
+      return;
+    }
+    if (!podeAcederPrevisaoVendas()) {
+      toast('Sem acesso à Previsão de vendas. Só Filipe, Diogo, Marcio, Massimo, Carlos e Chris (consulta).', 'error');
+      return;
+    }
+    _canalActivo = null;
+    _canalPinOk = null;
+    setAppView('previsao-vendas');
+    atualizarCanalBar('Previsão de vendas');
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    const panel = document.getElementById('panel-previsao-vendas');
+    if (panel) panel.classList.add('active');
+    const gate = document.getElementById('pv-pin-gate');
+    const content = document.getElementById('pv-content');
+    if (content && content.style.display === 'block') {
+      pvRender();
+      return;
+    }
+    if (gate) gate.style.display = '';
+    if (content) content.style.display = 'none';
+    const ok = await pedirPinUtilizador({
+      titulo: 'Previsão de vendas e acompanhamento',
+      desc: `Olá ${getUtilizadorAtual()} — introduz o teu PIN para aceder.`,
+      descCreate: `Olá ${getUtilizadorAtual()} — primeiro acesso. Cria o teu PIN pessoal (4 dígitos).`,
+    });
+    if (!ok) { voltarHome(); return; }
+    if (gate) gate.style.display = 'none';
+    if (content) content.style.display = 'block';
+    const anoEl = document.getElementById('pv-ano');
+    if (anoEl && !anoEl.value) anoEl.value = String(new Date().getFullYear());
+    pvShowCanal('horeca');
+  } catch (e) {
+    console.error('abrirPrevisaoVendasHome', e);
+    alert('Erro ao abrir Previsão de vendas: ' + (e && e.message ? e.message : e));
+  }
+}
+
+function pvFmtNum(v) {
+  if (v == null || v === '' || Number.isNaN(Number(v))) return '—';
+  return Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+}
+
+function pvShowCanal(canalId) {
+  _pvCanalActivo = canalId || 'horeca';
+  ['horeca', 'ecommerce', 'varejo', 'distribuidores', 'resumo'].forEach(id => {
+    const tab = document.getElementById('pv-tab-' + id);
+    if (tab) tab.classList.toggle('active', id === _pvCanalActivo);
+  });
+  pvRender();
+}
+
+function pvRender() {
+  const host = document.getElementById('pv-canal-panels');
+  if (!host) return;
+  const ano = document.getElementById('pv-ano')?.value || String(new Date().getFullYear());
+  pvLoadData(ano);
+  if (_pvData) _pvData.ano = Number(ano);
+
+  const edit = pvPodeEditar();
+  const btnG = document.getElementById('pv-btn-guardar');
+  if (btnG) btnG.style.display = edit ? '' : 'none';
+  const modo = document.getElementById('pv-modo-label');
+  if (modo) {
+    modo.textContent = edit
+      ? '· Modo edição (podes preencher a previsão)'
+      : '· Modo consulta (exportar Excel)';
+    modo.style.color = edit ? '#166534' : '#1d4ed8';
+  }
+
+  if (_pvCanalActivo === 'resumo') {
+    host.innerHTML = pvRenderResumoHtml(edit);
+    return;
+  }
+
+  const canal = (_pvData.canais || {})[_pvCanalActivo];
+  if (!canal) {
+    host.innerHTML = '<p style="color:var(--muted);font-size:13px;">Canal sem dados.</p>';
+    return;
+  }
+  host.innerHTML = pvRenderCanalHtml(_pvCanalActivo, canal, edit, ano);
+}
+
+function pvRenderCanalHtml(canalId, canal, edit, ano) {
+  const anoAnt = Number(ano) - 1;
+  let rows = '';
+  PV_MESES.forEach((mes, i) => {
+    const hist = canal.historico?.[i];
+    const obj = canal.objectivo?.[i];
+    const prev = canal.previsao?.[i];
+    const real = canal.real?.[i];
+    const prevVal = prev == null ? '' : String(prev);
+    const prevCell = edit
+      ? `<input type="number" class="form-input pv-prev-input" data-canal="${canalId}" data-mes="${i}"
+          value="${prevVal}" placeholder="—" style="height:34px;width:100%;min-width:90px;text-align:right;"
+          onchange="pvOnPrevisaoChange(this)">`
+      : `<span>${pvFmtNum(prev)}</span>`;
+    rows += `<tr>
+      <td style="font-weight:600;">${mes}</td>
+      <td style="text-align:right;color:var(--muted);">${pvFmtNum(hist)}</td>
+      <td style="text-align:right;">${pvFmtNum(obj)}</td>
+      <td style="text-align:right;">${prevCell}</td>
+      <td style="text-align:right;color:var(--muted);">${pvFmtNum(real)}</td>
+    </tr>`;
+  });
+  const sum = (arr) => (arr || []).reduce((a, v) => a + (v == null || v === '' ? 0 : Number(v) || 0), 0);
+  const hasHist = (canal.historico || []).some(v => v != null);
+  const hasObj = (canal.objectivo || []).some(v => v != null);
+  rows += `<tr style="background:#f8fafc;font-weight:700;">
+    <td>Total</td>
+    <td style="text-align:right;">${hasHist ? pvFmtNum(sum(canal.historico)) : '—'}</td>
+    <td style="text-align:right;">${hasObj ? pvFmtNum(sum(canal.objectivo)) : '—'}</td>
+    <td style="text-align:right;">${pvFmtNum(sum(canal.previsao))}</td>
+    <td style="text-align:right;">${pvFmtNum(sum(canal.real))}</td>
+  </tr>`;
+
+  return `
+    <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:15px;font-weight:600;">${canal.nome || canalId}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Ano ${ano} · Histórico ${anoAnt} (a preencher com as imagens)</div>
+        </div>
+      </div>
+      <table class="ct-table" style="width:100%;margin:0;">
+        <thead>
+          <tr>
+            <th style="text-align:left;">Mês</th>
+            <th style="text-align:right;">Histórico ${anoAnt}</th>
+            <th style="text-align:right;">Objectivo ${ano}</th>
+            <th style="text-align:right;">Previsão ${ano}</th>
+            <th style="text-align:right;">Real / Acomp. ${ano}</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function pvRenderResumoHtml(edit) {
+  const ano = _pvData?.ano || new Date().getFullYear();
+  let rows = '';
+  PV_CANAIS.forEach(c => {
+    const canal = (_pvData.canais || {})[c.id] || {};
+    const sum = (arr) => (arr || []).reduce((a, v) => a + (v == null || v === '' ? 0 : Number(v) || 0), 0);
+    const has = (arr) => (arr || []).some(v => v != null && v !== '');
+    rows += `<tr>
+      <td style="font-weight:600;">${c.nome}</td>
+      <td style="text-align:right;">${has(canal.historico) ? pvFmtNum(sum(canal.historico)) : '—'}</td>
+      <td style="text-align:right;">${has(canal.objectivo) ? pvFmtNum(sum(canal.objectivo)) : '—'}</td>
+      <td style="text-align:right;">${pvFmtNum(sum(canal.previsao))}</td>
+      <td style="text-align:right;">${pvFmtNum(sum(canal.real))}</td>
+      <td><button type="button" class="btn btn-secondary btn-sm" onclick="pvShowCanal('${c.id}')">Abrir</button></td>
+    </tr>`;
+  });
+  return `
+    <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);">
+        <div style="font-size:15px;font-weight:600;">Resumo por canal · ${ano}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Totais anuais (placeholder até importar histórico/objectivos)</div>
+      </div>
+      <table class="ct-table" style="width:100%;margin:0;">
+        <thead>
+          <tr>
+            <th style="text-align:left;">Canal</th>
+            <th style="text-align:right;">Histórico</th>
+            <th style="text-align:right;">Objectivo</th>
+            <th style="text-align:right;">Previsão</th>
+            <th style="text-align:right;">Real</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-top:12px;">${edit ? 'Podes editar a previsão em cada canal e carregar em Guardar.' : 'Modo consulta — podes exportar Excel.'}</p>`;
+}
+
+function pvOnPrevisaoChange(el) {
+  if (!pvPodeEditar() || !_pvData) return;
+  const canalId = el.getAttribute('data-canal');
+  const mes = Number(el.getAttribute('data-mes'));
+  const raw = String(el.value || '').trim();
+  const val = raw === '' ? null : Number(raw);
+  if (!_pvData.canais[canalId]) return;
+  if (!Array.isArray(_pvData.canais[canalId].previsao)) {
+    _pvData.canais[canalId].previsao = PV_MESES.map(() => null);
+  }
+  _pvData.canais[canalId].previsao[mes] = (val == null || Number.isNaN(val)) ? null : val;
+}
+
+function pvGuardar() {
+  if (!pvPodeEditar()) {
+    toast('Sem permissão para editar previsões (consulta apenas).', 'warn');
+    return;
+  }
+  // Sync inputs visíveis
+  document.querySelectorAll('.pv-prev-input').forEach(el => pvOnPrevisaoChange(el));
+  if (pvSaveData()) {
+    toast('✅ Previsões guardadas.');
+    pvRender();
+  } else {
+    toast('Erro ao guardar previsões.', 'error');
+  }
+}
+
+async function pvExportarExcel() {
+  try {
+    const ano = document.getElementById('pv-ano')?.value || String(new Date().getFullYear());
+    pvLoadData(ano);
+    if (typeof ensureXLSX === 'function') await ensureXLSX();
+    if (!window.XLSX) {
+      toast('Biblioteca Excel indisponível.', 'error');
+      return;
+    }
+    const rows = [['Canal', 'Mês', 'Histórico', 'Objectivo', 'Previsão', 'Real', 'Ano']];
+    PV_CANAIS.forEach(c => {
+      const canal = (_pvData.canais || {})[c.id] || {};
+      PV_MESES.forEach((mes, i) => {
+        rows.push([
+          c.nome,
+          mes,
+          canal.historico?.[i] ?? '',
+          canal.objectivo?.[i] ?? '',
+          canal.previsao?.[i] ?? '',
+          canal.real?.[i] ?? '',
+          Number(ano),
+        ]);
+      });
+    });
+    writeXlsxDownload(rows, 'Previsao', `Previsao_Vendas_${ano}.xlsx`,
+      [{ wch: 22 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 6 }]);
+    toast('⬇ Excel exportado.');
+  } catch (e) {
+    console.error('pvExportarExcel', e);
+    toast('Erro ao exportar: ' + (e.message || e), 'error');
   }
 }
 
@@ -16164,6 +16556,17 @@ function atualizarHomeCanais() {
     finCard.title = okFin ? 'Área Financeira — PIN do utilizador' : 'Só Christian, Andrea, Daniela K. e admin';
     finCard.style.opacity = okFin ? '' : '0.45';
     finCard.style.cursor = okFin ? '' : 'not-allowed';
+  }
+  const prevCard = document.getElementById('home-prev-card');
+  if (prevCard) {
+    const okPrev = !nome || podeAcederPrevisaoVendas();
+    prevCard.classList.toggle('hc-locked', !okPrev);
+    prevCard.disabled = !okPrev;
+    prevCard.title = okPrev
+      ? 'Previsão de vendas — PIN do utilizador'
+      : 'Só Filipe, Diogo, Marcio, Massimo, Carlos e Chris (consulta)';
+    prevCard.style.opacity = okPrev ? '' : '0.45';
+    prevCard.style.cursor = okPrev ? '' : 'not-allowed';
   }
 }
 
