@@ -10317,6 +10317,11 @@ function pvVarPrevMyrPct(row) {
   return pvPct(row.prevFecho, row.myr);
 }
 
+/** Var % Real (N) vs MYR = (N − MYR) / MYR × 100. */
+function pvVarNMyrPct(row) {
+  return pvPct(row.n, row.myr);
+}
+
 function pvFmtAccuracy(v) {
   if (v == null || Number.isNaN(Number(v))) return '—';
   const n = Number(v);
@@ -10767,15 +10772,16 @@ function pvUpdateRowPercents(idx) {
   const tr = document.querySelector(`tr[data-pv-idx="${idx}"]`);
   if (!tr) return;
   const cells = tr.children;
-  // 0 Emp, 1 N-1, 2 Prev, 3 N, 4 %Nn1, 5 Bud, 6 VarBud, 7 MYR, 8 VarPrevMyr, 9 AcumN1, 10 AcumN, 11 %Ac, 12 BudAcm, 13 %BudAc, 14 Acc
+  // 0 Emp, 1 N-1, 2 Prev, 3 N, 4 %Nn1, 5 Bud, 6 VarBud, 7 MYR, 8 VarPrevMyr, 9 VarNMyr, 10 AcumN1, 11 AcumN, 12 %Ac, 13 BudAcm, 14 %BudAc, 15 Acc
   const baseMes = row.prevFecho != null && row.prevFecho !== '' ? Number(row.prevFecho) : null;
   if (cells[4]) cells[4].innerHTML = pvFmtPct(pvPct(baseMes, row.n1));
   if (cells[6]) cells[6].innerHTML = pvFmtPct(pvPct(baseMes, row.budget));
   if (cells[8]) cells[8].innerHTML = pvFmtPct(pvVarPrevMyrPct(row));
+  if (cells[9]) cells[9].innerHTML = pvFmtPct(pvVarNMyrPct(row));
   const acumN = pvAcumNFecho(row);
-  if (cells[10]) cells[10].innerHTML = pvFmtNum(acumN);
-  if (cells[11]) cells[11].innerHTML = pvFmtPct(pvPct(acumN, row.acumN1));
-  if (cells[13]) cells[13].innerHTML = pvFmtPct(pvPct(acumN, row.budgetAcm));
+  if (cells[11]) cells[11].innerHTML = pvFmtNum(acumN);
+  if (cells[12]) cells[12].innerHTML = pvFmtPct(pvPct(acumN, row.acumN1));
+  if (cells[14]) cells[14].innerHTML = pvFmtPct(pvPct(acumN, row.budgetAcm));
   const accEl = document.querySelector(`.pv-acc-cell[data-idx="${idx}"]`);
   if (accEl) accEl.innerHTML = pvFmtAccuracy(pvAccuracyPct(row));
 }
@@ -10827,6 +10833,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     const pctAcumNn1 = pvPct(acumN, row.acumN1);
     const pctAcumBud = pvPct(acumN, row.budgetAcm);
     const varPrevMyr = pvVarPrevMyrPct(row);
+    const varNMyr = pvVarNMyrPct(row);
     const acc = pvAccuracyPct(row);
 
     const prevCell = pvEditCell('prevFecho', idx, row, edit, '#eff6ff');
@@ -10849,6 +10856,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
       <td style="text-align:right;">${pvFmtPct(pctBud)}</td>
       <td style="text-align:right;background:#fffbeb;font-variant-numeric:tabular-nums;">${myrCell}</td>
       <td style="text-align:right;" class="pv-var-prev-myr-cell" data-idx="${idx}" title="(Previsão − MYR) / MYR">${pvFmtPct(varPrevMyr)}</td>
+      <td style="text-align:right;" class="pv-var-n-myr-cell" data-idx="${idx}" title="(N − MYR) / MYR">${pvFmtPct(varNMyr)}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.acumN1)}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;" title="(YTD sem o mês) + Previsão">${pvFmtNum(acumN)}</td>
       <td style="text-align:right;">${pvFmtPct(pctAcumNn1)}</td>
@@ -10862,9 +10870,9 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Mapa ${mesNome} ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">Var Prev/MYR % = (Previsão − MYR) / MYR · Accuracy = N÷Previsão</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">Var Prev/MYR % = (Previsão − MYR) / MYR · Var N/MYR % = (N − MYR) / MYR · Accuracy = N÷Previsão</span>
       </div>
-      <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1280px;">
+      <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1380px;">
         <thead>
           <tr>
             <th style="text-align:left;">Empresa</th>
@@ -10876,6 +10884,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
             <th style="text-align:right;">Var Bud %</th>
             <th style="text-align:right;background:#fef3c7;">MYR</th>
             <th style="text-align:right;" title="(Previsão − MYR) / MYR">Var Prev/MYR %</th>
+            <th style="text-align:right;" title="(N − MYR) / MYR — real vs MYR">Var N/MYR %</th>
             <th style="text-align:right;">Acum. N-1</th>
             <th style="text-align:right;" title="(YTD sem o mês) + Previsão">Acum. N</th>
             <th style="text-align:right;">N VS N-1 % Ac.</th>
@@ -11067,13 +11076,14 @@ async function pvExportarExcel() {
     pvRecalcSomas('myr');
     const rows = [[
       'Empresa', 'N-1', 'Previsão de fecho', 'N', 'N VS N-1 %', 'Budget', 'Var Bud %',
-      'MYR', 'Var Prev/MYR %', 'Acum. N-1', 'Acum. N', 'N VS N-1 % Ac.', 'Budget Acm.', 'Var Bud Ac %', 'Accuracy %',
+      'MYR', 'Var Prev/MYR %', 'Var N/MYR %', 'Acum. N-1', 'Acum. N', 'N VS N-1 % Ac.', 'Budget Acm.', 'Var Bud Ac %', 'Accuracy %',
     ]];
     (_pvData.linhas || []).forEach(row => {
       const acumN = pvAcumNFecho(row);
       const baseMes = row.prevFecho != null && row.prevFecho !== '' ? Number(row.prevFecho) : null;
       const acc = pvAccuracyPct(row);
       const varPrevMyr = pvVarPrevMyrPct(row);
+      const varNMyr = pvVarNMyrPct(row);
       rows.push([
         row.empresa,
         row.n1 ?? '',
@@ -11084,6 +11094,7 @@ async function pvExportarExcel() {
         baseMes != null && row.budget ? pvPct(baseMes, row.budget) : '',
         row.myr ?? '',
         varPrevMyr == null ? '' : varPrevMyr,
+        varNMyr == null ? '' : varNMyr,
         row.acumN1 ?? '',
         acumN ?? '',
         acumN != null && row.acumN1 ? pvPct(acumN, row.acumN1) : '',
@@ -11094,7 +11105,7 @@ async function pvExportarExcel() {
     });
     writeXlsxDownload(rows, 'Mapa', `Previsao_Vendas_${mesNome}_${ano}.xlsx`,
       [{ wch: 28 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
-       { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }]);
+       { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }]);
     toast('⬇ Excel exportado.');
   } catch (e) {
     console.error('pvExportarExcel', e);
