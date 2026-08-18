@@ -10307,10 +10307,7 @@ function pvOnMyrChange(el) {
   const val = raw === '' ? null : Number(raw);
   if (!_pvData.linhas[idx]) return;
   _pvData.linhas[idx].myr = (val == null || Number.isNaN(val)) ? null : val;
-  // Recalcula % (N VS N-1 / Var Bud) com o MYR sem perder o resto da tabela
-  pvRender();
-  const next = document.querySelector(`.pv-myr-input[data-idx="${idx}"]`);
-  if (next) next.focus();
+  pvRender(); // atualiza % N VS N-1 / Var Bud com o MYR
 }
 
 function pvGuardar() {
