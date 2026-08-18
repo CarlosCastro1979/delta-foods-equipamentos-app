@@ -10238,9 +10238,9 @@ function pvAccuracyPct(row) {
   return (Number(real) / Number(prev)) * 100;
 }
 
-/** Var % Previsão → MYR = (MYR − Previsão) / Previsão × 100. */
+/** Var % Previsão vs MYR = (Previsão − MYR) / MYR × 100. */
 function pvVarPrevMyrPct(row) {
-  return pvPct(row.myr, row.prevFecho);
+  return pvPct(row.prevFecho, row.myr);
 }
 
 function pvFmtAccuracy(v) {
@@ -10737,7 +10737,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
       <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.budget)}</td>
       <td style="text-align:right;">${pvFmtPct(pctBud)}</td>
       <td style="text-align:right;background:#fffbeb;font-variant-numeric:tabular-nums;">${myrCell}</td>
-      <td style="text-align:right;" class="pv-var-prev-myr-cell" data-idx="${idx}" title="(MYR − Previsão) / Previsão">${pvFmtPct(varPrevMyr)}</td>
+      <td style="text-align:right;" class="pv-var-prev-myr-cell" data-idx="${idx}" title="(Previsão − MYR) / MYR">${pvFmtPct(varPrevMyr)}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.acumN1)}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;" title="(YTD sem o mês) + Previsão">${pvFmtNum(acumN)}</td>
       <td style="text-align:right;">${pvFmtPct(pctAcumNn1)}</td>
@@ -10751,7 +10751,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Mapa ${mesNome} ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">Var Prev/MYR % = (MYR − Previsão) / Previsão · Accuracy = N÷Previsão</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">Var Prev/MYR % = (Previsão − MYR) / MYR · Accuracy = N÷Previsão</span>
       </div>
       <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1280px;">
         <thead>
@@ -10764,7 +10764,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
             <th style="text-align:right;">Budget</th>
             <th style="text-align:right;">Var Bud %</th>
             <th style="text-align:right;background:#fef3c7;">MYR</th>
-            <th style="text-align:right;" title="(MYR − Previsão) / Previsão">Var Prev/MYR %</th>
+            <th style="text-align:right;" title="(Previsão − MYR) / MYR">Var Prev/MYR %</th>
             <th style="text-align:right;">Acum. N-1</th>
             <th style="text-align:right;" title="(YTD sem o mês) + Previsão">Acum. N</th>
             <th style="text-align:right;">N VS N-1 % Ac.</th>
