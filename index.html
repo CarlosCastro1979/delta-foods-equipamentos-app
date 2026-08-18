@@ -10167,58 +10167,68 @@ const PV_SEED_DEZEMBRO_2026 = {
 
 
 /**
- * Seed Julho 2026 — mês FECHADO (imagem Power BI).
- * N = fecho real; Previsão Fecho ≈ N; nMes = N para Acum. base.
- * MYR fica vazio para validares à mão (Var Prev/MYR e Accuracy).
- * Canais: imagem sem detalhe OCR completo — totais de grupo/Total preenchidos.
+ * Seed Julho 2026 — mês FECHADO (imagem Power BI completa).
+ * N = fecho real; Previsão = N; nMes = N; MYR vazio para validares à mão.
+ * Budget dos canais inferidos de Var Bud % (exceto Dist. Retalho/Regionais Q Brasil, lidos na imagem).
  */
 const PV_SEED_JULHO_2026 = {
   mes: 6,
   ano: 2026,
   linhas: [
     { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
-      n1: null, nMes: 2194050, budget: 2847193,
-      acumN1: null, acumNYtd: 14657486, budgetAcm: null,
+      n1: 2241917, nMes: 2194050, budget: 2847193,
+      acumN1: null, acumNYtd: 14657486, budgetAcm: 20930375,
       prevFecho: 2194050, n: 2194050 },
     { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
-      n1: null, nMes: null, budget: null,
-      acumN1: null, acumNYtd: null, budgetAcm: null },
+      n1: null, nMes: 637893, budget: 1028859,
+      acumN1: null, acumNYtd: null, budgetAcm: null,
+      prevFecho: 637893, n: 637893 },
     { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
-      n1: null, nMes: null, budget: null,
-      acumN1: null, acumNYtd: null, budgetAcm: null },
+      n1: null, nMes: 742527, budget: 713968,
+      acumN1: null, acumNYtd: null, budgetAcm: null,
+      prevFecho: 742527, n: 742527 },
     { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
-      n1: null, nMes: null, budget: null,
-      acumN1: null, acumNYtd: null, budgetAcm: null },
+      n1: null, nMes: 367249, budget: 417328,
+      acumN1: null, acumNYtd: null, budgetAcm: null,
+      prevFecho: 367249, n: 367249 },
     { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
-      n1: null, nMes: null, budget: null,
-      acumN1: null, acumNYtd: null, budgetAcm: null },
+      n1: null, nMes: 313823, budget: 373599,
+      acumN1: null, acumNYtd: null, budgetAcm: null,
+      prevFecho: 313823, n: 313823 },
     { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
-      n1: null, nMes: null, budget: null,
-      acumN1: null, acumNYtd: null, budgetAcm: null },
+      n1: null, nMes: 83657, budget: 253506,
+      acumN1: null, acumNYtd: null, budgetAcm: null,
+      prevFecho: 83657, n: 83657 },
     { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
-      n1: null, nMes: null, budget: null,
-      acumN1: null, acumNYtd: null, budgetAcm: null },
+      n1: null, nMes: 14829, budget: 42369,
+      acumN1: null, acumNYtd: null, budgetAcm: null,
+      prevFecho: 14829, n: 14829 },
     { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
-      n1: null, nMes: null, budget: null,
-      acumN1: null, acumNYtd: null, budgetAcm: null },
+      n1: null, nMes: 34073, budget: 15010,
+      acumN1: null, acumNYtd: null, budgetAcm: null,
+      prevFecho: 34073, n: 34073 },
     { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
-      n1: null, nMes: 27566, budget: 201931,
-      acumN1: null, acumNYtd: 662788, budgetAcm: null,
+      n1: 182779, nMes: 27566, budget: 201931,
+      acumN1: null, acumNYtd: 662788, budgetAcm: 1360436,
       prevFecho: 27566, n: 27566 },
     { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
-      n1: null, nMes: null, budget: null,
-      acumN1: null, acumNYtd: null, budgetAcm: null },
+      n1: null, nMes: -4254, budget: 141800,
+      acumN1: null, acumNYtd: null, budgetAcm: null,
+      prevFecho: -4254, n: -4254 },
     { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
-      n1: null, nMes: null, budget: null,
-      acumN1: null, acumNYtd: null, budgetAcm: null },
+      n1: null, nMes: 0, budget: 35277,
+      acumN1: null, acumNYtd: null, budgetAcm: null,
+      prevFecho: 0, n: 0 },
     { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
-      n1: null, nMes: null, budget: null,
-      acumN1: null, acumNYtd: null, budgetAcm: null },
+      n1: null, nMes: 31820, budget: 22892,
+      acumN1: null, acumNYtd: null, budgetAcm: null,
+      prevFecho: 31820, n: 31820 },
     { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
-      n1: null, nMes: null, budget: null,
-      acumN1: null, acumNYtd: null, budgetAcm: null },
+      n1: null, nMes: 0, budget: 1167,
+      acumN1: null, acumNYtd: null, budgetAcm: null,
+      prevFecho: 0, n: 0 },
     { id: 'total', empresa: 'Total', tipo: 'total',
-      n1: null, nMes: 2221616, budget: 3049124,
+      n1: 2424696, nMes: 2221616, budget: 3049124,
       acumN1: null, acumNYtd: 15320273, budgetAcm: 22290811,
       prevFecho: 2221616, n: 2221616 },
   ],
@@ -10344,6 +10354,41 @@ function pvDefaultMapa(ano, mes) {
   return { ano: y, mes: mesIdx, linhas, actualizadoEm: null, actualizadoPor: null };
 }
 
+function pvMergeSeedIntoLinhas(linhas, ano, mes) {
+  const seedLinhas = pvSeedLinhas(ano, mes);
+  if (!seedLinhas.length || !Array.isArray(linhas)) return linhas;
+  const byId = {};
+  seedLinhas.forEach(s => { byId[s.id] = s; });
+  const STATIC = ['n1', 'nMes', 'budget', 'acumN1', 'acumNYtd', 'budgetAcm', 'empresa', 'tipo', 'parent'];
+  const merged = linhas.map(row => {
+    const s = byId[row.id];
+    if (!s) return row;
+    const out = { ...row };
+    STATIC.forEach(k => {
+      if ((out[k] == null || out[k] === '') && s[k] != null && s[k] !== '') out[k] = s[k];
+    });
+    // Fecho/previsão do seed (mês fechado) se ainda vazios no browser
+    if ((out.n == null || out.n === '') && s.n != null) out.n = s.n;
+    if ((out.prevFecho == null || out.prevFecho === '') && s.prevFecho != null) out.prevFecho = s.prevFecho;
+    // Forçar refresh de Julho: se seed tem n e local tem n mas seed é mais completo nos canais — 
+    // atualizar campos estáticos sempre a partir do seed (não o MYR)
+    ['n1', 'nMes', 'budget', 'acumN1', 'acumNYtd', 'budgetAcm'].forEach(k => {
+      if (s[k] != null && s[k] !== '') out[k] = s[k];
+    });
+    if (s.n != null) out.n = s.n;
+    if (s.prevFecho != null) out.prevFecho = s.prevFecho;
+    return out;
+  });
+  // garantir ordem/ids do seed
+  const have = new Set(merged.map(r => r.id));
+  seedLinhas.forEach(s => {
+    if (!have.has(s.id)) merged.push({ ...s, myr: null });
+  });
+  const order = seedLinhas.map(s => s.id);
+  merged.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  return merged;
+}
+
 function pvLoadData(ano, mes) {
   const y = String(ano || document.getElementById('pv-ano')?.value || 2026);
   const m = String(mes ?? document.getElementById('pv-mes')?.value ?? 7);
@@ -10353,6 +10398,7 @@ function pvLoadData(ano, mes) {
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.linhas) && parsed.linhas.length) {
         parsed.linhas = pvNormalizeLinhas(parsed.linhas, false);
+        parsed.linhas = pvMergeSeedIntoLinhas(parsed.linhas, y, m);
         _pvData = parsed;
         return _pvData;
       }
