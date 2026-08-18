@@ -10165,8 +10165,68 @@ const PV_SEED_DEZEMBRO_2026 = {
   ],
 };
 
+
+/**
+ * Seed Julho 2026 — mês FECHADO (imagem Power BI).
+ * N = fecho real; Previsão Fecho ≈ N; nMes = N para Acum. base.
+ * MYR fica vazio para validares à mão (Var Prev/MYR e Accuracy).
+ * Canais: imagem sem detalhe OCR completo — totais de grupo/Total preenchidos.
+ */
+const PV_SEED_JULHO_2026 = {
+  mes: 6,
+  ano: 2026,
+  linhas: [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
+      n1: null, nMes: 2194050, budget: 2847193,
+      acumN1: null, acumNYtd: 14657486, budgetAcm: null,
+      prevFecho: 2194050, n: 2194050 },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
+      n1: null, nMes: 27566, budget: 201931,
+      acumN1: null, acumNYtd: 662788, budgetAcm: null,
+      prevFecho: 27566, n: 27566 },
+    { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: null,
+      acumN1: null, acumNYtd: null, budgetAcm: null },
+    { id: 'total', empresa: 'Total', tipo: 'total',
+      n1: null, nMes: 2221616, budget: 3049124,
+      acumN1: null, acumNYtd: 15320273, budgetAcm: 22290811,
+      prevFecho: 2221616, n: 2221616 },
+  ],
+};
+
 /** Seeds por ano+mês (0-based). */
 const PV_SEEDS = {
+  '2026_6': PV_SEED_JULHO_2026,
   '2026_7': PV_SEED_AGOSTO_2026,
   '2026_8': PV_SEED_SETEMBRO_2026,
   '2026_9': PV_SEED_OUTUBRO_2026,
@@ -10194,7 +10254,13 @@ function pvSeedLinhas(ano, mes) {
   const key = String(ano) + '_' + String(mes);
   const seed = PV_SEEDS[key];
   if (seed && Array.isArray(seed.linhas)) {
-    return seed.linhas.map(r => ({ ...r, prevFecho: null, n: null, myr: null }));
+    // Preserva prevFecho/n/myr do seed (ex.: Julho fechado já vem com fecho)
+    return seed.linhas.map(r => ({
+      ...r,
+      prevFecho: r.prevFecho ?? null,
+      n: r.n ?? null,
+      myr: r.myr ?? null,
+    }));
   }
   // 2026 Out→Dez: quadro montado à espera de N-1/Budget/Acum. da imagem
   if (Number(ano) === 2026 && Number(mes) >= 9 && Number(mes) <= 11) {
@@ -10634,7 +10700,8 @@ function pvRecalcSomas(campo) {
         any = true;
       }
     });
-    row[campo] = any ? sum : null;
+    // Só recalcula se houver canais preenchidos — senão mantém valor do seed (ex.: Julho)
+    if (any) row[campo] = sum;
   });
   const total = linhas.find(r => r.tipo === 'total');
   if (total) {
@@ -10646,7 +10713,7 @@ function pvRecalcSomas(campo) {
         any = true;
       }
     });
-    total[campo] = any ? sum : null;
+    if (any) total[campo] = sum;
   }
 }
 
@@ -10832,7 +10899,7 @@ function pvRecalcSomasOn(linhas, campo) {
         any = true;
       }
     });
-    row[campo] = any ? sum : null;
+    if (any) row[campo] = sum;
   });
   const total = linhas.find(r => r.tipo === 'total');
   if (total) {
@@ -10844,7 +10911,7 @@ function pvRecalcSomasOn(linhas, campo) {
         any = true;
       }
     });
-    total[campo] = any ? sum : null;
+    if (any) total[campo] = sum;
   }
 }
 
