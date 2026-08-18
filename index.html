@@ -10113,8 +10113,9 @@ const PV_SEED_NOVEMBRO_2026 = {
 
 /**
  * Seed Dezembro 2026 (imagem Power BI — N-1 + Budget).
- * Nota: na imagem só vieram claros os totais de grupo/Total e Dist. Retalho DFB (−6.650);
- * canais sem valor na imagem ficam null (podes preencher ou enviar print completo).
+ * Grupos/Total + Dist. Retalho DFB (−6.650) confirmados no print.
+ * Restantes canais: N-1/Budget editáveis no mapa (print cortado / ilegível).
+ * Coluna N vazia no Power BI = mês ainda sem fecho (normal).
  */
 const PV_SEED_DEZEMBRO_2026 = {
   mes: 11,
@@ -10270,7 +10271,7 @@ function pvSeedLinhas(ano, mes) {
       myr: r.myr ?? null,
     }));
   }
-  // 2026 Out→Dez: quadro montado à espera de N-1/Budget/Acum. da imagem
+  // Sem seed: estrutura vazia (não apaga seeds Out/Nov/Dez já registados em PV_SEEDS)
   if (Number(ano) === 2026 && Number(mes) >= 9 && Number(mes) <= 11) {
     return pvLinhasEstruturaVazia().map(r => ({ ...r, prevFecho: null, n: null, myr: null }));
   }
@@ -10738,32 +10739,7 @@ function pvAutosave() {
 
 function pvRecalcSomas(campo) {
   if (!_pvData || !Array.isArray(_pvData.linhas)) return;
-  const linhas = _pvData.linhas;
-  linhas.forEach(row => {
-    if (row.tipo !== 'grupo') return;
-    let sum = 0;
-    let any = false;
-    linhas.forEach(c => {
-      if (c.tipo === 'canal' && c.parent === row.id && c[campo] != null && c[campo] !== '') {
-        sum += Number(c[campo]);
-        any = true;
-      }
-    });
-    // Só recalcula se houver canais preenchidos — senão mantém valor do seed (ex.: Julho)
-    if (any) row[campo] = sum;
-  });
-  const total = linhas.find(r => r.tipo === 'total');
-  if (total) {
-    let sum = 0;
-    let any = false;
-    linhas.forEach(r => {
-      if (r.tipo === 'grupo' && r[campo] != null && r[campo] !== '') {
-        sum += Number(r[campo]);
-        any = true;
-      }
-    });
-    if (any) total[campo] = sum;
-  }
+  pvRecalcSomasOn(_pvData.linhas, campo);
 }
 
 function pvUpdateRowPercents(idx) {
@@ -10792,7 +10768,9 @@ function pvRefreshSomasDom(campo) {
       const el = document.querySelector(`.pv-${campo}-soma[data-idx="${idx}"]`);
       if (el) el.textContent = row[campo] == null ? '—' : pvFmtEdit(row[campo]);
     }
-    if (campo === 'prevFecho' || campo === 'n' || campo === 'myr') pvUpdateRowPercents(idx);
+    if (campo === 'prevFecho' || campo === 'n' || campo === 'myr' || campo === 'n1' || campo === 'budget') {
+      pvUpdateRowPercents(idx);
+    }
   });
 }
 
@@ -10806,11 +10784,15 @@ function pvEditCell(campo, idx, row, edit, bg) {
     prevFecho: 'pvOnPrevInput(this)" onblur="pvOnPrevBlur(this)',
     n: 'pvOnRealNInput(this)" onblur="pvOnRealNBlur(this)',
     myr: 'pvOnMyrInput(this)" onblur="pvOnMyrBlur(this)',
+    n1: 'pvOnN1Input(this)" onblur="pvOnN1Blur(this)',
+    budget: 'pvOnBudgetInput(this)" onblur="pvOnBudgetBlur(this)',
   };
   const titles = {
     prevFecho: 'Previsão de fecho (autosave)',
     n: 'Fecho real N (após fechar o mês)',
     myr: 'MYR (autosave)',
+    n1: 'N-1 histórico (autosave)',
+    budget: 'Budget / objectivo (autosave)',
   };
   return `<input type="text" inputmode="numeric" class="form-input pv-${campo}-input" data-idx="${idx}"
       value="${pvFmtEdit(row[campo])}" placeholder="—"
@@ -10839,6 +10821,8 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     const prevCell = pvEditCell('prevFecho', idx, row, edit, '#eff6ff');
     const nCell = pvEditCell('n', idx, row, edit, '#f0fdf4');
     const myrCell = pvEditCell('myr', idx, row, edit, '#fffbeb');
+    const n1Cell = pvEditCell('n1', idx, row, edit, '#f8fafc');
+    const budCell = pvEditCell('budget', idx, row, edit, '#f8fafc');
 
     const bg = row.tipo === 'total' ? '#f1f5f9'
       : row.tipo === 'grupo' ? '#f8fafc'
@@ -10848,11 +10832,11 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
 
     rows += `<tr data-pv-idx="${idx}" style="background:${bg};font-weight:${weight};">
       <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;">${row.empresa}</td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.n1)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${n1Cell}</td>
       <td style="text-align:right;background:#eff6ff;font-variant-numeric:tabular-nums;">${prevCell}</td>
       <td style="text-align:right;background:#f0fdf4;font-variant-numeric:tabular-nums;">${nCell}</td>
       <td style="text-align:right;">${pvFmtPct(pctNn1)}</td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.budget)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${budCell}</td>
       <td style="text-align:right;">${pvFmtPct(pctBud)}</td>
       <td style="text-align:right;background:#fffbeb;font-variant-numeric:tabular-nums;">${myrCell}</td>
       <td style="text-align:right;" class="pv-var-prev-myr-cell" data-idx="${idx}" title="(Previsão − MYR) / MYR">${pvFmtPct(varPrevMyr)}</td>
@@ -10940,31 +10924,46 @@ function pvLoadAnoMeses(ano) {
   return list;
 }
 
+/** Soma grupos/total a partir dos canais.
+ *  n1/budget: só recalcula se TODOS os canais do grupo tiverem valor
+ *  (protege totais do seed em Dezembro quando só Dist. Retalho tem N-1). */
 function pvRecalcSomasOn(linhas, campo) {
   if (!Array.isArray(linhas)) return;
+  const exigeTodos = (campo === 'n1' || campo === 'budget');
   linhas.forEach(row => {
     if (row.tipo !== 'grupo') return;
+    const filhos = linhas.filter(c => c.tipo === 'canal' && c.parent === row.id);
+    if (!filhos.length) return;
     let sum = 0;
-    let any = false;
-    linhas.forEach(c => {
-      if (c.tipo === 'canal' && c.parent === row.id && c[campo] != null && c[campo] !== '') {
+    let filled = 0;
+    filhos.forEach(c => {
+      if (c[campo] != null && c[campo] !== '') {
         sum += Number(c[campo]);
-        any = true;
+        filled++;
       }
     });
-    if (any) row[campo] = sum;
+    if (exigeTodos) {
+      if (filled === filhos.length) row[campo] = sum;
+    } else if (filled > 0) {
+      row[campo] = sum;
+    }
   });
   const total = linhas.find(r => r.tipo === 'total');
   if (total) {
+    const grupos = linhas.filter(r => r.tipo === 'grupo');
     let sum = 0;
-    let any = false;
-    linhas.forEach(r => {
-      if (r.tipo === 'grupo' && r[campo] != null && r[campo] !== '') {
+    let filled = 0;
+    grupos.forEach(r => {
+      if (r[campo] != null && r[campo] !== '') {
         sum += Number(r[campo]);
-        any = true;
+        filled++;
       }
     });
-    if (any) total[campo] = sum;
+    if (exigeTodos) {
+      if (filled === grupos.length) total[campo] = sum;
+    } else if (filled > 0) {
+      total[campo] = sum;
+    }
   }
 }
 
@@ -11013,10 +11012,8 @@ function pvOnCampoInput(el, campo) {
   if (!_pvData.linhas[idx] || _pvData.linhas[idx].tipo !== 'canal') return;
   _pvData.linhas[idx][campo] = pvParseNumInput(el.value);
   pvRecalcSomas(campo);
-  if (campo === 'prevFecho') pvRecalcSomas('prevFecho');
   pvRefreshSomasDom(campo);
-  if (campo === 'prevFecho') {
-    // Acum. N muda com previsão
+  if (campo === 'prevFecho' || campo === 'n' || campo === 'n1' || campo === 'budget' || campo === 'myr') {
     (_pvData.linhas || []).forEach((_, i) => pvUpdateRowPercents(i));
   }
   pvAutosave();
@@ -11031,7 +11028,7 @@ function pvOnCampoBlur(el, campo) {
   el.value = pvFmtEdit(v);
   pvRecalcSomas(campo);
   pvRefreshSomasDom(campo);
-  if (campo === 'prevFecho' || campo === 'n') {
+  if (campo === 'prevFecho' || campo === 'n' || campo === 'n1' || campo === 'budget' || campo === 'myr') {
     (_pvData.linhas || []).forEach((_, i) => pvUpdateRowPercents(i));
   }
   pvAutosave();
@@ -11043,6 +11040,10 @@ function pvOnRealNInput(el) { pvOnCampoInput(el, 'n'); }
 function pvOnRealNBlur(el) { pvOnCampoBlur(el, 'n'); }
 function pvOnMyrInput(el) { pvOnCampoInput(el, 'myr'); }
 function pvOnMyrBlur(el) { pvOnCampoBlur(el, 'myr'); }
+function pvOnN1Input(el) { pvOnCampoInput(el, 'n1'); }
+function pvOnN1Blur(el) { pvOnCampoBlur(el, 'n1'); }
+function pvOnBudgetInput(el) { pvOnCampoInput(el, 'budget'); }
+function pvOnBudgetBlur(el) { pvOnCampoBlur(el, 'budget'); }
 
 async function pvExportarExcel() {
   try {
