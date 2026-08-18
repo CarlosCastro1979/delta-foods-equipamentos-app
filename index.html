@@ -9990,9 +9990,9 @@ function pvAccuracyPct(row) {
   return (Number(real) / Number(prev)) * 100;
 }
 
-/** Var % Previsão → Fecho = (N − Previsão) / Previsão × 100. */
-function pvVarPrevFechoPct(row) {
-  return pvPct(row.n, row.prevFecho);
+/** Var % Previsão → MYR = (MYR − Previsão) / Previsão × 100. */
+function pvVarPrevMyrPct(row) {
+  return pvPct(row.myr, row.prevFecho);
 }
 
 function pvFmtAccuracy(v) {
@@ -10413,11 +10413,11 @@ function pvUpdateRowPercents(idx) {
   const tr = document.querySelector(`tr[data-pv-idx="${idx}"]`);
   if (!tr) return;
   const cells = tr.children;
-  // 0 Emp, 1 N-1, 2 Prev, 3 N, 4 VarPrev, 5 %Nn1, 6 Bud, 7 VarBud, 8 MYR, 9 AcumN1, 10 AcumN, 11 %Ac, 12 BudAcm, 13 %BudAc, 14 Acc
+  // 0 Emp, 1 N-1, 2 Prev, 3 N, 4 %Nn1, 5 Bud, 6 VarBud, 7 MYR, 8 VarPrevMyr, 9 AcumN1, 10 AcumN, 11 %Ac, 12 BudAcm, 13 %BudAc, 14 Acc
   const baseMes = row.prevFecho != null && row.prevFecho !== '' ? Number(row.prevFecho) : null;
-  if (cells[4]) cells[4].innerHTML = pvFmtPct(pvVarPrevFechoPct(row));
-  if (cells[5]) cells[5].innerHTML = pvFmtPct(pvPct(baseMes, row.n1));
-  if (cells[7]) cells[7].innerHTML = pvFmtPct(pvPct(baseMes, row.budget));
+  if (cells[4]) cells[4].innerHTML = pvFmtPct(pvPct(baseMes, row.n1));
+  if (cells[6]) cells[6].innerHTML = pvFmtPct(pvPct(baseMes, row.budget));
+  if (cells[8]) cells[8].innerHTML = pvFmtPct(pvVarPrevMyrPct(row));
   const acumN = pvAcumNFecho(row);
   if (cells[10]) cells[10].innerHTML = pvFmtNum(acumN);
   if (cells[11]) cells[11].innerHTML = pvFmtPct(pvPct(acumN, row.acumN1));
@@ -10432,7 +10432,7 @@ function pvRefreshSomasDom(campo) {
       const el = document.querySelector(`.pv-${campo}-soma[data-idx="${idx}"]`);
       if (el) el.textContent = row[campo] == null ? '—' : pvFmtEdit(row[campo]);
     }
-    if (campo === 'prevFecho' || campo === 'n') pvUpdateRowPercents(idx);
+    if (campo === 'prevFecho' || campo === 'n' || campo === 'myr') pvUpdateRowPercents(idx);
   });
 }
 
@@ -10472,7 +10472,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     const pctBud = pvPct(baseMes, row.budget);
     const pctAcumNn1 = pvPct(acumN, row.acumN1);
     const pctAcumBud = pvPct(acumN, row.budgetAcm);
-    const varPrev = pvVarPrevFechoPct(row);
+    const varPrevMyr = pvVarPrevMyrPct(row);
     const acc = pvAccuracyPct(row);
 
     const prevCell = pvEditCell('prevFecho', idx, row, edit, '#eff6ff');
@@ -10490,11 +10490,11 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
       <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.n1)}</td>
       <td style="text-align:right;background:#eff6ff;font-variant-numeric:tabular-nums;">${prevCell}</td>
       <td style="text-align:right;background:#f0fdf4;font-variant-numeric:tabular-nums;">${nCell}</td>
-      <td style="text-align:right;" class="pv-var-prev-cell" data-idx="${idx}" title="(N − Previsão) / Previsão">${pvFmtPct(varPrev)}</td>
       <td style="text-align:right;">${pvFmtPct(pctNn1)}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.budget)}</td>
       <td style="text-align:right;">${pvFmtPct(pctBud)}</td>
       <td style="text-align:right;background:#fffbeb;font-variant-numeric:tabular-nums;">${myrCell}</td>
+      <td style="text-align:right;" class="pv-var-prev-myr-cell" data-idx="${idx}" title="(MYR − Previsão) / Previsão">${pvFmtPct(varPrevMyr)}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(row.acumN1)}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;" title="(YTD sem o mês) + Previsão">${pvFmtNum(acumN)}</td>
       <td style="text-align:right;">${pvFmtPct(pctAcumNn1)}</td>
@@ -10508,7 +10508,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Mapa ${mesNome} ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">Var Prev % = (N − Previsão) / Previsão · Accuracy = N÷Previsão</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">Var Prev/MYR % = (MYR − Previsão) / Previsão · Accuracy = N÷Previsão</span>
       </div>
       <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1280px;">
         <thead>
@@ -10517,11 +10517,11 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
             <th style="text-align:right;">N-1</th>
             <th style="text-align:right;background:#dbeafe;">Previsão de fecho</th>
             <th style="text-align:right;background:#bbf7d0;">N</th>
-            <th style="text-align:right;" title="(N − Previsão) / Previsão">Var Prev %</th>
             <th style="text-align:right;">N VS N-1 %</th>
             <th style="text-align:right;">Budget</th>
             <th style="text-align:right;">Var Bud %</th>
             <th style="text-align:right;background:#fef3c7;">MYR</th>
+            <th style="text-align:right;" title="(MYR − Previsão) / Previsão">Var Prev/MYR %</th>
             <th style="text-align:right;">Acum. N-1</th>
             <th style="text-align:right;" title="(YTD sem o mês) + Previsão">Acum. N</th>
             <th style="text-align:right;">N VS N-1 % Ac.</th>
@@ -10712,24 +10712,24 @@ async function pvExportarExcel() {
     pvRecalcSomas('n');
     pvRecalcSomas('myr');
     const rows = [[
-      'Empresa', 'N-1', 'Previsão de fecho', 'N', 'Var Prev %', 'N VS N-1 %', 'Budget', 'Var Bud %',
-      'MYR', 'Acum. N-1', 'Acum. N', 'N VS N-1 % Ac.', 'Budget Acm.', 'Var Bud Ac %', 'Accuracy %',
+      'Empresa', 'N-1', 'Previsão de fecho', 'N', 'N VS N-1 %', 'Budget', 'Var Bud %',
+      'MYR', 'Var Prev/MYR %', 'Acum. N-1', 'Acum. N', 'N VS N-1 % Ac.', 'Budget Acm.', 'Var Bud Ac %', 'Accuracy %',
     ]];
     (_pvData.linhas || []).forEach(row => {
       const acumN = pvAcumNFecho(row);
       const baseMes = row.prevFecho != null && row.prevFecho !== '' ? Number(row.prevFecho) : null;
       const acc = pvAccuracyPct(row);
-      const varPrev = pvVarPrevFechoPct(row);
+      const varPrevMyr = pvVarPrevMyrPct(row);
       rows.push([
         row.empresa,
         row.n1 ?? '',
         row.prevFecho ?? '',
         row.n ?? '',
-        varPrev == null ? '' : varPrev,
         baseMes != null && row.n1 ? pvPct(baseMes, row.n1) : '',
         row.budget ?? '',
         baseMes != null && row.budget ? pvPct(baseMes, row.budget) : '',
         row.myr ?? '',
+        varPrevMyr == null ? '' : varPrevMyr,
         row.acumN1 ?? '',
         acumN ?? '',
         acumN != null && row.acumN1 ? pvPct(acumN, row.acumN1) : '',
@@ -10739,8 +10739,8 @@ async function pvExportarExcel() {
       ]);
     });
     writeXlsxDownload(rows, 'Mapa', `Previsao_Vendas_${mesNome}_${ano}.xlsx`,
-      [{ wch: 28 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
-       { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }]);
+      [{ wch: 28 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
+       { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }]);
     toast('⬇ Excel exportado.');
   } catch (e) {
     console.error('pvExportarExcel', e);
