@@ -1851,7 +1851,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Canais, histórico, previsão e objectivos mês a mês. Acesso: Filipe, Diogo, Marcio, Massimo, Carlos (+ Chris consulta/exportar).</div>
+          <div class="hd-desc">Mapa mensal (N-1 / Budget / MYR). Acesso: Filipe, Diogo, Marcio, Massimo, Carlos (+ Chris consulta/exportar).</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -3568,36 +3568,45 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Por canal: histórico, objectivos e previsão mês a mês.
+            Mapa mensal (estilo Power BI) · N-1 histórico · Budget objectivo · MYR preenchido à mão.
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <label style="font-size:12px;color:var(--muted);">Ano
             <select id="pv-ano" class="form-input" style="height:36px;min-width:90px;margin-left:6px;" onchange="pvRender()">
-              <option value="2026">2026</option>
+              <option value="2026" selected>2026</option>
               <option value="2025">2025</option>
-              <option value="2024">2024</option>
             </select>
           </label>
-          <button type="button" class="btn btn-secondary btn-sm" id="pv-btn-guardar" onclick="pvGuardar()" style="min-height:36px;display:none;">💾 Guardar previsões</button>
+          <label style="font-size:12px;color:var(--muted);">Mês
+            <select id="pv-mes" class="form-input" style="height:36px;min-width:110px;margin-left:6px;" onchange="pvRender()">
+              <option value="0">Janeiro</option>
+              <option value="1">Fevereiro</option>
+              <option value="2">Março</option>
+              <option value="3">Abril</option>
+              <option value="4">Maio</option>
+              <option value="5">Junho</option>
+              <option value="6">Julho</option>
+              <option value="7" selected>Agosto</option>
+              <option value="8">Setembro</option>
+              <option value="9">Outubro</option>
+              <option value="10">Novembro</option>
+              <option value="11">Dezembro</option>
+            </select>
+          </label>
+          <button type="button" class="btn btn-secondary btn-sm" id="pv-btn-guardar" onclick="pvGuardar()" style="min-height:36px;display:none;">💾 Guardar MYR</button>
           <button type="button" class="btn btn-secondary btn-sm" onclick="pvExportarExcel()" style="min-height:36px;">⬇ Excel</button>
         </div>
       </div>
 
       <div id="pv-banner" style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e3a5f;margin-bottom:16px;">
-        <strong>Cenário para validação</strong> — estrutura pronta. Os números (histórico / objectivos) serão preenchidos a partir das imagens que enviares a seguir. Podes já navegar pelos canais e testar o campo de previsão.
+        <strong>Agosto</strong> — N-1 = histórico · Budget = objectivo · coluna <strong>N</strong> vazia (mês em curso) ·
+        <strong>Acum. N</strong> = YTD sem as vendas do mês · <strong>MYR</strong> para preencheres à mão.
+        Envia mais imagens se faltarem linhas / orçamentos acumulados.
       </div>
 
-      <div class="sub-nav" style="margin-bottom:16px;flex-wrap:wrap;">
-        <button type="button" class="sub-tab active" id="pv-tab-horeca" onclick="pvShowCanal('horeca')">Horeca</button>
-        <button type="button" class="sub-tab" id="pv-tab-ecommerce" onclick="pvShowCanal('ecommerce')">Ecommerce</button>
-        <button type="button" class="sub-tab" id="pv-tab-varejo" onclick="pvShowCanal('varejo')">Varejo e Distr. Varejo</button>
-        <button type="button" class="sub-tab" id="pv-tab-distribuidores" onclick="pvShowCanal('distribuidores')">Distribuidores</button>
-        <button type="button" class="sub-tab" id="pv-tab-resumo" onclick="pvShowCanal('resumo')">Resumo</button>
-      </div>
-
-      <div id="pv-canal-panels"></div>
+      <div id="pv-canal-panels" style="overflow:auto;"></div>
     </div>
   </div>
 
@@ -9886,50 +9895,101 @@ const PREV_VENDAS_ACESSO = [
 const PREV_VENDAS_SO_CONSULTA = ['Christian Souza']; // Chris — consulta e exportar
 
 const PV_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-const PV_CANAIS = [
-  { id: 'horeca', nome: 'Horeca' },
-  { id: 'ecommerce', nome: 'Ecommerce' },
-  { id: 'varejo', nome: 'Varejo e Distr. Varejo' },
-  { id: 'distribuidores', nome: 'Distribuidores' },
-];
 
-/** Dados placeholder — serão substituídos pelas imagens do utilizador. */
+/**
+ * Seed Agosto (imagem Power BI).
+ * nMes = vendas do mês (usadas só para retirar do YTD; coluna N fica vazia no mapa).
+ * acumNYtd = YTD incluindo o mês → acumNMapa = acumNYtd - nMes.
+ */
+const PV_SEED_AGOSTO_2026 = {
+  mes: 7, // Agosto (0-based)
+  ano: 2026,
+  linhas: [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo',
+      n1: 1883085, nMes: 940210, budget: 2692407,
+      acumN1: 16318196, acumNYtd: 15597696, budgetAcm: null, prevFecho: null },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb',
+      n1: 648451, nMes: 510028, budget: 1092541,
+      acumN1: null, acumNYtd: null, budgetAcm: null, prevFecho: null },
+    { id: 'dfb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'dfb',
+      n1: 463538, nMes: 179680, budget: 584907,
+      acumN1: null, acumNYtd: null, budgetAcm: null, prevFecho: null },
+    { id: 'dfb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'dfb',
+      n1: 398985, nMes: 196631, budget: 386926,
+      acumN1: null, acumNYtd: null, budgetAcm: null, prevFecho: null },
+    { id: 'dfb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'dfb',
+      n1: 174741, nMes: 11218, budget: 323546,
+      acumN1: null, acumNYtd: null, budgetAcm: null, prevFecho: null },
+    { id: 'dfb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'dfb',
+      n1: 160042, nMes: 34377, budget: 251470,
+      acumN1: null, acumNYtd: null, budgetAcm: null, prevFecho: null },
+    { id: 'dfb_site', empresa: 'SITE PRÓPRIO', tipo: 'canal', parent: 'dfb',
+      n1: 22892, nMes: 4209, budget: 24990,
+      acumN1: null, acumNYtd: null, budgetAcm: null, prevFecho: null },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb',
+      n1: 14437, nMes: 4067, budget: 28026,
+      acumN1: null, acumNYtd: null, budgetAcm: null, prevFecho: null },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo',
+      n1: 242732, nMes: 152336, budget: 194247,
+      acumN1: 1095975, acumNYtd: 815124, budgetAcm: null, prevFecho: null },
+    { id: 'qb_ret_mod', empresa: 'RETALHO MODERNO', tipo: 'canal', parent: 'qb',
+      n1: 162779, nMes: null, budget: 141635,
+      acumN1: null, acumNYtd: null, budgetAcm: null, prevFecho: null },
+    { id: 'qb_dist_ret', empresa: 'DISTRIBUIDORES DE RETALHO', tipo: 'canal', parent: 'qb',
+      n1: 44453, nMes: 152336, budget: 30479,
+      acumN1: null, acumNYtd: null, budgetAcm: null, prevFecho: null },
+    { id: 'qb_rest', empresa: 'RESTAURAÇÃO', tipo: 'canal', parent: 'qb',
+      n1: 35499, nMes: null, budget: 21179,
+      acumN1: null, acumNYtd: null, budgetAcm: null, prevFecho: null },
+    { id: 'qb_dist_reg', empresa: 'DISTRIBUIDORES REGIONAIS', tipo: 'canal', parent: 'qb',
+      n1: null, nMes: null, budget: 955,
+      acumN1: null, acumNYtd: null, budgetAcm: null, prevFecho: null },
+    { id: 'total', empresa: 'Total', tipo: 'total',
+      n1: 2125817, nMes: 1092546, budget: 2886654,
+      acumN1: 17414171, acumNYtd: 16412819, budgetAcm: null, prevFecho: null },
+  ],
+};
+
+/** Dados do mapa (por ano+mês). */
 let _pvData = null;
-let _pvCanalActivo = 'horeca';
 
-function pvStoreKey(ano) {
-  return 'dfb_previsao_vendas_' + String(ano || new Date().getFullYear());
+function pvStoreKey(ano, mes) {
+  return 'dfb_previsao_mapa_' + String(ano || 2026) + '_' + String(mes ?? 7);
 }
 
-function pvDefaultData(ano) {
-  const y = Number(ano) || new Date().getFullYear();
-  const canais = {};
-  PV_CANAIS.forEach(c => {
-    canais[c.id] = {
-      nome: c.nome,
-      // histórico / objectivo: null até importar das imagens
-      historico: PV_MESES.map(() => null),
-      objectivo: PV_MESES.map(() => null),
-      previsao: PV_MESES.map(() => null),
-      real: PV_MESES.map(() => null),
-    };
-  });
-  return { ano: y, canais, actualizadoEm: null, actualizadoPor: null };
+function pvAcumNMapa(row) {
+  if (row.acumNYtd == null) return null;
+  const nMes = row.nMes == null ? 0 : Number(row.nMes);
+  return Number(row.acumNYtd) - nMes;
 }
 
-function pvLoadData(ano) {
-  const y = String(ano || document.getElementById('pv-ano')?.value || new Date().getFullYear());
+function pvDefaultMapa(ano, mes) {
+  const y = Number(ano) || 2026;
+  const m = Number(mes);
+  const mesIdx = Number.isFinite(m) ? m : 7;
+  let linhas;
+  if (y === 2026 && mesIdx === 7) {
+    linhas = PV_SEED_AGOSTO_2026.linhas.map(r => ({ ...r, myr: null }));
+  } else {
+    linhas = [];
+  }
+  return { ano: y, mes: mesIdx, linhas, actualizadoEm: null, actualizadoPor: null };
+}
+
+function pvLoadData(ano, mes) {
+  const y = String(ano || document.getElementById('pv-ano')?.value || 2026);
+  const m = String(mes ?? document.getElementById('pv-mes')?.value ?? 7);
   try {
-    const raw = localStorage.getItem(pvStoreKey(y));
+    const raw = localStorage.getItem(pvStoreKey(y, m));
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.canais) {
+      if (parsed && Array.isArray(parsed.linhas) && parsed.linhas.length) {
         _pvData = parsed;
         return _pvData;
       }
     }
   } catch (_) {}
-  _pvData = pvDefaultData(y);
+  _pvData = pvDefaultMapa(y, m);
   return _pvData;
 }
 
@@ -9938,7 +9998,7 @@ function pvSaveData() {
   _pvData.actualizadoEm = new Date().toISOString();
   _pvData.actualizadoPor = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
   try {
-    localStorage.setItem(pvStoreKey(_pvData.ano), JSON.stringify(_pvData));
+    localStorage.setItem(pvStoreKey(_pvData.ano, _pvData.mes), JSON.stringify(_pvData));
     return true;
   } catch (e) {
     console.warn('pvSaveData', e);
@@ -10103,8 +10163,10 @@ async function abrirPrevisaoVendasHome() {
     if (gate) gate.style.display = 'none';
     if (content) content.style.display = 'block';
     const anoEl = document.getElementById('pv-ano');
-    if (anoEl && !anoEl.value) anoEl.value = String(new Date().getFullYear());
-    pvShowCanal('horeca');
+    if (anoEl) anoEl.value = '2026';
+    const mesEl = document.getElementById('pv-mes');
+    if (mesEl) mesEl.value = '7';
+    pvRender();
   } catch (e) {
     console.error('abrirPrevisaoVendasHome', e);
     alert('Erro ao abrir Previsão de vendas: ' + (e && e.message ? e.message : e));
@@ -10116,21 +10178,29 @@ function pvFmtNum(v) {
   return Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 }
 
-function pvShowCanal(canalId) {
-  _pvCanalActivo = canalId || 'horeca';
-  ['horeca', 'ecommerce', 'varejo', 'distribuidores', 'resumo'].forEach(id => {
-    const tab = document.getElementById('pv-tab-' + id);
-    if (tab) tab.classList.toggle('active', id === _pvCanalActivo);
-  });
-  pvRender();
+function pvFmtPct(v) {
+  if (v == null || Number.isNaN(Number(v))) return '—';
+  const n = Number(v);
+  const txt = (n > 0 ? '+' : '') + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + '%';
+  const color = n > 0 ? '#15803d' : (n < 0 ? '#b91c1c' : 'inherit');
+  return `<span style="color:${color};font-weight:600;">${txt}</span>`;
+}
+
+function pvPct(a, b) {
+  if (a == null || b == null || Number(b) === 0) return null;
+  return ((Number(a) - Number(b)) / Number(b)) * 100;
 }
 
 function pvRender() {
   const host = document.getElementById('pv-canal-panels');
   if (!host) return;
-  const ano = document.getElementById('pv-ano')?.value || String(new Date().getFullYear());
-  pvLoadData(ano);
-  if (_pvData) _pvData.ano = Number(ano);
+  const ano = document.getElementById('pv-ano')?.value || '2026';
+  const mes = document.getElementById('pv-mes')?.value ?? '7';
+  pvLoadData(ano, mes);
+  if (_pvData) {
+    _pvData.ano = Number(ano);
+    _pvData.mes = Number(mes);
+  }
 
   const edit = pvPodeEditar();
   const btnG = document.getElementById('pv-btn-guardar');
@@ -10138,73 +10208,91 @@ function pvRender() {
   const modo = document.getElementById('pv-modo-label');
   if (modo) {
     modo.textContent = edit
-      ? '· Modo edição (podes preencher a previsão)'
+      ? '· Modo edição (MYR à mão)'
       : '· Modo consulta (exportar Excel)';
     modo.style.color = edit ? '#166534' : '#1d4ed8';
   }
 
-  if (_pvCanalActivo === 'resumo') {
-    host.innerHTML = pvRenderResumoHtml(edit);
+  const mesNome = PV_MESES[Number(mes)] || '—';
+  const banner = document.getElementById('pv-banner');
+  if (banner) {
+    banner.innerHTML = `<strong>${mesNome} ${ano}</strong> — N-1 = histórico · Budget = objectivo · coluna <strong>N</strong> vazia ·
+      <strong>Acum. N</strong> = YTD sem vendas do mês · <strong>MYR</strong> para preencheres à mão.`;
+  }
+
+  if (!_pvData.linhas || !_pvData.linhas.length) {
+    host.innerHTML = `<p style="color:var(--muted);font-size:13px;padding:24px 0;">Ainda sem dados para ${mesNome} ${ano}. Envia a imagem deste mês para eu carregar.</p>`;
     return;
   }
 
-  const canal = (_pvData.canais || {})[_pvCanalActivo];
-  if (!canal) {
-    host.innerHTML = '<p style="color:var(--muted);font-size:13px;">Canal sem dados.</p>';
-    return;
-  }
-  host.innerHTML = pvRenderCanalHtml(_pvCanalActivo, canal, edit, ano);
+  host.innerHTML = pvRenderMapaHtml(edit, ano, mesNome);
 }
 
-function pvRenderCanalHtml(canalId, canal, edit, ano) {
-  const anoAnt = Number(ano) - 1;
+function pvRenderMapaHtml(edit, ano, mesNome) {
   let rows = '';
-  PV_MESES.forEach((mes, i) => {
-    const hist = canal.historico?.[i];
-    const obj = canal.objectivo?.[i];
-    const prev = canal.previsao?.[i];
-    const real = canal.real?.[i];
-    const prevVal = prev == null ? '' : String(prev);
-    const prevCell = edit
-      ? `<input type="number" class="form-input pv-prev-input" data-canal="${canalId}" data-mes="${i}"
-          value="${prevVal}" placeholder="—" style="height:34px;width:100%;min-width:90px;text-align:right;"
-          onchange="pvOnPrevisaoChange(this)">`
-      : `<span>${pvFmtNum(prev)}</span>`;
-    rows += `<tr>
-      <td style="font-weight:600;">${mes}</td>
-      <td style="text-align:right;color:var(--muted);">${pvFmtNum(hist)}</td>
-      <td style="text-align:right;">${pvFmtNum(obj)}</td>
-      <td style="text-align:right;">${prevCell}</td>
-      <td style="text-align:right;color:var(--muted);">${pvFmtNum(real)}</td>
+  (_pvData.linhas || []).forEach((row, idx) => {
+    const isGrupo = row.tipo === 'grupo' || row.tipo === 'total';
+    const acumN = pvAcumNMapa(row);
+    // MYR (ou null) para % do mês; N fica sempre vazio no ecrã
+    const baseMes = row.myr != null && row.myr !== '' ? Number(row.myr) : null;
+    const pctNn1 = pvPct(baseMes, row.n1);
+    const pctBud = pvPct(baseMes, row.budget);
+    const pctAcumNn1 = pvPct(acumN, row.acumN1);
+    const pctAcumBud = pvPct(acumN, row.budgetAcm);
+
+    const myrVal = row.myr == null || row.myr === '' ? '' : String(row.myr);
+    const myrCell = edit
+      ? `<input type="number" class="form-input pv-myr-input" data-idx="${idx}"
+          value="${myrVal}" placeholder="—"
+          style="height:32px;width:100%;min-width:88px;text-align:right;padding:4px 6px;"
+          onchange="pvOnMyrChange(this)">`
+      : pvFmtNum(row.myr);
+
+    const bg = row.tipo === 'total' ? '#f1f5f9'
+      : row.tipo === 'grupo' ? '#f8fafc'
+      : 'transparent';
+    const weight = isGrupo ? '700' : '400';
+    const padLeft = row.tipo === 'canal' ? '18px' : '8px';
+
+    rows += `<tr style="background:${bg};font-weight:${weight};">
+      <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;">${row.empresa}</td>
+      <td style="text-align:right;">${pvFmtNum(row.n1)}</td>
+      <td style="text-align:right;color:var(--muted);">—</td>
+      <td style="text-align:right;">${pvFmtPct(pctNn1)}</td>
+      <td style="text-align:right;">${pvFmtNum(row.budget)}</td>
+      <td style="text-align:right;">${pvFmtPct(pctBud)}</td>
+      <td style="text-align:right;">${pvFmtNum(row.prevFecho)}</td>
+      <td style="text-align:right;background:#fffbeb;">${myrCell}</td>
+      <td style="text-align:right;">${pvFmtNum(row.acumN1)}</td>
+      <td style="text-align:right;">${pvFmtNum(acumN)}</td>
+      <td style="text-align:right;">${pvFmtPct(pctAcumNn1)}</td>
+      <td style="text-align:right;">${pvFmtNum(row.budgetAcm)}</td>
+      <td style="text-align:right;">${pvFmtPct(pctAcumBud)}</td>
     </tr>`;
   });
-  const sum = (arr) => (arr || []).reduce((a, v) => a + (v == null || v === '' ? 0 : Number(v) || 0), 0);
-  const hasHist = (canal.historico || []).some(v => v != null);
-  const hasObj = (canal.objectivo || []).some(v => v != null);
-  rows += `<tr style="background:#f8fafc;font-weight:700;">
-    <td>Total</td>
-    <td style="text-align:right;">${hasHist ? pvFmtNum(sum(canal.historico)) : '—'}</td>
-    <td style="text-align:right;">${hasObj ? pvFmtNum(sum(canal.objectivo)) : '—'}</td>
-    <td style="text-align:right;">${pvFmtNum(sum(canal.previsao))}</td>
-    <td style="text-align:right;">${pvFmtNum(sum(canal.real))}</td>
-  </tr>`;
 
   return `
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
-      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-        <div>
-          <div style="font-size:15px;font-weight:600;">${canal.nome || canalId}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Ano ${ano} · Histórico ${anoAnt} (a preencher com as imagens)</div>
-        </div>
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
+        Mapa ${mesNome} ${ano}
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">N vazio · Acum. N sem o mês · MYR manual</span>
       </div>
-      <table class="ct-table" style="width:100%;margin:0;">
+      <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1100px;">
         <thead>
           <tr>
-            <th style="text-align:left;">Mês</th>
-            <th style="text-align:right;">Histórico ${anoAnt}</th>
-            <th style="text-align:right;">Objectivo ${ano}</th>
-            <th style="text-align:right;">Previsão ${ano}</th>
-            <th style="text-align:right;">Real / Acomp. ${ano}</th>
+            <th style="text-align:left;">Empresa</th>
+            <th style="text-align:right;">N-1</th>
+            <th style="text-align:right;">N</th>
+            <th style="text-align:right;">N VS N-1 %</th>
+            <th style="text-align:right;">Budget</th>
+            <th style="text-align:right;">Var Bud %</th>
+            <th style="text-align:right;">Previsão Fecho</th>
+            <th style="text-align:right;background:#fef3c7;">MYR</th>
+            <th style="text-align:right;">Acum. N-1</th>
+            <th style="text-align:right;">Acum. N</th>
+            <th style="text-align:right;">N VS N-1 % Ac.</th>
+            <th style="text-align:right;">Budget Acm.</th>
+            <th style="text-align:right;">Var Bud Ac %</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -10212,99 +10300,77 @@ function pvRenderCanalHtml(canalId, canal, edit, ano) {
     </div>`;
 }
 
-function pvRenderResumoHtml(edit) {
-  const ano = _pvData?.ano || new Date().getFullYear();
-  let rows = '';
-  PV_CANAIS.forEach(c => {
-    const canal = (_pvData.canais || {})[c.id] || {};
-    const sum = (arr) => (arr || []).reduce((a, v) => a + (v == null || v === '' ? 0 : Number(v) || 0), 0);
-    const has = (arr) => (arr || []).some(v => v != null && v !== '');
-    rows += `<tr>
-      <td style="font-weight:600;">${c.nome}</td>
-      <td style="text-align:right;">${has(canal.historico) ? pvFmtNum(sum(canal.historico)) : '—'}</td>
-      <td style="text-align:right;">${has(canal.objectivo) ? pvFmtNum(sum(canal.objectivo)) : '—'}</td>
-      <td style="text-align:right;">${pvFmtNum(sum(canal.previsao))}</td>
-      <td style="text-align:right;">${pvFmtNum(sum(canal.real))}</td>
-      <td><button type="button" class="btn btn-secondary btn-sm" onclick="pvShowCanal('${c.id}')">Abrir</button></td>
-    </tr>`;
-  });
-  return `
-    <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
-      <div style="padding:12px 16px;border-bottom:1px solid var(--border);">
-        <div style="font-size:15px;font-weight:600;">Resumo por canal · ${ano}</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Totais anuais (placeholder até importar histórico/objectivos)</div>
-      </div>
-      <table class="ct-table" style="width:100%;margin:0;">
-        <thead>
-          <tr>
-            <th style="text-align:left;">Canal</th>
-            <th style="text-align:right;">Histórico</th>
-            <th style="text-align:right;">Objectivo</th>
-            <th style="text-align:right;">Previsão</th>
-            <th style="text-align:right;">Real</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-    <p style="font-size:12px;color:var(--muted);margin-top:12px;">${edit ? 'Podes editar a previsão em cada canal e carregar em Guardar.' : 'Modo consulta — podes exportar Excel.'}</p>`;
-}
-
-function pvOnPrevisaoChange(el) {
+function pvOnMyrChange(el) {
   if (!pvPodeEditar() || !_pvData) return;
-  const canalId = el.getAttribute('data-canal');
-  const mes = Number(el.getAttribute('data-mes'));
+  const idx = Number(el.getAttribute('data-idx'));
   const raw = String(el.value || '').trim();
   const val = raw === '' ? null : Number(raw);
-  if (!_pvData.canais[canalId]) return;
-  if (!Array.isArray(_pvData.canais[canalId].previsao)) {
-    _pvData.canais[canalId].previsao = PV_MESES.map(() => null);
-  }
-  _pvData.canais[canalId].previsao[mes] = (val == null || Number.isNaN(val)) ? null : val;
+  if (!_pvData.linhas[idx]) return;
+  _pvData.linhas[idx].myr = (val == null || Number.isNaN(val)) ? null : val;
+  // Recalcula % (N VS N-1 / Var Bud) com o MYR sem perder o resto da tabela
+  pvRender();
+  const next = document.querySelector(`.pv-myr-input[data-idx="${idx}"]`);
+  if (next) next.focus();
 }
 
 function pvGuardar() {
   if (!pvPodeEditar()) {
-    toast('Sem permissão para editar previsões (consulta apenas).', 'warn');
+    toast('Sem permissão para editar (consulta apenas).', 'warn');
     return;
   }
-  // Sync inputs visíveis
-  document.querySelectorAll('.pv-prev-input').forEach(el => pvOnPrevisaoChange(el));
+  document.querySelectorAll('.pv-myr-input').forEach(el => {
+    const idx = Number(el.getAttribute('data-idx'));
+    const raw = String(el.value || '').trim();
+    const val = raw === '' ? null : Number(raw);
+    if (_pvData?.linhas?.[idx]) {
+      _pvData.linhas[idx].myr = (val == null || Number.isNaN(val)) ? null : val;
+    }
+  });
   if (pvSaveData()) {
-    toast('✅ Previsões guardadas.');
+    toast('✅ MYR guardado.');
     pvRender();
   } else {
-    toast('Erro ao guardar previsões.', 'error');
+    toast('Erro ao guardar.', 'error');
   }
 }
 
 async function pvExportarExcel() {
   try {
-    const ano = document.getElementById('pv-ano')?.value || String(new Date().getFullYear());
-    pvLoadData(ano);
+    const ano = document.getElementById('pv-ano')?.value || '2026';
+    const mes = document.getElementById('pv-mes')?.value ?? '7';
+    pvLoadData(ano, mes);
     if (typeof ensureXLSX === 'function') await ensureXLSX();
     if (!window.XLSX) {
       toast('Biblioteca Excel indisponível.', 'error');
       return;
     }
-    const rows = [['Canal', 'Mês', 'Histórico', 'Objectivo', 'Previsão', 'Real', 'Ano']];
-    PV_CANAIS.forEach(c => {
-      const canal = (_pvData.canais || {})[c.id] || {};
-      PV_MESES.forEach((mes, i) => {
-        rows.push([
-          c.nome,
-          mes,
-          canal.historico?.[i] ?? '',
-          canal.objectivo?.[i] ?? '',
-          canal.previsao?.[i] ?? '',
-          canal.real?.[i] ?? '',
-          Number(ano),
-        ]);
-      });
+    const mesNome = PV_MESES[Number(mes)] || mes;
+    const rows = [[
+      'Empresa', 'N-1', 'N', 'N VS N-1 %', 'Budget', 'Var Bud %',
+      'Previsão Fecho', 'MYR', 'Acum. N-1', 'Acum. N', 'N VS N-1 % Ac.', 'Budget Acm.', 'Var Bud Ac %',
+    ]];
+    (_pvData.linhas || []).forEach(row => {
+      const acumN = pvAcumNMapa(row);
+      const baseMes = row.myr != null && row.myr !== '' ? Number(row.myr) : null;
+      rows.push([
+        row.empresa,
+        row.n1 ?? '',
+        '', // N vazio
+        baseMes != null && row.n1 ? pvPct(baseMes, row.n1) : '',
+        row.budget ?? '',
+        baseMes != null && row.budget ? pvPct(baseMes, row.budget) : '',
+        row.prevFecho ?? '',
+        row.myr ?? '',
+        row.acumN1 ?? '',
+        acumN ?? '',
+        acumN != null && row.acumN1 ? pvPct(acumN, row.acumN1) : '',
+        row.budgetAcm ?? '',
+        acumN != null && row.budgetAcm ? pvPct(acumN, row.budgetAcm) : '',
+      ]);
     });
-    writeXlsxDownload(rows, 'Previsao', `Previsao_Vendas_${ano}.xlsx`,
-      [{ wch: 22 }, { wch: 6 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 6 }]);
+    writeXlsxDownload(rows, 'Mapa', `Previsao_Vendas_${mesNome}_${ano}.xlsx`,
+      [{ wch: 28 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 10 },
+       { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }]);
     toast('⬇ Excel exportado.');
   } catch (e) {
     console.error('pvExportarExcel', e);
