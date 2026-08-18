@@ -15421,6 +15421,11 @@ function outlookGuessMime(filename) {
 const OUTLOOK_API_CACHE_KEY = 'delta_outlook_api_url';
 /** Windows/Edge: mailto > ~2000 chars falha → ecrã cinzento/em branco. */
 const MAILTO_MAX_LEN = 1800;
+/**
+ * Android/PWA Intent + ms-outlook aceitam URLs bem maiores.
+ * O limite de 1800 esvaziava chamados AT no tablet («Pedido Delta Foods»).
+ */
+const OUTLOOK_ANDROID_URI_MAX = 28000;
 /** Pacote Android da app Outlook (força abrir Outlook, sem chooser Chrome/Gmail). */
 const OUTLOOK_ANDROID_PACKAGE = 'com.microsoft.office.outlook';
 
@@ -15527,9 +15532,11 @@ function outlookAndroidMsComposeFromMailto(mailtoUrl) {
 function openMailtoSafely(mailtoUrl) {
   if (!mailtoUrl || !/^mailto:/i.test(mailtoUrl)) return false;
   const url = String(mailtoUrl);
-  if (url.length > MAILTO_MAX_LEN) return false;
+  const forceApp = outlookShouldForceOutlookApp();
+  const maxLen = forceApp ? OUTLOOK_ANDROID_URI_MAX : MAILTO_MAX_LEN;
+  if (url.length > maxLen) return false;
 
-  if (outlookShouldForceOutlookApp()) {
+  if (forceApp) {
     // 1) Deep link Outlook (iframe — não navega a PWA se o scheme falhar)
     const msUrl = outlookAndroidMsComposeFromMailto(url);
     if (msUrl) {
@@ -15563,6 +15570,27 @@ function openMailtoSafely(mailtoUrl) {
   } catch (_) {
     return false;
   }
+}
+
+/** Encaixa o corpo máximo possível no limite do mailto (mantém tabelas/texto AT). */
+function outlookFitBodyToMailto(bodyTxt, buildMailto, maxLen) {
+  const body = String(bodyTxt || '');
+  if (buildMailto(body).length <= maxLen) return body;
+  let lo = 0;
+  let hi = body.length;
+  let best = '';
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const candidate = body.slice(0, mid)
+      + (mid < body.length ? '\n\n[… continua — cola o texto completo se foi copiado]' : '');
+    if (buildMailto(candidate).length <= maxLen) {
+      best = candidate;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return best || body.slice(0, 300);
 }
 
 /** True em telemóvel/tablet (Android Galaxy, iPad, etc.). */
@@ -15648,8 +15676,8 @@ async function outlookDeliverExcelAttachments(attachments) {
 }
 
 /**
- * Abre Outlook via mailto e entrega o Excel para anexar.
- * Fluxo correcto em tablet/PWA (sem serve.ps1) — NÃO usa .eml.
+ * Abre Outlook via mailto/Intent e entrega o Excel para anexar.
+ * Tablet/PWA: corpo COMPLETO (tabelas AT, etc.) — NÃO esvaziar para «Pedido Delta Foods».
  */
 async function outlookOpenMailtoPlusExcel({
   to, ccVal, subject, html, attachments, mailtoFallback,
@@ -15679,16 +15707,30 @@ async function outlookOpenMailtoPlusExcel({
     '&subject=' + encodeURIComponent(subject || '') +
     '&body=' + encodeURIComponent(body);
 
-  let mailto = buildMailto(bodyTxt);
-  if (mailto.length > MAILTO_MAX_LEN) {
-    mailto = buildMailto(
-      hasExcel
-        ? 'Pedido Delta Foods.\n\nAnexa o ficheiro Excel descarregado a este email.\n\nCumprimentos.'
-        : 'Pedido Delta Foods.\n\nCumprimentos.'
-    );
+  const forceApp = typeof outlookShouldForceOutlookApp === 'function' && outlookShouldForceOutlookApp();
+  const maxLen = forceApp ? OUTLOOK_ANDROID_URI_MAX : MAILTO_MAX_LEN;
+
+  let bodyForMail = bodyTxt;
+  let mailto = buildMailto(bodyForMail);
+
+  if (mailto.length > maxLen) {
+    // Copiar texto completo (chamado AT com tabelas) para colar se precisar
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(bodyTxt);
+      }
+    } catch (_) {}
+    // Manter o máximo de conteúdo possível — NUNCA substituir por stub vazio
+    bodyForMail = outlookFitBodyToMailto(bodyTxt, buildMailto, maxLen);
+    mailto = buildMailto(bodyForMail);
   }
-  if (mailto.length > MAILTO_MAX_LEN) {
-    mailto = buildMailto(hasExcel ? 'Anexa o Excel descarregado.' : '');
+
+  // Desktop Windows sem espaço: só então mensagem curta (PC usa serve.ps1 / .eml em regra)
+  if (!forceApp && mailto.length > MAILTO_MAX_LEN) {
+    bodyForMail = hasExcel
+      ? 'Pedido Delta Foods.\n\nAnexa o ficheiro Excel descarregado a este email.\n\nCumprimentos.'
+      : (bodyTxt.slice(0, 600) || 'Pedido Delta Foods.\n\nCumprimentos.');
+    mailto = buildMailto(bodyForMail);
   }
 
   const opened = openMailtoSafely(mailto);

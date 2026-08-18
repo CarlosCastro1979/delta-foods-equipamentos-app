@@ -30,6 +30,7 @@ A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos,
    - `ms-outlook://emails/new?…` + Intent `package=com.microsoft.office.outlook`
    - Preferir `location.assign` / `location.href` (mais fiável que `<a>.click()` na PWA)
    - **Nunca** `mailto:` genérico no tablet → mostra «Abrir com» **Chrome / Gmail** e o Outlook muitas vezes **nem aparece** (mesmo instalado e como padrão)
+   - **Nunca** esvaziar o corpo para «Pedido Delta Foods» — chamados AT levam tabelas/texto completo (`OUTLOOK_ANDROID_URI_MAX`, não o limite PC de 1800)
 4. **Descarregar o Excel** para o utilizador anexar no Outlook.
 5. Toast: *Anexa o Excel descarregado ao email.*
 
