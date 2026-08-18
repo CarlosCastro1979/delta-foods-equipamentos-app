@@ -10035,8 +10035,8 @@ function pvSeedLinhas(ano, mes) {
   if (seed && Array.isArray(seed.linhas)) {
     return seed.linhas.map(r => ({ ...r, prevFecho: null, n: null, myr: null }));
   }
-  // 2026 Set→Dez: quadro montado à espera de N-1/Budget/Acum.
-  if (Number(ano) === 2026 && Number(mes) >= 8 && Number(mes) <= 11) {
+  // 2026 Out→Dez: quadro montado à espera de N-1/Budget/Acum. da imagem
+  if (Number(ano) === 2026 && Number(mes) >= 9 && Number(mes) <= 11) {
     return pvLinhasEstruturaVazia().map(r => ({ ...r, prevFecho: null, n: null, myr: null }));
   }
   return [];
