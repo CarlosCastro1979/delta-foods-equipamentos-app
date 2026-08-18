@@ -2586,12 +2586,16 @@ var _unused_placeholder = 1;
           <div class="ct-section-title" style="margin-top:20px">Anexo II — Bens a Título de Investimento</div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Preenche se aplicável.</div>
           <div id="ct_a2_table"></div>
-          <div class="ct-section-title" style="margin-top:20px">Testemunhas</div>
+          <div class="ct-section-title" style="margin-top:20px">Testemunhas (lado Delta Foods)</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
+            Fixas no contrato: <strong>Filipe Neves</strong> + <strong>vendedor do cliente</strong> (nome e CPF). Preenchido automaticamente.
+          </div>
+          <input type="hidden" id="ct_vendedor" value="">
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
-            <div><label class="ct-lbl">Testemunha 1 — Nome <span class="ct-req">*</span></label><input id="ct_t1_nome" class="form-input" placeholder="Nome completo"></div>
-            <div><label class="ct-lbl">CPF <span class="ct-req">*</span></label><input id="ct_t1_cpf" class="form-input" placeholder="000.000.000-00"></div>
-            <div><label class="ct-lbl">Testemunha 2 — Nome <span style="color:var(--muted);font-size:10px">(opcional)</span></label><input id="ct_t2_nome" class="form-input" placeholder="Nome completo"></div>
-            <div><label class="ct-lbl">CPF <span style="color:var(--muted);font-size:10px">(opcional)</span></label><input id="ct_t2_cpf" class="form-input" placeholder="000.000.000-00"></div>
+            <div><label class="ct-lbl">Testemunha 1 — Nome</label><input id="ct_t1_nome" class="form-input" readonly style="background:#f5f5f5;color:var(--muted)"></div>
+            <div><label class="ct-lbl">CPF</label><input id="ct_t1_cpf" class="form-input" readonly style="background:#f5f5f5;color:var(--muted)"></div>
+            <div><label class="ct-lbl">Testemunha 2 — Vendedor</label><input id="ct_t2_nome" class="form-input" readonly style="background:#f5f5f5;color:var(--muted)"></div>
+            <div><label class="ct-lbl">CPF</label><input id="ct_t2_cpf" class="form-input" readonly style="background:#f5f5f5;color:var(--muted)"></div>
           </div>
         </div>
 
@@ -23893,19 +23897,30 @@ async function ctBuscarCliente() {
           body: JSON.stringify({ cnpj: cnpjSAP })
         }).catch(()=>{});
       }
-      document.getElementById('ct_found_txt').textContent = (r.nome || clienteSAP?.nome || '') + (r.vendedor ? ' · ' + r.vendedor : '');
+      const vend = r.vendedor || clienteSAP?.vendedor || '';
+      const vendEl = document.getElementById('ct_vendedor');
+      if (vendEl) vendEl.value = vend;
+      document.getElementById('ct_found_txt').textContent = (r.nome || clienteSAP?.nome || '') + (vend ? ' · ' + vend : '');
       document.getElementById('ct_cliente_found').style.display = 'block';
+      ctAplicarTestemunhasDelta();
       showToast('Cliente encontrado: ' + r.nome, 'success');
     } else if (clienteSAP) {
       // Encontrado na lista SAP mas sem registo no Supabase
       document.getElementById('ct_empresa').value = clienteSAP.nome || '';
       document.getElementById('ct_cnpj').value = fmtCNPJ(cnpjSAP);
-      document.getElementById('ct_found_txt').textContent = clienteSAP.nome + ' · ' + clienteSAP.vendedor + ' (lista SAP)';
+      const vend = clienteSAP.vendedor || '';
+      const vendEl = document.getElementById('ct_vendedor');
+      if (vendEl) vendEl.value = vend;
+      document.getElementById('ct_found_txt').textContent = clienteSAP.nome + ' · ' + vend + ' (lista SAP)';
       document.getElementById('ct_cliente_found').style.display = 'block';
+      ctAplicarTestemunhasDelta();
       showToast('Cliente encontrado na lista SAP: ' + clienteSAP.nome, 'success');
     } else {
       showToast('Cliente não encontrado — preenche manualmente', 'error');
       document.getElementById('ct_cliente_found').style.display = 'none';
+      const vendEl = document.getElementById('ct_vendedor');
+      if (vendEl) vendEl.value = '';
+      ctAplicarTestemunhasDelta();
     }
   } catch(e) { showToast('Erro: ' + e.message, 'error'); }
 }
@@ -23929,6 +23944,7 @@ function ctGoto(step) {
   if (prev) prev.style.display = step > 1 ? '' : 'none';
   if (next) next.style.display = step < 4 ? '' : 'none';
   if (ger) ger.style.display = step === 4 ? '' : 'none';
+  if (step === 3 || step === 4) ctAplicarTestemunhasDelta();
   if (step === 4) ctBuildReview();
   if (step === 3) ctAutoExtenso();
 }
@@ -23939,6 +23955,91 @@ function ctNext() {
   ctGoto(ctCurrentStep + 1);
 }
 function ctPrev() { ctGoto(ctCurrentStep - 1); }
+
+/** Testemunhas Delta no final do contrato Horeca: Filipe + vendedor do cliente. */
+const CT_TESTEMUNHA_FILIPE = { nome: 'Filipe Neves', cpf: '123.423.841-14' };
+const CT_TESTEMUNHAS_VENDEDOR_CPF = [
+  { nome: 'Filipe Neves', cpf: '123.423.841-14', keys: ['filipe neves', 'filipe'] },
+  { nome: 'Hélcio Grégio', cpf: '129.337.468-75', keys: ['helcio gregio', 'helcio'] },
+  { nome: 'Paulo Fontes', cpf: '189.665.258-14', keys: ['paulo fontes', 'paulo'] },
+  // App usa «Daniela Santos»; no contrato legal: Daniela Silva
+  { nome: 'Daniela Silva', cpf: '324.143.528-84', keys: ['daniela silva', 'daniela santos', 'daniela'] },
+];
+
+function ctFmtCpfDigits(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  if (d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  return String(raw || '').trim();
+}
+
+function ctNormVendKey(nome) {
+  return String(nome || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function ctResolveTestemunhaVendedor(vendedorNome) {
+  const key = ctNormVendKey(vendedorNome);
+  if (!key) return null;
+  // Preferir match pelo nome completo; depois primeiro nome
+  for (const row of CT_TESTEMUNHAS_VENDEDOR_CPF) {
+    for (const k of row.keys) {
+      if (k.includes(' ') && (key === k || key.startsWith(k))) {
+        return { nome: row.nome, cpf: row.cpf };
+      }
+    }
+  }
+  for (const row of CT_TESTEMUNHAS_VENDEDOR_CPF) {
+    for (const k of row.keys) {
+      if (key === k || key.startsWith(k + ' ')) {
+        return { nome: row.nome, cpf: row.cpf };
+      }
+    }
+  }
+  return { nome: String(vendedorNome || '').trim(), cpf: '' };
+}
+
+/** Resolve vendedor do contrato: campo oculto → SAP → utilizador logado. */
+function ctResolveVendedorContrato() {
+  const fromField = (document.getElementById('ct_vendedor') || {}).value || '';
+  if (fromField.trim()) return fromField.trim();
+  const cod = (document.getElementById('ct_cod') || {}).value || '';
+  if (cod && typeof getListaClientesActiva === 'function') {
+    const normCod = v => String(v || '').trim().replace(/^0+/, '') || '0';
+    const cli = (getListaClientesActiva() || []).find(c => normCod(c.cod) === normCod(cod));
+    if (cli?.vendedor) return String(cli.vendedor).trim();
+  }
+  if (typeof getUtilizadorAtual === 'function') {
+    const u = getUtilizadorAtual();
+    if (u) return String(u).trim();
+  }
+  return '';
+}
+
+/** Preenche T1=Filipe Neves e T2=vendedor do cliente (nome + CPF). */
+function ctAplicarTestemunhasDelta() {
+  const t1Nome = document.getElementById('ct_t1_nome');
+  const t1Cpf = document.getElementById('ct_t1_cpf');
+  const t2Nome = document.getElementById('ct_t2_nome');
+  const t2Cpf = document.getElementById('ct_t2_cpf');
+  if (!t1Nome || !t1Cpf || !t2Nome || !t2Cpf) return;
+
+  t1Nome.value = CT_TESTEMUNHA_FILIPE.nome;
+  t1Cpf.value = CT_TESTEMUNHA_FILIPE.cpf;
+
+  const vend = ctResolveVendedorContrato();
+  const t2 = ctResolveTestemunhaVendedor(vend);
+  if (t2) {
+    t2Nome.value = t2.nome;
+    t2Cpf.value = t2.cpf ? ctFmtCpfDigits(t2.cpf) : '';
+  } else {
+    t2Nome.value = '';
+    t2Cpf.value = '';
+  }
+}
 
 function ctValidateStep(step) {
   const g = id => (document.getElementById(id) || {}).value || '';
@@ -23961,13 +24062,16 @@ function ctValidateStep(step) {
   if (step === 3) {
     const desc1 = document.getElementById('ct_a1_1_equip')?.value;
     if (!desc1) errs.push('Escolhe pelo menos 1 equipamento no Anexo I');
-    if (!g('ct_t1_nome')) errs.push('Nome Testemunha 1 obrigatorio');
-    if (!g('ct_t1_cpf')) errs.push('CPF Testemunha 1 obrigatorio');
+    ctAplicarTestemunhasDelta();
+    if (!g('ct_t1_nome') || !g('ct_t1_cpf')) errs.push('Testemunha Delta 1 (Filipe Neves) em falta');
+    if (!g('ct_t2_nome')) errs.push('Vendedor do cliente em falta para testemunha Delta 2 — pesquisa o código do cliente');
+    if (!g('ct_t2_cpf')) errs.push('CPF do vendedor (testemunha 2) em falta — confirma o vendedor do cliente');
   }
   return errs;
 }
 
 function ctBuildReview() {
+  ctAplicarTestemunhasDelta();
   const g = id => (document.getElementById(id) || {}).value || '';
   const un = g('ct_unidade');
   const qtd = g('ct_qtd_mes');
@@ -23980,6 +24084,7 @@ function ctBuildReview() {
   html += field('Empresa', g('ct_empresa'));
   html += field('Nº Contrato', g('ct_num_contrato'));
   html += field('CNPJ', g('ct_cnpj'));
+  html += field('Vendedor (testemunha 2)', g('ct_vendedor') || g('ct_t2_nome'));
   html += field('Representante', g('ct_rep_nome'));
   html += field('RG', g('ct_rep_rg'));
   html += field('CPF', g('ct_rep_cpf'));
@@ -23990,8 +24095,8 @@ function ctBuildReview() {
   html += field('Duracao', dur + ' meses (' + numToExtenso(parseInt(dur)||0) + ')');
   html += field('Prazo pagamento', g('ct_dias_num') + ' dias (' + numToExtenso(parseInt(g('ct_dias_num'))||0) + ')');
   html += field('Valor equipamentos', 'R$ ' + g('ct_valor_equip'));
-  html += field('Testemunha 1', g('ct_t1_nome') + ' / ' + g('ct_t1_cpf'));
-  if (g('ct_t2_nome')) html += field('Testemunha 2', g('ct_t2_nome') + ' / ' + g('ct_t2_cpf'));
+  html += field('Testemunha Delta 1', g('ct_t1_nome') + ' / ' + g('ct_t1_cpf'));
+  html += field('Testemunha Delta 2 (vendedor)', g('ct_t2_nome') + ' / ' + g('ct_t2_cpf'));
   html += '</div>';
 
   html += '<div style="font-size:13px;font-weight:700;color:var(--accent);margin:12px 0 6px">Anexo I</div>';
@@ -24017,6 +24122,9 @@ function ctGetData() {
   const total = ((parseInt(qtdMes)||0) * durNum).toLocaleString('pt-BR');
   const ano2 = String(now.getFullYear()).slice(2);
 
+  // Garantir testemunhas Delta actualizadas (Filipe + vendedor)
+  ctAplicarTestemunhasDelta();
+
   const data = {
     COMOD_EMPRESA: g('ct_empresa'),
     NUM_CONTRATO: g('ct_num_contrato'),
@@ -24038,10 +24146,11 @@ function ctGetData() {
     ASSINA_EMPRESA: g('ct_empresa'),
     ASSINA_NOME: g('ct_rep_nome'),
     ASSINA_CPF: g('ct_rep_cpf'),
-    TEST1_NOME: g('ct_t1_nome'),
-    TEST1_CPF: g('ct_t1_cpf'),
+    TEST1_NOME: g('ct_t1_nome') || CT_TESTEMUNHA_FILIPE.nome,
+    TEST1_CPF: g('ct_t1_cpf') || CT_TESTEMUNHA_FILIPE.cpf,
     TEST2_NOME: g('ct_t2_nome'),
     TEST2_CPF: g('ct_t2_cpf'),
+    VENDEDOR: g('ct_vendedor') || ctResolveVendedorContrato(),
   };
 
   for (let i = 1; i <= 8; i++) {
@@ -24337,7 +24446,7 @@ function ctBuildDocumentXml(d) {
   xml += ctPar(d.ASSINA_EMPRESA + ' — COMODATÁRIO', {sz:20, center:true});
   xml += ctPar(d.ASSINA_NOME + ' — CPF: ' + d.ASSINA_CPF, {sz:18, center:true});
   xml += ctPar('', {sz:22});
-  xml += ctPar('Testemunhas:', {bold:true, sz:22});
+  xml += ctPar('Testemunhas (lado Delta Foods):', {bold:true, sz:22});
   xml += ctPar('1. ' + d.TEST1_NOME + ' — CPF: ' + d.TEST1_CPF, {sz:22});
   xml += ctPar('2. ' + d.TEST2_NOME + ' — CPF: ' + d.TEST2_CPF, {sz:22});
   xml += ctPar('', {sz:22});
