@@ -1056,6 +1056,19 @@
     color: var(--muted); cursor: pointer; font-size: 11px; font-family: var(--font-main); padding: 4px 10px;
   }
   .user-pill-change:hover { color: var(--text); border-color: var(--border-strong); }
+  .email-pref-card { max-width: 460px; text-align: left; }
+  .email-pref-opt {
+    display: block; width: 100%; text-align: left; margin: 0 0 8px; padding: 12px 14px;
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+    cursor: pointer; font-family: var(--font-main); color: var(--text);
+  }
+  .email-pref-opt:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .email-pref-opt strong { display: block; font-size: 14px; margin-bottom: 2px; }
+  .email-pref-opt small { display: block; font-size: 12px; color: var(--muted); line-height: 1.35; }
+  .email-pref-home {
+    margin: 14px 0 0; font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap;
+    align-items: center; gap: 8px;
+  }
   .login-overlay {
     position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px);
     z-index: 3000; display: none; align-items: center; justify-content: center; padding: 20px;
@@ -1716,6 +1729,7 @@ var _unused_placeholder = 1;
     <div id="user-bar" class="user-pill" style="display:none">
       <span class="user-pill-label"><span class="user-pill-prefix">Utilizador:</span> <strong id="user-bar-name"></strong></span>
       <button type="button" class="user-pill-change" onclick="irHomeCanais()" title="Voltar ao menu inicial">Mudar</button>
+      <button type="button" class="user-pill-change" onclick="emailPrefAbrirPainel()" title="Como abrir emails no Outlook">Emails</button>
     </div>
   </div>
 </header>
@@ -1788,6 +1802,31 @@ var _unused_placeholder = 1;
   </div>
 </div>
 
+<div id="email-pref-overlay" class="login-overlay" style="display:none">
+  <div class="login-card email-pref-card">
+    <h2 class="login-title" style="text-align:center;">Como abrir emails?</h2>
+    <p class="login-desc" style="text-align:center;margin-bottom:16px;">
+      A escolha fica gravada neste PC ou tablet. Evita o erro do Outlook novo («ação ainda não é suportada»).
+    </p>
+    <button type="button" class="email-pref-opt" onclick="emailPrefEscolher('new')">
+      <strong>Outlook novo (recomendado no Windows)</strong>
+      <small>Abre o email via mailto. Anexos (Excel) descarregam para anexares. Não abre .eml automaticamente.</small>
+    </button>
+    <button type="button" class="email-pref-opt" onclick="emailPrefEscolher('classic')">
+      <strong>Outlook clássico</strong>
+      <small>Tenta abrir o rascunho completo com anexos (serve.ps1 ou .eml). Só se usas o Outlook antigo.</small>
+    </button>
+    <button type="button" class="email-pref-opt" onclick="emailPrefEscolher('tablet')">
+      <strong>Tablet / telemóvel</strong>
+      <small>Abre a app Outlook e descarrega o Excel para anexar. Sem .eml.</small>
+    </button>
+    <button type="button" class="email-pref-opt" onclick="emailPrefEscolher('download')">
+      <strong>Só descarregar ficheiros</strong>
+      <small>Grava .eml e Excel em Transferências, sem abrir o Outlook.</small>
+    </button>
+  </div>
+</div>
+
 <nav class="main-nav" id="main-nav">
   <div class="main-nav-inner">
     <button class="tab active" id="tab-registos" onclick="switchTab('registos')">Registo Clientes</button>
@@ -1832,6 +1871,11 @@ var _unused_placeholder = 1;
       <p id="home-trocar-user" style="margin:18px 0 0;font-size:12px;color:var(--muted);">
         Utilizador: <strong id="home-user-name">—</strong>
         · <button type="button" class="user-pill-change" style="margin-left:4px;" onclick="logoutUtilizador()">Trocar utilizador</button>
+      </p>
+      <p class="email-pref-home">
+        Emails:
+        <strong id="email-pref-home-label">—</strong>
+        · <button type="button" class="user-pill-change" onclick="emailPrefAbrirPainel()">Alterar</button>
       </p>
       <button type="button" class="home-at-card" id="home-at-card" onclick="abrirAreaTecnicaHome()">
         <span class="hd-icon">🔧</span>
@@ -14165,7 +14209,7 @@ Enviado via Delta Foods App`;
     toastMsg: '✅ Chamado registado — Outlook aberto com o pedido completo.',
     mailtoFallback: {
       body: corpo,
-      toastMsg: '✅ Chamado registado. Se o Outlook não abriu completo, usa o ficheiro .eml descarregado.',
+      toastMsg: '✅ Chamado registado. Email a abrir — anexa o Excel se foi descarregado.',
     },
   });
 }
@@ -16780,20 +16824,105 @@ const MAILTO_MAX_LEN = 1800;
 const OUTLOOK_ANDROID_URI_MAX = 28000;
 /** Pacote Android da app Outlook (força abrir Outlook, sem chooser Chrome/Gmail). */
 const OUTLOOK_ANDROID_PACKAGE = 'com.microsoft.office.outlook';
+const EMAIL_PREF_KEY = 'delta_email_open_mode';
+const EMAIL_PREF_MODES = ['new', 'classic', 'tablet', 'download'];
+const EMAIL_PREF_LABELS = {
+  new: 'Outlook novo (mailto + anexos)',
+  classic: 'Outlook clássico (.eml / serve.ps1)',
+  tablet: 'Tablet / telemóvel (app Outlook)',
+  download: 'Só descarregar ficheiros',
+};
+
+function outlookIsWindowsPc() {
+  const ua = String(navigator.userAgent || '').toLowerCase();
+  const plat = String(navigator.platform || '').toLowerCase();
+  return /windows nt|win64|wow64/.test(ua) || /^win(32|64)/.test(plat);
+}
 
 function outlookIsAndroid() {
   return /android/i.test(String(navigator.userAgent || ''));
 }
 
+function emailPrefGet() {
+  try {
+    const v = String(localStorage.getItem(EMAIL_PREF_KEY) || '').trim();
+    if (EMAIL_PREF_MODES.includes(v)) return v;
+  } catch (_) {}
+  return '';
+}
+
+function emailPrefSet(mode) {
+  if (!EMAIL_PREF_MODES.includes(mode)) return;
+  try { localStorage.setItem(EMAIL_PREF_KEY, mode); } catch (_) {}
+  if (typeof emailPrefSyncUi === 'function') emailPrefSyncUi();
+}
+
+/** Modo efectivo: preferência gravada, senão default seguro por plataforma. */
+function emailPrefResolvedMode() {
+  const saved = emailPrefGet();
+  if (saved) return saved;
+  if (outlookIsWindowsPc()) return 'new';
+  if (typeof outlookIsMobileClient === 'function' && outlookIsMobileClient()) return 'tablet';
+  if (typeof outlookIsStandaloneApp === 'function' && outlookIsStandaloneApp()) return 'tablet';
+  return 'new';
+}
+
+function emailPrefNeedsPrompt() {
+  if (emailPrefGet()) return false;
+  return outlookIsWindowsPc();
+}
+
+function emailPrefSyncUi() {
+  const el = document.getElementById('email-pref-home-label');
+  if (!el) return;
+  const mode = emailPrefGet() || emailPrefResolvedMode();
+  el.textContent = EMAIL_PREF_LABELS[mode] || mode;
+}
+
+function emailPrefFecharPainel() {
+  const ov = document.getElementById('email-pref-overlay');
+  if (!ov) return;
+  ov.classList.remove('open');
+  ov.style.display = 'none';
+}
+
+function emailPrefAbrirPainel() {
+  const ov = document.getElementById('email-pref-overlay');
+  if (!ov) return;
+  ov.style.display = 'flex';
+  ov.classList.add('open');
+}
+
+function emailPrefEscolher(mode) {
+  emailPrefSet(mode);
+  emailPrefFecharPainel();
+  if (typeof toast === 'function') {
+    toast('📧 Preferência de email gravada neste dispositivo.');
+  }
+}
+
+function emailPrefMaybePrompt() {
+  if (!emailPrefNeedsPrompt()) {
+    emailPrefSyncUi();
+    return;
+  }
+  const login = document.getElementById('login-overlay');
+  if (login && (login.classList.contains('open') || login.style.display === 'flex')) return;
+  emailPrefAbrirPainel();
+  emailPrefSyncUi();
+}
+
 /**
  * Galaxy Tab com teclado / «site para computador» manda UA de desktop (sem «Android»).
  * Nessas PWA o mailto genérico abre Chrome/Gmail — temos de forçar a app Outlook.
+ * NUNCA no Windows (PWA ou browser): ms-outlook:// dispara «ação ainda não é suportada» no Outlook novo.
  */
 function outlookShouldForceOutlookApp() {
+  if (outlookIsWindowsPc()) return false;
   if (outlookIsAndroid()) return true;
-  if (typeof outlookIsStandaloneApp === 'function' && outlookIsStandaloneApp()) return true;
   if (typeof outlookIsMobileClient === 'function' && outlookIsMobileClient()) return true;
-  // Tablet touch sem UA mobile (Samsung desktop mode)
+  if (typeof outlookIsStandaloneApp === 'function' && outlookIsStandaloneApp()) return true;
+  // Tablet touch sem UA mobile (Samsung desktop mode) — excluir Windows
   if ((navigator.maxTouchPoints || 0) > 1) {
     const ua = String(navigator.userAgent || '').toLowerCase();
     if (!/windows nt|wow64|win64/.test(ua)) return true;
@@ -16964,8 +17093,9 @@ function outlookIsStandaloneApp() {
   return window.navigator.standalone === true;
 }
 
-/** Tablet / PWA: sem serve.ps1 — mailto + Excel (não .eml). */
+/** Tablet / telemóvel: sem serve.ps1 — mailto + Excel (não .eml). Windows PWA NÃO conta. */
 function outlookIsTabletOrPwa() {
+  if (outlookIsWindowsPc()) return false;
   return outlookIsMobileClient() || outlookIsStandaloneApp();
 }
 
@@ -17093,11 +17223,36 @@ async function outlookOpenMailtoPlusExcel({
 /**
  * Abre .eml no Outlook (PC Windows / browser desktop).
  * Em tablet/PWA NÃO usar — preferir mailto + Excel.
+ * Outlook novo: NÃO usar window.open — dispara «ação ainda não é suportada».
  * Devolve: 'opened' | 'downloaded' | false
  */
-async function outlookOpenEmlClient(eml, fileName) {
+async function outlookOpenEmlClient(eml, fileName, { downloadOnly = false } = {}) {
   const name = fileName || 'Delta_rascunho_Outlook.eml';
   const file = new File([eml], name, { type: 'message/rfc822' });
+
+  if (downloadOnly) {
+    try {
+      const blob = new Blob([eml], { type: 'message/rfc822' });
+      if (typeof triggerBlobDownload === 'function') {
+        triggerBlobDownload(blob, name);
+        return 'downloaded';
+      }
+    } catch (_) {}
+    try {
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
+      return 'downloaded';
+    } catch (_) {
+      return false;
+    }
+  }
 
   try {
     if (navigator.msSaveOrOpenBlob) {
@@ -17286,9 +17441,11 @@ ${esc(texto).replace(/\n/g, '<br>')}
 
 /**
  * Abre rascunho no Outlook com corpo HTML e anexos.
- * Só status 204 da API local conta como sucesso (serve.ps1).
- * Tablet/PWA sem API: mailto + Excel para anexar (fluxo antigo — NÃO .eml).
- * PC sem API: .eml com anexos, ou mailto + Excel.
+ * Preferência gravada (localStorage delta_email_open_mode):
+ *   new (default Windows) → mailto + Excel, sem abrir .eml (Outlook novo)
+ *   classic → serve.ps1 / .eml (Outlook clássico)
+ *   tablet → app Outlook + Excel
+ *   download → só ficheiros
  */
 async function outlookAbrirRascunho({
   to, cc, subject, html, attachments = [],
@@ -17310,20 +17467,24 @@ async function outlookAbrirRascunho({
   }
   const hasAttachments = (attachments || []).some(a => a && a.blob);
   const isMobile = typeof outlookIsMobileClient === 'function' && outlookIsMobileClient();
-  const isTabletPwa = typeof outlookIsTabletOrPwa === 'function' && outlookIsTabletOrPwa();
+  const mode = typeof emailPrefResolvedMode === 'function' ? emailPrefResolvedMode() : 'new';
+  const useTabletPath = mode === 'tablet'
+    || (mode !== 'classic' && mode !== 'download' && typeof outlookIsTabletOrPwa === 'function' && outlookIsTabletOrPwa());
 
-  // Tablet / PWA: mailto + Excel para anexar (como antes — sem .eml)
-  if (isTabletPwa && to) {
+  const mailtoToast = () => toast(
+    (mailtoFallback && mailtoFallback.toastMsg)
+    || (hasAttachments
+      ? '📧 Email a abrir. Anexa o Excel descarregado ao email.'
+      : '📧 Email a abrir.')
+  );
+
+  // Tablet / telemóvel: mailto + Excel (NUNCA .eml nem ms-outlook no Windows)
+  if (useTabletPath && to && mode !== 'download') {
     const result = await outlookOpenMailtoPlusExcel({
       to, ccVal, subject, html, attachments, mailtoFallback,
     });
     if (result && (result.opened || result.excelStatus)) {
-      toast(
-        (mailtoFallback && mailtoFallback.toastMsg)
-        || (hasAttachments
-          ? '📧 Outlook a abrir. Anexa o Excel descarregado ao email.'
-          : '📧 Outlook a abrir.')
-      );
+      mailtoToast();
       return true;
     }
     if (hasAttachments) {
@@ -17366,10 +17527,11 @@ async function outlookAbrirRascunho({
   }
   parts.push(`--${boundary}--`, '');
   const eml = parts.join('\r\n');
+  const fileName = draftName || 'Delta_rascunho_Outlook.eml';
 
-  // Windows + serve.ps1 (saltar probe lento em tablets — não há localhost bridge)
+  // Só Outlook clássico: serve.ps1 (ShellExecute .eml) — no Outlook novo isto dá «ação não suportada»
   let openedEp = null;
-  if (!isMobile) {
+  if (mode === 'classic' && !isMobile) {
     const live = await outlookFindLiveApi();
     if (live) openedEp = await outlookPostDraft(live, eml);
     if (!openedEp) {
@@ -17387,30 +17549,34 @@ async function outlookAbrirRascunho({
   }
   try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
-  // PC desktop sem serve.ps1: abrir .eml (leva HTML + anexos)
-  const fileName = draftName || 'Delta_rascunho_Outlook.eml';
-  const openedEml = await outlookOpenEmlClient(eml, fileName);
-  if (openedEml === 'opened') {
-    toast(toastMsg || '📧 Outlook a abrir com email e anexos.');
-    return true;
+  if (mode === 'classic') {
+    const openedEml = await outlookOpenEmlClient(eml, fileName);
+    if (openedEml === 'opened') {
+      toast(toastMsg || '📧 Outlook a abrir com email e anexos.');
+      return true;
+    }
+    if (openedEml === 'downloaded') {
+      toast('📧 Ficheiro .eml descarregado — abre-o no Outlook clássico (já leva o anexo).', 'warn');
+      return true;
+    }
   }
-  if (openedEml === 'downloaded') {
-    toast('📧 Ficheiro .eml descarregado — abre-o no Outlook (já leva o anexo).', 'warn');
+
+  if (mode === 'download') {
+    if (hasAttachments) {
+      try { await outlookDeliverExcelAttachments(attachments); } catch (_) {}
+    }
+    outlookDownloadEml(eml, fileName);
+    toast('📧 Ficheiros descarregados (.eml' + (hasAttachments ? ' + Excel' : '') + '). Abre-os no Outlook se precisares.', 'warn');
     return true;
   }
 
-  // Fallback PC: mailto (+ Excel se houver)
+  // Outlook novo / default Windows: mailto + Excel. NÃO abrir .eml (erro «ação não suportada»).
   if (to) {
     const result = await outlookOpenMailtoPlusExcel({
       to, ccVal, subject, html, attachments, mailtoFallback,
     });
     if (result && (result.opened || result.excelStatus)) {
-      toast(
-        (mailtoFallback && mailtoFallback.toastMsg)
-        || (hasAttachments
-          ? '📧 Outlook a abrir. Anexa o Excel descarregado ao email.'
-          : '📧 Outlook a abrir.')
-      );
+      mailtoToast();
       return true;
     }
   }
@@ -17420,9 +17586,10 @@ async function outlookAbrirRascunho({
       try { triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx'); } catch (_) {}
     }
   }
-  outlookDownloadEml(eml, fileName);
   toast(
-    '📧 Ficheiro .eml descarregado — abre-o no Outlook (já vai com anexo).',
+    hasAttachments
+      ? '📧 Excel descarregado — abre o Outlook e anexa o ficheiro ao email.'
+      : '📧 Abre o Outlook e cria o email manualmente se não abriu.',
     'warn'
   );
   return false;
@@ -17577,6 +17744,9 @@ function aplicarUtilizador(nome) {
   // Barra de utilizador
   const bar = document.getElementById('user-bar');
   if (bar) { bar.style.display = 'inline-flex'; document.getElementById('user-bar-name').textContent = nome; }
+  if (typeof emailPrefMaybePrompt === 'function') {
+    try { emailPrefMaybePrompt(); } catch (_) {}
+  }
   const homeName = document.getElementById('home-user-name');
   if (homeName) homeName.textContent = nome || '—';
   // Reaplicar selects de vendedor com escopo Horeca (só o próprio / disabled)
@@ -25132,6 +25302,9 @@ async function exportATHistoricoExcel() {
 window.addEventListener('DOMContentLoaded', async () => {
   initLogin();
   voltarHome(); // abre na seleção de canais (+ Dados)
+  if (typeof emailPrefMaybePrompt === 'function') {
+    try { emailPrefMaybePrompt(); } catch (_) {}
+  }
   try { await carregarListaClientesLocalAsync(); } catch (_) {}
   await sincronizarListaClientes();
   try { await sincronizarListaContencioso(); } catch (_) {}
