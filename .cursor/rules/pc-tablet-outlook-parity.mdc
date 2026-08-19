@@ -9,22 +9,21 @@ A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos,
 
 **Validado em produção (Galaxy S9 / teclado, Ago 2026):** abrir só o Outlook na PWA, sem diálogo Chrome/Gmail.
 
+**Sem seletor de preferências.** Detectar PC vs tablet automaticamente. Não mostrar dropdown «Emails» nem gravar `delta_email_open_mode`.
+
 ## Ambientes
 
 | Ambiente | Como usam | Bridge local |
 |---|---|---|
-| **PC Windows** | Browser ou atalho; Outlook desktop | `serve.ps1` / `Iniciar-Delta-Foods.bat` / abertura automática |
+| **PC Windows** | Browser ou atalho; Outlook **clássico** | `serve.ps1` / `Iniciar-Delta-Foods.bat` / abertura automática |
 | **Tablet Android (Galaxy)** | App instalada (**PWA** standalone), **não** o Chrome | Não há `serve.ps1` nem localhost |
 
 ## Fluxos obrigatórios (não misturar)
 
 ### PC Windows (browser **ou** PWA instalada — `display-mode: standalone` no Windows **não** é tablet)
-1. Preferência gravada (`localStorage` `delta_email_open_mode`):
-   - **`new`** (default no Windows / Outlook novo): `mailto:` + descarregar Excel. **Nunca** abrir `.eml` nem `ms-outlook://` — o Outlook novo responde «Esta ação ainda não é suportada».
-   - **`classic`**: API `POST /api/open-outlook-draft` (`serve.ps1`) → Outlook clássico com HTML + anexos; senão abrir `.eml`.
-   - **`download`**: só gravar `.eml` + Excel.
-2. `outlookShouldForceOutlookApp()` e `outlookIsTabletOrPwa()` **devem devolver false no Windows**, mesmo em PWA standalone.
-3. Sem preferência no Windows: tratar como Outlook novo (mailto), e mostrar o painel «Como abrir emails?».
+1. Sempre Outlook **clássico**: `POST /api/open-outlook-draft` (`serve.ps1`) lança `outlook.exe` com o `.eml` (HTML + anexos). **Não** usar o default do SO no `.eml` — o Outlook novo responde «Esta ação ainda não é suportada».
+2. Sem ponte: tentar abrir `.eml`; último recurso mailto + Excel.
+3. `outlookShouldForceOutlookApp()` e `outlookIsTabletOrPwa()` **devem devolver false no Windows**, mesmo em PWA standalone e mesmo com `maxTouchPoints` (Surface = PC).
 
 ### Tablet / PWA Android (fluxo correcto — NÃO alterar sem validar nos dois)
 1. **Nunca** depender de `serve.ps1` / `127.0.0.1`.
@@ -37,24 +36,21 @@ A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos,
 4. **Descarregar o Excel** para o utilizador anexar no Outlook.
 5. Toast: *Anexa o Excel descarregado ao email.*
 
-## Armadilha crítica (já nos custou tempo)
+## Deteção (não simplificar)
 
-Galaxy Tab **com teclado** / «site para computador» manda **User-Agent de desktop** (`Linux x86_64`, **sem** a palavra `Android`).
-
-- Se o código só fizer `/android/i.test(ua)`, trata o tablet como PC → `mailto:` → Chrome/Gmail.
-- Usar **sempre** `outlookShouldForceOutlookApp()` no **tablet** (PWA standalone + touch + Linux sem Windows + Android).
-- **Nunca** forçar `ms-outlook://` / Intent Android num PC Windows (PWA ou browser) — Outlook novo recusa a acção.
-- `outlookIsMobileClient()` também deteta touch + Linux desktop, mas **exclui Windows**.
-
-**Não remover nem «simplificar» esta detecção.**
+- **PC:** Windows no UA / platform / `userAgentData.platform` — incluindo PWA standalone e ecrã táctil.
+- **Tablet/phone:** `Android`/`iPhone`/`iPad` no UA; iPadOS = Macintosh + touch; Galaxy Tab teclado = Linux + touch **sem** Windows.
+- **Nunca** tratar `maxTouchPoints` sozinho como tablet (portáteis Surface).
+- Galaxy Tab **com teclado** / «site para computador» manda **User-Agent de desktop** (`Linux x86_64`, **sem** a palavra `Android`). Sem a detecção Linux+touch, o tablet cai no fluxo PC.
+- **Nunca** forçar `ms-outlook://` / Intent Android num PC Windows.
 
 ## Funções de referência (`index.html`)
 
+- `outlookIsWindowsPc()` — Windows = sempre PC
 - `outlookShouldForceOutlookApp()` — porta de entrada no **tablet**; no Windows devolve sempre false
-- `emailPrefResolvedMode()` / `delta_email_open_mode` — preferência persistida
-- `openMailtoSafely()` — força Outlook na PWA Android; mailto no PC Windows
+- `openMailtoSafely()` — força Outlook na PWA Android; mailto só como fallback no PC
 - `outlookOpenMailtoPlusExcel()` / `outlookDeliverExcelAttachments()`
-- `outlookAbrirRascunho()` — honra a preferência; no Outlook novo não abre `.eml`
+- `outlookAbrirRascunho()` — PC clássico vs tablet app, sem preferências
 - Constante: `OUTLOOK_ANDROID_PACKAGE = 'com.microsoft.office.outlook'`
 
 ## Regras ao alterar código
@@ -63,15 +59,13 @@ Galaxy Tab **com teclado** / «site para computador» manda **User-Agent de desk
 2. Passar sempre `mailtoFallback` (corpo curto + toast) quando há anexos.
 3. Não “corrigir” o tablet com Web Share de `.eml`.
 4. Não assumir `window.open(blob)` na PWA standalone.
-5. Manter o ramo PC clássico (`serve.ps1` / `.eml`) **só** quando a preferência for `classic`.
-6. Mensagens: tablet → anexa Excel; PC Outlook novo → mailto + anexa Excel; PC clássico → `Instalar-Abertura-Automatica-Outlook.bat` / `serve.ps1`.
+5. PC: `serve.ps1` lança **outlook.exe clássico**, não o handler default do `.eml`.
+6. Mensagens: tablet → anexa Excel; PC clássico → `Instalar-Abertura-Automatica-Outlook.bat` / `serve.ps1`.
 7. Regressão tablet = diálogo «Abrir com» Chrome/Gmail → repor força Outlook.
-8. Regressão PC Outlook novo = «Esta ação ainda não é suportada» → não abrir `.eml` nem `ms-outlook://`.
+8. Não reintroduzir o painel «Como abrir emails?» / dropdown de preferências.
 
 ## Critério de aceite
 
-- **PC Outlook novo:** email abre (mailto) **sem** o diálogo «ação ainda não é suportada»; Excel descarrega para anexar.
-- **PC Outlook clássico** (preferência `classic` + bridge): Outlook abre com Excel já em anexo.
+- **PC:** Outlook clássico abre com HTML + anexos (via ponte). Sem pergunta ao utilizador.
 - **Tablet PWA:** Outlook abre **directamente** (sem Chrome/Gmail) + Excel descarregado para anexar.
-- Preferência gravada no dispositivo (não perguntar sempre).
 - Mesmo botão / mesmo pedido (MC00, AT, cadastro, contratos, etc.) nos dois.

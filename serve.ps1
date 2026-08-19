@@ -149,11 +149,37 @@ function Activate-OutlookForeground {
     return $false
 }
 
+function Get-ClassicOutlookExe {
+    # Nunca olk.exe (Outlook novo) — o default do Windows pode ser o novo e recusa .eml.
+    $fromAppPaths = $null
+    try {
+        $fromAppPaths = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\OUTLOOK.EXE' -ErrorAction Stop).'(default)'
+    } catch { }
+    $candidates = @(
+        $fromAppPaths,
+        "$env:ProgramFiles\Microsoft Office\root\Office16\OUTLOOK.EXE",
+        "${env:ProgramFiles(x86)}\Microsoft Office\root\Office16\OUTLOOK.EXE",
+        "$env:ProgramFiles\Microsoft Office\Office16\OUTLOOK.EXE",
+        "${env:ProgramFiles(x86)}\Microsoft Office\Office16\OUTLOOK.EXE",
+        "$env:ProgramFiles\Microsoft Office\root\Office15\OUTLOOK.EXE",
+        "${env:ProgramFiles(x86)}\Microsoft Office\root\Office15\OUTLOOK.EXE"
+    )
+    foreach ($p in $candidates) {
+        if ($p -and (Test-Path -LiteralPath $p)) { return $p }
+    }
+    $cmd = Get-Command outlook.exe -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source -and (Test-Path -LiteralPath $cmd.Source) -and ($cmd.Source -notmatch '(?i)olk')) {
+        return $cmd.Source
+    }
+    return $null
+}
+
 function Start-EmlDraft([string]$emlPath) {
     # IMPORTANTE: NÃO fazer New-Object Outlook.Application aqui.
     # Cold-start do Outlook via COM pode demorar >2–10s e o browser aborta o POST
-    # (timeout) → cai no mailto e fica ecrã cinzento. ShellExecute do .eml é imediato;
-    # o COM só se usa depois (Complete-EmlDraftFocus) para trazer a janela à frente.
+    # (timeout) → cai no mailto e fica ecrã cinzento.
+    # Abrir com outlook.exe (clássico) — ShellExecute no .eml usa o default do SO
+    # (Outlook novo → «Esta ação ainda não é suportada»).
     $before = 0
     $outlook = $null
     try {
@@ -161,8 +187,15 @@ function Start-EmlDraft([string]$emlPath) {
         $before = Get-OutlookInspectorCount $outlook
     } catch { }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $emlPath
-    $psi.UseShellExecute = $true
+    $classic = Get-ClassicOutlookExe
+    if ($classic) {
+        $psi.FileName = $classic
+        $psi.Arguments = "`"$emlPath`""
+        $psi.UseShellExecute = $false
+    } else {
+        $psi.FileName = $emlPath
+        $psi.UseShellExecute = $true
+    }
     [void][System.Diagnostics.Process]::Start($psi)
     return @{ Before = $before; Outlook = $outlook }
 }
