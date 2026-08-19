@@ -10598,22 +10598,19 @@ function pvMergeSeedIntoLinhas(linhas, ano, mes) {
     STATIC.forEach(k => {
       if ((out[k] == null || out[k] === '') && s[k] != null && s[k] !== '') out[k] = s[k];
     });
-    // Fecho/previsão do seed (mês fechado) se ainda vazios no browser
-    if ((out.n == null || out.n === '') && s.n != null) out.n = s.n;
-    if ((out.prevFecho == null || out.prevFecho === '') && s.prevFecho != null) out.prevFecho = s.prevFecho;
-    // Forçar refresh de Julho: se seed tem n e local tem n mas seed é mais completo nos canais — 
-    // atualizar campos estáticos sempre a partir do seed (não o MYR)
+    // Sempre refrescar a partir do seed (valores de produção / publicados)
     ['n1', 'nMes', 'budget', 'acumN1', 'acumNYtd', 'budgetAcm'].forEach(k => {
       if (s[k] != null && s[k] !== '') out[k] = s[k];
     });
-    if (s.n != null) out.n = s.n;
-    if (s.prevFecho != null) out.prevFecho = s.prevFecho;
+    if (s.n != null && s.n !== '') out.n = s.n;
+    if (s.prevFecho != null && s.prevFecho !== '') out.prevFecho = s.prevFecho;
+    if (s.myr != null && s.myr !== '') out.myr = s.myr;
     return out;
   });
   // garantir ordem/ids do seed
   const have = new Set(merged.map(r => r.id));
   seedLinhas.forEach(s => {
-    if (!have.has(s.id)) merged.push({ ...s, myr: null });
+    if (!have.has(s.id)) merged.push({ ...s, myr: s.myr ?? null });
   });
   const order = seedLinhas.map(s => s.id);
   merged.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
