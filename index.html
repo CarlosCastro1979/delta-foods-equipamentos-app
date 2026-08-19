@@ -3496,13 +3496,14 @@ var _unused_placeholder = 1;
         <div>
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Área Financeira</h2>
-          <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">Vista consolidada (todos os canais) — encerramentos, contencioso e dívida sem compras.</p>
+          <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">Vista consolidada (todos os canais) — encerramentos, contencioso, dívida sem compras e documento Quebra.</p>
         </div>
       </div>
       <div class="sub-nav" style="margin-bottom:16px;">
         <button type="button" class="sub-tab active" id="af-tab-enc" onclick="showAreaFinanceira('encerramentos')">Encerramentos pendentes</button>
         <button type="button" class="sub-tab" id="af-tab-cont" onclick="showAreaFinanceira('contencioso')">Contencioso</button>
         <button type="button" class="sub-tab" id="af-tab-div" onclick="showAreaFinanceira('divida-sem-compras')">Dívida + sem compras ≥ 3m</button>
+        <button type="button" class="sub-tab" id="af-tab-quebra" onclick="showAreaFinanceira('quebra')">Criar documento Quebra</button>
       </div>
       <div id="af-sec-encerramentos">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
@@ -3549,6 +3550,68 @@ var _unused_placeholder = 1;
         </div>
         <div id="af-dsc-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
         <div id="af-dsc-content"><div style="color:var(--muted);font-size:13px;padding:20px 0;">A carregar…</div></div>
+      </div>
+      <div id="af-sec-quebra" style="display:none;">
+        <div class="form-card" style="max-width:920px;">
+          <h3 style="font-size:16px;font-weight:600;margin:0 0 4px;">Criar documento Quebra</h3>
+          <p style="font-size:12px;color:var(--muted);margin:0 0 16px;line-height:1.45;">
+            Carrega a <strong>fatura PDF (NF-e / DANFE)</strong> e gera o <strong>Formulário de Quebras</strong> (MR 1063.00)
+            no layout oficial — versões Delta Foods (GN52) e Qbrasil (GN53).
+          </p>
+          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Empresa *</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+            <button type="button" class="sub-tab" id="af-qb-emp-delta" onclick="quebraSetEmpresa('delta')">Delta Foods</button>
+            <button type="button" class="sub-tab active" id="af-qb-emp-qbrasil" onclick="quebraSetEmpresa('qbrasil')">Qbrasil</button>
+          </div>
+          <p id="af-qb-emp-hint" style="font-size:11px;color:var(--muted);margin:0 0 16px;line-height:1.4;">
+            Qbrasil (GN53 / QBSP / depósito 0099 / centro 4303010107) — formulário oficial. Delta Foods usa DFSP / GN52 / depósito 0009 / o mesmo centro.
+          </p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;">
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Departamento</label>
+              <input type="text" id="af-qb-dept" class="form-input" style="width:100%;font-size:13px;" maxlength="12" autocomplete="off">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Empresa (SAP)</label>
+              <input type="text" id="af-qb-empresa" class="form-input" style="width:100%;font-size:13px;" maxlength="12" autocomplete="off">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Centro de custo</label>
+              <input type="text" id="af-qb-ccusto" class="form-input" style="width:100%;font-size:13px;" inputmode="numeric" autocomplete="off">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Depósito</label>
+              <input type="text" id="af-qb-deposito" class="form-input" style="width:100%;font-size:13px;" maxlength="8" autocomplete="off">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Data do formulário</label>
+              <input type="date" id="af-qb-data" class="form-input" style="width:100%;font-size:13px;">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Motivo padrão</label>
+              <select id="af-qb-motivo" class="form-input" style="width:100%;font-size:13px;" onchange="quebraApplyMotivoPadrao()">
+                <option value="1">1 — Danificado em armazém</option>
+                <option value="2">2 — Danificado na distribuição</option>
+                <option value="3">3 — Danificado na receção</option>
+                <option value="4" selected>4 — Validade expirada</option>
+                <option value="5">5 — Outros</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px;">
+            <label class="btn btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:36px;">
+              📁 Selecionar PDF da fatura
+              <input type="file" id="af-qb-pdf-input" accept="application/pdf,.pdf" style="display:none" onchange="quebraOnPdf(event)">
+            </label>
+            <span id="af-qb-pdf-name" style="font-size:13px;color:var(--muted);">Nenhum PDF seleccionado.</span>
+          </div>
+          <div id="af-qb-nfe-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
+          <div id="af-qb-preview"></div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;">
+            <button type="button" class="btn btn-primary" id="af-qb-btn-gerar" onclick="quebraGerarExcel()" disabled>⬇ Gerar Excel Quebra</button>
+          </div>
+          <div id="af-qb-status" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -24358,6 +24421,7 @@ function showAreaFinanceira(sub) {
     encerramentos: 'af-sec-encerramentos',
     contencioso: 'af-sec-contencioso',
     'divida-sem-compras': 'af-sec-divida-sem-compras',
+    quebra: 'af-sec-quebra',
   };
   Object.values(map).forEach(id => {
     const el = document.getElementById(id);
@@ -24369,9 +24433,11 @@ function showAreaFinanceira(sub) {
   document.getElementById('af-tab-enc')?.classList.toggle('active', _afSubActiva === 'encerramentos');
   document.getElementById('af-tab-cont')?.classList.toggle('active', _afSubActiva === 'contencioso');
   document.getElementById('af-tab-div')?.classList.toggle('active', _afSubActiva === 'divida-sem-compras');
+  document.getElementById('af-tab-quebra')?.classList.toggle('active', _afSubActiva === 'quebra');
   if (_afSubActiva === 'encerramentos') loadAfEncerramentos();
   else if (_afSubActiva === 'contencioso') loadAfContencioso();
-  else loadAfDividaSemCompras();
+  else if (_afSubActiva === 'divida-sem-compras') loadAfDividaSemCompras();
+  else if (_afSubActiva === 'quebra') quebraInitPanel();
 }
 
 async function loadAfEncerramentos() {
@@ -24939,6 +25005,770 @@ window.afDscLimparFiltro = afDscLimparFiltro;
 window.showAfDscSub = showAfDscSub;
 window.afDscOnObsInput = afDscOnObsInput;
 window.showAreaFinanceira = showAreaFinanceira;
+
+// ─── Documento Quebra (Área Financeira) ─────────────────
+const QUEBRA_ITEM_ROW_START = 15;
+const QUEBRA_ITEM_TPL_END = 39;
+const QUEBRA_ITEM_PROTO_ROW = 23;
+const QUEBRA_FOOTER_START = 40;
+const QUEBRA_OBS_ROW = 51;
+const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDFJS_WORKER_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const QUEBRA_EMPRESAS = {
+  qbrasil: {
+    id: 'qbrasil',
+    label: 'Qbrasil',
+    departamento: 'QBSP',
+    empresa: 'GN53',
+    centroCusto: '4303010107',
+    deposito: '0099',
+    nome: 'Q-BRASIL IMP.E DIST.MAQUINAS E ALIM',
+    cnpj: '11.344.359/0005-26',
+  },
+  delta: {
+    id: 'delta',
+    label: 'Delta Foods',
+    departamento: 'DFSP',
+    empresa: 'GN52',
+    centroCusto: '4303010107',
+    deposito: '0009',
+    nome: 'DELTA FOODS BRASIL COMÉRCIO E IMPORTAÇÃO DE ALIMENTOS LTDA',
+    cnpj: '',
+  },
+};
+const QUEBRA_MOTIVOS = {
+  1: 'Danificado em armazém',
+  2: 'Danificado na distribuição',
+  3: 'Danificado na receção',
+  4: 'Validade expirada',
+  5: 'Outros',
+};
+
+let _quebraEmpresa = 'qbrasil';
+let _quebraPdfFile = null;
+let _quebraNfe = null;
+let _quebraPdfJsPromise = null;
+let _quebraTemplateBuf = null;
+
+function quebraInitPanel() {
+  if (!document.getElementById('af-qb-dept')?.value) quebraSetEmpresa(_quebraEmpresa || 'qbrasil');
+  const dataEl = document.getElementById('af-qb-data');
+  if (dataEl && !dataEl.value) {
+    const d = new Date();
+    dataEl.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+}
+
+function quebraSetEmpresa(id) {
+  const cfg = QUEBRA_EMPRESAS[id] || QUEBRA_EMPRESAS.qbrasil;
+  _quebraEmpresa = cfg.id;
+  document.getElementById('af-qb-emp-delta')?.classList.toggle('active', cfg.id === 'delta');
+  document.getElementById('af-qb-emp-qbrasil')?.classList.toggle('active', cfg.id === 'qbrasil');
+  const set = (elId, val) => { const el = document.getElementById(elId); if (el) el.value = val; };
+  set('af-qb-dept', cfg.departamento);
+  set('af-qb-empresa', cfg.empresa);
+  set('af-qb-ccusto', cfg.centroCusto);
+  set('af-qb-deposito', cfg.deposito);
+  const hint = document.getElementById('af-qb-emp-hint');
+  if (hint) {
+    hint.textContent = cfg.id === 'qbrasil'
+      ? 'Qbrasil (GN53 / QBSP / depósito 0099 / centro 4303010107) — formulário oficial. Delta Foods usa DFSP / GN52 / depósito 0009 / o mesmo centro.'
+      : 'Delta Foods (GN52 / DFSP / depósito 0009 / centro 4303010107) — copiado do formulário oficial DFSP. Podes alterar o depósito se a NF for doutro armazém.';
+  }
+  quebraRenderPreview();
+}
+
+function quebraBrNum(s) {
+  const t = String(s || '').trim().replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(t);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function quebraFmtCnpj(d) {
+  const x = String(d || '').replace(/\D/g, '');
+  if (x.length !== 14) return String(d || '');
+  return `${x.slice(0, 2)}.${x.slice(2, 5)}.${x.slice(5, 8)}/${x.slice(8, 12)}-${x.slice(12)}`;
+}
+
+function quebraDecodeChave(chave) {
+  const k = String(chave || '').replace(/\D/g, '');
+  if (k.length !== 44) return null;
+  return {
+    chave: k,
+    uf: k.slice(0, 2),
+    aamm: k.slice(2, 6),
+    cnpj: k.slice(6, 20),
+    modelo: k.slice(20, 22),
+    serie: String(parseInt(k.slice(22, 25), 10) || 1),
+    numero: String(parseInt(k.slice(25, 34), 10) || 0),
+  };
+}
+
+async function ensurePdfJs() {
+  if (window.pdfjsLib) {
+    if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN;
+    }
+    return;
+  }
+  if (!_quebraPdfJsPromise) {
+    _quebraPdfJsPromise = new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = PDFJS_CDN;
+      s.onload = res;
+      s.onerror = () => rej(new Error('Não foi possível carregar pdf.js (CDN).'));
+      document.head.appendChild(s);
+    });
+  }
+  await _quebraPdfJsPromise;
+  if (window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN;
+}
+
+async function quebraPdfToText(file) {
+  await ensurePdfJs();
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  const lines = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const tc = await page.getTextContent({ disableCombineTextItems: true });
+    let lastY = null;
+    let bufLine = [];
+    const flush = () => {
+      const s = bufLine.join('').replace(/[ \t]+/g, ' ').trim();
+      if (s) lines.push(s);
+      bufLine = [];
+    };
+    for (const it of tc.items) {
+      const y = Math.round((it.transform && it.transform[5]) || 0);
+      if (lastY != null && Math.abs(y - lastY) > 3) flush();
+      const str = it.str || '';
+      if (!str) continue;
+      if (bufLine.length && !/\s$/.test(bufLine[bufLine.length - 1]) && !/^\s/.test(str)) bufLine.push(' ');
+      bufLine.push(str);
+      lastY = y;
+    }
+    flush();
+    lines.push('');
+  }
+  return quebraSplitInfAdProd(lines.join('\n'));
+}
+
+/** DANFE infAdProd: pdf.js often glues Lote=/Qtd=/dtVal= (TJ offsets too small to count as spaces). */
+function quebraSplitInfAdProd(text) {
+  return String(text || '')
+    .replace(/([^\s])(?=Lote\s*=)/gi, '$1 ')
+    .replace(/([^\s])(?=Qtd\s*=)/gi, '$1 ')
+    .replace(/([^\s])(?=dtVal\s*=)/gi, '$1 ')
+    .replace(/([^\s])(?=nLote\s*[=:])/gi, '$1 ');
+}
+
+function quebraNormDtVal(s) {
+  const t = String(s || '').trim();
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return t;
+  const br = t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  return t;
+}
+
+function quebraParseQtdLote(s) {
+  const t = String(s || '').trim();
+  if (!t) return null;
+  if (t.includes(',')) return quebraBrNum(t);
+  const n = parseFloat(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+function quebraParseLoteChunks(text) {
+  const chunks = [];
+  const seen = new Set();
+  const push = (idx, lote, qtd, dtVal) => {
+    const loteS = String(lote || '').trim();
+    if (!loteS) return;
+    const key = `${idx}|${loteS}|${qtd}|${dtVal}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    chunks.push({ index: idx, lote: loteS, qtd, dtVal: dtVal || '' });
+  };
+  let m;
+  const covered = new Set();
+  const re = /Lote\s*=\s*([A-Za-z0-9.\-\/]+)\s*Qtd\s*=\s*([\d.,]+)\s*dtVal\s*=\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})/gi;
+  while ((m = re.exec(text))) {
+    push(m.index, m[1], quebraParseQtdLote(m[2]), quebraNormDtVal(m[3]));
+    for (let i = m.index; i < m.index + m[0].length; i++) covered.add(i);
+  }
+  const re2 = /(?:Lote|nLote)\s*[=:]\s*([A-Za-z0-9.\-\/]+)/gi;
+  while ((m = re2.exec(text))) {
+    if (covered.has(m.index)) continue;
+    push(m.index, m[1], null, '');
+  }
+  const xmlRe = /<nLote>\s*([^<]+?)\s*<\/nLote>[\s\S]{0,160}?<qLote>\s*([^<]+?)\s*<\/qLote>[\s\S]{0,120}?<dVal>\s*([^<]+?)\s*<\/dVal>/gi;
+  while ((m = xmlRe.exec(text))) {
+    push(m.index, m[1], quebraParseQtdLote(m[2]), quebraNormDtVal(m[3]));
+  }
+  chunks.sort((a, b) => a.index - b.index);
+  return chunks;
+}
+
+function quebraParseItemMatches(compact) {
+  const found = [];
+  const itemRe = /(\d{5,8})\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç0-9 ._\-\/()]{4,80}?)\s+(\d{8})\s+(\d{4})\s+(UN|CX|KG|SC|FR|PAK|EM|CJ|GR)\s+([\d.]+,[\d]{2})/g;
+  let im;
+  while ((im = itemRe.exec(compact))) {
+    found.push({
+      index: im.index,
+      codigo: im[1],
+      designacao: im[2].replace(/\s+/g, ' ').trim(),
+      ncm: im[3],
+      cfop: im[4],
+      umb: im[5],
+      quantidade: quebraBrNum(im[6]),
+    });
+  }
+  if (!found.length) {
+    const altRe = /(\d{5,8})\s+((?:DELTA|TREMO[CÇ]O|CAF[EÉ]|CH[AÁ]|QIT|MAQ|M[AÁ]Q)[^0-9]{4,80}?)(?=\s+\d{8}|\s+Lote\s*=)/gi;
+    let am;
+    while ((am = altRe.exec(compact))) {
+      found.push({
+        index: am.index,
+        codigo: am[1],
+        designacao: am[2].replace(/\s+/g, ' ').trim(),
+        ncm: '',
+        cfop: '',
+        umb: 'UN',
+        quantidade: 0,
+      });
+    }
+  }
+  return found;
+}
+
+function quebraMergeItemsWithLotes(itemMatches, lotes, dataEmissao) {
+  const items = [];
+  const used = new Set();
+  const apply = (base, loteInfo) => {
+    const qtd = loteInfo.qtd != null ? loteInfo.qtd : base.quantidade;
+    const dtVal = loteInfo.dtVal || '';
+    return {
+      codigo: base.codigo,
+      designacao: base.designacao,
+      ncm: base.ncm,
+      cfop: base.cfop,
+      umb: base.umb,
+      quantidade: qtd,
+      lote: loteInfo.lote || '',
+      dtVal,
+      motivo: quebraMotivoFromValidade(dtVal, dataEmissao),
+    };
+  };
+  for (let i = 0; i < itemMatches.length; i++) {
+    const it = itemMatches[i];
+    const start = it.index;
+    const end = i + 1 < itemMatches.length ? itemMatches[i + 1].index : Infinity;
+    const mine = [];
+    lotes.forEach((l, li) => {
+      if (used.has(li)) return;
+      if (l.index > start && l.index < end) {
+        used.add(li);
+        mine.push(l);
+      }
+    });
+    if (mine.length) {
+      mine.forEach(l => items.push(apply(it, l)));
+      continue;
+    }
+    let fallback = {};
+    for (let li = 0; li < lotes.length; li++) {
+      if (!used.has(li)) {
+        used.add(li);
+        fallback = lotes[li];
+        break;
+      }
+    }
+    items.push(apply(it, fallback));
+  }
+  return items;
+}
+
+function quebraParseNfeText(text, filename) {
+  const raw = quebraSplitInfAdProd(text);
+  const compact = raw.replace(/\s+/g, ' ');
+  let chave = '';
+  const g = compact.match(/(\d{4}\s+\d{4}\s+\d{4}\s+\d{4}\s+\d{4}\s+\d{4}\s+\d{4}\s+\d{4}\s+\d{4}\s+\d{4}\s+\d{4})/);
+  if (g) chave = g[1].replace(/\s+/g, '');
+  if (!chave) {
+    const m44 = compact.match(/\b(\d{44})\b/);
+    if (m44) chave = m44[1];
+  }
+  if (!chave) {
+    const fn = String(filename || '').match(/(\d{44})/);
+    if (fn) chave = fn[1];
+  }
+  const decoded = quebraDecodeChave(chave);
+  const nnfM = compact.match(/N[º°o]\s*(\d{1,9})/i);
+  const numero = (nnfM && nnfM[1]) || (decoded && decoded.numero) || '';
+  const serie = (decoded && decoded.serie) || '1';
+  const cnpjM = compact.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/);
+  const cnpj = (cnpjM && cnpjM[1]) || (decoded ? quebraFmtCnpj(decoded.cnpj) : '');
+  const dataM = compact.match(/(\d{2}\/\d{2}\/\d{4})/);
+  const dataEmissao = dataM ? dataM[1] : '';
+  const natM = compact.match(/Remessa para Descarte|Natureza da Opera[cç][aã]o[:\s]+([^0-9]{8,80})/i);
+  const natureza = natM ? String(natM[0]).replace(/Natureza da Opera[cç][aã]o[:\s]+/i, '').trim() : '';
+  const nomeM = compact.match(/(Q-BRASIL[^.]{0,60}|DELTA FOODS[^.]{0,80}|Q-Brasil Imp[^.]{0,60})/i);
+  const emitente = nomeM ? nomeM[1].trim() : '';
+  const totM = compact.match(/VALOR TOTAL DA NOTA[^\d]{0,40}([\d.]+,[\d]{2})/i);
+  const valorTotal = totM ? totM[1] : '';
+
+  const lotes = quebraParseLoteChunks(compact);
+  const itemMatches = quebraParseItemMatches(compact);
+  const items = quebraMergeItemsWithLotes(itemMatches, lotes, dataEmissao);
+
+  return {
+    chave,
+    numero,
+    serie,
+    cnpj,
+    dataEmissao,
+    natureza,
+    emitente,
+    valorTotal,
+    items,
+    texto: raw,
+  };
+}
+
+function quebraParseDateBr(s) {
+  const m = String(s || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+}
+
+function quebraMotivoFromValidade(dtValIso, dataEmissaoBr) {
+  if (!dtValIso) return 4;
+  const val = new Date(dtValIso + 'T00:00:00');
+  const em = quebraParseDateBr(dataEmissaoBr) || new Date();
+  if (Number.isNaN(val.getTime())) return 4;
+  return val < em ? 4 : 1;
+}
+
+async function quebraOnPdf(ev) {
+  const file = ev?.target?.files?.[0];
+  const nameEl = document.getElementById('af-qb-pdf-name');
+  const infoEl = document.getElementById('af-qb-nfe-info');
+  const st = document.getElementById('af-qb-status');
+  if (!file) return;
+  _quebraPdfFile = file;
+  if (nameEl) nameEl.textContent = file.name;
+  if (st) st.textContent = 'A ler PDF…';
+  try {
+    const text = await quebraPdfToText(file);
+    _quebraNfe = quebraParseNfeText(text, file.name);
+    const n = _quebraNfe;
+    if (!n.items.length) {
+      toast('PDF lido, mas não encontrei linhas de produto. Confirma que é uma DANFE NF-e.', 'warn');
+    } else {
+      toast(`NF-e ${n.numero || '—'} · ${n.items.length} artigo(s) extraído(s).`);
+    }
+    if (infoEl) {
+      infoEl.innerHTML = n.items.length || n.chave
+        ? `<span style="color:var(--text);"><b>NF-e ${escHtml(n.numero || '—')}</b> série ${escHtml(n.serie || '—')} · ${escHtml(n.dataEmissao || '—')} · ${escHtml(n.emitente || '—')}<br>
+           CNPJ ${escHtml(n.cnpj || '—')} · ${escHtml(n.natureza || '')}<br>
+           Chave ${escHtml(n.chave || '—')}</span>`
+        : '<span style="color:#b45309;">Não foi possível identificar a NF-e neste PDF.</span>';
+    }
+    quebraRenderPreview();
+    if (st) st.textContent = '';
+  } catch (e) {
+    _quebraNfe = null;
+    quebraRenderPreview();
+    if (st) st.innerHTML = `<span style="color:var(--danger)">Erro a ler PDF: ${escHtml(e.message)}</span>`;
+    toast('Erro a ler PDF: ' + e.message, 'error');
+  }
+}
+
+function quebraApplyMotivoPadrao() {
+  const mot = Number(document.getElementById('af-qb-motivo')?.value || 4);
+  if (!_quebraNfe?.items?.length) return;
+  _quebraNfe.items.forEach(it => { it.motivo = mot; });
+  quebraRenderPreview();
+}
+
+function quebraOnItemMotivo(i, val) {
+  if (!_quebraNfe?.items?.[i]) return;
+  _quebraNfe.items[i].motivo = Number(val) || 4;
+}
+
+function quebraRenderPreview() {
+  const el = document.getElementById('af-qb-preview');
+  const btn = document.getElementById('af-qb-btn-gerar');
+  if (btn) btn.disabled = !(_quebraNfe && _quebraNfe.items && _quebraNfe.items.length);
+  if (!el) return;
+  if (!_quebraNfe?.items?.length) {
+    el.innerHTML = '';
+    return;
+  }
+  const items = _quebraNfe.items;
+  const rows = items.map((it, i) => {
+    const opts = Object.keys(QUEBRA_MOTIVOS).map(k =>
+      `<option value="${k}"${Number(it.motivo) === Number(k) ? ' selected' : ''}>${k} — ${QUEBRA_MOTIVOS[k]}</option>`
+    ).join('');
+    return `<tr>
+      <td style="padding:6px 8px;font-size:12px;font-family:var(--font-mono);">${escHtml(it.codigo)}</td>
+      <td style="padding:6px 8px;font-size:12px;">${escHtml(it.designacao)}</td>
+      <td style="padding:6px 8px;font-size:12px;font-family:var(--font-mono);">${escHtml(it.lote || '—')}</td>
+      <td style="padding:6px 8px;font-size:12px;text-align:right;">${escHtml(String(it.quantidade))}</td>
+      <td style="padding:6px 8px;font-size:12px;">${escHtml(it.umb || 'UN')}</td>
+      <td style="padding:6px 8px;font-size:12px;color:var(--muted);">${escHtml(it.dtVal || '—')}</td>
+      <td style="padding:6px 8px;"><select class="form-input" style="font-size:12px;min-width:180px;" onchange="quebraOnItemMotivo(${i}, this.value)">${opts}</select></td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<div class="table-wrap"><table class="data-table" style="width:100%;">
+    <thead><tr>
+      <th>Código</th><th>Designação</th><th>Lote</th><th>Qtd</th><th>UMB</th><th>Validade</th><th>Motivo</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>
+  <div style="font-size:11px;color:var(--muted);margin-top:6px;">${items.length} linha(s) — o formulário cresce à medida das linhas da NF.</div>`;
+}
+
+async function quebraLoadTemplateBuffer() {
+  if (_quebraTemplateBuf) return _quebraTemplateBuf;
+  const bases = [];
+  try {
+    const u = new URL('.', location.href);
+    bases.push(u.href);
+  } catch (_) {}
+  bases.push('./', '../', '/delta-foods-equipamentos-app/', '/');
+  let lastErr = null;
+  for (const b of bases) {
+    try {
+      const res = await fetch(b + 'quebra-template.xlsx', { cache: 'no-store' });
+      if (!res.ok) continue;
+      _quebraTemplateBuf = await res.arrayBuffer();
+      return _quebraTemplateBuf;
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error('Template quebra-template.xlsx não encontrado. Confirma que o ficheiro está junto do index.html (serve.ps1).');
+}
+
+function quebraPadDeposito(s) {
+  const raw = String(s || '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return raw;
+  return digits.length >= 4 ? digits : digits.padStart(4, '0');
+}
+
+function quebraHeaderFromUi() {
+  return {
+    departamento: (document.getElementById('af-qb-dept')?.value || '').trim(),
+    empresa: (document.getElementById('af-qb-empresa')?.value || '').trim(),
+    centroCusto: (document.getElementById('af-qb-ccusto')?.value || '').trim(),
+    deposito: quebraPadDeposito(document.getElementById('af-qb-deposito')?.value || ''),
+    data: document.getElementById('af-qb-data')?.value || '',
+  };
+}
+
+function quebraParseA1Range(ref) {
+  const m = String(ref || '').replace(/\$/g, '').match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i);
+  if (!m) return null;
+  return { ref: String(ref), c1: m[1].toUpperCase(), r1: Number(m[2]), c2: m[3].toUpperCase(), r2: Number(m[4]) };
+}
+
+function quebraCollectMergeRefs(ws) {
+  const refs = [];
+  const modelMerges = ws.model && ws.model.merges;
+  if (Array.isArray(modelMerges)) {
+    modelMerges.forEach(m => { if (m) refs.push(String(m)); });
+    return refs;
+  }
+  const internal = ws._merges;
+  if (!internal) return refs;
+  if (typeof internal.forEach === 'function' && !Array.isArray(internal)) {
+    internal.forEach((range, key) => refs.push((range && range.range) || String(key)));
+    return refs;
+  }
+  Object.keys(internal).forEach(k => {
+    const m = internal[k];
+    refs.push((m && (m.range || m.model)) || k);
+  });
+  return refs;
+}
+
+function quebraFooterMergesShifted(ws, extra) {
+  if (extra <= 0) return true;
+  const want = `B${QUEBRA_OBS_ROW + extra}:I${QUEBRA_OBS_ROW + extra + 3}`.toUpperCase();
+  return quebraCollectMergeRefs(ws).some(r => String(r).replace(/\$/g, '').toUpperCase() === want);
+}
+
+function quebraShiftMergesFrom(ws, fromRow, extra) {
+  if (extra <= 0) return;
+  const toMove = quebraCollectMergeRefs(ws)
+    .map(quebraParseA1Range)
+    .filter(p => p && p.r1 >= fromRow);
+  toMove.sort((a, b) => b.r1 - a.r1);
+  toMove.forEach(p => {
+    try { ws.unMergeCells(`${p.c1}${p.r1}:${p.c2}${p.r2}`); } catch (_) {}
+  });
+  toMove.forEach(p => {
+    try { ws.mergeCells(`${p.c1}${p.r1 + extra}:${p.c2}${p.r2 + extra}`); } catch (_) {}
+  });
+}
+
+function quebraShiftAnchor(anchor, fromRow, extra) {
+  if (!anchor || extra <= 0) return;
+  const excelRowOf = (nativeRow, row) => {
+    if (typeof nativeRow === 'number') return nativeRow + 1;
+    if (typeof row === 'number') return Math.floor(row) + 1;
+    return 0;
+  };
+  if (excelRowOf(anchor.nativeRow, anchor.row) >= fromRow) {
+    if (typeof anchor.nativeRow === 'number') anchor.nativeRow += extra;
+    if (typeof anchor.row === 'number') anchor.row += extra;
+  }
+}
+
+function quebraShiftDrawings(ws, fromRow, extra) {
+  if (extra <= 0) return;
+  const imgs = typeof ws.getImages === 'function' ? ws.getImages() : (ws._media || []);
+  imgs.forEach(img => {
+    const range = img && img.range;
+    if (!range) return;
+    quebraShiftAnchor(range.tl, fromRow, extra);
+    quebraShiftAnchor(range.br, fromRow, extra);
+    quebraShiftAnchor(range.ext && range.ext.tl, fromRow, extra);
+    quebraShiftAnchor(range.ext && range.ext.br, fromRow, extra);
+  });
+}
+
+function quebraBumpPrintRange(text, extra) {
+  return String(text || '').replace(/(\$?I\$?)(\d+)/gi, (full, col, n) => {
+    const row = Number(n);
+    return row >= QUEBRA_FOOTER_START ? `${col}${row + extra}` : full;
+  }).replace(/(\$?A\$?1:\$?I\$?)(\d+)/gi, (full, prefix, n) => {
+    const row = Number(n);
+    return row >= QUEBRA_FOOTER_START ? `${prefix}${row + extra}` : full;
+  });
+}
+
+function quebraExpandPrintArea(ws, extra) {
+  if (extra <= 0) return;
+  if (ws.pageSetup && ws.pageSetup.printArea) {
+    ws.pageSetup.printArea = quebraBumpPrintRange(ws.pageSetup.printArea, extra);
+  }
+  const wb = ws.workbook;
+  const names = wb && wb.definedNames;
+  if (!names) return;
+  const model = names.model;
+  if (Array.isArray(model)) {
+    model.forEach(dn => {
+      if (!dn || !/Print_Area/i.test(dn.name || '')) return;
+      if (typeof dn.ranges === 'string') dn.ranges = quebraBumpPrintRange(dn.ranges, extra);
+      else if (Array.isArray(dn.ranges)) dn.ranges = dn.ranges.map(r => quebraBumpPrintRange(r, extra));
+    });
+    names.model = model;
+  }
+}
+
+function quebraPlainClone(v) {
+  if (v == null || typeof v !== 'object') return v;
+  try { return JSON.parse(JSON.stringify(v)); } catch (_) { return Object.assign({}, v); }
+}
+
+function quebraSnapshotCellStyle(cell) {
+  if (!cell) return {};
+  const s = cell.style || {};
+  return {
+    font: quebraPlainClone(s.font || cell.font),
+    alignment: quebraPlainClone(s.alignment || cell.alignment),
+    border: quebraPlainClone(s.border || cell.border),
+    fill: quebraPlainClone(s.fill || cell.fill),
+    numFmt: cell.numFmt || s.numFmt || undefined,
+  };
+}
+
+function quebraApplySnapshot(cell, snap) {
+  if (!cell || !snap) return;
+  if (snap.font) cell.font = quebraPlainClone(snap.font);
+  if (snap.alignment) cell.alignment = quebraPlainClone(snap.alignment);
+  if (snap.border) cell.border = quebraPlainClone(snap.border);
+  if (snap.fill) cell.fill = quebraPlainClone(snap.fill);
+  if (snap.numFmt) cell.numFmt = snap.numFmt;
+}
+
+function quebraSnapshotItemRow(ws, rowNum) {
+  const row = ws.getRow(rowNum);
+  const cells = {};
+  row.eachCell({ includeEmpty: true }, (cell, col) => {
+    cells[col] = quebraSnapshotCellStyle(cell);
+  });
+  for (let col = 2; col <= 9; col++) {
+    if (!cells[col]) cells[col] = quebraSnapshotCellStyle(ws.getCell(rowNum, col));
+  }
+  return { height: row.height, cells };
+}
+
+function quebraEnsureQtyMerge(ws, row) {
+  const want = `F${row}:G${row}`;
+  const already = quebraCollectMergeRefs(ws).some(r => String(r).replace(/\$/g, '').toUpperCase() === want);
+  if (already) return;
+  try { ws.mergeCells(want); } catch (_) {}
+}
+
+function quebraForceItemAlignments(ws, row) {
+  const center = { horizontal: 'center', vertical: 'middle' };
+  const left = { horizontal: 'left', vertical: 'middle' };
+  [2, 3, 4, 6, 7, 8, 9].forEach(col => {
+    const c = ws.getCell(row, col);
+    c.alignment = Object.assign({}, quebraPlainClone(c.alignment) || {}, center);
+  });
+  const e = ws.getCell(row, 5);
+  e.alignment = Object.assign({}, quebraPlainClone(e.alignment) || {}, left);
+}
+
+function quebraApplyItemRowStyle(ws, destRow, protoSnap) {
+  const dst = ws.getRow(destRow);
+  if (protoSnap && protoSnap.height) dst.height = protoSnap.height;
+  if (protoSnap && protoSnap.cells) {
+    Object.keys(protoSnap.cells).forEach(k => {
+      quebraApplySnapshot(dst.getCell(Number(k)), protoSnap.cells[k]);
+    });
+  }
+  quebraForceItemAlignments(ws, destRow);
+  quebraEnsureQtyMerge(ws, destRow);
+}
+
+function quebraCopyItemRowStyle(ws, protoRow, destRow, protoSnap) {
+  const snap = protoSnap || quebraSnapshotItemRow(ws, protoRow);
+  quebraApplyItemRowStyle(ws, destRow, snap);
+  const dst = ws.getRow(destRow);
+  dst.getCell(5).value = { formula: `IFERROR(VLOOKUP(C${destRow},Folha2!$A$1:$E$1300,2,0),"")` };
+  dst.getCell(8).value = { formula: `IFERROR(VLOOKUP(C${destRow},Folha2!A:C,3,0),"")` };
+  quebraApplyItemRowStyle(ws, destRow, snap);
+}
+
+/** Insere linhas de artigo antes do bloco de rodapé (motivos, observações, assinaturas). */
+function quebraExpandItemRows(ws, extra, protoSnap) {
+  if (extra <= 0) return;
+  const insertAt = QUEBRA_ITEM_TPL_END + 1;
+  const blanks = Array.from({ length: extra }, () => []);
+  if (typeof ws.spliceRows === 'function') ws.spliceRows(insertAt, 0, ...blanks);
+  else if (typeof ws.insertRows === 'function') ws.insertRows(insertAt, blanks);
+  if (!quebraFooterMergesShifted(ws, extra)) quebraShiftMergesFrom(ws, QUEBRA_FOOTER_START, extra);
+  for (let i = 0; i < extra; i++) quebraCopyItemRowStyle(ws, QUEBRA_ITEM_PROTO_ROW, insertAt + i, protoSnap);
+  quebraShiftDrawings(ws, QUEBRA_FOOTER_START, extra);
+  quebraExpandPrintArea(ws, extra);
+}
+
+function quebraDateFromInput(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return new Date();
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function quebraFileStamp(d) {
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}${p(d.getMonth() + 1)}${d.getFullYear()}`;
+}
+
+async function quebraGerarExcel() {
+  const st = document.getElementById('af-qb-status');
+  const hdr = quebraHeaderFromUi();
+  if (!_quebraEmpresa) {
+    toast('Selecciona Delta Foods ou Qbrasil.', 'error');
+    return;
+  }
+  if (!hdr.empresa) {
+    toast('Indica a empresa (GN52 / GN53).', 'error');
+    return;
+  }
+  if (!_quebraNfe?.items?.length) {
+    toast('Carrega primeiro o PDF da fatura.', 'error');
+    return;
+  }
+  if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar Excel…</span>';
+  try {
+    await prosEnsureExcelJS();
+    const buf = await quebraLoadTemplateBuffer();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    const ws = wb.getWorksheet('Formulário') || wb.worksheets[0];
+    if (!ws) throw new Error('Folha «Formulário» não encontrada no template.');
+
+    ws.getCell('D9').value = hdr.departamento;
+    ws.getCell('D10').value = hdr.empresa;
+    const cc = hdr.centroCusto.replace(/\D/g, '');
+    ws.getCell('D11').value = cc ? Number(cc) : (hdr.centroCusto || '');
+    ws.getCell('D12').value = quebraDateFromInput(hdr.data);
+
+    const items = _quebraNfe.items;
+    const tplCount = QUEBRA_ITEM_TPL_END - QUEBRA_ITEM_ROW_START + 1;
+    const extra = Math.max(0, items.length - tplCount);
+    const protoSnap = quebraSnapshotItemRow(ws, QUEBRA_ITEM_PROTO_ROW);
+    quebraExpandItemRows(ws, extra, protoSnap);
+    const lastItemRow = QUEBRA_ITEM_ROW_START + Math.max(tplCount, items.length) - 1;
+    const deposito = hdr.deposito || '';
+    for (let r = QUEBRA_ITEM_ROW_START; r <= lastItemRow; r++) {
+      const it = items[r - QUEBRA_ITEM_ROW_START];
+      const cB = ws.getCell(r, 2);
+      const cC = ws.getCell(r, 3);
+      const cD = ws.getCell(r, 4);
+      const cE = ws.getCell(r, 5);
+      const cF = ws.getCell(r, 6);
+      const cH = ws.getCell(r, 8);
+      const cI = ws.getCell(r, 9);
+      if (it) {
+        cB.value = deposito ? String(deposito) : '';
+        cC.value = Number(it.codigo) || it.codigo;
+        cD.value = it.lote ? (Number(it.lote) || it.lote) : '';
+        cE.value = it.designacao || '';
+        cF.value = Number(it.quantidade) || 0;
+        cH.value = it.umb || 'UN';
+        cI.value = Number(it.motivo) || 4;
+      } else {
+        cB.value = null;
+        cC.value = null;
+        cD.value = null;
+        cF.value = null;
+        cI.value = null;
+        cE.value = { formula: `IFERROR(VLOOKUP(C${r},Folha2!$A$1:$E$1300,2,0),"")` };
+        cH.value = { formula: `IFERROR(VLOOKUP(C${r},Folha2!A:C,3,0),"")` };
+      }
+      quebraApplyItemRowStyle(ws, r, protoSnap);
+      if (it) cB.numFmt = '@';
+      quebraForceItemAlignments(ws, r);
+    }
+
+    const n = _quebraNfe;
+    const obs = [
+      n.natureza ? String(n.natureza) : '',
+      n.numero ? `NF-e ${n.numero} série ${n.serie || '1'} de ${n.dataEmissao || '—'}` : '',
+      n.chave ? `Chave ${n.chave}` : '',
+      n.emitente ? n.emitente : '',
+    ].filter(Boolean).join(' · ');
+    ws.getCell(`B${QUEBRA_OBS_ROW + extra}`).value = `OBSERVAÇÕES:  ${obs}`;
+
+    const d = quebraDateFromInput(hdr.data);
+    const dept = hdr.departamento || (_quebraEmpresa === 'delta' ? 'DFSP' : 'QBSP');
+    const dep = deposito || '0000';
+    const fname = `Formulário Tratamento Quebras - ${dept} - DEP.${dep} - ${quebraFileStamp(d)}.xlsx`;
+    const out = await wb.xlsx.writeBuffer();
+    triggerBlobDownload(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fname);
+    toast(extra ? `✅ Formulário de Quebras gerado (${items.length} linhas).` : '✅ Formulário de Quebras gerado.');
+    if (st) st.innerHTML = `<span style="color:#16a34a">Ficheiro gerado: ${escHtml(fname)}</span>`;
+  } catch (e) {
+    console.error('quebraGerarExcel', e);
+    if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${escHtml(e.message)}</span>`;
+    toast('Erro a gerar Excel: ' + e.message, 'error');
+  }
+}
+
+window.quebraSetEmpresa = quebraSetEmpresa;
+window.quebraOnPdf = quebraOnPdf;
+window.quebraGerarExcel = quebraGerarExcel;
+window.quebraApplyMotivoPadrao = quebraApplyMotivoPadrao;
+window.quebraOnItemMotivo = quebraOnItemMotivo;
 
 
 

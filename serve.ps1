@@ -2,7 +2,7 @@ $preferred = if ($env:PORT) { [int]$env:PORT } else { 8088 }
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $silent = ($env:DELTA_OUTLOOK_SILENT -eq '1')
 $appDir = Join-Path $root 'delta-foods-equipamentos-app'
-$syncFiles = @('index.html', 'manifest.json', 'sw.js', 'simulador-template.js', 'mc00-template.xlsx', 'icon-192.png', 'icon-512.png')
+$syncFiles = @('index.html', 'manifest.json', 'sw.js', 'simulador-template.js', 'mc00-template.xlsx', 'quebra-template.xlsx', 'icon-192.png', 'icon-512.png')
 
 function Write-Info([string]$msg, [string]$color = 'Gray') {
     if ($silent) { return }
