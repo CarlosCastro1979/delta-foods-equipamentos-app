@@ -25018,6 +25018,9 @@ const QUEBRA_ITEM_TPL_END = 39;
 const QUEBRA_ITEM_PROTO_ROW = 23;
 const QUEBRA_FOOTER_START = 40;
 const QUEBRA_OBS_ROW = 51;
+/** Altura mínima das linhas de artigo — evita sobreposição quando o template
+ *  tem alturas residuals (7.5 / 2.25) que o ExcelJS spliceRows não desloca. */
+const QUEBRA_ITEM_ROW_HEIGHT = 15;
 const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 const PDFJS_WORKER_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const QUEBRA_EMPRESAS = {
@@ -26191,16 +26194,41 @@ function quebraSnapshotItemRow(ws, rowNum) {
   return { height: row.height, cells };
 }
 
+function quebraColLettersToIndex(letters) {
+  let n = 0;
+  const s = String(letters || '').toUpperCase();
+  for (let i = 0; i < s.length; i++) n = n * 26 + (s.charCodeAt(i) - 64);
+  return n;
+}
+
 function quebraEnsureQtyMerge(ws, row) {
   const want = `F${row}:G${row}`;
-  const already = quebraCollectMergeRefs(ws).some(r => String(r).replace(/\$/g, '').toUpperCase() === want);
+  const refs = quebraCollectMergeRefs(ws);
+  let already = false;
+  refs.forEach(ref => {
+    const p = quebraParseA1Range(ref);
+    if (!p) return;
+    if (!(p.r1 <= row && row <= p.r2)) return;
+    const c1 = quebraColLettersToIndex(p.c1);
+    const c2 = quebraColLettersToIndex(p.c2);
+    const touchesFG = c1 <= 7 && c2 >= 6; // F=6, G=7
+    if (!touchesFG) return;
+    const exact = p.c1 === 'F' && p.c2 === 'G' && p.r1 === row && p.r2 === row;
+    if (exact) { already = true; return; }
+    try { ws.unMergeCells(`${p.c1}${p.r1}:${p.c2}${p.r2}`); } catch (_) {}
+  });
   if (already) return;
-  try { ws.mergeCells(want); } catch (_) {}
+  try { ws.mergeCells(want); } catch (_) {
+    try {
+      ws.unMergeCells(want);
+      ws.mergeCells(want);
+    } catch (__) {}
+  }
 }
 
 function quebraForceItemAlignments(ws, row) {
-  const center = { horizontal: 'center', vertical: 'middle' };
-  const left = { horizontal: 'left', vertical: 'middle' };
+  const center = { horizontal: 'center', vertical: 'middle', wrapText: false };
+  const left = { horizontal: 'left', vertical: 'middle', wrapText: false };
   [2, 3, 4, 6, 7, 8, 9].forEach(col => {
     const c = ws.getCell(row, col);
     c.alignment = Object.assign({}, quebraPlainClone(c.alignment) || {}, center);
@@ -26211,12 +26239,16 @@ function quebraForceItemAlignments(ws, row) {
 
 function quebraApplyItemRowStyle(ws, destRow, protoSnap) {
   const dst = ws.getRow(destRow);
-  if (protoSnap && protoSnap.height) dst.height = protoSnap.height;
+  const h = (protoSnap && Number(protoSnap.height)) || QUEBRA_ITEM_ROW_HEIGHT;
+  dst.height = Math.max(h, QUEBRA_ITEM_ROW_HEIGHT);
   if (protoSnap && protoSnap.cells) {
     Object.keys(protoSnap.cells).forEach(k => {
       quebraApplySnapshot(dst.getCell(Number(k)), protoSnap.cells[k]);
     });
   }
+  // Garantir G com o mesmo estilo de F (merge de quantidade)
+  const snapF = protoSnap && protoSnap.cells && (protoSnap.cells[6] || protoSnap.cells['6']);
+  if (snapF) quebraApplySnapshot(dst.getCell(7), snapF);
   quebraForceItemAlignments(ws, destRow);
   quebraEnsureQtyMerge(ws, destRow);
 }
@@ -26241,6 +26273,15 @@ function quebraExpandItemRows(ws, extra, protoSnap) {
   for (let i = 0; i < extra; i++) quebraCopyItemRowStyle(ws, QUEBRA_ITEM_PROTO_ROW, insertAt + i, protoSnap);
   quebraShiftDrawings(ws, QUEBRA_FOOTER_START, extra);
   quebraExpandPrintArea(ws, extra);
+}
+
+/** Normaliza altura + merge F:G de todas as linhas de artigo (corrige lixo do template/splice). */
+function quebraNormalizeItemRows(ws, fromRow, toRow, protoSnap) {
+  for (let r = fromRow; r <= toRow; r++) {
+    quebraApplyItemRowStyle(ws, r, protoSnap);
+    const row = ws.getRow(r);
+    row.height = QUEBRA_ITEM_ROW_HEIGHT;
+  }
 }
 
 function quebraDateFromInput(iso) {
@@ -26323,6 +26364,16 @@ async function quebraGerarExcel() {
         cB.numFmt = '@';
         cD.numFmt = '@';
       }
+      quebraForceItemAlignments(ws, r);
+    }
+    // Passo final: altura uniforme + merges F:G em TODAS as linhas de artigo
+    // (o template tem alturas 7.5/2.25 no rodapé que o spliceRows deixa nas linhas)
+    quebraNormalizeItemRows(ws, QUEBRA_ITEM_ROW_START, lastItemRow, protoSnap);
+    for (let r = QUEBRA_ITEM_ROW_START; r <= lastItemRow; r++) {
+      const it = items[r - QUEBRA_ITEM_ROW_START];
+      if (!it) continue;
+      ws.getCell(r, 2).numFmt = '@';
+      ws.getCell(r, 4).numFmt = '@';
       quebraForceItemAlignments(ws, r);
     }
 
