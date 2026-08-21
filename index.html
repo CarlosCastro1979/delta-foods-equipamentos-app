@@ -25130,44 +25130,73 @@ async function ensurePdfJs() {
   if (window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN;
 }
 
+function quebraItemsToLines(items) {
+  const lines = [];
+  let lastY = null;
+  let bufLine = [];
+  const flush = () => {
+    const s = bufLine.join('').replace(/[ \t]+/g, ' ').trim();
+    if (s) lines.push(s);
+    bufLine = [];
+  };
+  for (const it of items) {
+    const y = Math.round((it.transform && it.transform[5]) || 0);
+    if (lastY != null && Math.abs(y - lastY) > 3) flush();
+    const str = it.str || '';
+    if (!str) continue;
+    if (bufLine.length && !/\s$/.test(bufLine[bufLine.length - 1]) && !/^\s/.test(str)) bufLine.push(' ');
+    bufLine.push(str);
+    lastY = y;
+  }
+  flush();
+  return lines;
+}
+
+function quebraSortReadingOrder(items) {
+  return (items || []).slice().sort((a, b) => {
+    const ya = (a.transform && a.transform[5]) || 0;
+    const yb = (b.transform && b.transform[5]) || 0;
+    if (Math.abs(ya - yb) > 2.5) return yb - ya;
+    const xa = (a.transform && a.transform[4]) || 0;
+    const xb = (b.transform && b.transform[4]) || 0;
+    return xa - xb;
+  });
+}
+
+function quebraScoreParse(nfe) {
+  if (!nfe || !nfe.items) return -1;
+  let score = 0;
+  const codes = new Set();
+  nfe.items.forEach(it => {
+    if (it.quantidade > 0) score += 10;
+    if (it.dtVal) score += 5;
+    if (it.lote) score += 2;
+    if (it.codigo) codes.add(it.codigo);
+  });
+  score += codes.size * 8;
+  score += Math.min(nfe.items.length, 40);
+  return score;
+}
+
 async function quebraPdfToText(file) {
   await ensurePdfJs();
   const buf = await file.arrayBuffer();
   const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-  const lines = [];
+  const linesNative = [];
+  const linesSorted = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent({ disableCombineTextItems: true });
-    // Ordenar por leitura visual (cima→baixo, esq→dir). Sem isto o pdf.js
-    // devolve por vezes colunas fora de ordem e mistura produto/qtd/lote.
-    const sorted = (tc.items || []).slice().sort((a, b) => {
-      const ya = (a.transform && a.transform[5]) || 0;
-      const yb = (b.transform && b.transform[5]) || 0;
-      if (Math.abs(ya - yb) > 2.5) return yb - ya;
-      const xa = (a.transform && a.transform[4]) || 0;
-      const xb = (b.transform && b.transform[4]) || 0;
-      return xa - xb;
-    });
-    let lastY = null;
-    let bufLine = [];
-    const flush = () => {
-      const s = bufLine.join('').replace(/[ \t]+/g, ' ').trim();
-      if (s) lines.push(s);
-      bufLine = [];
-    };
-    for (const it of sorted) {
-      const y = Math.round((it.transform && it.transform[5]) || 0);
-      if (lastY != null && Math.abs(y - lastY) > 3) flush();
-      const str = it.str || '';
-      if (!str) continue;
-      if (bufLine.length && !/\s$/.test(bufLine[bufLine.length - 1]) && !/^\s/.test(str)) bufLine.push(' ');
-      bufLine.push(str);
-      lastY = y;
-    }
-    flush();
-    lines.push('');
+    const rawItems = tc.items || [];
+    linesNative.push(...quebraItemsToLines(rawItems), '');
+    linesSorted.push(...quebraItemsToLines(quebraSortReadingOrder(rawItems)), '');
   }
-  return quebraSplitInfAdProd(lines.join('\n'));
+  const tNative = quebraSplitInfAdProd(linesNative.join('\n'));
+  const tSorted = quebraSplitInfAdProd(linesSorted.join('\n'));
+  // Escolhe a extracção que melhor recupera qtd/validade/produtos distintos
+  const sNative = quebraScoreParse(quebraParseNfeText(tNative, file.name));
+  const sSorted = quebraScoreParse(quebraParseNfeText(tSorted, file.name));
+  return sSorted > sNative ? tSorted : tNative;
 }
 
 /** DANFE infAdProd: pdf.js often glues Lote=/Qtd=/dtVal= (TJ offsets too small to count as spaces). */
@@ -25193,9 +25222,15 @@ function quebraNormDtVal(s) {
 function quebraParseQtdLote(s) {
   const t = String(s || '').trim();
   if (!t) return null;
+  // BR: 1.234,567 → remove milhares; EN/XML: 1.000 → decimal point
   if (t.includes(',')) return quebraBrNum(t);
   const n = parseFloat(t);
   return Number.isFinite(n) ? n : null;
+}
+
+function quebraParseQtyFlexible(s) {
+  const n = quebraParseQtdLote(s);
+  return n == null ? 0 : n;
 }
 
 function quebraParseLoteChunks(text) {
@@ -25211,16 +25246,28 @@ function quebraParseLoteChunks(text) {
   };
   let m;
   const covered = new Set();
+  const mark = (from, len) => {
+    for (let i = from; i < from + len; i++) covered.add(i);
+  };
+
+  // Formato clássico SAP: Lote=… Qtd=… dtVal=…
   const re = /Lote\s*=\s*([A-Za-z0-9.\-\/]+)\s*Qtd\s*=\s*([\d.,]+)\s*dtVal\s*=\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})/gi;
   while ((m = re.exec(text))) {
     push(m.index, m[1], quebraParseQtdLote(m[2]), quebraNormDtVal(m[3]));
-    for (let i = m.index; i < m.index + m[0].length; i++) covered.add(i);
+    mark(m.index, m[0].length);
   }
-  const re2 = /(?:Lote|nLote)\s*[=:]\s*([A-Za-z0-9.\-\/]+)/gi;
-  while ((m = re2.exec(text))) {
+
+  // Lote=XXX … Qtd/Qtde/Quantidade … dtVal/Validade (campos perto, ordem flexível)
+  const reLote = /(?:Lote|nLote)\s*[=:]\s*([A-Za-z0-9.\-\/]+)/gi;
+  while ((m = reLote.exec(text))) {
     if (covered.has(m.index)) continue;
-    push(m.index, m[1], null, '');
+    const window = text.slice(m.index, m.index + 160);
+    const qtdM = window.match(/(?:Qtd(?:e|ade)?|Quantidade|qLote)\s*[=:]?\s*([\d.,]+)/i);
+    const dtM = window.match(/(?:dtVal|dVal|Validade|Val\.?|Data\s*(?:de\s*)?Val(?:idade)?)\s*[=:]?\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})/i);
+    push(m.index, m[1], qtdM ? quebraParseQtdLote(qtdM[1]) : null, dtM ? quebraNormDtVal(dtM[1]) : '');
+    mark(m.index, Math.min(window.length, 40));
   }
+
   const xmlRe = /<nLote>\s*([^<]+?)\s*<\/nLote>[\s\S]{0,160}?<qLote>\s*([^<]+?)\s*<\/qLote>[\s\S]{0,120}?<dVal>\s*([^<]+?)\s*<\/dVal>/gi;
   while ((m = xmlRe.exec(text))) {
     push(m.index, m[1], quebraParseQtdLote(m[2]), quebraNormDtVal(m[3]));
@@ -25231,34 +25278,54 @@ function quebraParseLoteChunks(text) {
 
 function quebraParseItemMatches(compact) {
   const found = [];
-  const itemRe = /(\d{5,8})\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç0-9 ._\-\/()]{4,80}?)\s+(\d{8})\s+(\d{4})\s+(UN|CX|KG|SC|FR|PAK|EM|CJ|GR)\s+([\d.]+,[\d]{2})/g;
+  const seen = new Set();
+  const push = (index, codigo, designacao, ncm, cfop, umb, quantidade) => {
+    const cod = String(codigo || '').trim();
+    if (!cod) return;
+    const key = `${index}|${cod}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push({
+      index,
+      codigo: cod,
+      designacao: String(designacao || '').replace(/\s+/g, ' ').trim(),
+      ncm: ncm || '',
+      cfop: cfop || '',
+      umb: (umb || 'UN').toUpperCase(),
+      quantidade: quantidade || 0,
+    });
+  };
+
+  // Linha DANFE completa: cód + desc + NCM + CFOP + UN + qtd (BR ou inteiro)
+  const itemRe = /(\d{5,8})\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç0-9 ._\-\/()]{3,90}?)\s+(\d{8})\s+(\d{3,4})\s+(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)\s+([\d.]+,[\d]{2,4}|\d+(?:[.,]\d+)?)/gi;
   let im;
   while ((im = itemRe.exec(compact))) {
-    found.push({
-      index: im.index,
-      codigo: im[1],
-      designacao: im[2].replace(/\s+/g, ' ').trim(),
-      ncm: im[3],
-      cfop: im[4],
-      umb: im[5],
-      quantidade: quebraBrNum(im[6]),
-    });
+    push(im.index, im[1], im[2], im[3], im[4], im[5], quebraParseQtyFlexible(im[6]));
   }
+
+  // Variante sem CFOP (alguns DANFE / extracções)
   if (!found.length) {
-    const altRe = /(\d{5,8})\s+((?:DELTA|TREMO[CÇ]O|CAF[EÉ]|CH[AÁ]|QIT|MAQ|M[AÁ]Q)[^0-9]{4,80}?)(?=\s+\d{8}|\s+Lote\s*=)/gi;
-    let am;
-    while ((am = altRe.exec(compact))) {
-      found.push({
-        index: am.index,
-        codigo: am[1],
-        designacao: am[2].replace(/\s+/g, ' ').trim(),
-        ncm: '',
-        cfop: '',
-        umb: 'UN',
-        quantidade: 0,
-      });
+    const re2 = /(\d{5,8})\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç0-9 ._\-\/()]{3,90}?)\s+(\d{8})\s+(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)\s+([\d.]+,[\d]{2,4}|\d+(?:[.,]\d+)?)/gi;
+    while ((im = re2.exec(compact))) {
+      push(im.index, im[1], im[2], im[3], '', im[4], quebraParseQtyFlexible(im[5]));
     }
   }
+
+  // Fallback por nome de marca (qtd pode vir dos lotes)
+  if (!found.length) {
+    const altRe = /(\d{5,8})\s+((?:DELTA|TREMO[CÇ]O|CAF[EÉ]|CH[AÁ]|QIT|MAQ|M[AÁ]Q|GOLD)[^0-9]{3,90}?)(?=\s+\d{8}|\s+(?:UN|CX|KG)\b|\s+Lote\s*[=:])/gi;
+    while ((im = altRe.exec(compact))) {
+      let umb = 'UN';
+      let qtd = 0;
+      const tail = compact.slice(im.index, im.index + im[0].length + 80);
+      const umbM = tail.match(/\b(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)\b/i);
+      const qtdM = tail.match(/\b(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)\s+([\d.]+,[\d]{2,4}|\d+(?:[.,]\d+)?)/i);
+      if (umbM) umb = umbM[1].toUpperCase();
+      if (qtdM) qtd = quebraParseQtyFlexible(qtdM[2]);
+      push(im.index, im[1], im[2], '', '', umb, qtd);
+    }
+  }
+  found.sort((a, b) => a.index - b.index);
   return found;
 }
 
@@ -25287,9 +25354,9 @@ function quebraPackLotsForTarget(pool, target) {
 
 /**
  * Associa lotes aos artigos.
- * DANFE costuma listar todos os Lote=/Qtd=/dtVal= no bloco final — o fallback
- * antigo (1 lote por linha, resto no último) trocava produtos/qtds/lotes.
- * Estratégia: 1) lotes entre linhas consecutivas; 2) resto por quantidade.
+ * - Lotes entre linhas consecutivas
+ * - Resto por quantidade (quando o artigo tem qtd > 0)
+ * - 1 artigo + muitos lotes com qtd própria → uma linha por lote (caso típico descarte)
  */
 function quebraMergeItemsWithLotes(itemMatches, lotes, dataEmissao) {
   const apply = (base, loteInfo) => {
@@ -25307,12 +25374,25 @@ function quebraMergeItemsWithLotes(itemMatches, lotes, dataEmissao) {
       motivo: quebraMotivoFromValidade(dtVal, dataEmissao),
     };
   };
-  if (!itemMatches.length) return [];
+  if (!itemMatches.length) {
+    // Só lotes: ainda assim devolve linhas (código vazio) para o utilizador ver qtds
+    return lotes.map(l => apply({
+      codigo: '', designacao: '', ncm: '', cfop: '', umb: 'UN', quantidade: 0,
+    }, l));
+  }
+
+  // Caso típico: 1 SKU + N lotes com Qtd no rastro
+  if (itemMatches.length === 1 && lotes.length > 1) {
+    const base = itemMatches[0];
+    const lotsWithQtd = lotes.filter(l => l.qtd != null && l.qtd > 0);
+    if (lotsWithQtd.length >= 1 && (!(base.quantidade > 0) || lotsWithQtd.length >= 2)) {
+      return lotes.map(l => apply(base, l));
+    }
+  }
 
   const used = new Set();
   const assigned = itemMatches.map(() => []);
 
-  // Fase 1: lotes estritamente entre artigo i e i+1 (não varrer o bloco final para o último)
   for (let i = 0; i < itemMatches.length - 1; i++) {
     const start = itemMatches[i].index;
     const end = itemMatches[i + 1].index;
@@ -25337,13 +25417,29 @@ function quebraMergeItemsWithLotes(itemMatches, lotes, dataEmissao) {
   for (const i of needsPack) {
     const already = assigned[i].reduce((s, l) => s + Number(l.qtd || 0), 0);
     const target = Number(itemMatches[i].quantidade || 0);
-    const remain = target > 0 ? Math.max(0, target - already) : 0;
+    if (!(target > 0)) {
+      // Sem qtd no artigo: 1 lote (com qtd própria) por vez — não engolir o pool todo
+      if (pool.length) assigned[i].push(pool.shift());
+      continue;
+    }
+    const remain = Math.max(0, target - already);
     const pack = quebraPackLotsForTarget(pool, remain || target);
     assigned[i].push(...pack);
   }
 
-  // Sobras → último artigo (ainda como linhas de lote)
-  if (pool.length) assigned[assigned.length - 1].push(...pool);
+  if (pool.length) {
+    if (itemMatches.length === 1) {
+      assigned[0].push(...pool);
+    } else {
+      // Distribui sobras 1 a 1 pelos artigos; resto no último
+      let i = 0;
+      while (pool.length && i < itemMatches.length) {
+        assigned[i].push(pool.shift());
+        i++;
+      }
+      if (pool.length) assigned[assigned.length - 1].push(...pool);
+    }
+  }
 
   const items = [];
   for (let i = 0; i < itemMatches.length; i++) {
