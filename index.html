@@ -25138,6 +25138,16 @@ async function quebraPdfToText(file) {
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const tc = await page.getTextContent({ disableCombineTextItems: true });
+    // Ordenar por leitura visual (cima→baixo, esq→dir). Sem isto o pdf.js
+    // devolve por vezes colunas fora de ordem e mistura produto/qtd/lote.
+    const sorted = (tc.items || []).slice().sort((a, b) => {
+      const ya = (a.transform && a.transform[5]) || 0;
+      const yb = (b.transform && b.transform[5]) || 0;
+      if (Math.abs(ya - yb) > 2.5) return yb - ya;
+      const xa = (a.transform && a.transform[4]) || 0;
+      const xb = (b.transform && b.transform[4]) || 0;
+      return xa - xb;
+    });
     let lastY = null;
     let bufLine = [];
     const flush = () => {
@@ -25145,7 +25155,7 @@ async function quebraPdfToText(file) {
       if (s) lines.push(s);
       bufLine = [];
     };
-    for (const it of tc.items) {
+    for (const it of sorted) {
       const y = Math.round((it.transform && it.transform[5]) || 0);
       if (lastY != null && Math.abs(y - lastY) > 3) flush();
       const str = it.str || '';
@@ -25166,7 +25176,9 @@ function quebraSplitInfAdProd(text) {
     .replace(/([^\s])(?=Lote\s*=)/gi, '$1 ')
     .replace(/([^\s])(?=Qtd\s*=)/gi, '$1 ')
     .replace(/([^\s])(?=dtVal\s*=)/gi, '$1 ')
-    .replace(/([^\s])(?=nLote\s*[=:])/gi, '$1 ');
+    .replace(/([^\s])(?=nLote\s*[=:])/gi, '$1 ')
+    .replace(/(Lote\s*=\s*[A-Za-z0-9.\-\/]+)\s*(?=Qtd\s*=)/gi, '$1 ')
+    .replace(/(Qtd\s*=\s*[\d.,]+)\s*(?=dtVal\s*=)/gi, '$1 ');
 }
 
 function quebraNormDtVal(s) {
@@ -25250,9 +25262,36 @@ function quebraParseItemMatches(compact) {
   return found;
 }
 
+function quebraQtdClose(a, b) {
+  return Math.abs(Number(a || 0) - Number(b || 0)) < 0.001;
+}
+
+/** Empacota lotes restantes para bater na qtd do artigo (exact / sequência / 1º lote). */
+function quebraPackLotsForTarget(pool, target) {
+  if (!pool.length) return [];
+  if (!(target > 0)) return [pool.shift()];
+
+  const exact = pool.findIndex(l => l.qtd != null && quebraQtdClose(l.qtd, target));
+  if (exact >= 0) return pool.splice(exact, 1);
+
+  for (let start = 0; start < pool.length; start++) {
+    let sum = 0;
+    for (let end = start; end < pool.length; end++) {
+      sum += Number(pool[end].qtd || 0);
+      if (quebraQtdClose(sum, target)) return pool.splice(start, end - start + 1);
+      if (sum > target + 0.001) break;
+    }
+  }
+  return [pool.shift()];
+}
+
+/**
+ * Associa lotes aos artigos.
+ * DANFE costuma listar todos os Lote=/Qtd=/dtVal= no bloco final — o fallback
+ * antigo (1 lote por linha, resto no último) trocava produtos/qtds/lotes.
+ * Estratégia: 1) lotes entre linhas consecutivas; 2) resto por quantidade.
+ */
 function quebraMergeItemsWithLotes(itemMatches, lotes, dataEmissao) {
-  const items = [];
-  const used = new Set();
   const apply = (base, loteInfo) => {
     const qtd = loteInfo.qtd != null ? loteInfo.qtd : base.quantidade;
     const dtVal = loteInfo.dtVal || '';
@@ -25268,31 +25307,50 @@ function quebraMergeItemsWithLotes(itemMatches, lotes, dataEmissao) {
       motivo: quebraMotivoFromValidade(dtVal, dataEmissao),
     };
   };
-  for (let i = 0; i < itemMatches.length; i++) {
-    const it = itemMatches[i];
-    const start = it.index;
-    const end = i + 1 < itemMatches.length ? itemMatches[i + 1].index : Infinity;
-    const mine = [];
+  if (!itemMatches.length) return [];
+
+  const used = new Set();
+  const assigned = itemMatches.map(() => []);
+
+  // Fase 1: lotes estritamente entre artigo i e i+1 (não varrer o bloco final para o último)
+  for (let i = 0; i < itemMatches.length - 1; i++) {
+    const start = itemMatches[i].index;
+    const end = itemMatches[i + 1].index;
     lotes.forEach((l, li) => {
       if (used.has(li)) return;
       if (l.index > start && l.index < end) {
         used.add(li);
-        mine.push(l);
+        assigned[i].push(l);
       }
     });
-    if (mine.length) {
-      mine.forEach(l => items.push(apply(it, l)));
-      continue;
-    }
-    let fallback = {};
-    for (let li = 0; li < lotes.length; li++) {
-      if (!used.has(li)) {
-        used.add(li);
-        fallback = lotes[li];
-        break;
-      }
-    }
-    items.push(apply(it, fallback));
+  }
+
+  const pool = lotes.filter((_, li) => !used.has(li)).map(l => ({ ...l }));
+
+  const needsPack = [];
+  for (let i = 0; i < itemMatches.length; i++) {
+    const sum = assigned[i].reduce((s, l) => s + Number(l.qtd || 0), 0);
+    const target = Number(itemMatches[i].quantidade || 0);
+    if (!assigned[i].length || (target > 0 && sum + 0.001 < target)) needsPack.push(i);
+  }
+
+  for (const i of needsPack) {
+    const already = assigned[i].reduce((s, l) => s + Number(l.qtd || 0), 0);
+    const target = Number(itemMatches[i].quantidade || 0);
+    const remain = target > 0 ? Math.max(0, target - already) : 0;
+    const pack = quebraPackLotsForTarget(pool, remain || target);
+    assigned[i].push(...pack);
+  }
+
+  // Sobras → último artigo (ainda como linhas de lote)
+  if (pool.length) assigned[assigned.length - 1].push(...pool);
+
+  const items = [];
+  for (let i = 0; i < itemMatches.length; i++) {
+    const base = itemMatches[i];
+    const mine = assigned[i];
+    if (!mine.length) items.push(apply(base, {}));
+    else mine.forEach(l => items.push(apply(base, l)));
   }
   return items;
 }
