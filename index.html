@@ -3555,8 +3555,8 @@ var _unused_placeholder = 1;
         <div class="form-card" style="max-width:920px;">
           <h3 style="font-size:16px;font-weight:600;margin:0 0 4px;">Criar documento Quebra</h3>
           <p style="font-size:12px;color:var(--muted);margin:0 0 16px;line-height:1.45;">
-            Carrega a <strong>fatura PDF (NF-e / DANFE)</strong> e gera o <strong>Formulário de Quebras</strong> (MR 1063.00)
-            no layout oficial — versões Delta Foods (GN52) e Qbrasil (GN53).
+            Preferir o <strong>XML da NF-e</strong> (mais fiável). Também aceita PDF/DANFE.
+            Gera o <strong>Formulário de Quebras</strong> (MR 1063.00) no layout oficial — Delta Foods (GN52) e Qbrasil (GN53).
           </p>
           <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Empresa *</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -3600,10 +3600,10 @@ var _unused_placeholder = 1;
           </div>
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px;">
             <label class="btn btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:36px;">
-              📁 Selecionar PDF da fatura
-              <input type="file" id="af-qb-pdf-input" accept="application/pdf,.pdf" style="display:none" onchange="quebraOnPdf(event)">
+              📁 Selecionar PDF ou XML da NF-e
+              <input type="file" id="af-qb-pdf-input" accept="application/pdf,.pdf,text/xml,application/xml,.xml" style="display:none" onchange="quebraOnNfeFile(event)">
             </label>
-            <span id="af-qb-pdf-name" style="font-size:13px;color:var(--muted);">Nenhum PDF seleccionado.</span>
+            <span id="af-qb-pdf-name" style="font-size:13px;color:var(--muted);">Nenhum ficheiro seleccionado.</span>
           </div>
           <div id="af-qb-nfe-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;"></div>
           <div id="af-qb-preview"></div>
@@ -25173,8 +25173,10 @@ function quebraScoreParse(nfe) {
     if (it.lote) score += 2;
     if (it.codigo) codes.add(it.codigo);
   });
-  score += codes.size * 8;
+  // Códigos distintos pesam muito — evita o modo «tudo GOLD» da extracção sorted do pdf.js
+  score += codes.size * 40;
   score += Math.min(nfe.items.length, 40);
+  if (nfe.items.length >= 8 && codes.size <= 2) score -= 2000;
   return score;
 }
 
@@ -25708,6 +25710,7 @@ function quebraParseNfeText(text, filename) {
     valorTotal,
     items,
     texto: raw,
+    fonte: 'pdf',
   };
 }
 
@@ -25725,7 +25728,159 @@ function quebraMotivoFromValidade(dtValIso, dataEmissaoBr) {
   return val < em ? 4 : 1;
 }
 
-async function quebraOnPdf(ev) {
+/** Texto de um elemento XML pelo localName (ignora namespaces da NF-e). */
+function quebraXmlText(parent, localName) {
+  if (!parent) return '';
+  const kids = parent.getElementsByTagNameNS
+    ? parent.getElementsByTagNameNS('*', localName)
+    : parent.getElementsByTagName(localName);
+  if (!kids || !kids.length) return '';
+  return String(kids[0].textContent || '').trim();
+}
+
+function quebraXmlAll(parent, localName) {
+  if (!parent) return [];
+  const kids = parent.getElementsByTagNameNS
+    ? parent.getElementsByTagNameNS('*', localName)
+    : parent.getElementsByTagName(localName);
+  return Array.from(kids || []);
+}
+
+function quebraXmlIsoToBr(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/**
+ * Parser oficial da NF-e XML — um artigo por &lt;rastro&gt; (nLote/qLote/dVal).
+ * Preferir sempre ao PDF quando o XML estiver disponível.
+ */
+function quebraParseNfeXml(xmlText, filename) {
+  const raw = String(xmlText || '').replace(/^\uFEFF/, '').trim();
+  if (!raw || raw.charAt(0) !== '<') {
+    throw new Error('Ficheiro XML inválido (não começa com <).');
+  }
+  const doc = new DOMParser().parseFromString(raw, 'application/xml');
+  let parseErr = null;
+  try {
+    const errs = doc.getElementsByTagName('parsererror');
+    if (errs && errs.length) parseErr = errs[0];
+  } catch (_) {}
+  if (!parseErr && typeof doc.querySelector === 'function') {
+    parseErr = doc.querySelector('parsererror');
+  }
+  if (parseErr) {
+    throw new Error('XML da NF-e inválido ou corrompido.');
+  }
+
+  const inf = quebraXmlAll(doc, 'infNFe')[0] || doc.documentElement;
+  const ide = quebraXmlAll(inf, 'ide')[0];
+  const emit = quebraXmlAll(inf, 'emit')[0];
+  const total = quebraXmlAll(inf, 'total')[0];
+
+  let chave = '';
+  const idAttr = inf && (inf.getAttribute('Id') || inf.getAttribute('id'));
+  if (idAttr) chave = String(idAttr).replace(/^NFe/i, '').replace(/\D/g, '');
+  if (chave.length !== 44) {
+    const fn = String(filename || '').match(/(\d{44})/);
+    if (fn) chave = fn[1];
+  }
+  if (chave.length !== 44) {
+    const m44 = raw.replace(/\s+/g, ' ').match(/\b(\d{44})\b/);
+    if (m44) chave = m44[1];
+  }
+  const decoded = quebraDecodeChave(chave);
+
+  const numero = quebraXmlText(ide, 'nNF') || (decoded && decoded.numero) || '';
+  const serie = quebraXmlText(ide, 'serie') || (decoded && decoded.serie) || '1';
+  const dhEmi = quebraXmlText(ide, 'dhEmi') || quebraXmlText(ide, 'dEmi');
+  const dataEmissao = quebraXmlIsoToBr(dhEmi) || (dhEmi.includes('/') ? dhEmi : '');
+  const natureza = quebraXmlText(ide, 'natOp');
+  const cnpjRaw = quebraXmlText(emit, 'CNPJ') || (decoded && decoded.cnpj) || '';
+  const cnpj = quebraFmtCnpj(cnpjRaw);
+  const emitente = quebraXmlText(emit, 'xNome') || quebraXmlText(emit, 'xFant');
+  const vNF = quebraXmlText(quebraXmlAll(total, 'ICMSTot')[0], 'vNF');
+  const valorTotal = vNF || '';
+
+  const items = [];
+  const dets = quebraXmlAll(inf, 'det');
+  dets.forEach(det => {
+    const prod = quebraXmlAll(det, 'prod')[0] || det;
+    const codigo = quebraXmlText(prod, 'cProd');
+    if (!codigo) return;
+    const designacao = quebraXmlText(prod, 'xProd');
+    const ncm = quebraXmlText(prod, 'NCM');
+    const cfop = quebraXmlText(prod, 'CFOP');
+    const umb = (quebraXmlText(prod, 'uCom') || quebraXmlText(prod, 'uTrib') || 'UN').toUpperCase();
+    const qCom = quebraParseQtdLote(quebraXmlText(prod, 'qCom') || quebraXmlText(prod, 'qTrib'));
+
+    // rastro pode estar em prod ou directamente em det
+    let rastros = quebraXmlAll(prod, 'rastro');
+    if (!rastros.length) rastros = quebraXmlAll(det, 'rastro');
+
+    const pushLine = (lote, qtd, dtVal) => {
+      const q = qtd != null ? qtd : (qCom != null ? qCom : 0);
+      items.push({
+        codigo: String(codigo).trim(),
+        designacao: String(designacao || '').trim(),
+        ncm: String(ncm || '').trim(),
+        cfop: String(cfop || '').trim(),
+        umb,
+        quantidade: q,
+        lote: String(lote || '').trim(),
+        dtVal: quebraNormDtVal(dtVal || ''),
+        motivo: quebraMotivoFromValidade(quebraNormDtVal(dtVal || ''), dataEmissao),
+      });
+    };
+
+    if (rastros.length) {
+      rastros.forEach(r => {
+        pushLine(
+          quebraXmlText(r, 'nLote'),
+          quebraParseQtdLote(quebraXmlText(r, 'qLote')),
+          quebraXmlText(r, 'dVal')
+        );
+      });
+      return;
+    }
+
+    // Fallback: infAdProd estilo DANFE "Lote=… Qtd=… dtVal=…"
+    const infAd = quebraXmlText(prod, 'infAdProd') || quebraXmlText(det, 'infAdProd');
+    if (infAd) {
+      const chunks = quebraParseLoteChunks(quebraSplitInfAdProd(infAd));
+      if (chunks.length) {
+        chunks.forEach(c => pushLine(c.lote, c.qtd, c.dtVal));
+        return;
+      }
+    }
+    pushLine('', qCom, '');
+  });
+
+  return {
+    chave,
+    numero: String(numero),
+    serie: String(serie),
+    cnpj,
+    dataEmissao,
+    natureza,
+    emitente,
+    valorTotal,
+    items,
+    texto: raw.slice(0, 2000),
+    fonte: 'xml',
+  };
+}
+
+function quebraIsXmlFile(file) {
+  const name = String(file?.name || '').toLowerCase();
+  const type = String(file?.type || '').toLowerCase();
+  if (name.endsWith('.xml')) return true;
+  if (type.includes('xml')) return true;
+  return false;
+}
+
+async function quebraOnNfeFile(ev) {
   const file = ev?.target?.files?.[0];
   const nameEl = document.getElementById('af-qb-pdf-name');
   const infoEl = document.getElementById('af-qb-nfe-info');
@@ -25733,31 +25888,49 @@ async function quebraOnPdf(ev) {
   if (!file) return;
   _quebraPdfFile = file;
   if (nameEl) nameEl.textContent = file.name;
-  if (st) st.textContent = 'A ler PDF…';
+  const asXml = quebraIsXmlFile(file);
+  if (st) st.textContent = asXml ? 'A ler XML da NF-e…' : 'A ler PDF…';
   try {
-    const text = await quebraPdfToText(file);
-    _quebraNfe = quebraParseNfeText(text, file.name);
+    if (asXml) {
+      const xmlText = await file.text();
+      _quebraNfe = quebraParseNfeXml(xmlText, file.name);
+    } else {
+      const text = await quebraPdfToText(file);
+      _quebraNfe = quebraParseNfeText(text, file.name);
+    }
     const n = _quebraNfe;
     if (!n.items.length) {
-      toast('PDF lido, mas não encontrei linhas de produto. Confirma que é uma DANFE NF-e.', 'warn');
+      toast(
+        asXml
+          ? 'XML lido, mas não encontrei produtos (det/prod). Confirma que é uma NF-e.'
+          : 'PDF lido, mas não encontrei linhas de produto. Confirma que é uma DANFE NF-e.',
+        'warn'
+      );
     } else {
-      toast(`NF-e ${n.numero || '—'} · ${n.items.length} artigo(s) extraído(s).`);
+      const fonte = n.fonte === 'xml' ? 'XML' : 'PDF';
+      toast(`NF-e ${n.numero || '—'} · ${n.items.length} artigo(s) via ${fonte}.`);
     }
     if (infoEl) {
+      const fonteLbl = n.fonte === 'xml' ? ' · fonte XML' : ' · fonte PDF';
       infoEl.innerHTML = n.items.length || n.chave
-        ? `<span style="color:var(--text);"><b>NF-e ${escHtml(n.numero || '—')}</b> série ${escHtml(n.serie || '—')} · ${escHtml(n.dataEmissao || '—')} · ${escHtml(n.emitente || '—')}<br>
+        ? `<span style="color:var(--text);"><b>NF-e ${escHtml(n.numero || '—')}</b> série ${escHtml(n.serie || '—')} · ${escHtml(n.dataEmissao || '—')} · ${escHtml(n.emitente || '—')}${fonteLbl}<br>
            CNPJ ${escHtml(n.cnpj || '—')} · ${escHtml(n.natureza || '')}<br>
            Chave ${escHtml(n.chave || '—')}</span>`
-        : '<span style="color:#b45309;">Não foi possível identificar a NF-e neste PDF.</span>';
+        : `<span style="color:#b45309;">Não foi possível identificar a NF-e neste ${asXml ? 'XML' : 'PDF'}.</span>`;
     }
     quebraRenderPreview();
     if (st) st.textContent = '';
   } catch (e) {
     _quebraNfe = null;
     quebraRenderPreview();
-    if (st) st.innerHTML = `<span style="color:var(--danger)">Erro a ler PDF: ${escHtml(e.message)}</span>`;
-    toast('Erro a ler PDF: ' + e.message, 'error');
+    if (st) st.innerHTML = `<span style="color:var(--danger)">Erro a ler ficheiro: ${escHtml(e.message)}</span>`;
+    toast('Erro a ler ficheiro: ' + e.message, 'error');
   }
+}
+
+/** @deprecated use quebraOnNfeFile */
+async function quebraOnPdf(ev) {
+  return quebraOnNfeFile(ev);
 }
 
 function quebraApplyMotivoPadrao() {
@@ -26057,7 +26230,7 @@ async function quebraGerarExcel() {
     return;
   }
   if (!_quebraNfe?.items?.length) {
-    toast('Carrega primeiro o PDF da fatura.', 'error');
+    toast('Carrega primeiro o PDF ou XML da NF-e.', 'error');
     return;
   }
   if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar Excel…</span>';
@@ -26094,7 +26267,8 @@ async function quebraGerarExcel() {
       if (it) {
         cB.value = deposito ? String(deposito) : '';
         cC.value = Number(it.codigo) || it.codigo;
-        cD.value = it.lote ? (Number(it.lote) || it.lote) : '';
+        // Lote como texto — preserva zeros à esquerda (ex. 078525)
+        cD.value = it.lote ? String(it.lote) : '';
         cE.value = it.designacao || '';
         cF.value = Number(it.quantidade) || 0;
         cH.value = it.umb || 'UN';
@@ -26109,7 +26283,10 @@ async function quebraGerarExcel() {
         cH.value = { formula: `IFERROR(VLOOKUP(C${r},Folha2!A:C,3,0),"")` };
       }
       quebraApplyItemRowStyle(ws, r, protoSnap);
-      if (it) cB.numFmt = '@';
+      if (it) {
+        cB.numFmt = '@';
+        cD.numFmt = '@';
+      }
       quebraForceItemAlignments(ws, r);
     }
 
@@ -26139,6 +26316,7 @@ async function quebraGerarExcel() {
 
 window.quebraSetEmpresa = quebraSetEmpresa;
 window.quebraOnPdf = quebraOnPdf;
+window.quebraOnNfeFile = quebraOnNfeFile;
 window.quebraGerarExcel = quebraGerarExcel;
 window.quebraApplyMotivoPadrao = quebraApplyMotivoPadrao;
 window.quebraOnItemMotivo = quebraOnItemMotivo;
