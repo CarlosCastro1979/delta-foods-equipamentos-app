@@ -25199,15 +25199,23 @@ async function quebraPdfToText(file) {
   return sSorted > sNative ? tSorted : tNative;
 }
 
+/** Normaliza hífens Unicode do DANFE (U+2212 etc.) e NBSP. */
+function quebraNormalizePdfText(text) {
+  return String(text || '')
+    .replace(/[\u2212\u2010\u2011\u2012\u2013\u2014\uFE58\uFE63\uFF0D]/g, '-')
+    .replace(/\u00a0/g, ' ');
+}
+
 /** DANFE infAdProd: pdf.js often glues Lote=/Qtd=/dtVal= (TJ offsets too small to count as spaces). */
 function quebraSplitInfAdProd(text) {
-  return String(text || '')
+  return quebraNormalizePdfText(text)
     .replace(/([^\s])(?=Lote\s*=)/gi, '$1 ')
     .replace(/([^\s])(?=Qtd\s*=)/gi, '$1 ')
     .replace(/([^\s])(?=dtVal\s*=)/gi, '$1 ')
     .replace(/([^\s])(?=nLote\s*[=:])/gi, '$1 ')
-    .replace(/(Lote\s*=\s*[A-Za-z0-9.\-\/]+)\s*(?=Qtd\s*=)/gi, '$1 ')
-    .replace(/(Qtd\s*=\s*[\d.,]+)\s*(?=dtVal\s*=)/gi, '$1 ');
+    // Só espaços horizontais — NÃO colapsar newlines entre Lote/Qtd/dtVal
+    .replace(/(Lote\s*=\s*[A-Za-z0-9.\-\/]+)[^\S\n]*(?=Qtd\s*=)/gi, '$1 ')
+    .replace(/(Qtd\s*=\s*[\d.,]+)[^\S\n]*(?=dtVal\s*=)/gi, '$1 ');
 }
 
 function quebraNormDtVal(s) {
@@ -25467,6 +25475,192 @@ function quebraMergeItemsWithLotes(itemMatches, lotes, dataEmissao) {
   return items;
 }
 
+/**
+ * Parser linha-a-linha para DANFE Delta (cód / desc / NCM / CFOP / UN / qtd / … / Lote / Qtd / dtVal).
+ * É o formato real das NF-e de descarte — mais fiável que regex no texto compactado.
+ */
+function quebraParseNfeByLines(raw, dataEmissao) {
+  const lines = quebraNormalizePdfText(raw)
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l.length > 0);
+
+  const skipExact = new Set([
+    'DANFE', 'QTDE', 'CFOP', 'NCM / SH', 'NCM/SH', 'IPI', 'ICMS',
+    'CÓD PRODUTO', 'COD PRODUTO', 'DESCRIÇÃO DOS PRODUTOS / SERVIÇOS',
+    'DADOS DO PRODUTO / SERVIÇOS', 'RESERVADO AO FISCO', 'DADOS ADICIONAIS',
+    'IMPOSTOS:', 'VL. UNITÁRIO', 'VL. TOTAL', 'BC ICMS', 'VL. ICMS', 'VL. IPI',
+    'ALÍQUOTAS', '1 − SAÍDA', '1 - SAÍDA', '0 − ENTRADA', '0 - ENTRADA',
+    'Documento Auxiliar de', 'Nota Fiscal Eletrônica',
+  ]);
+
+  const items = [];
+  let cur = null;
+  let pendingLote = null;
+
+  const flushLote = () => {
+    if (!pendingLote || !pendingLote.lote) { pendingLote = null; return; }
+    const target = cur || items[items.length - 1];
+    if (!target) { pendingLote = null; return; }
+    const qtd = pendingLote.qtd != null ? pendingLote.qtd : target.quantidade;
+    items.push({
+      codigo: target.codigo,
+      designacao: target.designacao,
+      ncm: target.ncm,
+      cfop: target.cfop,
+      umb: target.umb,
+      quantidade: qtd,
+      lote: pendingLote.lote,
+      dtVal: pendingLote.dtVal || '',
+      motivo: quebraMotivoFromValidade(pendingLote.dtVal || '', dataEmissao),
+    });
+    // Um artigo DANFE = uma linha de produto + um rastro; após emitir, libera cur
+    // para o próximo código (o mesmo SKU pode repetir com outro lote).
+    if (cur && cur === target) cur = null;
+    pendingLote = null;
+  };
+
+  const startProduct = (codigo) => {
+    if (pendingLote) flushLote();
+    cur = {
+      codigo,
+      designacao: '',
+      ncm: '',
+      cfop: '',
+      umb: 'UN',
+      quantidade: 0,
+      _phase: 'desc',
+    };
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    if (skipExact.has(line)) continue;
+    if (/^Folhas\s+\d/i.test(line)) continue;
+    if (/^PROTOCOLO/i.test(line)) continue;
+    if (/^CONSULTA DE AUTENTICIDADE/i.test(line)) continue;
+    if (/^Valor Aproximado/i.test(line)) continue;
+    if (/^-{5,}$/.test(line)) continue;
+
+    // Lote (+ Qtd/dtVal na mesma linha, se o splitInfAdProd os colapsou)
+    const loteFull = line.match(/^Lote\s*=\s*([A-Za-z0-9.\-\/]+)\s+Qtd\s*=\s*([\d.,]+)\s+dtVal\s*=\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})\s*$/i);
+    if (loteFull) {
+      if (pendingLote) flushLote();
+      pendingLote = {
+        lote: loteFull[1],
+        qtd: quebraParseQtdLote(loteFull[2]),
+        dtVal: quebraNormDtVal(loteFull[3]),
+      };
+      flushLote();
+      continue;
+    }
+    const loteM = line.match(/^Lote\s*=\s*([A-Za-z0-9.\-\/]+)\s*$/i);
+    if (loteM) {
+      if (pendingLote) flushLote();
+      pendingLote = { lote: loteM[1], qtd: null, dtVal: '' };
+      continue;
+    }
+    const qtdM = line.match(/^Qtd(?:e|ade)?\s*=\s*([\d.,]+)\s*$/i);
+    if (qtdM && pendingLote) {
+      pendingLote.qtd = quebraParseQtdLote(qtdM[1]);
+      continue;
+    }
+    const dtM = line.match(/^dtVal\s*=\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})\s*$/i);
+    if (dtM && pendingLote) {
+      pendingLote.dtVal = quebraNormDtVal(dtM[1]);
+      flushLote();
+      continue;
+    }
+
+    // Linha completa (pdf.js): "7801734 DELTA … 09012100 5949 UN 12,00 7,9700 95,64 141"
+    const rowM = line.match(/^(\d{5,7})\s+(.+?)\s+(\d{8})\s+(\d{3,4})\s+(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)\s+([\d.]+,[\d]{2,4})(?:\s+|$)/i);
+    if (rowM) {
+      startProduct(rowM[1]);
+      cur.designacao = rowM[2].replace(/\s+/g, ' ').trim();
+      cur.ncm = rowM[3];
+      cur.cfop = rowM[4];
+      cur.umb = rowM[5].toUpperCase();
+      cur.quantidade = quebraParseQtyFlexible(rowM[6]);
+      cur._phase = 'afterqtd';
+      continue;
+    }
+
+    // NCM (8 dígitos) / NCM colado na descrição — ANTES de tratar como novo cód. produto
+    if (cur && cur._phase === 'desc') {
+      const gluedNcm = line.match(/^(.*?)[\s\-]+(\d{8})$/);
+      if (gluedNcm && gluedNcm[1].length >= 3) {
+        cur.designacao = (cur.designacao + ' ' + gluedNcm[1]).replace(/\s+/g, ' ').trim();
+        cur.ncm = gluedNcm[2];
+        cur._phase = 'cfop';
+        continue;
+      }
+      if (/^\d{8}$/.test(line)) {
+        cur.ncm = line;
+        cur._phase = 'cfop';
+        continue;
+      }
+    }
+
+    // Código de produto sozinho (5–7 dígitos; 8 = NCM) — extracção PyMuPDF / linha-a-linha
+    if (/^\d{5,7}$/.test(line)) {
+      startProduct(line);
+      continue;
+    }
+
+    if (!cur) continue;
+
+    if ((cur._phase === 'cfop' || cur._phase === 'desc') && /^\d{3,4}$/.test(line) && cur.ncm) {
+      cur.cfop = line;
+      cur._phase = 'umb';
+      continue;
+    }
+    if ((cur._phase === 'umb' || cur._phase === 'cfop') && /^(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)$/i.test(line)) {
+      cur.umb = line.toUpperCase();
+      cur._phase = 'qtd';
+      continue;
+    }
+    if (cur._phase === 'qtd' && /^[\d.]+,[\d]{2,4}$|^\d+(?:[.,]\d+)?$/.test(line)) {
+      // Evitar confundir preço unitário (7,9700) — qtd DANFE costuma ter ,00 / .000 ou inteiro curto
+      const asQtd = quebraParseQtyFlexible(line);
+      if (/,/.test(line) || /^\d+\.\d{3}$/.test(line) || /^\d{1,5}$/.test(line)) {
+        cur.quantidade = asQtd;
+        cur._phase = 'afterqtd';
+        continue;
+      }
+    }
+    // Continuação da descrição (CAP / SIL / resto do nome)
+    if (cur._phase === 'desc' || cur._phase === 'afterqtd') {
+      if (/^(SIL|CAP)$/i.test(line) || (/^[A-Za-zÁÉÍÓÚÂÊÔÃÕÇ]/.test(line) && cur._phase === 'desc' && !/^\d/.test(line))) {
+        if (!/^(UN|CX|KG)$/i.test(line)) {
+          cur.designacao = (cur.designacao + ' ' + line).replace(/\s+/g, ' ').trim();
+          continue;
+        }
+      }
+    }
+    if (cur._phase === 'desc' && line.length >= 3 && !/^\d/.test(line)) {
+      cur.designacao = (cur.designacao + ' ' + line).replace(/\s+/g, ' ').trim();
+    }
+  }
+  if (pendingLote) flushLote();
+
+  // Artigos sem lote emitido (raro) — inclui com qtd da linha
+  if (cur && cur.codigo && cur.designacao) {
+    items.push({
+      codigo: cur.codigo,
+      designacao: cur.designacao,
+      ncm: cur.ncm,
+      cfop: cur.cfop,
+      umb: cur.umb,
+      quantidade: cur.quantidade,
+      lote: '',
+      dtVal: '',
+      motivo: 4,
+    });
+  }
+
+  return items;
+}
+
 function quebraParseNfeText(text, filename) {
   const raw = quebraSplitInfAdProd(text);
   const compact = raw.replace(/\s+/g, ' ');
@@ -25482,7 +25676,7 @@ function quebraParseNfeText(text, filename) {
     if (fn) chave = fn[1];
   }
   const decoded = quebraDecodeChave(chave);
-  const nnfM = compact.match(/N[º°o]\s*(\d{1,9})/i);
+  const nnfM = compact.match(/N[º°o]\s*[°.]?\s*(\d{1,9})/i) || compact.match(/N[°º]\s*(\d{1,9})/);
   const numero = (nnfM && nnfM[1]) || (decoded && decoded.numero) || '';
   const serie = (decoded && decoded.serie) || '1';
   const cnpjM = compact.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/);
@@ -25496,9 +25690,12 @@ function quebraParseNfeText(text, filename) {
   const totM = compact.match(/VALOR TOTAL DA NOTA[^\d]{0,40}([\d.]+,[\d]{2})/i);
   const valorTotal = totM ? totM[1] : '';
 
-  const lotes = quebraParseLoteChunks(compact);
-  const itemMatches = quebraParseItemMatches(compact);
-  const items = quebraMergeItemsWithLotes(itemMatches, lotes, dataEmissao);
+  let items = quebraParseNfeByLines(raw, dataEmissao);
+  if (!items.length) {
+    const lotes = quebraParseLoteChunks(compact);
+    const itemMatches = quebraParseItemMatches(compact);
+    items = quebraMergeItemsWithLotes(itemMatches, lotes, dataEmissao);
+  }
 
   return {
     chave,
