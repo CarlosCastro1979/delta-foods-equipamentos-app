@@ -1,0 +1,4 @@
+{
+  "install": "chmod +x serve.sh",
+  "start": "./serve.sh"
+}
