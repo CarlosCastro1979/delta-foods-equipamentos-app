@@ -25221,7 +25221,7 @@ function quebraSplitInfAdProd(text) {
 }
 
 function quebraNormDtVal(s) {
-  const t = String(s || '').trim();
+  const t = String(s || '').trim().replace(/[\u2212\u2010\u2011\u2012\u2013\u2014\uFE58\uFE63\uFF0D]/g, '-');
   const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) return t;
   const br = t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -25545,7 +25545,8 @@ function quebraParseNfeByLines(raw, dataEmissao) {
     if (/^-{5,}$/.test(line)) continue;
 
     // Lote (+ Qtd/dtVal na mesma linha, se o splitInfAdProd os colapsou)
-    const loteFull = line.match(/^Lote\s*=\s*([A-Za-z0-9.\-\/]+)\s+Qtd\s*=\s*([\d.,]+)\s+dtVal\s*=\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})\s*$/i);
+    // Aceita hífen Unicode na data (DANFE) mesmo se a normalização falhar nalgum caminho
+    const loteFull = line.match(/^Lote\s*=\s*([A-Za-z0-9.\-\/]+)\s+Qtd\s*=\s*([\d.,]+)\s+dtVal\s*=\s*(\d{4}[\-−]\d{2}[\-−]\d{2}|\d{2}\/\d{2}\/\d{4})\s*$/i);
     if (loteFull) {
       if (pendingLote) flushLote();
       pendingLote = {
@@ -25567,23 +25568,58 @@ function quebraParseNfeByLines(raw, dataEmissao) {
       pendingLote.qtd = quebraParseQtdLote(qtdM[1]);
       continue;
     }
-    const dtM = line.match(/^dtVal\s*=\s*(\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})\s*$/i);
+    const dtM = line.match(/^dtVal\s*=\s*(\d{4}[\-−]\d{2}[\-−]\d{2}|\d{2}\/\d{2}\/\d{4})\s*$/i);
     if (dtM && pendingLote) {
       pendingLote.dtVal = quebraNormDtVal(dtM[1]);
       flushLote();
       continue;
     }
 
-    // Linha completa (pdf.js): "7801734 DELTA … 09012100 5949 UN 12,00 7,9700 95,64 141"
-    const rowM = line.match(/^(\d{5,7})\s+(.+?)\s+(\d{8})\s+(\d{3,4})\s+(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)\s+([\d.]+,[\d]{2,4})(?:\s+|$)/i);
+    // Linha completa (pdf.js): "7801734 DELTA … 09012100 5949 UN 12,00 …"
+    // Ou com CST/CSOSN entre NCM e CFOP: "… 09012100 141 5949 UN 12,00 …" (extracção sorted)
+    const rowM = line.match(/^(\d{5,7})\s+(.+?)\s+(\d{8})\s+(?:(\d{2,4})\s+)?(\d{3,4})\s+(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)\s+([\d.]+,[\d]{2,4})(?:\s+|$)/i);
     if (rowM) {
       startProduct(rowM[1]);
       cur.designacao = rowM[2].replace(/\s+/g, ' ').trim();
       cur.ncm = rowM[3];
-      cur.cfop = rowM[4];
-      cur.umb = rowM[5].toUpperCase();
-      cur.quantidade = quebraParseQtyFlexible(rowM[6]);
+      cur.cfop = rowM[5];
+      cur.umb = rowM[6].toUpperCase();
+      cur.quantidade = quebraParseQtyFlexible(rowM[7]);
       cur._phase = 'afterqtd';
+      continue;
+    }
+
+    // Fallback: linha começa com cód. produto mas o resto não bateu no regex completo
+    // (evita o lote seguinte colar no SKU anterior — bug azeitona/pickles no DRIP)
+    const codePrefix = line.match(/^(\d{5,7})\s+(.+)$/);
+    if (codePrefix && !/^(Lote|Qtd|dtVal)\b/i.test(codePrefix[2])) {
+      startProduct(codePrefix[1]);
+      const rest = codePrefix[2].replace(/\s+/g, ' ').trim();
+      const ncmAt = rest.search(/(?:^|\s)(\d{8})(?:\s|$)/);
+      if (ncmAt >= 0) {
+        const ncmM = rest.slice(ncmAt).trim().match(/^(\d{8})\s*(.*)$/);
+        cur.designacao = rest.slice(0, ncmAt).trim();
+        cur.ncm = ncmM ? ncmM[1] : '';
+        const after = (ncmM && ncmM[2] ? ncmM[2] : '').trim().split(/\s+/).filter(Boolean);
+        let ti = 0;
+        if (after[ti] && /^\d{2,4}$/.test(after[ti]) && after[ti + 1] && /^\d{3,4}$/.test(after[ti + 1])
+            && after[ti + 2] && /^(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)$/i.test(after[ti + 2])) {
+          ti++; // CST/CSOSN antes do CFOP
+        }
+        if (after[ti] && /^\d{3,4}$/.test(after[ti])) cur.cfop = after[ti++];
+        if (after[ti] && /^(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)$/i.test(after[ti])) {
+          cur.umb = after[ti++].toUpperCase();
+        }
+        if (after[ti] && /^[\d.]+,[\d]{2,4}$/.test(after[ti])) {
+          cur.quantidade = quebraParseQtyFlexible(after[ti]);
+          cur._phase = 'afterqtd';
+        } else {
+          cur._phase = cur.cfop ? 'umb' : (cur.ncm ? 'cfop' : 'desc');
+        }
+      } else {
+        cur.designacao = rest;
+        cur._phase = 'desc';
+      }
       continue;
     }
 
