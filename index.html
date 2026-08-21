@@ -25306,8 +25306,8 @@ function quebraParseItemMatches(compact) {
     });
   };
 
-  // Linha DANFE completa: cód + desc + NCM + CFOP + UN + qtd (BR ou inteiro)
-  const itemRe = /(\d{5,8})\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç0-9 ._\-\/()]{3,90}?)\s+(\d{8})\s+(\d{3,4})\s+(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)\s+([\d.]+,[\d]{2,4}|\d+(?:[.,]\d+)?)/gi;
+  // Linha DANFE completa: cód + desc + NCM + [CST] + CFOP + UN + qtd (BR ou inteiro)
+  const itemRe = /(\d{5,8})\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç0-9 ._\-\/()]{3,90}?)\s+(\d{8})\s+(?:\d{2,4}\s+)?(\d{3,4})\s+(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)\s+([\d.]+,[\d]{2,4}|\d+(?:[.,]\d+)?)/gi;
   let im;
   while ((im = itemRe.exec(compact))) {
     push(im.index, im[1], im[2], im[3], im[4], im[5], quebraParseQtyFlexible(im[6]));
