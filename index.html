@@ -25311,6 +25311,22 @@ function quebraParseItemMatches(compact) {
     }
   }
 
+  // Cód + descrição + NCM (qtd/UMB à frente ou nos lotes)
+  if (!found.length) {
+    const re3 = /(\d{5,8})\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9][A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç0-9 ._\-\/()]{3,90}?)\s+(\d{8})(?=\s+(?:\d{3,4}\s+)?(?:UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)\b|\s+Lote\s*[=:]|\s+\d{5,8}\b)/gi;
+    while ((im = re3.exec(compact))) {
+      let umb = 'UN';
+      let qtd = 0;
+      const tail = compact.slice(im.index + im[0].length, im.index + im[0].length + 60);
+      const qtdM = tail.match(/^\s*(?:(\d{3,4})\s+)?(UN|CX|KG|SC|FR|PAK|EM|CJ|GR|PCT|PC)\s+([\d.]+,[\d]{2,4}|\d+(?:[.,]\d+)?)/i);
+      if (qtdM) {
+        umb = qtdM[2].toUpperCase();
+        qtd = quebraParseQtyFlexible(qtdM[3]);
+      }
+      push(im.index, im[1], im[2], im[3], qtdM && qtdM[1] ? qtdM[1] : '', umb, qtd);
+    }
+  }
+
   // Fallback por nome de marca (qtd pode vir dos lotes)
   if (!found.length) {
     const altRe = /(\d{5,8})\s+((?:DELTA|TREMO[CÇ]O|CAF[EÉ]|CH[AÁ]|QIT|MAQ|M[AÁ]Q|GOLD)[^0-9]{3,90}?)(?=\s+\d{8}|\s+(?:UN|CX|KG)\b|\s+Lote\s*[=:])/gi;
