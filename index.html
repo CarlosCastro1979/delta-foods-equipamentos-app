@@ -19486,7 +19486,7 @@ let prosCadastroJsonUnavailable = false;
 let prosActiveTab = 'lead';
 let prosFieldSyncLock = false;
 let prosFieldSyncAbort = null;
-const PROS_AUTOSAVE_FIELDS = ['nome','contato','vendedor','segmento','regiao','cnpj','celular','email','estado','marca','marca-outro','preco','caps','kg','acao','data-acao'];
+const PROS_AUTOSAVE_FIELDS = ['nome','contato','vendedor','segmento','regiao','cnpj','celular','email','estado','marca','marca-outro','preco','caps','kg','acao','data-acao','nota'];
 const PROS_CADASTRO_OBRIGATORIOS = [
   ['nome', 'Nome / Razão Social'], ['cnpj', 'CNPJ / CPF'], ['fantasia', 'Nome Fantasia'],
   ['email', 'Email'], ['tel1', 'Tel. 1'], ['rua', 'Rua'], ['nro', 'Nro.'], ['bairro', 'Bairro'],
@@ -20436,11 +20436,16 @@ function prosFindById(id) {
   return prosData.find(x => String(x.id) === String(id));
 }
 
+function prosNotaDirty() {
+  const nota = document.getElementById('pros-f-nota')?.value.trim() || '';
+  return nota !== (prosSavedNota || '');
+}
+
 function scheduleProsAutoSave(delay = 800) {
   clearTimeout(prosAutoSaveTimer);
   if (!prosAutoSaveReady) return;
   if (!prosCanAutoSave()) return;
-  if (prosFormSnapshot() === prosLastSavedSnapshot) return;
+  if (prosFormSnapshot() === prosLastSavedSnapshot && !prosNotaDirty()) return;
   prosSetAutoSaveStatus('A guardar...', 'var(--muted)');
   prosAutoSaveTimer = setTimeout(() => prosAutoSave(), delay);
 }
@@ -20448,7 +20453,7 @@ function scheduleProsAutoSave(delay = 800) {
 async function prosAutoSave() {
   if (!prosAutoSaveReady) return;
   if (!prosCanAutoSave()) return;
-  if (prosFormSnapshot() === prosLastSavedSnapshot) return;
+  if (prosFormSnapshot() === prosLastSavedSnapshot && !prosNotaDirty()) return;
   const ok = await prosSave({ keepOpen: true, autosave: true });
   if (ok) prosLastSavedSnapshot = prosFormSnapshot();
 }
@@ -20462,11 +20467,12 @@ function initProsAutoSave() {
   PROS_AUTOSAVE_FIELDS.forEach(f => {
     const el = document.getElementById('pros-f-' + f);
     if (!el) return;
-    el.addEventListener('input', () => scheduleProsAutoSave(), { signal });
+    // Notas: debounce um pouco mais longo no input; blur guarda de imediato
+    const inputDelay = f === 'nota' ? 1200 : 800;
+    el.addEventListener('input', () => scheduleProsAutoSave(inputDelay), { signal });
     el.addEventListener('change', () => scheduleProsAutoSave(300), { signal });
+    if (f === 'nota') el.addEventListener('blur', () => scheduleProsAutoSave(100), { signal });
   });
-  const nota = document.getElementById('pros-f-nota');
-  if (nota) nota.addEventListener('blur', () => scheduleProsAutoSave(100), { signal });
   setTimeout(() => {
     prosLastSavedSnapshot = prosFormSnapshot();
     prosAutoSaveReady = true;
@@ -20630,7 +20636,7 @@ function prosCloseModalOnBg(e) {
 async function prosCloseModal() {
   clearTimeout(prosAutoSaveTimer);
   clearTimeout(prosGanhoAutoSaveTimer);
-  if (prosAutoSaveReady && prosCanAutoSave() && prosFormSnapshot() !== prosLastSavedSnapshot) {
+  if (prosAutoSaveReady && prosCanAutoSave() && (prosFormSnapshot() !== prosLastSavedSnapshot || prosNotaDirty())) {
     await prosSave({ keepOpen: true, autosave: true });
   }
   if (prosCadastroLeadId() && prosFormSnapshotGanho() !== prosGanhoLastSnapshot) {
