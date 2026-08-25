@@ -10542,6 +10542,14 @@ function pvTemNGravado(row) {
   return row != null && row.n != null && row.n !== '' && !Number.isNaN(Number(row.n));
 }
 
+/** Base do mês para % vs N-1 / Budget: N gravado, senão Previsão de fecho. */
+function pvBaseMesFecho(row) {
+  if (pvTemNGravado(row)) return Number(row.n);
+  if (!row || row.prevFecho == null || row.prevFecho === '') return null;
+  const p = Number(row.prevFecho);
+  return Number.isNaN(p) ? null : p;
+}
+
 /** Valor do mês para Acum. N: N gravado na linha, senão Previsão de fecho.
  *  Grupos/total somam os filhos (cada canal independente). */
 function pvValorMesAcumN(row, linhas) {
@@ -11063,7 +11071,7 @@ function pvUpdateRowPercents(idx) {
   if (!tr) return;
   const cells = tr.children;
   // 0 Emp, 1 N-1, 2 Prev, 3 N, 4 %Nn1, 5 Bud, 6 VarBud, 7 MYR, 8 VarPrevMyr, 9 VarNMyr, 10 AcumN1, 11 AcumN, 12 %Ac, 13 BudAcm, 14 %BudAc, 15 Acc
-  const baseMes = row.prevFecho != null && row.prevFecho !== '' ? Number(row.prevFecho) : null;
+  const baseMes = pvBaseMesFecho(row);
   if (cells[4]) cells[4].innerHTML = pvFmtPct(pvPct(baseMes, row.n1));
   if (cells[6]) cells[6].innerHTML = pvFmtPct(pvPct(baseMes, row.budget));
   if (cells[8]) cells[8].innerHTML = pvFmtPct(pvVarPrevMyrPct(row));
@@ -11123,7 +11131,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
   (_pvData.linhas || []).forEach((row, idx) => {
     const isGrupo = row.tipo === 'grupo' || row.tipo === 'total';
     const acumN = pvAcumNFecho(row);
-    const baseMes = row.prevFecho != null && row.prevFecho !== '' ? Number(row.prevFecho) : null;
+    const baseMes = pvBaseMesFecho(row);
     const pctNn1 = pvPct(baseMes, row.n1);
     const pctBud = pvPct(baseMes, row.budget);
     const pctAcumNn1 = pvPct(acumN, row.acumN1);
@@ -11168,7 +11176,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Mapa ${mesNome} ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">Var Prev/MYR % = (Previsão − MYR) / MYR · Var N/MYR % = (N − MYR) / MYR · Accuracy = N÷Previsão</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">N VS N-1 % = (N ou Previsão − N-1) / N-1 · Var Prev/MYR % = (Previsão − MYR) / MYR · Var N/MYR % = (N − MYR) / MYR · Accuracy = N÷Previsão</span>
       </div>
       <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1380px;">
         <thead>
@@ -11177,7 +11185,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
             <th style="text-align:right;">N-1</th>
             <th style="text-align:right;background:#dbeafe;">Previsão de fecho</th>
             <th style="text-align:right;background:#bbf7d0;">N</th>
-            <th style="text-align:right;">N VS N-1 %</th>
+            <th style="text-align:right;" title="(N gravado, senão Previsão − N-1) / N-1">N VS N-1 %</th>
             <th style="text-align:right;">Budget</th>
             <th style="text-align:right;">Var Bud %</th>
             <th style="text-align:right;background:#fef3c7;">MYR</th>
@@ -11400,7 +11408,7 @@ async function pvExportarExcel() {
     ]];
     (_pvData.linhas || []).forEach(row => {
       const acumN = pvAcumNFecho(row);
-      const baseMes = row.prevFecho != null && row.prevFecho !== '' ? Number(row.prevFecho) : null;
+      const baseMes = pvBaseMesFecho(row);
       const acc = pvAccuracyPct(row);
       const varPrevMyr = pvVarPrevMyrPct(row);
       const varNMyr = pvVarNMyrPct(row);
