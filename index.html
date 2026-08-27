@@ -1912,7 +1912,7 @@ var _unused_placeholder = 1;
         </div>
         <div class="form-group" id="f-contrato-group">
           <label>N Contrato</label>
-          <input type="text" id="f-contrato" placeholder="Número do contrato (opcional)" autocomplete="off" oninput="toggleContratoFields('f')">
+          <input type="text" id="f-contrato" placeholder="Número do contrato (opcional)" autocomplete="off" oninput="toggleContratoFields('f')" onblur="checkNumContratoInput(this)">
         </div>
         <div id="f-contrato-extra" style="display:none">
           <div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:8px">
@@ -2535,7 +2535,7 @@ var _unused_placeholder = 1;
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div><label class="ct-lbl">Nº do Contrato <span class="ct-req">*</span></label><input id="ct_num_contrato" class="form-input" placeholder="ex: B0029/25" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
+            <div><label class="ct-lbl">Nº do Contrato <span class="ct-req">*</span></label><input id="ct_num_contrato" class="form-input" placeholder="ex: B0029/25" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" onblur="checkNumContratoInput(this)"></div>
             <div></div>
             <div><label class="ct-lbl">Nome da Empresa <span class="ct-req">*</span></label><input id="ct_empresa" class="form-input" placeholder="Razão social"></div>
             <div><label class="ct-lbl">CNPJ <span class="ct-req">*</span></label><input id="ct_cnpj" class="form-input" placeholder="00.000.000/0000-00"></div>
@@ -3949,7 +3949,7 @@ var _unused_placeholder = 1;
         </div>
         <div class="form-group" id="e-contrato-group">
           <label>N Contrato</label>
-          <input type="text" id="e-contrato" placeholder="Número do contrato (opcional)" oninput="toggleContratoFields('e')">
+          <input type="text" id="e-contrato" placeholder="Número do contrato (opcional)" oninput="toggleContratoFields('e')" onblur="checkNumContratoInput(this, { exceptId: typeof editingId !== 'undefined' ? editingId : null })">
         </div>
         <div id="e-contrato-extra" style="display:none">
           <div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:8px">
@@ -4314,6 +4314,12 @@ async function salvarRegisto(opts = {}) {
     }
   }
 
+  const numsNovo = isDist
+    ? (dist_contratos || []).map(c => c.numero)
+    : [contrato];
+  const dupNovo = await erroSeContratoJaCriado(numsNovo);
+  if (dupNovo) { toast(dupNovo, 'error'); return; }
+
   const btn = document.getElementById('btn-save');
   btn.disabled = true; btn.textContent = 'A guardar...';
 
@@ -4526,6 +4532,7 @@ function clearSessionDataCaches() {
   try { scContenciosoPendentes = new Map(); } catch (_) {}
   try { foraSPCache = null; } catch (_) {}
   try { contratosCache = null; } catch (_) {}
+  try { _contratoUniqCache = { at: 0, rows: null }; } catch (_) {}
   try { window._contratosAllRows = null; } catch (_) {}
   try { window._contratosPorRegistar = null; } catch (_) {}
   try { window._clientesContenciosoView = null; } catch (_) {}
@@ -7806,6 +7813,12 @@ async function salvarEdicao() {
     const erroContratoEdit = validarContratos(contratos);
     if (erroContratoEdit) { toast(erroContratoEdit, 'error'); return; }
   }
+
+  const numsEdit = isDist
+    ? (dist_contratos || []).map(c => c.numero)
+    : [contrato];
+  const dupEdit = await erroSeContratoJaCriado(numsEdit, { exceptId: editingId, exceptCod: cod });
+  if (dupEdit) { toast(dupEdit, 'error'); return; }
 
   const body = {
     vendedor, cod, nome, cep, contrato, contratos, equipamentos,
@@ -15429,6 +15442,172 @@ function validarContratos(contratos) {
   return null; // sem erros
 }
 
+/** Nº contrato canónico: maiúsculas, sem espaços. «B0029/25» = «b0029 / 25». */
+function normNumContrato(s) {
+  return String(s || '')
+    .toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
+function isNumContratoPlaceholder(s) {
+  const k = normNumContrato(s);
+  return !k || /^SEM[_-]?COMODATO$/.test(k);
+}
+
+/** Todos os números de contrato de um registo (campo + arrays Horeca/Dist). */
+function numsContratoDoRegisto(r) {
+  const out = [];
+  const seen = new Set();
+  const add = (n) => {
+    if (isNumContratoPlaceholder(n)) return;
+    const k = normNumContrato(n);
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    out.push(String(n).trim());
+  };
+  String(r && r.contrato != null ? r.contrato : '').split(/[,;]/).forEach(add);
+  (r && Array.isArray(r.contratos) ? r.contratos : []).forEach(c => add(c && (c.num || c.numero)));
+  (r && Array.isArray(r.dist_contratos) ? r.dist_contratos : []).forEach(c => add(c && (c.numero || c.num)));
+  return out;
+}
+
+function msgContratoJaCriado(num, hit) {
+  const n = String(num || '').trim();
+  if (hit && (hit.cod || hit.nome)) {
+    const quem = [hit.cod, hit.nome].filter(Boolean).join(' — ');
+    return `Esse contrato já foi criado (${n} no cliente ${quem}).`;
+  }
+  return n ? `Esse contrato já foi criado (${n}).` : 'Esse contrato já foi criado.';
+}
+
+function encontrarContratoNasLinhas(num, rows, opts) {
+  opts = opts || {};
+  const exceptId = opts.exceptId;
+  const exceptCod = opts.exceptCod;
+  const key = normNumContrato(num);
+  if (!key || isNumContratoPlaceholder(key)) return null;
+  const exceptCodN = exceptCod && typeof normCod === 'function' ? normCod(exceptCod) : String(exceptCod || '');
+  for (const r of rows || []) {
+    if (!r) continue;
+    if (exceptId && r.id === exceptId) continue;
+    if (exceptCodN && typeof normCod === 'function' && normCod(r.cod) === exceptCodN) continue;
+    if (exceptCodN && typeof normCod !== 'function' && String(r.cod || '') === String(exceptCod)) continue;
+    for (const n of numsContratoDoRegisto(r)) {
+      if (normNumContrato(n) === key) {
+        return { id: r.id, cod: r.cod, nome: r.nome, num: n };
+      }
+    }
+  }
+  return null;
+}
+
+let _contratoUniqCache = { at: 0, rows: null };
+
+async function carregarRegistosUnicidadeContrato(force) {
+  const now = Date.now();
+  if (!force && _contratoUniqCache.rows && (now - _contratoUniqCache.at) < 8000) {
+    return _contratoUniqCache.rows;
+  }
+  const mem = (typeof allData !== 'undefined' && Array.isArray(allData)) ? allData : [];
+  try {
+    const hdr = typeof registosReadHeaders === 'function'
+      ? registosReadHeaders()
+      : { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY };
+    const res = await fetch(SUPA_URL + '?select=id,cod,nome,vendedor,contrato,contratos,dist_contratos', { headers: hdr });
+    if (res.ok) {
+      const rows = await res.json();
+      if (Array.isArray(rows)) {
+        _contratoUniqCache = { at: now, rows };
+        return rows;
+      }
+    }
+  } catch (_) {}
+  return mem;
+}
+
+/**
+ * Procura se o nº de contrato já existe.
+ * exceptId / exceptCod: ao editar o mesmo cliente, o número actual é permitido.
+ */
+async function encontrarContratoExistente(num, opts = {}) {
+  if (isNumContratoPlaceholder(num)) return null;
+  const rows = await carregarRegistosUnicidadeContrato(!!opts.force);
+  return encontrarContratoNasLinhas(num, rows, opts);
+}
+
+async function erroSeContratoJaCriado(numeros, opts = {}) {
+  const list = (Array.isArray(numeros) ? numeros : [numeros])
+    .map(n => String(n || '').trim())
+    .filter(n => !isNumContratoPlaceholder(n));
+  const seen = new Set();
+  for (const n of list) {
+    const k = normNumContrato(n);
+    if (seen.has(k)) return msgContratoJaCriado(n);
+    seen.add(k);
+  }
+  for (const n of list) {
+    const hit = await encontrarContratoExistente(n, { ...opts, force: true });
+    if (hit) return msgContratoJaCriado(n, hit);
+  }
+  return null;
+}
+
+async function checkNumContratoInput(el, opts) {
+  if (!el) return;
+  const num = el.value;
+  if (isNumContratoPlaceholder(num)) {
+    el.style.borderColor = '';
+    return;
+  }
+  const hit = await encontrarContratoExistente(num, opts || {});
+  if (hit) {
+    el.style.borderColor = 'var(--danger)';
+    toast(msgContratoJaCriado(num, hit), 'error');
+  } else {
+    el.style.borderColor = '';
+  }
+}
+
+function detectarNumerosContratoDuplicados(rows) {
+  const map = new Map();
+  for (const r of rows || []) {
+    const codK = typeof normCod === 'function' ? normCod(r.cod) : String(r.cod || '');
+    for (const n of numsContratoDoRegisto(r)) {
+      const k = normNumContrato(n);
+      if (!k) continue;
+      if (!map.has(k)) map.set(k, new Map());
+      const clients = map.get(k);
+      if (!clients.has(codK)) clients.set(codK, { cod: r.cod, nome: r.nome, num: n });
+    }
+  }
+  const dups = [];
+  for (const [key, clients] of map) {
+    if (clients.size > 1) dups.push({ key, clientes: [...clients.values()] });
+  }
+  dups.sort((a, b) => b.clientes.length - a.clientes.length || a.key.localeCompare(b.key));
+  return dups;
+}
+
+function filtrarContratoDuplicado(num) {
+  const inp = document.getElementById('contratos-search-num');
+  if (inp) inp.value = num || '';
+  if (typeof filtrarContratosVendedor === 'function') filtrarContratosVendedor();
+}
+
+function htmlBannerContratosDuplicados(dups) {
+  if (!dups || !dups.length) return '';
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const items = dups.slice(0, 12).map(d => {
+    const n = d.clientes[0]?.num || d.key;
+    return `<button type="button" class="contrato-dup-num" data-num="${esc(n)}" onclick="filtrarContratoDuplicado(this.dataset.num)" style="background:none;border:none;padding:0;color:#9a3412;font-weight:700;cursor:pointer;text-decoration:underline;">${esc(n)}</button> <span style="color:#c2410c;">(${d.clientes.length})</span>`;
+  }).join(' · ');
+  return `<div style="margin-bottom:12px;padding:10px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:12.5px;color:#9a3412;line-height:1.45;">
+    ⚠ <strong>${dups.length}</strong> número(s) de contrato repetido(s) — cada número só pode ter um contrato. Clica para filtrar: ${items}
+  </div>`;
+}
+
 function loadContratos(prefix, contratos = []) {
   const list = document.getElementById(`${prefix}-contratos-list`);
   if (!list) return;
@@ -15458,8 +15637,10 @@ async function loadContratosTab(forceRefresh = false) {
 
   try {
     // Fetch all registos with contratos from Supabase
-    const res = await fetch(SUPA_URL + '?select=cod,nome,vendedor,contrato,contratos,docs', {headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }});
+    const res = await fetch(SUPA_URL + '?select=id,cod,nome,vendedor,contrato,contratos,dist_contratos,docs', {headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }});
     let registos = await res.json();
+    const dupsCt = detectarNumerosContratoDuplicados(registos);
+    window._contratosDuplicados = dupsCt;
 
     // Filter only those with contratos array
     registos = registos.filter(r => Array.isArray(r.contratos) && r.contratos.length > 0);
@@ -15486,7 +15667,8 @@ async function loadContratosTab(forceRefresh = false) {
     }
 
     if (!registos.length) {
-      cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Nenhum contrato registado ainda.<br>Adiciona contratos no formulário de Novo Registo.</div>';
+      const vazio = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Nenhum contrato registado ainda.<br>Adiciona contratos no formulário de Novo Registo.</div>';
+      cont.innerHTML = htmlBannerContratosDuplicados(dupsCt) + vazio;
       return;
     }
 
@@ -15690,6 +15872,7 @@ async function loadContratosTab(forceRefresh = false) {
     registos.forEach(r => { if (r.docs) docsMap[String(r.cod)] = r.docs; });
     window._contratosDocsMap = docsMap;
     window._contratosAllRows = rows;
+    html = htmlBannerContratosDuplicados(dupsCt) + html;
     contratosCache = html;
     cont.innerHTML = html;
     setTimeout(() => contratoMarkExisting(rows, docsMap), 100);
@@ -27160,9 +27343,14 @@ function ctGoto(step) {
   if (step === 3) ctAutoExtenso();
 }
 
-function ctNext() {
+async function ctNext() {
   const errs = ctValidateStep(ctCurrentStep);
   if (errs.length) { showToast(errs[0], 'error'); return; }
+  if (ctCurrentStep === 1) {
+    const num = (document.getElementById('ct_num_contrato')?.value || '').trim();
+    const dup = await erroSeContratoJaCriado(num);
+    if (dup) { showToast(dup, 'error'); return; }
+  }
   ctGoto(ctCurrentStep + 1);
 }
 function ctPrev() { ctGoto(ctCurrentStep - 1); }
@@ -27393,6 +27581,14 @@ async function ctGerar() {
   if (allErrs.length) {
     document.getElementById('ct_erros').style.display = 'block';
     document.getElementById('ct_erros').innerHTML = '<strong>Por favor corrige:</strong><ul style="margin:4px 0 0 16px">' + allErrs.map(e => '<li>' + e + '</li>').join('') + '</ul>';
+    return;
+  }
+  const numGerar = (document.getElementById('ct_num_contrato')?.value || '').trim();
+  const dupGerar = await erroSeContratoJaCriado(numGerar);
+  if (dupGerar) {
+    document.getElementById('ct_erros').style.display = 'block';
+    document.getElementById('ct_erros').innerHTML = '<strong>' + dupGerar + '</strong>';
+    showToast(dupGerar, 'error');
     return;
   }
   document.getElementById('ct_erros').style.display = 'none';
@@ -27757,15 +27953,13 @@ async function ctGuardarContratoSuapbase(data) {
     prazo:    parseInt(g('ct_dias_num')) || 30,
   };
 
-  // Verificar se já existe contrato com mesmo número — actualizar se sim, adicionar se não
-  const idx = contratosActuais.findIndex(c => c.num === novoContrato.num);
-  let contratosNovos;
-  if (idx >= 0) {
-    contratosNovos = [...contratosActuais];
-    contratosNovos[idx] = novoContrato;
-  } else {
-    contratosNovos = [...contratosActuais, novoContrato];
+  const dupSave = await erroSeContratoJaCriado(novoContrato.num);
+  if (dupSave) {
+    toast(dupSave, 'error');
+    return false;
   }
+
+  const contratosNovos = [...contratosActuais, novoContrato];
 
   // Também actualizar o campo contrato (nº de registo visível)
   const patch = await fetch(SUPA_URL + '?id=eq.' + registo.id, {
@@ -28330,6 +28524,7 @@ function distAddContrato(prefix, data) {
     <div class="form-group" style="margin-bottom:10px">
       <label style="font-size:11px;color:var(--muted)">Nº contrato *</label>
       <input type="text" class="form-input dist-ct-numero" placeholder="Ex: B0029/25" value="${(data.numero || '').replace(/"/g, '&quot;')}"
+        onblur="checkNumContratoInput(this, { exceptId: '${prefix}' === 'e' && typeof editingId !== 'undefined' ? editingId : null })"
         onfocus="_distUi['${prefix}'].activeContratoIdx = [...this.closest('#${listId}').children].indexOf(this.closest('.dist-contrato-card'));distSetContratoCollapsed(this.closest('.dist-contrato-card'), false)">
     </div>
     <div class="dist-ct-summary" style="display:none" onclick="if(this.closest('.dist-contrato-card')?.classList.contains('is-collapsed'))distToggleContratoCard(this.closest('.dist-contrato-card'))"></div>
@@ -28506,6 +28701,13 @@ function distBuildPayloadFromForm(prefix) {
     if (requireNf && !dist_contratos[i].equipamentos.some(e => e && e.nf)) {
       return { error: `Contrato ${i + 1}: associa pelo menos uma NF da carga.` };
     }
+  }
+  const seenDist = new Set();
+  for (const c of dist_contratos) {
+    const k = typeof normNumContrato === 'function' ? normNumContrato(c.numero) : String(c.numero || '').toUpperCase().replace(/\s+/g, '');
+    if (!k) continue;
+    if (seenDist.has(k)) return { error: msgContratoJaCriado(c.numero) };
+    seenDist.add(k);
   }
   const equipamentos = [];
   dist_contratos.forEach(c => {
