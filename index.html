@@ -2539,6 +2539,7 @@ var _unused_placeholder = 1;
             <div></div>
             <div><label class="ct-lbl">Nome da Empresa <span class="ct-req">*</span></label><input id="ct_empresa" class="form-input" placeholder="Razão social"></div>
             <div><label class="ct-lbl">CNPJ <span class="ct-req">*</span></label><input id="ct_cnpj" class="form-input" placeholder="00.000.000/0000-00"></div>
+            <div><label class="ct-lbl">Morada / sede</label><input id="ct_endereco" class="form-input" placeholder="Rua, n.º — CEP (preenchido da lista SAP)"></div>
             <div><label class="ct-lbl">Nome do Representante / Quem Assina <span class="ct-req">*</span></label><input id="ct_rep_nome" class="form-input" placeholder="Nome completo"></div>
             <div><label class="ct-lbl">RG do Representante <span class="ct-req">*</span></label><input id="ct_rep_rg" class="form-input" placeholder="00.000.000-0"></div>
             <div><label class="ct-lbl">CPF do Representante <span class="ct-req">*</span></label><input id="ct_rep_cpf" class="form-input" placeholder="000.000.000-00"></div>
@@ -26910,6 +26911,7 @@ async function ctBuscarCliente() {
       const cnpjFinal = r.cnpj || cnpjSAP || '';
       document.getElementById('ct_empresa').value = r.nome || clienteSAP?.nome || '';
       document.getElementById('ct_cnpj').value = fmtCNPJ(cnpjFinal);
+      ctPreencherEnderecoCliente(clienteSAP, r);
       // Se o registo não tem CNPJ mas a lista SAP tem, guardar no Supabase para outros dispositivos
       if (!r.cnpj && cnpjSAP && r.id) {
         fetch(`${SUPA_URL}?id=eq.${r.id}`, {
@@ -26929,6 +26931,7 @@ async function ctBuscarCliente() {
       // Encontrado na lista SAP mas sem registo no Supabase
       document.getElementById('ct_empresa').value = clienteSAP.nome || '';
       document.getElementById('ct_cnpj').value = fmtCNPJ(cnpjSAP);
+      ctPreencherEnderecoCliente(clienteSAP, null);
       const vend = clienteSAP.vendedor || '';
       const vendEl = document.getElementById('ct_vendedor');
       if (vendEl) vendEl.value = vend;
@@ -26944,6 +26947,89 @@ async function ctBuscarCliente() {
       ctAplicarTestemunhasDelta();
     }
   } catch(e) { showToast('Erro: ' + e.message, 'error'); }
+}
+
+function ctNormCodCliente(v) {
+  return String(v || '').trim().replace(/^0+/, '') || '0';
+}
+
+function ctResolveEnderecoCliente() {
+  const fromField = (document.getElementById('ct_endereco') || {}).value || '';
+  if (fromField.trim()) return fromField.trim();
+  const cod = (document.getElementById('ct_cod') || {}).value || '';
+  let rua = '', cep = '';
+  if (cod && typeof getListaClientesActiva === 'function') {
+    const cli = (getListaClientesActiva() || []).find(c => ctNormCodCliente(c.cod) === ctNormCodCliente(cod));
+    if (cli) {
+      rua = [cli.rua, cli.nro].filter(Boolean).join(', ') || String(cli.endereco || cli.morada || '').trim();
+      cep = String(cli.cep || '').trim();
+    }
+  }
+  if ((!rua || !cep) && cod && typeof getMorada === 'function') {
+    const m = getMorada(cod);
+    if (m) {
+      if (!rua) rua = String(m.rua || '').trim();
+      if (!cep) cep = String(m.cep || '').trim();
+    }
+  }
+  const parts = [];
+  if (rua) parts.push(rua);
+  if (cep) parts.push('CEP ' + cep);
+  return parts.join(' — ');
+}
+
+function ctPreencherEnderecoCliente(clienteSAP, registo) {
+  const el = document.getElementById('ct_endereco');
+  if (!el) return;
+  const rua = [registo?.rua, registo?.nro].filter(Boolean).join(', ')
+    || [clienteSAP?.rua, clienteSAP?.nro].filter(Boolean).join(', ')
+    || String(registo?.endereco || clienteSAP?.endereco || clienteSAP?.morada || '').trim();
+  const cep = String(registo?.cep || clienteSAP?.cep || '').trim();
+  let extraRua = rua, extraCep = cep;
+  const cod = (document.getElementById('ct_cod') || {}).value || (clienteSAP?.cod || registo?.cod || '');
+  if ((!extraRua || !extraCep) && cod && typeof getMorada === 'function') {
+    const m = getMorada(cod);
+    if (m) {
+      if (!extraRua) extraRua = String(m.rua || '').trim();
+      if (!extraCep) extraCep = String(m.cep || '').trim();
+    }
+  }
+  const parts = [];
+  if (extraRua) parts.push(extraRua);
+  if (extraCep) parts.push('CEP ' + extraCep);
+  if (parts.length) el.value = parts.join(' — ');
+}
+
+/**
+ * No Word o nome da COMODATÁRIA é um run isolado "." (não "xxxx").
+ * O regex antigo exigia "- ." no mesmo texto e falhava sempre neste template.
+ */
+function ctPreencherCabecalhoComodataria(docXml, empresa, endereco) {
+  const marker = /<w:t[^>]*>COMOD[AÁ]T[AÁ]RIA\s*<\/w:t>/i;
+  const m = marker.exec(docXml);
+  if (!m) return docXml;
+  const start = m.index;
+  const windowEnd = Math.min(docXml.length, start + 3500);
+  const head = docXml.slice(0, start);
+  let slice = docXml.slice(start, windowEnd);
+  const tail = docXml.slice(windowEnd);
+  const nome = String(empresa || '').trim();
+  const sede = String(endereco || '').trim();
+
+  if (nome) {
+    slice = slice.replace(/<w:t((?:\s[^>]*)?)>\.<\/w:t>/, (_, attrs) => {
+      let a = attrs || '';
+      if (!/xml:space=/.test(a)) a += ' xml:space="preserve"';
+      return `<w:t${a}>${nome}</w:t>`;
+    });
+  }
+  if (sede) {
+    slice = slice.replace(
+      /(,\s*com sede na)(\s*inscrita)/,
+      (_, a, b) => `${a} ${sede},${b}`
+    );
+  }
+  return head + slice + tail;
 }
 
 function ctGoto(step) {
@@ -27102,8 +27188,9 @@ function ctBuildReview() {
   const field = (label, val) => '<div class="ct-review-item' + (!val ? ' missing' : '') + '"><strong>' + label + '</strong><div>' + (val || 'NAO PREENCHIDO') + '</div></div>';
 
   let html = '<div class="ct-review-grid">';
-  html += field('Empresa', g('ct_empresa'));
-  html += field('Nº Contrato', g('ct_num_contrato'));
+    html += field('Empresa', g('ct_empresa'));
+    html += field('Morada', g('ct_endereco') || ctResolveEnderecoCliente());
+    html += field('Nº Contrato', g('ct_num_contrato'));
   html += field('CNPJ', g('ct_cnpj'));
   html += field('Vendedor (testemunha 2)', g('ct_vendedor') || g('ct_t2_nome'));
   html += field('Representante', g('ct_rep_nome'));
@@ -27148,6 +27235,7 @@ function ctGetData() {
 
   const data = {
     COMOD_EMPRESA: g('ct_empresa'),
+    COMOD_ENDERECO: g('ct_endereco') || ctResolveEnderecoCliente(),
     NUM_CONTRATO: g('ct_num_contrato'),
     COMOD_COD: g('ct_cod'),
     COMOD_CNPJ: g('ct_cnpj'),
@@ -27290,18 +27378,8 @@ async function ctGerar() {
       docXml = replaceOnce(docXml, 'xxxx', esc(data['A2_R'+i+'_VALOR'] || ''));
     }
 
-    // Também substituir o nome da empresa no parágrafo 6 (que tem "." como placeholder)
-    // O parágrafo 6 começa com "COMODATÁRIA - ." — o "." é o placeholder do nome
-    docXml = docXml.replace(
-      /(<w:t[^>]*>COMOD[AÁ]T[AÁ]RIA\s*-\s*)<\/w:t>/,
-      `$1</w:t>`
-    );
-    // Substituir o "." placeholder antes de ", com sede" pelo nome da empresa
-    // Encontrar o padrão: "- ." + (runs) + ", com sede"
-    docXml = docXml.replace(
-      /(-\s*)(\.)((?:<\/w:t>.*?<w:t[^>]*>)*,\s*com sede)/,
-      `$1${esc(data.COMOD_EMPRESA)}$3`
-    );
+    // Nome + morada da COMODATÁRIA (o "." no Word é um run isolado — não usar xxxx)
+    docXml = ctPreencherCabecalhoComodataria(docXml, esc(data.COMOD_EMPRESA), esc(data.COMOD_ENDERECO || ctResolveEnderecoCliente()));
 
     // ─── Limpeza do documento ───────────────────────────
 
