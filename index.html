@@ -16861,35 +16861,67 @@ function isCanalHorecaActivo() {
   return id === 'horeca';
 }
 
+/** Remove lixo invisível / pontuação que o Gmail marca a vermelho. */
+function outlookSanitizeEmail(s) {
+  return String(s || '')
+    .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '')
+    .replace(/[<>]/g, '')
+    .replace(/^[\s,;]+|[\s,;]+$/g, '')
+    .trim();
+}
+
+/**
+ * Lista de emails a partir de string/array (aceita `,` ou `;`).
+ * Gmail no tablet trata `a@x; b@y` como UM endereço inválido.
+ */
+function outlookMailtoAddrList(input) {
+  const raw = Array.isArray(input) ? input : [input];
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    for (const part of String(item == null ? '' : item).split(/[,;]/)) {
+      const e = outlookSanitizeEmail(part);
+      if (!e || e.indexOf('@') < 1) continue;
+      const k = e.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(e);
+    }
+  }
+  return out;
+}
+
 // Monta CC. No Horeca inclui sempre o Filipe; noutros canais nunca o inclui.
-// Separador: ponto-e-vírgula (Outlook desktop / PT-BR).
+// Separador no .eml / Outlook desktop: ponto-e-vírgula (PT-BR).
 function ccString(cc) {
   const filipe = CC_FIXO_FILIPE.toLowerCase();
-  let arr = (Array.isArray(cc) ? cc : [cc])
-    .map(e => String(e || '').trim())
-    .filter(Boolean);
-  if (isCanalHorecaActivo()) {
-    arr.push(CC_FIXO_FILIPE);
+  let arr = outlookMailtoAddrList(cc);
+  if (typeof isCanalHorecaActivo === 'function' && isCanalHorecaActivo()) {
+    arr = outlookMailtoAddrList(arr.concat(CC_FIXO_FILIPE));
   } else {
     arr = arr.filter(e => e.toLowerCase() !== filipe);
   }
-  const seen = new Set();
-  const out = [];
-  for (const e of arr) {
-    const k = e.toLowerCase();
-    if (!seen.has(k)) { seen.add(k); out.push(e); }
-  }
-  return out.join('; ');
+  return arr.join('; ');
 }
 
-/** Path do mailto SEM encode do @ — Outlook Android/tablet rejeita info.br%40dominio.com. */
+/** Path do mailto SEM encode do @ — Outlook Android rejeita info.br%40dominio.com. */
 function mailtoAddr(email) {
-  return String(email || '').trim();
+  return outlookMailtoAddrList(email).join(',');
 }
 
-/** Parâmetro cc= do mailto (endereços separados por ;). */
+/** To do mailto: vários destinos separados por vírgula (RFC 6068). */
+function mailtoToPath(to) {
+  return outlookMailtoAddrList(to).join(',') || outlookSanitizeEmail(to);
+}
+
+/**
+ * Parâmetro cc= do mailto: SEMPRE vírgulas.
+ * Gmail/iOS/Android marcam `;` como endereço inválido («Verificar endereço de email»).
+ * Outlook aceita vírgula no mailto. O .eml do PC continua com `;` via ccString.
+ */
 function ccMailtoParam(cc) {
-  return 'cc=' + encodeURIComponent(ccString(cc));
+  const emails = outlookMailtoAddrList(ccString(cc));
+  return emails.length ? ('cc=' + encodeURIComponent(emails.join(','))) : '';
 }
 
 // mailto de aprovação. Nota: NÃO usar mailto:remetente?to=destinatario —
@@ -16902,7 +16934,12 @@ function buildMailtoAprovacao({ remetenteNome, destinatario, cc = [], assunto, c
   if (remetenteEmail && !ccArr.some(e => String(e || '').toLowerCase() === remetenteEmail.toLowerCase())) {
     ccArr.push(remetenteEmail);
   }
-  return `mailto:${mailtoAddr(to)}?${ccMailtoParam(ccArr)}&subject=${assunto}&body=${corpo}`;
+  const parts = [];
+  const ccP = ccMailtoParam(ccArr);
+  if (ccP) parts.push(ccP);
+  parts.push('subject=' + assunto);
+  parts.push('body=' + corpo);
+  return `mailto:${mailtoToPath(to)}?${parts.join('&')}`;
 }
 
 // ─── Outlook: rascunho HTML + anexos (mailto não suporta HTML/anexos) ─────────
@@ -16955,17 +16992,61 @@ const OUTLOOK_ANDROID_URI_MAX = 28000;
 /** Pacote Android da app Outlook (força abrir Outlook, sem chooser Chrome/Gmail). */
 const OUTLOOK_ANDROID_PACKAGE = 'com.microsoft.office.outlook';
 
-function outlookIsWindowsPc() {
-  const ua = String(navigator.userAgent || '').toLowerCase();
-  const plat = String(navigator.platform || '').toLowerCase();
-  const osc = (navigator.userAgentData && navigator.userAgentData.platform)
-    ? String(navigator.userAgentData.platform).toLowerCase()
-    : '';
-  return /windows nt|win64|wow64/.test(ua) || /^win(32|64)/.test(plat) || osc === 'windows';
+/**
+ * Snapshot do navegador (testável: passa um mock em vez de `navigator`).
+ * Galaxy Tab «site para computador» mente no UA (Windows NT ou Linux x86_64)
+ * mas o Client Hint `userAgentData.platform` continua `Android`.
+ */
+function outlookReadNav(nav) {
+  const n = nav || (typeof navigator !== 'undefined' ? navigator : {});
+  const ua = String(n.userAgent || '');
+  const plat = String(n.platform || '');
+  const uaData = n.userAgentData || {};
+  return {
+    ua,
+    uaL: ua.toLowerCase(),
+    plat,
+    platL: plat.toLowerCase(),
+    uaPlatform: String(uaData.platform || '').toLowerCase(),
+    uaMobile: !!uaData.mobile,
+    maxTouch: Number(n.maxTouchPoints) || 0,
+  };
 }
 
-function outlookIsAndroid() {
-  return /android/i.test(String(navigator.userAgent || ''));
+function outlookIsAndroid(nav) {
+  const d = outlookReadNav(nav);
+  if (d.uaPlatform === 'android') return true;
+  if (/android/i.test(d.ua)) return true;
+  if (/samsungbrowser/i.test(d.ua)) return true;
+  if (/\bsm-[txp]\w+/i.test(d.ua)) return true;
+  return false;
+}
+
+function outlookIsIosLike(nav) {
+  const d = outlookReadNav(nav);
+  if (/iphone|ipad|ipod/i.test(d.ua)) return true;
+  if (d.uaPlatform === 'ios' || d.uaPlatform === 'ipados') return true;
+  // iPadOS: «Macintosh» + toque
+  if (d.maxTouch > 1 && /mac/i.test(d.ua + ' ' + d.plat)) return true;
+  return false;
+}
+
+/**
+ * PC Windows real (Outlook clássico / serve.ps1).
+ * NÃO tratar como Windows:
+ *  - Android/iOS (incl. UA falso «Windows NT 10.0» do «site para computador»)
+ *  - Client Hint platform ≠ windows (Android, Linux, macOS…)
+ *  - navigator.platform Linux (Galaxy Tab teclado)
+ */
+function outlookIsWindowsPc(nav) {
+  if (outlookIsAndroid(nav) || outlookIsIosLike(nav)) return false;
+  const d = outlookReadNav(nav);
+  if (d.uaMobile) return false;
+  if (d.uaPlatform && d.uaPlatform !== 'windows') return false;
+  if (/linux/i.test(d.plat) && !/win/i.test(d.plat)) return false;
+  return d.uaPlatform === 'windows'
+    || /windows nt|win64|wow64/.test(d.uaL)
+    || /^win(32|64)/.test(d.platL);
 }
 
 /** Preferência df60f68 — a detecção PC vs tablet manda; ignora/limpa a chave. */
@@ -16976,10 +17057,10 @@ try { localStorage.removeItem('delta_email_open_mode'); } catch (_) {}
  * Nessas PWA o mailto genérico abre Chrome/Gmail — temos de forçar a app Outlook.
  * NUNCA no Windows (PWA, browser, Surface com touch): é PC → Outlook clássico.
  */
-function outlookShouldForceOutlookApp() {
-  if (outlookIsWindowsPc()) return false;
-  if (outlookIsAndroid()) return true;
-  if (typeof outlookIsMobileClient === 'function' && outlookIsMobileClient()) return true;
+function outlookShouldForceOutlookApp(nav) {
+  if (outlookIsWindowsPc(nav)) return false;
+  if (outlookIsAndroid(nav)) return true;
+  if (typeof outlookIsMobileClient === 'function' && outlookIsMobileClient(nav)) return true;
   // Galaxy Tab PWA (Linux desktop UA) — Windows standalone NÃO entra aqui
   if (typeof outlookIsStandaloneApp === 'function' && outlookIsStandaloneApp()) return true;
   return false;
@@ -17045,10 +17126,11 @@ function outlookAndroidMsComposeFromMailto(mailtoUrl) {
     const toPart = q >= 0 ? noScheme.slice(0, q) : noScheme;
     const query = q >= 0 ? noScheme.slice(q + 1) : '';
     const params = new URLSearchParams(query);
-    const to = decodeURIComponent(String(toPart || '').replace(/\+/g, '%20')).trim();
+    const to = outlookMailtoAddrList(toPart).join(',')
+      || decodeURIComponent(String(toPart || '').replace(/\+/g, '%20')).trim();
     const subject = params.get('subject') || '';
     const body = params.get('body') || '';
-    const cc = params.get('cc') || '';
+    const cc = outlookMailtoAddrList(params.get('cc') || '').join(',');
     let url = `ms-outlook://emails/new?to=${encodeURIComponent(to)}`;
     if (cc) url += `&cc=${encodeURIComponent(cc)}`;
     if (subject) url += `&subject=${encodeURIComponent(subject)}`;
@@ -17069,7 +17151,7 @@ function openMailtoSafely(mailtoUrl) {
   if (!mailtoUrl || !/^mailto:/i.test(mailtoUrl)) return false;
   const url = String(mailtoUrl);
   const forceApp = outlookShouldForceOutlookApp();
-  const maxLen = forceApp ? OUTLOOK_ANDROID_URI_MAX : MAILTO_MAX_LEN;
+  const maxLen = outlookIsWindowsPc() ? MAILTO_MAX_LEN : OUTLOOK_ANDROID_URI_MAX;
   if (url.length > maxLen) return false;
 
   if (forceApp) {
@@ -17133,14 +17215,14 @@ function outlookFitBodyToMailto(bodyTxt, buildMailto, maxLen) {
  * Telemóvel/tablet (Android Galaxy, iPad).
  * NÃO usar só maxTouchPoints — Surface / portáteis Windows com ecrã táctil são PC.
  */
-function outlookIsMobileClient() {
-  if (outlookIsWindowsPc()) return false;
-  const ua = String(navigator.userAgent || '').toLowerCase();
-  if (/android|iphone|ipad|ipod|mobile|tablet/.test(ua)) return true;
-  // iPadOS: «Macintosh» + touch
-  if ((navigator.maxTouchPoints || 0) > 1 && /mac/.test(ua)) return true;
+function outlookIsMobileClient(nav) {
+  if (outlookIsWindowsPc(nav)) return false;
+  const d = outlookReadNav(nav);
+  if (/android|iphone|ipad|ipod|mobile|tablet/i.test(d.ua)) return true;
+  if (outlookIsAndroid(nav) || outlookIsIosLike(nav)) return true;
   // Galaxy Tab com teclado: UA «Linux x86_64» desktop, sem a palavra Android
-  if ((navigator.maxTouchPoints || 0) > 1 && /linux/.test(ua) && !/windows/.test(ua)) return true;
+  if (d.maxTouch > 1 && /linux/.test(d.uaL) && !/windows/.test(d.uaL)) return true;
+  if (d.maxTouch > 1 && /linux/.test(d.platL) && !/win/.test(d.platL)) return true;
   return false;
 }
 
@@ -17155,9 +17237,9 @@ function outlookIsStandaloneApp() {
 }
 
 /** Tablet / telemóvel: app Outlook + Excel. Windows (incl. PWA) é sempre PC. */
-function outlookIsTabletOrPwa() {
-  if (outlookIsWindowsPc()) return false;
-  return outlookIsMobileClient() || outlookIsStandaloneApp();
+function outlookIsTabletOrPwa(nav) {
+  if (outlookIsWindowsPc(nav)) return false;
+  return outlookIsMobileClient(nav) || outlookIsStandaloneApp();
 }
 
 function outlookHtmlToPlainText(html) {
@@ -17241,17 +17323,20 @@ async function outlookOpenMailtoPlusExcel({
     bodyTxt += '\n\n(Anexa o ficheiro Excel descarregado a este email.)';
   }
 
-  const ccList = String(ccVal || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
-  const toMailto = String(to).split(/[,;]/).map(s => s.trim()).filter(Boolean).join(',');
+  const ccList = outlookMailtoAddrList(ccVal);
+  const toMailto = mailtoToPath(to);
 
-  const buildMailto = (body) =>
-    `mailto:${mailtoAddr(toMailto)}?` +
-    ccMailtoParam(ccList) +
-    '&subject=' + encodeURIComponent(subject || '') +
-    '&body=' + encodeURIComponent(body);
+  const buildMailto = (body) => {
+    const parts = [];
+    const ccP = ccMailtoParam(ccList);
+    if (ccP) parts.push(ccP);
+    parts.push('subject=' + encodeURIComponent(subject || ''));
+    parts.push('body=' + encodeURIComponent(body || ''));
+    return `mailto:${toMailto}?${parts.join('&')}`;
+  };
 
-  const forceApp = typeof outlookShouldForceOutlookApp === 'function' && outlookShouldForceOutlookApp();
-  const maxLen = forceApp ? OUTLOOK_ANDROID_URI_MAX : MAILTO_MAX_LEN;
+  // Tablet/Gmail/Android: URL longa OK. Só o Outlook desktop Windows ~2000 chars.
+  const maxLen = outlookIsWindowsPc() ? MAILTO_MAX_LEN : OUTLOOK_ANDROID_URI_MAX;
 
   let bodyForMail = bodyTxt;
   let mailto = buildMailto(bodyForMail);
@@ -17263,16 +17348,8 @@ async function outlookOpenMailtoPlusExcel({
         await navigator.clipboard.writeText(bodyTxt);
       }
     } catch (_) {}
-    // Manter o máximo de conteúdo possível — NUNCA substituir por stub vazio
+    // Manter o máximo de conteúdo possível — NUNCA «Pedido Delta Foods» vazio
     bodyForMail = outlookFitBodyToMailto(bodyTxt, buildMailto, maxLen);
-    mailto = buildMailto(bodyForMail);
-  }
-
-  // Desktop Windows sem espaço: só então mensagem curta (PC usa serve.ps1 / .eml em regra)
-  if (!forceApp && mailto.length > MAILTO_MAX_LEN) {
-    bodyForMail = hasExcel
-      ? 'Pedido Delta Foods.\n\nAnexa o ficheiro Excel descarregado a este email.\n\nCumprimentos.'
-      : (bodyTxt.slice(0, 600) || 'Pedido Delta Foods.\n\nCumprimentos.');
     mailto = buildMailto(bodyForMail);
   }
 
@@ -17524,8 +17601,11 @@ async function outlookAbrirRascunho({
     ccVal = ccVal.split(/[,;]/).map(s => s.trim()).filter(Boolean).join('; ');
   }
   const hasAttachments = (attachments || []).some(a => a && a.blob);
+  const isWindowsPc = typeof outlookIsWindowsPc === 'function' && outlookIsWindowsPc();
   const isMobile = typeof outlookIsMobileClient === 'function' && outlookIsMobileClient();
-  const isTabletPwa = typeof outlookIsTabletOrPwa === 'function' && outlookIsTabletOrPwa();
+  // Qualquer dispositivo que NÃO seja PC Windows (Galaxy Tab com UA desktop,
+  // Chrome «site para computador», PWA): mailto completo — nunca serve.ps1/.eml.
+  const useTabletMailto = !isWindowsPc;
 
   const mailtoToast = () => toast(
     (mailtoFallback && mailtoFallback.toastMsg)
@@ -17534,8 +17614,8 @@ async function outlookAbrirRascunho({
       : '📧 Outlook a abrir.')
   );
 
-  // Tablet / telemóvel: app Outlook + Excel (NUNCA .eml)
-  if (isTabletPwa && to) {
+  // Tablet / telemóvel / PWA Android: app Outlook (ou Gmail-safe mailto) + Excel
+  if (useTabletMailto && to) {
     const result = await outlookOpenMailtoPlusExcel({
       to, ccVal, subject, html, attachments, mailtoFallback,
     });
@@ -17551,8 +17631,9 @@ async function outlookAbrirRascunho({
   }
 
   const boundary = `DELTA_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const emlTo = outlookMailtoAddrList(to).join('; ') || String(to || '').trim();
   const parts = [
-    `To: ${to}`,
+    `To: ${emlTo}`,
     `Cc: ${ccVal}`,
     `Subject: ${outlookEncodeSubjectUtf8(subject)}`,
     'X-Unsent: 1',
@@ -17585,9 +17666,9 @@ async function outlookAbrirRascunho({
   const eml = parts.join('\r\n');
   const fileName = draftName || 'Delta_rascunho_Outlook.eml';
 
-  // PC: serve.ps1 abre o Outlook clássico (outlook.exe) com HTML + anexos
+  // PC Windows: serve.ps1 abre o Outlook clássico (outlook.exe) com HTML + anexos
   let openedEp = null;
-  if (!isMobile) {
+  if (isWindowsPc && !isMobile) {
     const live = await outlookFindLiveApi();
     if (live) openedEp = await outlookPostDraft(live, eml);
     if (!openedEp) {

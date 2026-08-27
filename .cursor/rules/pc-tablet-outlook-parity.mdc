@@ -31,24 +31,36 @@ A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos,
 3. Abrir email **só na app Outlook**:
    - `ms-outlook://emails/new?…` + Intent `package=com.microsoft.office.outlook`
    - Preferir `location.assign` / `location.href` (mais fiável que `<a>.click()` na PWA)
-   - **Nunca** `mailto:` genérico no tablet → mostra «Abrir com» **Chrome / Gmail** e o Outlook muitas vezes **nem aparece** (mesmo instalado e como padrão)
+   - **Nunca** `mailto:` genérico no tablet se o Outlook estiver disponível → mostra «Abrir com» **Chrome / Gmail** e o Outlook muitas vezes **nem aparece** (mesmo instalado e como padrão)
    - **Nunca** esvaziar o corpo para «Pedido Delta Foods» — chamados AT levam tabelas/texto completo (`OUTLOOK_ANDROID_URI_MAX`, não o limite PC de 1800)
 4. **Descarregar o Excel** para o utilizador anexar no Outlook.
 5. Toast: *Anexa o Excel descarregado ao email.*
 
+### Mailto tem de funcionar no Gmail (obrigatório)
+O tablet da Daniela abre por vezes o **Gmail** (UA «site para computador» / handler default). O payload do `mailto:` tem de ser válido **em qualquer cliente**:
+
+1. **CC/To no mailto: vírgulas**, nunca `;`. O Gmail trata `a@x; b@y` como um endereço só e mostra «Verificar endereço de email» (tudo a vermelho).
+2. O **.eml do PC** continua com `;` no cabeçalho `Cc:` (Outlook PT-BR).
+3. **Nunca** substituir o corpo por «Pedido Delta Foods. Cumprimentos.» — isso era o chamado AT em branco.
+4. Qualquer dispositivo que **não** seja PC Windows real usa o fluxo tablet (mailto completo). Não tentar `serve.ps1` no GitHub Pages.
+
 ## Deteção (não simplificar)
 
-- **PC:** Windows no UA / platform / `userAgentData.platform` — incluindo PWA standalone e ecrã táctil.
-- **Tablet/phone:** `Android`/`iPhone`/`iPad` no UA; iPadOS = Macintosh + touch; Galaxy Tab teclado = Linux + touch **sem** Windows.
+- **PC:** Windows **real** — `userAgentData.platform === 'windows'`, ou UA Windows **depois** de excluir Android/iOS. Inclui PWA standalone e Surface.
+- **NÃO é PC Windows** mesmo que o UA diga `Windows NT 10.0`:
+  - `userAgentData.platform` = `Android` / `Linux` / iOS
+  - `navigator.platform` = `Linux …` (Galaxy Tab teclado / «site para computador»)
+  - UA com `Android`, `SamsungBrowser`, `SM-T`/`SM-X`
+- **Tablet/phone:** `Android`/`iPhone`/`iPad` no UA; iPadOS = Macintosh + touch; Galaxy Tab teclado = Linux + touch.
 - **Nunca** tratar `maxTouchPoints` sozinho como tablet (portáteis Surface).
-- Galaxy Tab **com teclado** / «site para computador» manda **User-Agent de desktop** (`Linux x86_64`, **sem** a palavra `Android`). Sem a detecção Linux+touch, o tablet cai no fluxo PC.
 - **Nunca** forçar `ms-outlook://` / Intent Android num PC Windows.
 
 ## Funções de referência (`index.html`)
 
-- `outlookIsWindowsPc()` — Windows = sempre PC
+- `outlookIsWindowsPc()` — Windows **real** = PC; UA falso de tablet ≠ PC
 - `outlookShouldForceOutlookApp()` — porta de entrada no **tablet**; no Windows devolve sempre false
-- `openMailtoSafely()` — força Outlook na PWA Android; mailto só como fallback no PC
+- `ccMailtoParam()` / `mailtoToPath()` — vírgulas no mailto (Gmail-safe)
+- `openMailtoSafely()` — força Outlook na PWA Android; mailto Gmail-safe como payload
 - `outlookOpenMailtoPlusExcel()` / `outlookDeliverExcelAttachments()`
 - `outlookAbrirRascunho()` — PC clássico vs tablet app, sem preferências
 - Constante: `OUTLOOK_ANDROID_PACKAGE = 'com.microsoft.office.outlook'`
@@ -56,16 +68,18 @@ A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos,
 ## Regras ao alterar código
 
 1. Testar mentalmente **PC + tablet** em cada mudança de email (com e sem anexo).
-2. Passar sempre `mailtoFallback` (corpo curto + toast) quando há anexos.
+2. Passar sempre `mailtoFallback` (corpo **completo** + toast) quando há anexos.
 3. Não “corrigir” o tablet com Web Share de `.eml`.
 4. Não assumir `window.open(blob)` na PWA standalone.
 5. PC: `serve.ps1` lança **outlook.exe clássico**, não o handler default do `.eml`.
 6. Mensagens: tablet → anexa Excel; PC clássico → `Instalar-Abertura-Automatica-Outlook.bat` / `serve.ps1`.
-7. Regressão tablet = diálogo «Abrir com» Chrome/Gmail → repor força Outlook.
+7. Regressão tablet = diálogo «Abrir com» Chrome/Gmail **ou** endereços a vermelho **ou** corpo «Pedido Delta Foods».
 8. Não reintroduzir o painel «Como abrir emails?» / dropdown de preferências.
+9. Não reintroduzir o stub «Pedido Delta Foods» nem `;` no `cc=` do mailto.
 
 ## Critério de aceite
 
 - **PC:** Outlook clássico abre com HTML + anexos (via ponte). Sem pergunta ao utilizador.
 - **Tablet PWA:** Outlook abre **directamente** (sem Chrome/Gmail) + Excel descarregado para anexar.
+- **Tablet se o Gmail abrir:** To/CC válidos (vírgulas) + corpo completo do chamado AT (não stub).
 - Mesmo botão / mesmo pedido (MC00, AT, cadastro, contratos, etc.) nos dois.

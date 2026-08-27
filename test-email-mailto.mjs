@@ -1,0 +1,214 @@
+#!/usr/bin/env node
+/**
+ * Regressões do chamado AT no tablet:
+ *  - Gmail «Verificar endereço de email» (CC com ponto-e-vírgula)
+ *  - Corpo «Pedido Delta Foods» (tablet tratado como PC / stub de 1800 chars)
+ */
+import fs from 'fs';
+import vm from 'vm';
+import assert from 'assert';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+
+function extractFn(src, name) {
+  const start = src.indexOf(`function ${name}(`);
+  if (start < 0) throw new Error('Função em falta: ' + name);
+  const brace = src.indexOf('{', start);
+  let depth = 0;
+  for (let i = brace; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return src.slice(start, i + 1);
+    }
+  }
+  throw new Error('Chaveta não fechou: ' + name);
+}
+
+const names = [
+  'outlookSanitizeEmail',
+  'outlookMailtoAddrList',
+  'ccString',
+  'mailtoAddr',
+  'mailtoToPath',
+  'ccMailtoParam',
+  'outlookReadNav',
+  'outlookIsAndroid',
+  'outlookIsIosLike',
+  'outlookIsWindowsPc',
+  'outlookIsMobileClient',
+];
+
+let horeca = true;
+const context = {
+  CC_FIXO_FILIPE: 'filipe.neves@deltafoodsbrasil.com.br',
+  isCanalHorecaActivo: () => horeca,
+  console,
+};
+vm.createContext(context);
+for (const name of names) {
+  vm.runInContext(extractFn(html, name), context);
+}
+
+function check(title, fn) {
+  try {
+    fn();
+    console.log('OK  ' + title);
+  } catch (e) {
+    console.error('FAIL ' + title);
+    console.error(e && e.stack ? e.stack : e);
+    process.exitCode = 1;
+  }
+}
+
+// ── Gmail: vírgulas no mailto, nunca ';' ──────────────────────────────────
+check('lista parte CC com ; em endereços distintos', () => {
+  const list = context.outlookMailtoAddrList(
+    'carlos.castro@deltafoodsbrasil.com.br; ricardo.vicentesilva@deltafoodsbrasil.com.br; daniela.silva@deltafoodsbrasil.com.br; filipe.neves@deltafoodsbrasil.com.br'
+  );
+  assert.equal(list.length, 4);
+  assert.ok(list.every(e => e.includes('@') && !e.includes(';')));
+});
+
+check('To do chamado AT não leva %40 no path', () => {
+  const to = context.mailtoToPath('info.br@gruponabeiro.com');
+  assert.equal(to, 'info.br@gruponabeiro.com');
+});
+
+check('To com ; vira vírgulas (RFC 6068)', () => {
+  const to = context.mailtoToPath(
+    'andrea.albuquerque@deltafoodsbrasil.com.br; daniela.kucinski@deltafoodsbrasil.com.br'
+  );
+  assert.equal(
+    to,
+    'andrea.albuquerque@deltafoodsbrasil.com.br,daniela.kucinski@deltafoodsbrasil.com.br'
+  );
+});
+
+check('cc mailto do chamado (Horeca) — Gmail não vê ponto-e-vírgula', () => {
+  horeca = true;
+  const param = context.ccMailtoParam([
+    'carlos.castro@deltafoodsbrasil.com.br',
+    'ricardo.vicentesilva@deltafoodsbrasil.com.br',
+    'daniela.silva@deltafoodsbrasil.com.br',
+  ]);
+  assert.ok(param.startsWith('cc='));
+  const raw = param.slice(3);
+  assert.equal(raw.indexOf('%3B'), -1, 'cc mailto não pode ter ; encoded');
+  assert.equal(raw.indexOf(';'), -1, 'cc mailto não pode ter ; cru');
+  const decoded = decodeURIComponent(raw);
+  assert.equal(decoded.indexOf(';'), -1);
+  assert.ok(decoded.includes(','));
+  assert.ok(decoded.includes('filipe.neves@deltafoodsbrasil.com.br'));
+  assert.ok(decoded.includes('daniela.silva@deltafoodsbrasil.com.br'));
+});
+
+check('cc .eml (ccString) continua com ; para Outlook desktop', () => {
+  horeca = true;
+  const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br']);
+  assert.ok(s.includes(';') || s.includes('filipe.neves@deltafoodsbrasil.com.br'));
+  assert.ok(s.includes('carlos.castro@deltafoodsbrasil.com.br'));
+});
+
+check('sanitiza lixo invisível / <> que o Gmail rejeita', () => {
+  const e = context.outlookSanitizeEmail('\u200B<info.br@gruponabeiro.com>;\u00A0');
+  assert.equal(e, 'info.br@gruponabeiro.com');
+});
+
+check('URL mailto do chamado AT (screenshot Daniela) é Gmail-safe', () => {
+  horeca = true;
+  const to = context.mailtoToPath('info.br@gruponabeiro.com');
+  const cc = context.ccMailtoParam([
+    'carlos.castro@deltafoodsbrasil.com.br',
+    'ricardo.vicentesilva@deltafoodsbrasil.com.br',
+    'daniela.silva@deltafoodsbrasil.com.br',
+  ]);
+  const body = encodeURIComponent(
+    `PEDIDO DE ASSISTÊNCIA TÉCNICA — DELTA FOODS BRASIL\n  Nome      : JULES PANIFICADORA E CONFEITARIA\n  Código    : 748520`
+  );
+  const mailto = `mailto:${to}?${cc}&subject=${encodeURIComponent('ABERTURA DE CHAMADO 748520 JULES PANIFICADORA E CONFEITARIA')}&body=${body}`;
+  assert.ok(!mailto.includes('Pedido Delta Foods.'));
+  assert.ok(mailto.includes('748520'));
+  const q = mailto.split('?')[1];
+  const ccQ = new URLSearchParams(q).get('cc');
+  assert.ok(ccQ && !ccQ.includes(';'), 'Gmail recebe CC com vírgulas');
+  assert.ok(ccQ.includes(','));
+  const bodyQ = new URLSearchParams(q).get('body');
+  assert.ok(bodyQ.includes('PEDIDO DE ASSISTÊNCIA TÉCNICA'));
+  assert.ok(!bodyQ.includes('Pedido Delta Foods.'));
+});
+
+// ── Deteção: tablet com UA desktop ≠ PC Windows ───────────────────────────
+const galaxyDesktopWindowsUa = {
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+  platform: 'Linux x86_64',
+  userAgentData: { platform: 'Android', mobile: false },
+  maxTouchPoints: 5,
+};
+const galaxyLinuxDesktopUa = {
+  userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+  platform: 'Linux x86_64',
+  userAgentData: { platform: 'Android', mobile: false },
+  maxTouchPoints: 5,
+};
+const windowsPc = {
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+  platform: 'Win32',
+  userAgentData: { platform: 'Windows', mobile: false },
+  maxTouchPoints: 0,
+};
+const surfacePc = {
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+  platform: 'Win32',
+  userAgentData: { platform: 'Windows', mobile: false },
+  maxTouchPoints: 10,
+};
+
+check('Galaxy «site para computador» (UA Windows NT + platform Android) NÃO é PC', () => {
+  assert.equal(context.outlookIsWindowsPc(galaxyDesktopWindowsUa), false);
+  assert.equal(context.outlookIsAndroid(galaxyDesktopWindowsUa), true);
+  assert.equal(context.outlookIsMobileClient(galaxyDesktopWindowsUa), true);
+});
+
+check('Galaxy teclado (UA Linux x86_64) NÃO é PC', () => {
+  assert.equal(context.outlookIsWindowsPc(galaxyLinuxDesktopUa), false);
+  assert.equal(context.outlookIsMobileClient(galaxyLinuxDesktopUa), true);
+});
+
+check('Galaxy UA Windows NT + platform Linux (sem Client Hints) NÃO é PC', () => {
+  const nav = {
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+    platform: 'Linux x86_64',
+    maxTouchPoints: 5,
+  };
+  assert.equal(context.outlookIsWindowsPc(nav), false);
+  assert.equal(context.outlookIsMobileClient(nav), true);
+});
+
+check('PC Windows real continua PC (serve.ps1)', () => {
+  assert.equal(context.outlookIsWindowsPc(windowsPc), true);
+  assert.equal(context.outlookIsMobileClient(windowsPc), false);
+});
+
+check('Surface com toque continua PC Windows', () => {
+  assert.equal(context.outlookIsWindowsPc(surfacePc), true);
+  assert.equal(context.outlookIsMobileClient(surfacePc), false);
+});
+
+// ── Fonte: o stub que esvaziava o chamado não pode voltar ─────────────────
+check('index.html já não substitui o corpo por Pedido Delta Foods', () => {
+  assert.equal(html.includes("bodyForMail = hasExcel"), false);
+  assert.equal(/bodyForMail = hasExcel[\s\S]{0,80}Pedido Delta Foods/.test(html), false);
+  assert.ok(html.includes('NUNCA «Pedido Delta Foods» vazio'));
+  assert.ok(html.includes('SEMPRE vírgulas'));
+});
+
+if (process.exitCode) {
+  console.error('\nFalhou pelo menos um teste.');
+  process.exit(process.exitCode);
+}
+console.log('\nTodos os testes de email/chamado AT passaram.');
