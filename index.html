@@ -16247,7 +16247,10 @@ function contratoUploadPdf(tipo, docPath) {
       contratoMarcarBotao(cod, numContrato, tipo, false);
       const targetBtn = contratoDocsBtnsFor(cod, numContrato).find(b => b.dataset.uploadTipo === tipo) || btn;
       if (targetBtn) {
-        targetBtn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
+        // Legado: ✅ NF / ✅ CT. Nas pílulas .ct-doc-btn o texto já vem de contratoMarcarBotao.
+        if (!targetBtn.classList || !targetBtn.classList.contains('ct-doc-btn')) {
+          targetBtn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
+        }
         targetBtn.classList.add('is-loaded');
         targetBtn.disabled = false;
         contratoSetDownloadBtn(targetBtn, pubUrl, label);
