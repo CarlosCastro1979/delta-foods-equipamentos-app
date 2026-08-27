@@ -1729,6 +1729,9 @@ var _unused_placeholder = 1;
       <option value="">— Selecionar —</option>
       <optgroup label="Admin">
         <option value="Carlos Castro">Carlos Castro</option>
+        <option value="Christian Souza">Christian Souza</option>
+        <option value="Andrea Albuquerque">Andrea Albuquerque</option>
+        <option value="Daniela Kucinski">Daniela Kucinski</option>
       </optgroup>
       <optgroup label="Horeca">
         <option value="Hélcio Grégio">Hélcio Grégio</option>
@@ -1750,11 +1753,6 @@ var _unused_placeholder = 1;
         <option value="Fernando">Fernando</option>
         <option value="Ricardo Vicente Silva">Ricardo Vicente Silva</option>
         <option value="Marcelo">Marcelo</option>
-      </optgroup>
-      <optgroup label="Área Financeira">
-        <option value="Christian Souza">Christian Souza</option>
-        <option value="Andrea Albuquerque">Andrea Albuquerque</option>
-        <option value="Daniela Kucinski">Daniela Kucinski</option>
       </optgroup>
     </select>
     <button class="btn btn-primary login-btn" onclick="if(typeof confirmarLogin==='function')confirmarLogin()">Entrar</button>
@@ -1844,21 +1842,21 @@ var _unused_placeholder = 1;
         <span class="hd-icon">💶</span>
         <span>
           <div class="hd-title">Área Financeira</div>
-          <div class="hd-desc">Encerramentos, Contencioso e clientes com dívida sem compras ≥ 3 meses. Acesso: Christian, Andrea, Daniela K. (+ admin).</div>
+          <div class="hd-desc">Encerramentos, Contencioso e clientes com dívida sem compras ≥ 3 meses. Acesso: admins (Carlos, Christian, Andrea, Daniela K.) + equipa financeira.</div>
         </span>
       </button>
       <button type="button" class="home-at-card home-prev-card" id="home-prev-card" onclick="abrirPrevisaoVendasHome()">
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal (N-1 / Budget / MYR). Acesso: Filipe, Diogo, Marcio, Massimo, Carlos (+ Chris consulta/exportar).</div>
+          <div class="hd-desc">Mapa mensal (N-1 / Budget / MYR). Acesso: Filipe, Diogo, Marcio, Massimo + admins (edição completa).</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
         <span class="hd-icon">⚙</span>
         <span>
           <div class="hd-title">Dados</div>
-          <div class="hd-desc">Carregar Lista SAP, Vendas, Dívidas e códigos relacionados — para todos os canais. Acesso: Christian, Andrea, Daniela K. (+ admin).</div>
+          <div class="hd-desc">Carregar Lista SAP, Vendas, Dívidas e códigos relacionados — para todos os canais. Acesso: admins (Carlos, Christian, Andrea, Daniela K.).</div>
         </span>
       </button>
     </div>
@@ -9908,7 +9906,7 @@ async function abrirDadosHome() {
       return;
     }
     if (!podeAcederDados()) {
-      toast('Sem acesso à área Dados. Só Christian, Andrea, Daniela K. e admin.', 'error');
+      toast('Sem acesso à área Dados. Só administradores (Carlos, Christian, Andrea, Daniela K.).', 'error');
       return;
     }
     _canalActivo = null;
@@ -9940,25 +9938,23 @@ async function abrirDadosHome() {
 /** Área Técnica: Fernando, Ricardo Vicente Silva, Marcelo + admin Carlos. PIN à entrada. */
 const AT_AREA_ACESSO = ['Fernando', 'Ricardo Vicente Silva', 'Marcelo'];
 
-/** Área Financeira: Christian, Andrea, Daniela Kucinski + admin Carlos. PIN à entrada. */
+/** Área Financeira: admins (Carlos, Christian, Andrea, Daniela K.). PIN à entrada. */
 const FIN_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski'];
 
-/** Área Dados (carregamentos SAP/Vendas/Dívidas): mesmo grupo da Financeira + admin. */
+/** Área Dados (carregamentos SAP/Vendas/Dívidas): admins. */
 const DADOS_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski'];
 
 /**
  * Previsão de vendas e acompanhamento.
- * Edição: Filipe, Diogo, Marcio, Massimo (+ admin Carlos).
- * Consulta + exportar: Christian Souza («Chris»).
+ * Edição: Filipe, Diogo, Marcio, Massimo + admins (Carlos, Christian, Andrea, Daniela K.).
  */
 const PREV_VENDAS_ACESSO = [
   'Filipe Neves',
   'Diogo Oliveira',
   'Marcio Gorga',
   'Massimo Bottello',
-  'Christian Souza',
 ];
-const PREV_VENDAS_SO_CONSULTA = ['Christian Souza']; // Chris — consulta e exportar
+const PREV_VENDAS_SO_CONSULTA = [];
 
 const PV_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -10759,7 +10755,7 @@ function podeAcederPrevisaoVendas() {
   return PREV_VENDAS_ACESSO.some(n => normNomeUtilizador(n) === atual);
 }
 
-/** Chris (Christian) e outros em PREV_VENDAS_SO_CONSULTA: só leitura + export. */
+/** Chris e outros em PREV_VENDAS_SO_CONSULTA: só leitura + export. Admins editam sempre. */
 function pvPodeEditar() {
   if (typeof isAdmin === 'function' && isAdmin()) return true;
   const atual = normNomeUtilizador(getUtilizadorAtual());
@@ -10839,7 +10835,7 @@ async function abrirAreaFinanceiraHome() {
       return;
     }
     if (!podeAcederAreaFinanceira()) {
-      toast('Sem acesso à Área Financeira. Só Christian, Andrea, Daniela K. e admin.', 'error');
+      toast('Sem acesso à Área Financeira. Só administradores (Carlos, Christian, Andrea, Daniela K.).', 'error');
       return;
     }
     _canalActivo = null;
@@ -16315,7 +16311,13 @@ async function exportContratosExcel() {
 }
 
 // ─── UTILIZADOR / LOGIN ──────────────────────────────
-const ADMINS = ['Carlos Castro']; // acesso a todos os canais + Dados + AT + Financeira
+const ADMINS = [
+  'Carlos Castro',
+  'Christian Souza',
+  'Andrea Albuquerque',
+  'Daniela Kucinski',
+  'Daniela Kucinsky', // grafia alternativa
+]; // acesso a todos os canais + Dados + AT + Financeira + Previsão
 
 /**
  * No Horeca: vêem todos os vendedores do canal (sem filtro ao login).
@@ -16689,7 +16691,7 @@ async function esqueciUserPin() {
     return;
   }
   toast(
-    'Pede ao administrador (Carlos) para repor o teu PIN: na app, entra como admin, escolhe o teu utilizador e em «Esqueci o PIN» → Repor.',
+    'Pede a um administrador (Carlos, Christian, Andrea ou Daniela K.) para repor o teu PIN: na app, entra como admin, escolhe o teu utilizador e em «Esqueci o PIN» → Repor.',
     'warn'
   );
 }
@@ -17704,7 +17706,7 @@ function atualizarHomeCanais() {
     const okDados = !nome || podeAcederDados();
     dadosCard.classList.toggle('hc-locked', !okDados);
     dadosCard.disabled = !okDados;
-    dadosCard.title = okDados ? 'Dados — PIN do utilizador' : 'Só Christian, Andrea, Daniela K. e admin';
+    dadosCard.title = okDados ? 'Dados — PIN do utilizador' : 'Só administradores (Carlos, Christian, Andrea, Daniela K.)';
     dadosCard.style.opacity = okDados ? '' : '0.45';
     dadosCard.style.cursor = okDados ? '' : 'not-allowed';
   }
@@ -17722,7 +17724,7 @@ function atualizarHomeCanais() {
     const okFin = !nome || podeAcederAreaFinanceira();
     finCard.classList.toggle('hc-locked', !okFin);
     finCard.disabled = !okFin;
-    finCard.title = okFin ? 'Área Financeira — PIN do utilizador' : 'Só Christian, Andrea, Daniela K. e admin';
+    finCard.title = okFin ? 'Área Financeira — PIN do utilizador' : 'Só administradores (Carlos, Christian, Andrea, Daniela K.)';
     finCard.style.opacity = okFin ? '' : '0.45';
     finCard.style.cursor = okFin ? '' : 'not-allowed';
   }
