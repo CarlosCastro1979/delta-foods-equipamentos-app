@@ -17246,14 +17246,18 @@ function outlookHtmlToPlainText(html) {
   return String(html || '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
+    .replace(/<\/t[dh]>\s*<t[dh]\b[^>]*>/gi, ' | ')
     .replace(/<\/tr>/gi, '\n')
-    .replace(/<\/(div|h[1-6]|li)>/gi, '\n')
+    .replace(/<\/(div|h[1-6]|li|table|thead|tbody)>/gi, '\n')
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
+    .replace(/[ \t]*\|[ \t]*/g, ' | ')
+    .replace(/(?:^|\n)[ \t]*\|[ \t]*/g, '\n')
+    .replace(/[ \t]*\|[ \t]*(?=\n|$)/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -23055,6 +23059,20 @@ function mc00ResumoProdutosEmailHtml(produtos) {
 </table>`;
 }
 
+/** Quadro de produtos em texto — tablet/Gmail (mailto não leva HTML). */
+function mc00ResumoProdutosEmailText(produtos) {
+  const rows = (produtos || []).filter(p => p && (p.sapCode || p.descricao));
+  if (!rows.length) return '(sem produtos)';
+  const lines = ['Cód.SAP | Produto | P.Tabela | Desc.1 | P.Final'];
+  for (const p of rows) {
+    const tab = 'R$ ' + (mc00Fmt(mc00Num(p.preco)) || '0,00');
+    const d1 = (String(p.desc1 ?? '').replace(/%/g, '').trim() || '0') + '%';
+    const fin = 'R$ ' + (mc00Fmt(mc00CalcPlf(p)) || '0,00');
+    lines.push(`${p.sapCode || '—'} | ${p.descricao || '—'} | ${tab} | ${d1} | ${fin}`);
+  }
+  return lines.join('\n');
+}
+
 async function mc00AbrirEmail(d, excelBlob, excelFilename) {
   const hora = new Date().getHours();
   const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
@@ -23079,7 +23097,12 @@ ${tabela}
 Peço o carregamento das condições especiais de fornecimento (MC00) em anexo no ZDAB
 para o cliente ${d.nome || ''} (cód. ${d.cod || ''}).
 
+Resumo para validação:
+${mc00ResumoProdutosEmailText(d.produtos)}
+
 Anexa o ficheiro Excel MC00 descarregado a este email.
+
+Aguardo a vossa aprovação.
 
 Cumprimentos,
 ${remetente}`;

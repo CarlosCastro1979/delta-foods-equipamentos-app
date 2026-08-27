@@ -207,6 +207,42 @@ check('index.html já não substitui o corpo por Pedido Delta Foods', () => {
   assert.ok(html.includes('SEMPRE vírgulas'));
 });
 
+// ── MC00 tablet: quadro resumo no mailto (não só «anexa o Excel») ─────────
+const mc00Names = ['mc00Num', 'mc00Fmt', 'mc00CalcPlf', 'mc00ResumoProdutosEmailText', 'outlookHtmlToPlainText'];
+for (const name of mc00Names) {
+  vm.runInContext(extractFn(html, name), context);
+}
+
+check('MC00 texto inclui os negócios (código, produto, preços)', () => {
+  const txt = context.mc00ResumoProdutosEmailText([
+    { sapCode: '1001234', descricao: 'CAFÉ TORRADO 1KG', preco: '45,00', desc1: '10' },
+    { sapCode: '1005678', descricao: 'LEITE CONDENSADO', preco: '12,50', desc1: '5' },
+  ]);
+  assert.ok(txt.includes('Cód.SAP'));
+  assert.ok(txt.includes('1001234'));
+  assert.ok(txt.includes('CAFÉ TORRADO 1KG'));
+  assert.ok(txt.includes('1005678'));
+  assert.ok(txt.includes('P.Final'));
+  assert.ok(txt.includes('R$'));
+});
+
+check('MC00 mailtoFallback no código chama o quadro de produtos', () => {
+  assert.ok(html.includes('mc00ResumoProdutosEmailText(d.produtos)'));
+  const bloco = html.slice(html.indexOf('async function mc00AbrirEmail'));
+  const bodyTxt = bloco.slice(0, bloco.indexOf('return outlookAbrirRascunho'));
+  assert.ok(bodyTxt.includes('Resumo para validação'));
+  assert.ok(bodyTxt.includes('mc00ResumoProdutosEmailText'));
+  assert.equal(bodyTxt.includes('Anexa o ficheiro Excel MC00') && !bodyTxt.includes('mc00ResumoProdutosEmailText'), false);
+});
+
+check('HTML de tabela vira quadro texto (tablet sem HTML no mailto)', () => {
+  const htmlTbl = `<p>Resumo</p><table><tr><th>Cód.SAP</th><th>Produto</th></tr><tr><td>1001234</td><td>CAFÉ</td></tr></table>`;
+  const txt = context.outlookHtmlToPlainText(htmlTbl);
+  assert.ok(txt.includes('1001234'));
+  assert.ok(txt.includes('CAFÉ'));
+  assert.ok(txt.includes('|'), 'células da tabela separadas por |');
+});
+
 if (process.exitCode) {
   console.error('\nFalhou pelo menos um teste.');
   process.exit(process.exitCode);

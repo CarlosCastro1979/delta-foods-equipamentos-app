@@ -33,6 +33,7 @@ A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos,
    - Preferir `location.assign` / `location.href` (mais fiável que `<a>.click()` na PWA)
    - **Nunca** `mailto:` genérico no tablet se o Outlook estiver disponível → mostra «Abrir com» **Chrome / Gmail** e o Outlook muitas vezes **nem aparece** (mesmo instalado e como padrão)
    - **Nunca** esvaziar o corpo para «Pedido Delta Foods» — chamados AT levam tabelas/texto completo (`OUTLOOK_ANDROID_URI_MAX`, não o limite PC de 1800)
+   - **MC00 / cadastro:** o `mailtoFallback.body` tem de incluir os **quadros resumo** (produtos/negócios), não só «anexa o Excel»
 4. **Descarregar o Excel** para o utilizador anexar no Outlook.
 5. Toast: *Anexa o Excel descarregado ao email.*
 
@@ -82,4 +83,5 @@ O tablet da Daniela abre por vezes o **Gmail** (UA «site para computador» / ha
 - **PC:** Outlook clássico abre com HTML + anexos (via ponte). Sem pergunta ao utilizador.
 - **Tablet PWA:** Outlook abre **directamente** (sem Chrome/Gmail) + Excel descarregado para anexar.
 - **Tablet se o Gmail abrir:** To/CC válidos (vírgulas) + corpo completo do chamado AT (não stub).
+- **MC00 no tablet:** o mailto leva o **quadro resumo** (Cód.SAP, Produto, P.Tabela, Desc.1, P.Final) — os mesmos negócios do Excel. No PC o quadro vai em HTML no Outlook clássico.
 - Mesmo botão / mesmo pedido (MC00, AT, cadastro, contratos, etc.) nos dois.
