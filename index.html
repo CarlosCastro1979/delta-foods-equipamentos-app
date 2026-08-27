@@ -875,6 +875,42 @@
   .edit-tab-btn:hover { color:var(--text); }
   .edit-tab-btn.active { color:#b91c1c; border-bottom-color:#b91c1c; }
 
+  /* Contratos — NF / Contrato carregados (verde e visível) */
+  .ct-doc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 84px;
+    min-height: 30px;
+    padding: 4px 10px;
+    border-radius: 7px;
+    border: 1.5px solid #d1d5db;
+    background: #f3f4f6;
+    color: #6b7280;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .02em;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .ct-doc-btn.is-loaded {
+    background: #dcfce7;
+    border-color: #16a34a;
+    color: #166534;
+    box-shadow: inset 0 0 0 1px #86efac;
+  }
+  .ct-doc-btn:hover { filter: brightness(0.97); }
+  #docs-row-nf.is-loaded,
+  #docs-row-ct.is-loaded {
+    background: #ecfdf5 !important;
+    border: 1.5px solid #16a34a;
+  }
+  #docs-row-nf.is-focus,
+  #docs-row-ct.is-focus {
+    outline: 2px solid #166534;
+    outline-offset: 1px;
+  }
+
   /* MC00 */
   .mc00-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px 12px; }
   .mc00-grid .form-group { margin:0; }
@@ -15794,7 +15830,7 @@ async function loadContratosTab(forceRefresh = false) {
 
     // ── RESUMO POR VENDEDOR ──
     let html = buildContratosResumoHtml(rows, window._contratosNivelFiltro || null);
-    // Main contracts table — cabeçalho com coluna DOCS
+    // Tabela de contratos — colunas visíveis NF | Contrato
     const TH2 = 'padding:8px 12px;font-weight:700;font-size:11px;border:1px solid #ddd;background:#f5f5f5;';
     html += `<div class="table-wrap"><table class="data-table wide" style="border-collapse:collapse;font-size:12px;">
       <thead><tr>
@@ -15811,7 +15847,8 @@ async function loadContratosTab(forceRefresh = false) {
         <th style="${TH2}text-align:center;min-width:80px">% TOTAL</th>
         <th style="${TH2}text-align:center;min-width:80px">% YTD</th>
         <th style="${TH2}text-align:center;min-width:200px">ALERTA</th>
-        <th style="${TH2}text-align:center;min-width:80px">📄 DOCS</th>
+        <th style="${TH2}text-align:center;min-width:72px">NF</th>
+        <th style="${TH2}text-align:center;min-width:92px">Contrato</th>
       </tr></thead><tbody>`;
 
     const fmtNum2 = (n, u) => u === 'Kg'
@@ -15844,13 +15881,8 @@ async function loadContratosTab(forceRefresh = false) {
         <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal!==null?`<span style="background:${pctBg2(r.pctTotal)};color:${pctColor2(r.pctTotal)};padding:2px 8px;border-radius:10px;font-weight:700">${r.pctTotal}%</span>`:'—'}</td>
         <td style="${td}text-align:center;background:#F8FFF9">${r.pct!==null&&r.mesesDecorridos>0?`<span style="background:${pBg};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700">${r.pct}%</span>`:'—'}</td>
         <td style="${td}text-align:center;overflow:hidden;">${alertaHtml}</td>
-        <td style="${td}text-align:center;white-space:nowrap">
-          <button onclick="contratoAbrirDocs('${r.cod}','${r.contrato}')"
-            style="background:none;border:1px solid #aaa;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;"
-            title="Gerir documentos">📁</button>
-          <span data-upload-tipo="nf" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
-          <span data-upload-tipo="ct" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
-        </td>
+        <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('nf', r.cod, r.contrato)}</td>
+        <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('ct', r.cod, r.contrato)}</td>
       </tr>`;
     });
     html += `</tbody></table></div>`;
@@ -16061,7 +16093,8 @@ function filtrarContratosVendedor() {
       <th style="${TH}text-align:center">% TOTAL</th>
       <th style="${TH}text-align:center">% YTD</th>
       <th style="${TH}text-align:center;min-width:160px">ALERTA</th>
-      <th style="${TH}text-align:center;min-width:100px">📄 DOCS</th>
+      <th style="${TH}text-align:center;min-width:72px">NF</th>
+      <th style="${TH}text-align:center;min-width:92px">Contrato</th>
     </tr></thead><tbody>`;
 
   rows.forEach((r, idx) => {
@@ -16074,9 +16107,6 @@ function filtrarContratosVendedor() {
       : r.alerta === 'sem_consumo'
       ? `<span style="background:#ffebee;color:#b71c1c;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🚫 Sem Consumo — Analisar</span>`
       : `<span style="color:#aaa;font-size:11px">—</span>`;
-    const docPath = `${r.cod}/${r.contrato}`;
-    const nfKey = `nf|${docPath}`;
-    const ctKey = `ct|${docPath}`;
     html += `<tr>
       <td style="${td}font-size:11px;color:var(--muted)">${r.cod}</td>
       <td class="col-nome" style="${td}font-weight:500;" title="${r.nome}">${r.nome}</td>
@@ -16091,25 +16121,76 @@ function filtrarContratosVendedor() {
       <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal !== null ? `<span style="background:${pctBg(r.pctTotal)};color:${pctColor(r.pctTotal)};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pctTotal}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
       <td style="${td}text-align:center;background:#F8FFF9">${r.pct !== null && r.mesesDecorridos > 0 ? `<span style="background:${pBg};color:${pCol};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pct}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
       <td style="${td}text-align:center">${alertaHtml}</td>
-      <td style="${td}text-align:center;white-space:nowrap">
-        <button onclick="contratoAbrirDocs('${r.cod}','${r.contrato}')"
-          style="background:none;border:1px solid #aaa;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px;"
-          title="Gerir documentos">📁</button>
-          <span data-upload-tipo="nf" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
-          <span data-upload-tipo="ct" data-upload-cod="${r.cod}" data-upload-num="${r.contrato}" style="display:none"></span>
-      </td>
+      <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('nf', r.cod, r.contrato)}</td>
+      <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('ct', r.cod, r.contrato)}</td>
     </tr>`;
   });
 
   html += `</tbody></table></div>`;
   document.getElementById('contratos-content').innerHTML = html;
-  // Verificar docs existentes no Storage após render
+  try { contratoMarkExisting(rows, window._contratosDocsMap); } catch (_) {}
 }
 
 // ─── SUPABASE STORAGE — PDFs de Contratos ────────────
 const STORAGE_BUCKET = 'contratos';
 const STORAGE_BASE = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
 const STORAGE_PUBLIC = STORAGE_BASE + '/public/' + STORAGE_BUCKET;
+
+function contratoDocBtnHtml(tipo, cod, num) {
+  const label = tipo === 'nf' ? 'NF' : 'Contrato';
+  const c = String(cod ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const n = String(num ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  return `<button type="button" class="ct-doc-btn" data-upload-tipo="${tipo}" data-upload-cod="${c}" data-upload-num="${n}"
+    onclick="contratoAbrirDocs(this.dataset.uploadCod,this.dataset.uploadNum,'${tipo}')"
+    title="${tipo === 'nf' ? 'Nota Fiscal' : 'Contrato assinado'}">${label}</button>`;
+}
+
+function contratoDocsBtnsFor(cod, num) {
+  const c = String(cod ?? '');
+  const n = String(num ?? '');
+  return [...document.querySelectorAll('.ct-doc-btn')].filter(b =>
+    String(b.dataset.uploadCod || '') === c && String(b.dataset.uploadNum || '') === n
+  );
+}
+
+function contratoDocsSetLoaded(el, loaded) {
+  if (!el) return;
+  const tipo = el.dataset.uploadTipo;
+  const label = tipo === 'nf' ? 'NF' : 'Contrato';
+  const on = !!loaded;
+  el.classList.toggle('is-loaded', on);
+  el.dataset.hasDoc = on ? '1' : '';
+  el.style.borderColor = '';
+  el.style.color = '';
+  el.style.background = '';
+  el.textContent = on ? '✅ ' + label : label;
+  el.title = on
+    ? (tipo === 'nf' ? 'NF carregada — clica para ver ou substituir' : 'Contrato carregado — clica para ver ou substituir')
+    : (tipo === 'nf' ? 'NF em falta — clica para carregar PDF' : 'Contrato em falta — clica para carregar PDF');
+}
+
+function contratoDocsLidos(cod, num, docsMap) {
+  const supabaseDocs = (docsMap || window._contratosDocsMap || {})[String(cod)]?.[num] || {};
+  let localDocs = {};
+  try { localDocs = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch (_) {}
+  const all = { ...supabaseDocs, ...localDocs };
+  return { nf: !!all.nf, ct: !!all.ct, all };
+}
+
+function contratoDocsRefreshRow(cod, num) {
+  const st = contratoDocsLidos(cod, num);
+  contratoDocsBtnsFor(cod, num).forEach(btn => {
+    contratoDocsSetLoaded(btn, btn.dataset.uploadTipo === 'nf' ? st.nf : st.ct);
+  });
+}
+
+function contratoDocsPatchMap(cod, num, tipo, value) {
+  if (!window._contratosDocsMap) window._contratosDocsMap = {};
+  const c = String(cod);
+  if (!window._contratosDocsMap[c]) window._contratosDocsMap[c] = {};
+  if (!window._contratosDocsMap[c][num]) window._contratosDocsMap[c][num] = {};
+  window._contratosDocsMap[c][num][tipo] = value || false;
+}
 
 // docs_index: { "cod/contrato": {nf: true/false, ct: true/false} }
 // Guardado na tabela registos no campo docs_index (jsonb)
@@ -16161,17 +16242,13 @@ function contratoUploadPdf(tipo, docPath) {
         localStorage.setItem(docsLocalKey, JSON.stringify(saved));
       } catch(e) {}
 
-      // 2. Actualizar botão imediatamente
-      const allBtns = document.querySelectorAll(`[data-upload-tipo="${tipo}"]`);
-      let foundBtn = null;
-      allBtns.forEach(b => {
-        if (b.dataset.uploadCod === cod && b.dataset.uploadNum === numContrato) foundBtn = b;
-      });
-      const targetBtn = foundBtn || btn;
+      // 2. Actualizar pílulas NF / Contrato imediatamente
+      contratoDocsPatchMap(cod, numContrato, tipo, storagePath);
+      contratoMarcarBotao(cod, numContrato, tipo, false);
+      const targetBtn = contratoDocsBtnsFor(cod, numContrato).find(b => b.dataset.uploadTipo === tipo) || btn;
       if (targetBtn) {
         targetBtn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
-        targetBtn.style.borderColor = '#16a34a';
-        targetBtn.style.color = '#16a34a';
+        targetBtn.classList.add('is-loaded');
         targetBtn.disabled = false;
         contratoSetDownloadBtn(targetBtn, pubUrl, label);
       }
@@ -16195,61 +16272,49 @@ function contratoUploadPdf(tipo, docPath) {
         .catch(e => console.warn('docs save supabase:', e));
     } catch(err) {
       toast('Erro: ' + err.message, 'error');
-      if (btn) { btn.textContent = tipo === 'nf' ? '📄 NF' : '✍ CT'; btn.disabled = false; }
+      if (btn) { btn.disabled = false; contratoDocsSetLoaded(btn, false); }
     }
   };
   input.click();
 }
 
 // ─── MODAL DOCS DE CONTRATOS ─────────────────────────
-function contratoAbrirDocs(cod, num) {
+function contratoAbrirDocs(cod, num, focusTipo) {
   const modal = document.getElementById('docs-modal');
   document.getElementById('docs-modal-titulo').textContent = `Documentos — ${num}`;
   document.getElementById('docs-modal-cod').value = cod;
   document.getElementById('docs-modal-num').value = num;
 
-  // Ver estado actual dos docs
-  let localDocs = {};
-  try { localDocs = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch(e) {}
+  const st = contratoDocsLidos(cod, num);
+  const cEsc = String(cod ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const nEsc = String(num ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const ds = `data-docs-cod="${cEsc}" data-docs-num="${nEsc}"`;
 
   ['nf','ct'].forEach(tipo => {
-    const hasDoc = !!localDocs[tipo];
+    const hasDoc = tipo === 'nf' ? st.nf : st.ct;
     const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
     const icon = tipo === 'nf' ? '📄' : '✍';
     const row = document.getElementById('docs-row-' + tipo);
+    row.classList.toggle('is-loaded', hasDoc);
+    row.classList.toggle('is-focus', focusTipo === tipo);
+    row.style.background = hasDoc ? '#ecfdf5' : 'var(--surface2)';
+    row.style.border = hasDoc ? '1.5px solid #16a34a' : '1.5px solid transparent';
+    row.style.outline = (focusTipo === tipo) ? '2px solid #166534' : '';
+    const clickArgs = `this.dataset.docsCod,this.dataset.docsNum,'${tipo}'`;
     row.innerHTML = hasDoc
-      ? `<span style="color:#16a34a;font-weight:600">${icon} ${label}</span>
-         <div style="display:flex;gap:6px;margin-top:4px;">
-           <button class="btn btn-secondary btn-sm" onclick="contratoDocsDownload('${cod}','${num}','${tipo}')" style="font-size:12px;">⬇ Abrir</button>
-           <button class="btn btn-secondary btn-sm" onclick="contratoDocsUpload('${cod}','${num}','${tipo}')" style="font-size:12px;">↩ Substituir</button>
-           <button class="btn btn-secondary btn-sm" onclick="contratoDocsDelete('${cod}','${num}','${tipo}')" style="font-size:12px;color:var(--danger);border-color:var(--danger);">🗑 Eliminar</button>
+      ? `<span style="color:#166534;font-weight:700">${icon} ${label} — carregado</span>
+         <div style="display:flex;gap:6px;margin-top:8px;">
+           <button class="btn btn-secondary btn-sm" ${ds} onclick="contratoDocsDownload(${clickArgs})" style="font-size:12px;">⬇ Abrir</button>
+           <button class="btn btn-secondary btn-sm" ${ds} onclick="contratoDocsUpload(${clickArgs})" style="font-size:12px;">↩ Substituir</button>
+           <button class="btn btn-secondary btn-sm" ${ds} onclick="contratoDocsDelete(${clickArgs})" style="font-size:12px;color:var(--danger);border-color:var(--danger);">🗑 Eliminar</button>
          </div>`
-      : `<span style="color:var(--muted)">${icon} ${label} — não carregado</span>
-         <div style="margin-top:4px;">
-           <button class="btn btn-primary btn-sm" onclick="contratoDocsUpload('${cod}','${num}','${tipo}')" style="font-size:12px;">⬆ Carregar PDF</button>
+      : `<span style="color:var(--muted);font-weight:600">${icon} ${label} — não carregado</span>
+         <div style="margin-top:8px;">
+           <button class="btn btn-primary btn-sm" ${ds} onclick="contratoDocsUpload(${clickArgs})" style="font-size:12px;">⬆ Carregar PDF</button>
          </div>`;
   });
 
-  // Actualizar botão 📁 em tempo real
-  const btnDoc = document.querySelector(`button[onclick*="contratoAbrirDocs('${cod}','${num}')"]`);
-  if (btnDoc) {
-    let localDocs2 = {};
-    try { localDocs2 = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch(e) {}
-    const nfOk = !!localDocs2['nf'];
-    const ctOk = !!localDocs2['ct'];
-    if (nfOk || ctOk) {
-      btnDoc.style.borderColor = '#16a34a';
-      btnDoc.style.color = '#16a34a';
-      let indicator = nfOk && ctOk ? ' ✓✓' : nfOk ? ' NF✓' : ' CT✓';
-      btnDoc.innerHTML = '📁' + indicator;
-      btnDoc.title = (nfOk ? '✅ NF carregada' : '❌ NF em falta') + '\n' + (ctOk ? '✅ CT carregado' : '❌ CT em falta');
-    } else {
-      btnDoc.style.borderColor = '#aaa';
-      btnDoc.style.color = '';
-      btnDoc.innerHTML = '📁';
-      btnDoc.title = 'Gerir documentos';
-    }
-  }
+  contratoDocsRefreshRow(cod, num);
   modal.style.display = 'flex';
 }
 
@@ -16286,10 +16351,10 @@ function contratoDocsUpload(cod, num, tipo) {
           return fetch(`${SUPA_URL}?id=eq.${reg.id}`, { method:'PATCH', headers:{...HEADERS,'Content-Type':'application/json','Prefer':'return=minimal'}, body:JSON.stringify({docs}) });
         }).catch(()=>{});
       statusEl.textContent = '✅ ' + label + ' guardada!'; statusEl.style.color = '#16a34a';
-      // Actualizar indicador no botão 📁
-      contratoMarcarBotao(cod, num, tipo);
-      // Reabrir modal para mostrar estado actualizado
-      setTimeout(() => contratoAbrirDocs(cod, num), 500);
+      contratoDocsPatchMap(cod, num, tipo, storagePath);
+      contratoMarcarBotao(cod, num, tipo, false);
+      contratoDocsRefreshRow(cod, num);
+      setTimeout(() => contratoAbrirDocs(cod, num, tipo), 400);
     } catch(err) {
       statusEl.textContent = 'Erro: ' + err.message; statusEl.style.color = 'var(--danger)';
     }
@@ -16312,10 +16377,12 @@ async function contratoDocsDelete(cod, num, tipo) {
     method:'DELETE',
     headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'}
   });
-  // Remover localStorage
+  // Remover localStorage (false = eliminado; não deixar o mapa antigo ressuscitar o PDF)
   try {
     const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
-    if (saved[num]) { delete saved[num][tipo]; localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved)); }
+    if (!saved[num]) saved[num] = {};
+    saved[num][tipo] = false;
+    localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
   } catch(e) {}
   // Remover Supabase
   fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers:HEADERS })
@@ -16325,23 +16392,21 @@ async function contratoDocsDelete(cod, num, tipo) {
       if (docs[num]) { delete docs[num][tipo]; }
       return fetch(`${SUPA_URL}?id=eq.${reg.id}`, { method:'PATCH', headers:{...HEADERS,'Content-Type':'application/json','Prefer':'return=minimal'}, body:JSON.stringify({docs}) });
     }).catch(()=>{});
-  // Actualizar botão
+  contratoDocsPatchMap(cod, num, tipo, null);
   contratoMarcarBotao(cod, num, tipo, true);
-  contratoAbrirDocs(cod, num);
+  contratoDocsRefreshRow(cod, num);
+  contratoAbrirDocs(cod, num, tipo);
 }
 
 function contratoMarcarBotao(cod, num, tipo, removed) {
-  // Actualizar o ícone do botão 📁 para mostrar se tem docs
-  const spans = document.querySelectorAll(`[data-upload-tipo][data-upload-cod="${cod}"][data-upload-num="${num}"]`);
-  spans.forEach(s => { if (s.dataset.uploadTipo === tipo) s.dataset.hasDoc = removed ? '' : '1'; });
-  // Actualizar cor do botão 📁
-  const btn = document.querySelector(`button[onclick*="contratoAbrirDocs('${cod}','${num}')"]`);
-  if (!btn) return;
-  const allSpans = document.querySelectorAll(`[data-upload-cod="${cod}"][data-upload-num="${num}"]`);
-  const anyDoc = [...allSpans].some(s => s.dataset.hasDoc === '1');
-  btn.style.borderColor = anyDoc ? '#16a34a' : '#aaa';
-  btn.style.color = anyDoc ? '#16a34a' : '';
-  btn.textContent = anyDoc ? '📁✅' : '📁';
+  if (!tipo) {
+    contratoDocsRefreshRow(cod, num);
+    return;
+  }
+  const loaded = !removed;
+  contratoDocsBtnsFor(cod, num).forEach(btn => {
+    if (btn.dataset.uploadTipo === tipo) contratoDocsSetLoaded(btn, loaded);
+  });
 }
 
 function contratoFecharDocs() {
@@ -16366,9 +16431,17 @@ async function contratoDeletePdf(tipo, cod, num, pubUrl, uploadBtn, label) {
     // Remover do localStorage
     try {
       const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
-      if (saved[num]) { delete saved[num][tipo]; localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved)); }
+      if (!saved[num]) saved[num] = {};
+      saved[num][tipo] = false;
+      localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
     } catch(e) {}
-    // Remover do Supabase
+    contratoDocsPatchMap(cod, num, tipo, null);
+    contratoMarcarBotao(cod, num, tipo, true);
+    if (uploadBtn && uploadBtn.classList && uploadBtn.classList.contains('ct-doc-btn')) {
+      contratoDocsSetLoaded(uploadBtn, false);
+    }
+    const parent = uploadBtn && uploadBtn.parentElement;
+    if (parent) parent.querySelectorAll(`[data-dl-tipo="${tipo}"]`).forEach(e => e.remove());
     fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS })
       .then(r => r.json()).then(regs => {
         if (!regs.length) return;
@@ -16380,56 +16453,27 @@ async function contratoDeletePdf(tipo, cod, num, pubUrl, uploadBtn, label) {
           body: JSON.stringify({ docs })
         });
       }).catch(e => console.warn(e));
-    // Restaurar botão original
-    uploadBtn.textContent = tipo === 'nf' ? '📄 NF' : '✍ CT';
-    uploadBtn.style.borderColor = '#aaa'; uploadBtn.style.color = '';
-    const parent = uploadBtn.parentElement;
-    parent.querySelectorAll(`[data-dl-tipo="${tipo}"]`).forEach(e => e.remove());
     toast(`${label} eliminada.`, 'success');
   } catch(e) { toast('Erro: ' + e.message, 'error'); }
 }
 
 function contratoMarkExisting(allRows, docsMap) {
   if (!allRows) return;
+  if (docsMap && !window._contratosDocsMap) window._contratosDocsMap = docsMap;
   allRows.forEach(r => {
     const cod = String(r.cod);
     const num = r.contrato;
-    const supabaseDocs = (docsMap || {})[cod]?.[num] || {};
+    const supabaseDocs = (docsMap || window._contratosDocsMap || {})[cod]?.[num] || {};
     let localDocs = {};
     try { localDocs = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch(e) {}
-    // Sincronizar localStorage com Supabase
     if (Object.keys(supabaseDocs).length) {
       try {
         const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
-        saved[num] = { ...localDocs, ...supabaseDocs };
+        saved[num] = { ...supabaseDocs, ...localDocs };
         localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
       } catch(e) {}
     }
-    const allDocs = { ...localDocs, ...supabaseDocs };
-    const hasNf = !!allDocs['nf'];
-    const hasCt = !!allDocs['ct'];
-    if (!hasNf && !hasCt) return;
-    // Marcar os spans hidden
-    ['nf','ct'].forEach(tipo => {
-      document.querySelectorAll(`[data-upload-tipo="${tipo}"][data-upload-cod="${cod}"][data-upload-num="${num}"]`).forEach(s => {
-        s.dataset.hasDoc = allDocs[tipo] ? '1' : '';
-      });
-    });
-    // Actualizar botão 📁 com indicadores NF/CT
-    const btn = document.querySelector(`button[onclick*="contratoAbrirDocs('${cod}','${num}')"]`);
-    if (btn) {
-      const nfOk = !!allDocs['nf'];
-      const ctOk = !!allDocs['ct'];
-      btn.style.borderColor = '#16a34a';
-      btn.style.color = '#16a34a';
-      // Mostrar quais docs existem
-      let indicator = '';
-      if (nfOk && ctOk) indicator = ' ✓✓';
-      else if (nfOk) indicator = ' NF✓';
-      else if (ctOk) indicator = ' CT✓';
-      btn.innerHTML = '📁' + indicator;
-      btn.title = (nfOk ? '✅ NF carregada' : '❌ NF em falta') + '\n' + (ctOk ? '✅ CT carregado' : '❌ CT em falta');
-    }
+    contratoDocsRefreshRow(cod, num);
   });
 }
 
@@ -30042,8 +30086,8 @@ if (document.readyState === 'loading') {
     <input type="hidden" id="docs-modal-cod">
     <input type="hidden" id="docs-modal-num">
     <div style="display:flex;flex-direction:column;gap:16px;">
-      <div id="docs-row-nf" style="padding:12px;background:var(--surface2);border-radius:8px;"></div>
-      <div id="docs-row-ct" style="padding:12px;background:var(--surface2);border-radius:8px;"></div>
+      <div id="docs-row-nf" style="padding:12px;background:var(--surface2);border-radius:8px;border:1.5px solid transparent;"></div>
+      <div id="docs-row-ct" style="padding:12px;background:var(--surface2);border-radius:8px;border:1.5px solid transparent;"></div>
     </div>
     <div id="docs-status" style="margin-top:12px;font-size:13px;text-align:center;min-height:20px;"></div>
   </div>
