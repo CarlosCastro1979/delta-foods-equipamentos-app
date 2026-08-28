@@ -7599,10 +7599,23 @@ function isEquipamentoProfissionalNosso(tipo) {
 async function loadContratosPorRegistar() {
   const cont = document.getElementById('contratos-por-registar-content');
   if (!cont) return;
-  cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A calcular...</div>';
+  if (Array.isArray(window._contratosPorRegistar)) {
+    renderContratosPorRegistar();
+    return;
+  }
+
+  const cacheRegs = typeof getRegistosCache === 'function' ? getRegistosCache() : null;
+  const locais = (Array.isArray(allData) && allData.length) ? allData
+    : (cacheRegs && cacheRegs.length ? cacheRegs : null);
+  const locaisOk = !!(locais && locais.some(r => 'equipamentos' in r || 'contratos' in r));
+  if (!locaisOk) {
+    cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A calcular...</div>';
+  }
 
   try {
-    const registos = await fetchRegistosPaginado('cod,nome,vendedor,equipamentos,contratos', 'cod.asc');
+    const registos = locaisOk
+      ? locais
+      : await fetchRegistosPaginado('cod,nome,vendedor,equipamentos,contratos', 'cod.asc');
     const codsComContrato = new Set(
       registos
         .filter(r => Array.isArray(r.contratos) && r.contratos.length > 0)
@@ -7624,16 +7637,11 @@ async function loadContratosPorRegistar() {
       }
     }
 
-    // Horeca: vendedor logado só vê os seus
-    const porRegistarScoped = typeof filterByUtilizadorActivo === 'function'
-      ? filterByUtilizadorActivo(porRegistar)
-      : porRegistar;
-
-    // Popula filtro vendedor = só os do canal activo (ou só o próprio se scoped)
+    // Lista do canal (sem escopo de utilizador) — o render aplica o vendedor logado
     if (typeof fillVendedorSelectCanal === 'function') {
       fillVendedorSelectCanal('contratos-pr-vendedor', { emptyLabel: 'Todos os vendedores' });
     } else {
-      const vendedores = [...new Set(porRegistarScoped.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
+      const vendedores = [...new Set(porRegistar.map(r => r.vendedor).filter(v => v && v !== '—'))].sort();
       const selV = document.getElementById('contratos-pr-vendedor');
       if (selV) {
         selV.innerHTML = '<option value="">Todos os vendedores</option>' +
@@ -7641,7 +7649,7 @@ async function loadContratosPorRegistar() {
       }
     }
 
-    window._contratosPorRegistar = porRegistarScoped;
+    window._contratosPorRegistar = porRegistar;
     renderContratosPorRegistar();
   } catch(e) {
     cont.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">Erro: ${e.message}</div>`;
@@ -7655,6 +7663,9 @@ function renderContratosPorRegistar() {
   const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
   const vendFilt = scope || document.getElementById('contratos-pr-vendedor')?.value || '';
   let lista = window._contratosPorRegistar;
+  if (typeof filterByUtilizadorActivo === 'function') {
+    lista = filterByUtilizadorActivo(lista);
+  }
   if (vendFilt) {
     const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vendFilt) : vendFilt;
     lista = lista.filter(r =>
@@ -15282,7 +15293,8 @@ async function processVendasFile(event) {
     }));
     renderUltimaVendasCarga();
     clearInput();
-    try { loadContratosTab(); } catch (e) {}
+    try { if (typeof clearContratosCache === 'function') clearContratosCache(); } catch (e) {}
+    try { loadContratosTab(true); } catch (e) {}
     try { loadVendasCobertura(true); } catch (e) {}
     toast(`✅ ${inserted.toLocaleString('pt-BR')} novos · ${jaExistentes.toLocaleString('pt-BR')} já existiam · período ${periodoTxt}`);
   } catch (e) {
@@ -15313,7 +15325,8 @@ async function clearVendas() {
     } catch (_) {}
     (document.getElementById('dados-vendas-status') || document.getElementById('vendas-status')).innerHTML =
       '<div style="color:var(--danger);font-size:12px">🗑 Dados eliminados do servidor e cache limpo.</div>';
-    loadContratosTab();
+    try { if (typeof clearContratosCache === 'function') clearContratosCache(); } catch (e) {}
+    loadContratosTab(true);
     try { loadVendasCobertura(true); } catch (e) {}
   } catch(e) {
     toast('Erro ao eliminar: ' + e.message, 'error');
@@ -15655,28 +15668,237 @@ function loadContratos(prefix, contratos = []) {
   }
 }
 
-let contratosCache = null; // cache em memória — só vai ao Supabase uma vez por sessão
+let contratosCache = null; // HTML legado; a fonte de verdade é _contratosAllRows + IndexedDB
+const CONTRATOS_TAB_IDB_KEY = 'delta_contratos_tab_v1';
+
+function contratosYmKey(d) {
+  const x = d instanceof Date ? d : new Date();
+  return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0');
+}
+
+function parseContentRangeTotal(cr) {
+  const m = String(cr || '').match(/\/(\d+|\*)/);
+  if (!m || m[1] === '*') return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function vendasCargaStamp() {
+  try {
+    const s = localStorage.getItem('delta_vendas_ultima_carga');
+    if (!s) return '';
+    const j = JSON.parse(s);
+    return String(j.data || '') + '|' + String(j.novos ?? '') + '|' + String(j.noPeriodo ?? '');
+  } catch (e) { return ''; }
+}
+
+function contratosSigFromRegistos(registos) {
+  const list = Array.isArray(registos) ? registos : [];
+  return list.map(r => {
+    const cs = Array.isArray(r.contratos) ? r.contratos : [];
+    const bits = cs.map(c => [c.num || c.contrato || '', c.inicio || '', c.consumo || '', c.duracao || ''].join('|')).join(',');
+    return `${r.cod || ''}:${bits}`;
+  }).sort().join(';');
+}
+
+function contratosFpIgual(a, b) {
+  if (!a || !b) return false;
+  if (a.ym !== b.ym) return false;
+  if (a.vendasCarga && b.vendasCarga && a.vendasCarga !== b.vendasCarga) return false;
+  if (a.vendasN != null && b.vendasN != null && a.vendasN !== b.vendasN) return false;
+  if (a.nRegs != null && b.nRegs != null && a.nRegs !== b.nRegs) return false;
+  if (a.sig && b.sig && a.sig !== b.sig) return false;
+  return true;
+}
+
+function filterVendasPorCods(vendas, codSet) {
+  if (!vendas || !vendas.length || !codSet || !codSet.size) return [];
+  const out = [];
+  for (let i = 0; i < vendas.length; i++) {
+    const v = vendas[i];
+    const c = String(v.cod || '').trim();
+    if (!c) continue;
+    if (codSet.has(c)) { out.push(v); continue; }
+    if (typeof normalizaCodSC === 'function' && codSet.has(normalizaCodSC(c))) out.push(v);
+  }
+  return out;
+}
+
+async function countSupabaseRows(baseUrl) {
+  const sep = String(baseUrl).includes('?') ? '&' : '?';
+  const res = await fetch(`${baseUrl}${sep}select=id&limit=1`, {
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      Prefer: 'count=exact',
+      Range: '0-0',
+    },
+  });
+  if (!res.ok && res.status !== 416) throw new Error('HTTP ' + res.status);
+  return parseContentRangeTotal(res.headers.get('content-range') || res.headers.get('Content-Range'));
+}
+
+async function fetchVendasPorCods(codSet) {
+  const list = [...codSet].map(c => String(c || '').trim()).filter(c => /^[0-9A-Za-z._-]+$/.test(c));
+  if (!list.length) return [];
+  const CHUNK = 60;
+  const all = [];
+  const headers = { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY };
+  for (let i = 0; i < list.length; i += CHUNK) {
+    const inList = list.slice(i, i + CHUNK).join(',');
+    let from = 0;
+    while (true) {
+      const to = from + 999;
+      const res = await fetch(
+        `${SUPA_VENDAS}?select=cod,data,tipo,qty,peso&cod=in.(${inList})&order=cod.asc,data.asc`,
+        { headers: { ...headers, Range: `${from}-${to}` } }
+      );
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const page = await res.json();
+      if (!Array.isArray(page) || !page.length) break;
+      for (let k = 0; k < page.length; k++) all.push(page[k]);
+      if (page.length < 1000) break;
+      from += page.length;
+      if (from > 200000) break;
+    }
+  }
+  return all;
+}
+
+async function getVendasParaContratos(codSet) {
+  if (window._vendasMemCache && window._vendasMemCache.length) {
+    return filterVendasPorCods(window._vendasMemCache, codSet);
+  }
+  return fetchVendasPorCods(codSet);
+}
+
+async function loadRegistosParaContratos() {
+  if (Array.isArray(allData) && allData.length && allData.some(r => 'contratos' in r || 'docs' in r)) {
+    return allData;
+  }
+  const cache = typeof getRegistosCache === 'function' ? getRegistosCache() : null;
+  if (cache && cache.length && cache.some(r => 'contratos' in r)) return cache;
+  return fetchRegistosPaginado('id,cod,nome,vendedor,contrato,contratos,dist_contratos,docs', 'cod.asc');
+}
+
+function contratosTabApplyPacked(packed) {
+  window._contratosAllRows = packed.rows || [];
+  window._contratosDocsMap = packed.docsMap || {};
+  window._contratosDuplicados = packed.dups || [];
+  window._contratosTabFp = packed.fp || null;
+  contratosCache = packed.rows && packed.rows.length ? 'rows' : null;
+}
+
+function persistContratosTabPacked(packed) {
+  window._contratosTabFp = packed.fp || null;
+  try {
+    if (typeof idbSet === 'function') idbSet(CONTRATOS_TAB_IDB_KEY, packed).catch(() => {});
+  } catch (_) {}
+}
+
+async function contratosLiveFingerprint() {
+  const ym = contratosYmKey();
+  const vendasCarga = vendasCargaStamp();
+  let vendasN = null;
+  try { vendasN = await countSupabaseRows(SUPA_VENDAS); } catch (_) {}
+  let nRegs = window._contratosTabFp?.nRegs ?? null;
+  let sig = window._contratosTabFp?.sig || '';
+  if (Array.isArray(allData) && allData.length) {
+    nRegs = allData.length;
+    sig = contratosSigFromRegistos(allData);
+  } else {
+    try {
+      const cache = typeof getRegistosCache === 'function' ? getRegistosCache() : null;
+      if (cache && cache.length) {
+        nRegs = cache.length;
+        sig = contratosSigFromRegistos(cache);
+      }
+    } catch (_) {}
+  }
+  return { ym, vendasN, nRegs, sig, vendasCarga };
+}
+
+function contratosEnsureResumoListener(cont) {
+  if (!cont || cont._resumoListenerAdded) return;
+  cont._resumoListenerAdded = true;
+  cont.addEventListener('click', function(e) {
+    const td = e.target.closest('[data-nivel]');
+    if (!td) return;
+    const tr = td.closest('[data-vend]');
+    const vend = tr ? decodeURIComponent(tr.dataset.vend) : (td.dataset.vend || 'todos');
+    const nivel = td.dataset.nivel || 'todos';
+    if (!nivel) return;
+    filtrarContratosTabela(vend, nivel);
+  });
+}
+
+function contratosTabPaint() {
+  const cont = document.getElementById('contratos-content');
+  if (typeof fillVendedorSelectCanal === 'function') {
+    fillVendedorSelectCanal('contratos-vendedor', { emptyLabel: 'Todos os vendedores' });
+  }
+  if (typeof filtrarContratosVendedor === 'function') filtrarContratosVendedor();
+  contratosEnsureResumoListener(cont);
+}
+
+function contratosRevalidateBg() {
+  if (window._contratosTabRevalidating) return;
+  window._contratosTabRevalidating = true;
+  Promise.resolve()
+    .then(async () => {
+      const fp = await contratosLiveFingerprint();
+      if (contratosFpIgual(fp, window._contratosTabFp)) return;
+      await loadContratosTab(true);
+    })
+    .catch(e => console.warn('contratos revalidate', e))
+    .finally(() => { window._contratosTabRevalidating = false; });
+}
 
 async function loadContratosTab(forceRefresh = false) {
   window._contratosNivelFiltro = null;
   const cont = document.getElementById('contratos-content');
+  if (!cont) return;
 
-  // Usa cache se disponível e não forçar refresh
-  if (contratosCache && !forceRefresh) {
-    renderContratosFromCache(contratosCache);
-    // Reaplicar escopo Horeca (cache HTML pode ser de outro utilizador / all-vendors)
-    try { if (typeof filtrarContratosVendedor === 'function') filtrarContratosVendedor(); } catch (_) {}
+  if (!forceRefresh && Array.isArray(window._contratosAllRows) && window._contratosAllRows.length) {
+    contratosTabPaint();
+    contratosRevalidateBg();
     return;
   }
 
-  cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A calcular...</div>';
+  if (!forceRefresh) {
+    try {
+      const packed = typeof idbGet === 'function' ? await idbGet(CONTRATOS_TAB_IDB_KEY) : null;
+      if (packed && Array.isArray(packed.rows) && packed.rows.length && packed.fp && packed.fp.ym === contratosYmKey()) {
+        contratosTabApplyPacked(packed);
+        contratosTabPaint();
+        contratosRevalidateBg();
+        return;
+      }
+    } catch (_) {}
+    if (contratosCache && contratosCache !== 'rows') {
+      renderContratosFromCache(contratosCache);
+      try { if (typeof filtrarContratosVendedor === 'function') filtrarContratosVendedor(); } catch (_) {}
+      return;
+    }
+  }
+
+  if (!forceRefresh && window._contratosAllRows?.length) {
+    contratosTabPaint();
+    return;
+  }
+
+  return sessionCacheRun('contratosTabCompute', async () => {
+  if (!window._contratosAllRows?.length) {
+    cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A calcular...</div>';
+  }
 
   try {
-    // Fetch all registos with contratos from Supabase
-    const res = await fetch(SUPA_URL + '?select=id,cod,nome,vendedor,contrato,contratos,dist_contratos,docs', {headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }});
-    let registos = await res.json();
+    let registos = await loadRegistosParaContratos();
+    if (!Array.isArray(registos)) registos = [];
     const dupsCt = detectarNumerosContratoDuplicados(registos);
     window._contratosDuplicados = dupsCt;
+    const nRegsAll = registos.length;
+    const sigAll = contratosSigFromRegistos(registos);
 
     // Filter only those with contratos array
     registos = registos.filter(r => Array.isArray(r.contratos) && r.contratos.length > 0);
@@ -15688,27 +15910,28 @@ async function loadContratosTab(forceRefresh = false) {
       registos = registos.filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
     }
 
-    // Horeca: vendedor logado só vê os seus (antes do cache)
-    if (typeof filterByUtilizadorActivo === 'function') {
-      registos = filterByUtilizadorActivo(registos);
-    }
-
-    // Apply vendedor filter if active
-    const vendFiltContr = window._contratosFiltro || '';
-    if (vendFiltContr) {
-      const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vendFiltContr) : vendFiltContr;
-      registos = registos.filter(r =>
-        (typeof normNomeUtilizador === 'function' ? normNomeUtilizador(r.vendedor) : r.vendedor) === vn
-      );
-    }
-
     if (!registos.length) {
       const vazio = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Nenhum contrato registado ainda.<br>Adiciona contratos no formulário de Novo Registo.</div>';
       cont.innerHTML = htmlBannerContratosDuplicados(dupsCt) + vazio;
       return;
     }
 
-    const vendas = await getVendas();
+    const codSet = new Set();
+    for (let i = 0; i < registos.length; i++) {
+      const fam = typeof getCodsFamilia === 'function' ? getCodsFamilia(registos[i].cod) : [registos[i].cod];
+      for (const c of fam) {
+        const s = String(c || '').trim();
+        if (s) codSet.add(s);
+        if (typeof normalizaCodSC === 'function') {
+          const nrm = normalizaCodSC(s);
+          if (nrm) codSet.add(nrm);
+        }
+      }
+    }
+    const [vendas, vendasN] = await Promise.all([
+      getVendasParaContratos(codSet),
+      countSupabaseRows(SUPA_VENDAS).catch(() => null),
+    ]);
     const today = new Date();
 
     // vendas indexed by cod (tanto original como normalizado) para evitar mismatches
@@ -15906,25 +16129,26 @@ async function loadContratosTab(forceRefresh = false) {
     window._contratosAllRows = rows;
     html = htmlBannerContratosDuplicados(dupsCt) + html;
     contratosCache = html;
-    cont.innerHTML = html;
-    setTimeout(() => contratoMarkExisting(rows, docsMap), 100);
-
-    // Event delegation for resumo table clicks (once only)
-    if (!cont._resumoListenerAdded) {
-      cont._resumoListenerAdded = true;
-      cont.addEventListener('click', function(e) {
-        const td = e.target.closest('[data-nivel]');
-        if (!td) return;
-        const tr = td.closest('[data-vend]');
-        const vend = tr ? decodeURIComponent(tr.dataset.vend) : (td.dataset.vend || 'todos');
-        const nivel = td.dataset.nivel || 'todos';
-        if (!nivel) return;
-        filtrarContratosTabela(vend, nivel);
-      });
-    }
+    persistContratosTabPacked({
+      rows,
+      docsMap,
+      dups: dupsCt,
+      fp: {
+        ym: contratosYmKey(),
+        vendasN,
+        nRegs: nRegsAll,
+        sig: sigAll,
+        vendasCarga: vendasCargaStamp(),
+      },
+    });
+    contratosTabPaint();
+    contratosEnsureResumoListener(cont);
   } catch(e) {
-    cont.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">Erro: ${e.message}</div>`;
+    if (!window._contratosAllRows?.length) {
+      cont.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">Erro: ${e.message}</div>`;
+    }
   }
+  });
 }
 
 // Filtra a tabela de contratos por vendedor e nível de cumprimento
@@ -16008,7 +16232,7 @@ function filtrarContratosVendedor() {
     ? resolveVendFilt('contratos-vendedor')
     : (document.getElementById('contratos-vendedor')?.value || '');
   let allRows = window._contratosAllRows;
-  if (!allRows) { loadContratosTab(true); return; }
+  if (!allRows) { loadContratosTab(false); return; }
   if (typeof filterByUtilizadorActivo === 'function') {
     allRows = filterByUtilizadorActivo(allRows, r => r && r.vendedor);
   }
@@ -16063,6 +16287,7 @@ function filtrarContratosVendedor() {
 
   if (!rows.length) {
     document.getElementById('contratos-content').innerHTML =
+      htmlBannerContratosDuplicados(window._contratosDuplicados) +
       buildContratosResumoHtml(scopeRows, nivel) +
       '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">Nenhum contrato para este filtro.</div>';
     return;
@@ -16075,7 +16300,7 @@ function filtrarContratosVendedor() {
     ? n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' Kg'
     : Math.round(n).toLocaleString('pt-BR')+' Cáps';
 
-  let html = buildContratosResumoHtml(scopeRows, nivel);
+  let html = htmlBannerContratosDuplicados(window._contratosDuplicados) + buildContratosResumoHtml(scopeRows, nivel);
   // Tabela de contratos (reutiliza HTML do contrato original por linha)
   const TH = 'padding:8px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:11px;background:#f5f5f5;';
   html += `<div style="overflow-x:auto;width:100%"><table style="border-collapse:collapse;font-size:12px;width:max-content;min-width:100%">
@@ -16486,7 +16711,16 @@ function renderContratosFromCache(html) {
 }
 
 // Invalida cache dos contratos quando há novos registos
-function clearContratosCache() { contratosCache = null; }
+function clearContratosCache() {
+  contratosCache = null;
+  window._contratosAllRows = null;
+  window._contratosTabFp = null;
+  window._contratosPorRegistar = null;
+  try { sessionCacheInvalidate('contratosTabCompute'); } catch (_) {}
+  try {
+    if (typeof idbSet === 'function') idbSet(CONTRATOS_TAB_IDB_KEY, null).catch(() => {});
+  } catch (_) {}
+}
 
 function contratoAlertaLabel(a) {
   if (a === 'finalizado') return 'Contrato Finalizado — Negociar';
@@ -18145,13 +18379,15 @@ function aplicarUtilizador(nome) {
       if (typeof renderPros === 'function') renderPros();
     }
   } catch (_) {}
-  // Invalidar caches partilhados (evita HTML/dados de outro utilizador após login)
+  // Não apagar _contratosAllRows: o quadro do canal mantém-se; o paint reaplica o escopo do vendedor
   try {
-    if (typeof clearContratosCache === 'function') clearContratosCache();
-    window._contratosAllRows = null;
-    window._contratosPorRegistar = null;
+    contratosCache = null;
     window._clientesContenciosoView = null;
     foraSPCache = null;
+    if (document.getElementById('panel-contratos')?.classList.contains('active')) {
+      if (typeof contratosTabPaint === 'function') contratosTabPaint();
+      else if (typeof filtrarContratosVendedor === 'function') filtrarContratosVendedor();
+    }
   } catch (_) {}
   atualizarHomeCanais();
 }
@@ -28017,6 +28253,7 @@ async function ctGuardarContratoSuapbase(data) {
 
   if (patch.ok) {
     clearRegistosCache();
+    try { if (typeof clearContratosCache === 'function') clearContratosCache(); } catch (_) {}
     toast('✅ Contrato ' + data.NUM_CONTRATO + ' guardado no perfil do cliente.');
   }
 }
