@@ -7778,22 +7778,16 @@ function renderContratosPorRegistar() {
         <th style="padding:9px 12px;text-align:left;font-weight:600;white-space:nowrap;">Cód.</th>
         <th style="padding:9px 12px;text-align:left;font-weight:600;">Cliente</th>
         <th style="padding:9px 12px;text-align:left;font-weight:600;">Equipamento(s)</th>
-        <th style="padding:9px 12px;text-align:center;font-weight:600;">PDV</th>
         <th style="padding:9px 12px;text-align:center;font-weight:600;">Acção</th>
       </tr></thead><tbody>`;
 
   lista.forEach((r, i) => {
     const equipsStr = r.equipamentos.map(e => e.tipo + (e.tag ? ` #${e.tag}` : '')).join(', ');
-    const namePdv = 'pr-pdv-' + String(r.cod);
     html += `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
       <td style="padding:8px 12px;font-size:12px;color:var(--muted);white-space:nowrap;">${escHtml(r.vendedor)}</td>
       <td style="padding:8px 12px;font-size:12px;color:var(--muted);">${escHtml(r.cod)}</td>
       <td style="padding:8px 12px;font-weight:500;">${escHtml(r.nome)}</td>
       <td style="padding:8px 12px;font-size:12px;">${escHtml(equipsStr)}</td>
-      <td style="padding:8px 12px;text-align:center;white-space:nowrap;font-size:11px;">
-        <label style="cursor:pointer;margin-right:8px;"><input type="radio" name="${escHtml(namePdv)}" value="unico" checked> Único</label>
-        <label style="cursor:pointer;"><input type="radio" name="${escHtml(namePdv)}" value="multi"> Multi</label>
-      </td>
       <td style="padding:8px 12px;text-align:center;white-space:nowrap;">
         <button type="button" class="btn btn-primary btn-sm" data-reg-cod="${escHtml(r.cod)}" onclick="abrirRegistarContrato(this.dataset.regCod)" style="font-size:12px;padding:5px 12px;">Registar</button>
       </td>
@@ -7886,7 +7880,7 @@ async function ctRegAddCodExtra() {
   }
 }
 
-function abrirRegistarContrato(cod, pdvPref) {
+function abrirRegistarContrato(cod) {
   const lista = Array.isArray(window._contratosPorRegistar) ? window._contratosPorRegistar : [];
   const row = lista.find(r => String(r.cod) === String(cod));
   if (!row) { toast('Cliente não encontrado na lista por registar.', 'error'); return; }
@@ -7900,15 +7894,10 @@ function abrirRegistarContrato(cod, pdvPref) {
   document.getElementById('ct-reg-duracao').value = '';
   document.getElementById('ct-reg-consumo').value = '';
   document.getElementById('ct-reg-unidade').value = 'Capsulas';
-  if (!pdvPref) {
-    const rad = document.querySelector('input[name="pr-pdv-' + String(cod) + '"]:checked');
-    if (rad) pdvPref = rad.value;
-  }
-  const wantMulti = pdvPref === 'multi';
   const unico = document.getElementById('ct-reg-pdv-unico');
-  if (unico) unico.checked = !wantMulti;
+  if (unico) unico.checked = true;
   const multi = document.getElementById('ct-reg-pdv-multi');
-  if (multi) multi.checked = wantMulti;
+  if (multi) multi.checked = false;
   ctRegPdvToggle();
   document.getElementById('ct-reg-status').textContent = '';
   document.getElementById('ct-registar-modal').style.display = 'flex';

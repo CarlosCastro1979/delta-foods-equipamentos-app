@@ -125,6 +125,14 @@ check('Por Registar tem botão Registar e o modal com os IDs', () => {
   const render = extractFn(html, 'renderContratosPorRegistar');
   assert.ok(render.includes('Registar'));
   assert.ok(render.includes('abrirRegistarContrato'));
+  assert.ok(!render.includes('pr-pdv-'));
+  assert.ok(!/>PDV<\/th>/.test(render));
+  assert.ok(!render.includes('value="unico"'));
+  assert.ok(!render.includes('value="multi"'));
+  const abrir = extractFn(html, 'abrirRegistarContrato');
+  assert.ok(abrir.includes("unico.checked = true"));
+  assert.ok(abrir.includes("multi.checked = false"));
+  assert.ok(!abrir.includes('pr-pdv-'));
   [
     'ct-registar-modal',
     'ct-reg-cod',
