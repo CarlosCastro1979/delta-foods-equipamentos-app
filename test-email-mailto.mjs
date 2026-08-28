@@ -298,7 +298,10 @@ check('outlookTxtJuntarSaudacao: sem parágrafo vazio após Bom dia', () => {
 });
 
 check('outlookAbrirRascunho envolve o HTML; EML continua text/html UTF-8', () => {
-  const fn = extractFn(html, 'outlookAbrirRascunho');
+  const start = html.indexOf('async function outlookAbrirRascunho');
+  const end = html.indexOf('\nfunction isAdmin()', start);
+  assert.ok(start >= 0 && end > start);
+  const fn = html.slice(start, end);
   assert.ok(fn.includes('outlookWrapHtmlCorpo'));
   assert.ok(fn.includes('X-Unsent: 1'));
   assert.ok(fn.includes('Content-Type: text/html; charset=UTF-8'));
