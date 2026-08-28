@@ -33,9 +33,12 @@ wscript //B "%VBS%"
 timeout /t 2 /nobreak >nul
 
 echo  Pronto. A partir de agora:
-echo   - Podes usar o site online normalmente
-echo   - O Outlook abre com Excel anexo sem correres serve.ps1 a cada sessao
+echo   - A ponte so ABRE o rascunho no Outlook (nao escolhe o Para)
+echo   - O Para/CC vem da pagina que o browser tem aberta
 echo.
-echo  Site: https://carloscastro1979.github.io/delta-foods-equipamentos-app/
+echo  Site online (main / GitHub Pages):
+echo   https://carloscastro1979.github.io/delta-foods-equipamentos-app/
+echo  Teste local DESTA pasta (depois de git pull da branch certa):
+echo   http://localhost:8088/delta-foods-equipamentos-app/
 echo.
 pause

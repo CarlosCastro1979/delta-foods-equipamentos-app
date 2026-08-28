@@ -13,6 +13,12 @@ echo.
 echo  A iniciar servidor local agora...
 echo  Deixa esta janela aberta enquanto usas a app.
 echo.
+echo  IMPORTANTE: o Outlook usa o email da pagina no BROWSER.
+echo   Esta pasta  -^> http://localhost:8088/delta-foods-equipamentos-app/
+echo   Site online -^> https://carloscastro1979.github.io/delta-foods-equipamentos-app/
+echo   Se abrires o github.io, o rascunho MC00 continua Para: Carlos ate o PR 73
+echo   estar no main. Para testar ESTA pasta, usa so o localhost:8088.
+echo.
 
 start "" cmd /c "timeout /t 2 /nobreak >nul & start http://localhost:8088/delta-foods-equipamentos-app/"
 

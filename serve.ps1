@@ -20,10 +20,18 @@ function Sync-AppAssets {
         $src = Join-Path $root $f
         if (-not (Test-Path $src)) { continue }
         $dst = Join-Path $appDir $f
-        if (-not (Test-Path $dst) -or (Get-Item $src).LastWriteTimeUtc -gt (Get-Item $dst).LastWriteTimeUtc) {
-            Copy-Item $src $dst -Force
-        }
+        # Sempre copiar: uma pasta aninhada mais recente bloqueava o git pull
+        # e o Outlook continuava a abrir o index.html antigo (Para: Carlos).
+        Copy-Item $src $dst -Force
     }
+}
+
+function Get-Mc00EmailTo {
+    $indexSrc = Join-Path $root 'index.html'
+    if (-not (Test-Path $indexSrc)) { return 'index.html ausente' }
+    $m = Select-String -Path $indexSrc -Pattern "const EMAIL_MC00_TO = '([^']+)'" | Select-Object -First 1
+    if ($m) { return $m.Matches[0].Groups[1].Value }
+    return 'AUSENTE — esta pasta ainda e o codigo antigo (Para: Carlos)'
 }
 
 Sync-AppAssets
@@ -277,8 +285,10 @@ if (-not $listener) {
 Write-Info ''
 Write-Info 'Delta Foods - Gestao de Equipamentos' 'Green'
 Write-Info "Local:  http://localhost:$port/delta-foods-equipamentos-app/" 'Cyan'
+Write-Info "MC00 Para (desta pasta): $(Get-Mc00EmailTo)" 'Cyan'
+Write-Info 'O Outlook usa o Para/CC da PAGINA no browser, nao so desta pasta.' 'Yellow'
+Write-Info 'github.io = main em producao. Sem o PR 73 no main, o site online continua Para: Carlos.' 'Yellow'
 Write-Info 'API Outlook: POST /api/open-outlook-draft (CORS + Private Network)' 'Gray'
-Write-Info 'Online: https://carloscastro1979.github.io/delta-foods-equipamentos-app/' 'Gray'
 Write-Info 'Ctrl+C para parar' 'Gray'
 Write-Info ''
 
