@@ -16353,10 +16353,84 @@ async function checkNumContratoInput(el, opts) {
   }
 }
 
-function detectarNumerosContratoDuplicados(rows) {
-  const map = new Map();
+/** Índice nº → conjuntos PDV Multi (mesmos códigos = 1 contrato, não duplicado acidental). */
+function indiceContratosPdvMulti(rows) {
+  const byNum = new Map();
+  if (typeof contratoPdvTipo !== 'function' || typeof contratoPdvChave !== 'function') return byNum;
+  const nrm = (x) => (typeof normCod === 'function' ? String(normCod(x)) : String(x || '').trim());
   for (const r of rows || []) {
-    const codK = typeof normCod === 'function' ? normCod(r.cod) : String(r.cod || '');
+    const cts = [
+      ...(Array.isArray(r.contratos) ? r.contratos : []),
+      ...(Array.isArray(r.dist_contratos) ? r.dist_contratos : []),
+    ];
+    for (const c of cts) {
+      if (contratoPdvTipo(c) !== 'multi') continue;
+      const n = (c && (c.num || c.numero)) || '';
+      if (!n || isNumContratoPlaceholder(n)) continue;
+      const chave = contratoPdvChave(c, r);
+      if (!chave || !String(chave).startsWith('M|')) continue;
+      let nk = normNumContrato(n);
+      for (const existing of byNum.keys()) {
+        if (numsContratoIguais(existing, n)) { nk = existing; break; }
+      }
+      if (!byNum.has(nk)) byNum.set(nk, new Map());
+      const sets = byNum.get(nk);
+      if (!sets.has(chave)) sets.set(chave, new Set());
+      const set = sets.get(chave);
+      const own = nrm(r && r.cod);
+      if (own) set.add(own);
+      const cods = typeof contratoPdvCods === 'function' ? contratoPdvCods(c, r) : [];
+      for (const x of cods) {
+        const k = nrm(x);
+        if (k) set.add(k);
+      }
+    }
+  }
+  return byNum;
+}
+
+/** PDV Multi (chave M|) = 1 cliente-grupo; PDV único = o próprio código. */
+function contratoDupGrupoKey(r, n, indiceMulti) {
+  const nrm = (x) => (typeof normCod === 'function' ? String(normCod(x)) : String(x || '').trim());
+  const own = nrm(r && r.cod);
+  const cts = [
+    ...(r && Array.isArray(r.contratos) ? r.contratos : []),
+    ...(r && Array.isArray(r.dist_contratos) ? r.dist_contratos : []),
+  ];
+  if (typeof contratoPdvTipo === 'function' && typeof contratoPdvChave === 'function') {
+    for (const c of cts) {
+      const cn = c && (c.num || c.numero);
+      if (cn && !numsContratoIguais(cn, n)) continue;
+      if (!cn && !numsContratoIguais(r && r.contrato, n)) continue;
+      if (contratoPdvTipo(c) !== 'multi') continue;
+      const chave = contratoPdvChave(c, r);
+      if (chave && String(chave).startsWith('M|')) return chave;
+    }
+  }
+  if (indiceMulti) {
+    for (const [nk, sets] of indiceMulti) {
+      if (!numsContratoIguais(nk, n)) continue;
+      for (const [chave, cods] of sets) {
+        if (cods.has(own)) return chave;
+      }
+    }
+  }
+  return 'U|' + own;
+}
+
+/** Só alerta se o nº existir em mais do que um cliente-grupo (PDV Multi puro não conta). */
+function contratoDupEhAlerta(g) {
+  if (!g) return false;
+  if (Array.isArray(g.grupos)) return g.grupos.length > 1;
+  return ((g.clientes) || []).length > 1;
+}
+
+function detectarNumerosContratoDuplicados(rows) {
+  const list = rows || [];
+  const indiceMulti = indiceContratosPdvMulti(list);
+  const map = new Map();
+  for (const r of list) {
+    const codK = typeof normCod === 'function' ? String(normCod(r.cod)) : String(r.cod || '');
     const seenNum = [];
     for (const n of numsContratoDoRegisto(r)) {
       if (seenNum.some(s => numsContratoIguais(s, n))) continue;
@@ -16365,14 +16439,18 @@ function detectarNumerosContratoDuplicados(rows) {
       for (const existing of map.keys()) {
         if (numsContratoIguais(existing, n)) { gKey = existing; break; }
       }
-      if (!map.has(gKey)) map.set(gKey, new Map());
-      const clients = map.get(gKey);
-      if (!clients.has(codK)) clients.set(codK, { cod: r.cod, nome: r.nome, vendedor: r.vendedor, num: n, docs: r.docs });
+      if (!map.has(gKey)) map.set(gKey, { clients: new Map(), grupos: new Set() });
+      const bucket = map.get(gKey);
+      bucket.grupos.add(contratoDupGrupoKey(r, n, indiceMulti));
+      if (!bucket.clients.has(codK)) {
+        bucket.clients.set(codK, { cod: r.cod, nome: r.nome, vendedor: r.vendedor, num: n, docs: r.docs });
+      }
     }
   }
   const dups = [];
-  for (const [key, clients] of map) {
-    if (clients.size > 1) dups.push({ key, clientes: [...clients.values()] });
+  for (const [key, bucket] of map) {
+    const grupos = [...bucket.grupos].sort();
+    if (grupos.length > 1) dups.push({ key, clientes: [...bucket.clients.values()], grupos });
   }
   dups.sort((a, b) => b.clientes.length - a.clientes.length || a.key.localeCompare(b.key));
   return dups;
@@ -16385,14 +16463,15 @@ function filtrarContratoDuplicado(num) {
 }
 
 function htmlBannerContratosDuplicados(dups) {
-  if (!dups || !dups.length) return '';
+  const list = (dups || []).filter(g => typeof contratoDupEhAlerta === 'function' ? contratoDupEhAlerta(g) : ((g.clientes || []).length > 1));
+  if (!list.length) return '';
   const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const items = dups.slice(0, 8).map(d => {
+  const items = list.slice(0, 8).map(d => {
     const n = d.clientes[0]?.num || d.key;
     return `<button type="button" class="contrato-dup-num" data-num="${esc(n)}" onclick="filtrarContratoMultiCliente(this.dataset.num)" style="background:none;border:none;padding:0;color:#1d4ed8;font-weight:700;cursor:pointer;text-decoration:underline;">${esc(n)}</button> <span style="color:#1e40af;">(${d.clientes.length})</span>`;
   }).join(' · ');
   return `<div style="margin-bottom:12px;padding:10px 12px;background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;font-size:12.5px;color:#1e3a8a;line-height:1.45;">
-    ${dups.length} número(s) de contrato em mais do que um cliente (ex.: cadeia de lojas).
+    ${list.length} número(s) de contrato em mais do que um cliente (ex.: cadeia de lojas).
     <button type="button" class="btn btn-secondary btn-sm" onclick="switchSubTab('contratos','multi-cliente')" style="margin-left:8px;font-size:11px;padding:3px 10px;vertical-align:middle;">Ver Contratos com mais de 1 Cliente</button>
     <div style="margin-top:6px">${items}</div>
   </div>`;
@@ -16472,7 +16551,8 @@ function limparFiltroContratosMulti() {
 function renderContratosMultiCliente() {
   const cont = document.getElementById('contratos-multi-content');
   if (!cont) return;
-  const groups = Array.isArray(window._contratosMultiGroups) ? window._contratosMultiGroups : [];
+  const groups = (Array.isArray(window._contratosMultiGroups) ? window._contratosMultiGroups : [])
+    .filter(g => typeof contratoDupEhAlerta === 'function' ? contratoDupEhAlerta(g) : ((g.clientes || []).length > 1));
   const q = (document.getElementById('ct-multi-search')?.value || '').trim().toLowerCase();
   const numFilt = window._contratosMultiFiltro || null;
   const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -28818,7 +28898,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-08-28-pdv-c: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-08-28-pdv-d: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

@@ -43,7 +43,15 @@ for (const name of [
   'marcarContratoParSeNovo',
   'msgContratoJaCriado',
   'encontrarContratoNasLinhas',
+  'contratoPdvNormCods',
+  'contratoPdvTipo',
+  'contratoPdvCods',
+  'contratoPdvChave',
+  'indiceContratosPdvMulti',
+  'contratoDupGrupoKey',
+  'contratoDupEhAlerta',
   'detectarNumerosContratoDuplicados',
+  'htmlBannerContratosDuplicados',
 ]) {
   vm.runInContext(extractFn(html, name), context);
 }
@@ -116,6 +124,52 @@ check('detecta números partilhados entre clientes', () => {
   assert.equal(dups.length, 1);
   assert.equal(dups[0].key, 'B0029/25');
   assert.equal(dups[0].clientes.length, 2);
+});
+
+check('PDV único com o mesmo nº em dois códigos continua no alerta', () => {
+  const dups = context.detectarNumerosContratoDuplicados([
+    { cod: '100', nome: 'A', contratos: [{ num: '007/2022', pdv: 'unico' }] },
+    { cod: '200', nome: 'B', contratos: [{ num: '007/2022', pdv: 'unico' }] },
+  ]);
+  assert.equal(dups.length, 1);
+  assert.equal(dups[0].key, '007/2022');
+  assert.equal(dups[0].clientes.length, 2);
+  assert.ok(context.contratoDupEhAlerta(dups[0]));
+});
+
+check('PDV Multi 031/2022 nos códigos juntos NÃO entra no alerta de duplicados', () => {
+  const ct = { num: '031/2022', pdv: 'multi', cods: ['794161', '792643'] };
+  const dups = context.detectarNumerosContratoDuplicados([
+    { cod: '794161', nome: 'PADARIA CRUZEIRO DO SUL LTDA', contratos: [ct], contrato: '031/2022' },
+    { cod: '792643', nome: 'CASA 2', contratos: [{ num: '031/2022', pdv: 'multi', cods: ['792643', '794161'] }], contrato: '031/2022' },
+  ]);
+  assert.equal(dups.find(d => context.numsContratoIguais(d.key, '031/2022')), undefined);
+  assert.equal(dups.length, 0);
+  const html = context.htmlBannerContratosDuplicados(dups);
+  assert.equal(html, '');
+  assert.ok(!html.includes('031/2022'));
+});
+
+check('PDV Multi + cliente extra fora do grupo continua no alerta', () => {
+  const dups = context.detectarNumerosContratoDuplicados([
+    { cod: '794161', nome: 'Padaria', contratos: [{ num: '031/2022', pdv: 'multi', cods: ['794161', '792643'] }] },
+    { cod: '792643', nome: 'Casa 2', contratos: [{ num: '031/2022', pdv: 'multi', cods: ['794161', '792643'] }] },
+    { cod: '111111', nome: 'Outro', contratos: [{ num: '031/2022', pdv: 'unico' }] },
+  ]);
+  assert.equal(dups.length, 1);
+  assert.equal(dups[0].key, '031/2022');
+  assert.ok(dups[0].clientes.length >= 2);
+  assert.ok(context.contratoDupEhAlerta(dups[0]));
+  const html = context.htmlBannerContratosDuplicados(dups);
+  assert.ok(html.includes('031/2022'));
+});
+
+check('banner ignora PDV Multi puro mesmo se a lista antiga o trouxer', () => {
+  const html = context.htmlBannerContratosDuplicados([
+    { key: '031/2022', clientes: [{ num: '031/2022', cod: '794161' }, { num: '031/2022', cod: '792643' }], grupos: ['M|031/2022|792643,794161'] },
+  ]);
+  assert.equal(html, '');
+  assert.ok(!html.includes('031/2022'));
 });
 
 check('colapsa linhas repetidas no mesmo cliente e fica a que tem nº e anexos', () => {

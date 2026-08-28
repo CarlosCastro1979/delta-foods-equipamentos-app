@@ -60,9 +60,61 @@ for (const name of [
   'colapsarContratosArray',
   'validarDataContrato',
   'validarContratos',
+  'isNumContratoPlaceholder',
+  'numsContratoDoRegisto',
+  'indiceContratosPdvMulti',
+  'contratoDupGrupoKey',
+  'contratoDupEhAlerta',
+  'detectarNumerosContratoDuplicados',
+  'htmlBannerContratosDuplicados',
 ]) {
   vm.runInContext(extractFn(html, name), context);
 }
+
+check('PDV Multi 031/2022 não aparece em detectarNumerosContratoDuplicados', () => {
+  const dups = context.detectarNumerosContratoDuplicados([
+    { cod: '794161', nome: 'Padaria', contratos: [{ num: '031/2022', pdv: 'multi', cods: ['794161', '792643'] }] },
+    { cod: '792643', nome: 'Casa 2', contratos: [{ num: '031/2022', pdv: 'multi', cods: ['792643', '794161'] }] },
+  ]);
+  assert.ok(!dups.some(d => context.numsContratoIguais(d.key, '031/2022')));
+  assert.equal(dups.length, 0);
+  assert.equal(context.htmlBannerContratosDuplicados(dups), '');
+});
+
+check('mesmo nº em PDV único (sem multi) continua listado como duplicado', () => {
+  const dups = context.detectarNumerosContratoDuplicados([
+    { cod: '100', nome: 'A', contratos: [{ num: 'B0047/24', pdv: 'unico' }] },
+    { cod: '200', nome: 'B', contratos: [{ num: 'B0047/24' }] },
+  ]);
+  assert.equal(dups.length, 1);
+  assert.equal(dups[0].key, 'B0047/24');
+  assert.equal(dups[0].clientes.length, 2);
+});
+
+check('PDV Multi inferido só por cods[] também some do alerta', () => {
+  const dups = context.detectarNumerosContratoDuplicados([
+    { cod: '794161', contratos: [{ num: '031/2022', cods: ['794161', '792643'] }] },
+    { cod: '792643', contratos: [{ num: '031/2022', cods: ['794161', '792643'] }] },
+  ]);
+  assert.equal(dups.length, 0);
+});
+
+check('casa só com o nº no campo contrato entra no mesmo grupo Multi', () => {
+  const dups = context.detectarNumerosContratoDuplicados([
+    { cod: '794161', contratos: [{ num: '031/2022', pdv: 'multi', cods: ['794161', '792643'] }] },
+    { cod: '792643', contrato: '031/2022' },
+  ]);
+  assert.equal(dups.length, 0);
+});
+
+check('render e banner filtram PDV Multi puro', () => {
+  const render = extractFn(html, 'renderContratosMultiCliente');
+  assert.ok(render.includes('contratoDupEhAlerta'));
+  const banner = extractFn(html, 'htmlBannerContratosDuplicados');
+  assert.ok(banner.includes('contratoDupEhAlerta'));
+  const load = extractFn(html, 'loadContratosMultiCliente');
+  assert.ok(load.includes('detectarNumerosContratoDuplicados'));
+});
 
 check('chave PDV Multi agrupa os mesmos códigos independentemente da ordem e do principal', () => {
   const c1 = { pdv: 'multi', num: 'B0902/26', cods: ['442779', '748174'], principal: '442779' };
