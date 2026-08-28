@@ -57,6 +57,13 @@ check('pinta cache em memória/IndexedDB sem spinner', () => {
   assert.ok(loadFn.includes('_contratosAllRows.length'));
 });
 
+check('cache IndexedDB de contratos usa v2 para não reutilizar dups antigos', () => {
+  assert.ok(html.includes("delta_contratos_tab_v2"));
+  assert.ok(!html.includes("delta_contratos_tab_v1"));
+  const apply = extractFn(html, 'contratosTabApplyPacked');
+  assert.ok(apply.includes('resolverContratosDuplicados'));
+});
+
 check('filtro já não força refresh completo', () => {
   assert.ok(filtrarFn.includes('loadContratosTab(false)'));
   assert.ok(!filtrarFn.includes('loadContratosTab(true)'));
@@ -121,6 +128,12 @@ check('contratosSigFromRegistos muda se o consumo muda', () => {
   const b = [{ cod: '1', contratos: [{ num: 'A', inicio: '2024-01', consumo: 11, duracao: 12 }] }];
   assert.notEqual(ctx.contratosSigFromRegistos(a), ctx.contratosSigFromRegistos(b));
   assert.equal(ctx.contratosSigFromRegistos(a), ctx.contratosSigFromRegistos(a));
+});
+
+check('contratosSigFromRegistos muda ao juntar códigos PDV Multi', () => {
+  const a = [{ cod: '1', contratos: [{ num: '031/2022', inicio: '2022-01', consumo: 10, duracao: 12, pdv: 'unico' }] }];
+  const b = [{ cod: '1', contratos: [{ num: '031/2022', inicio: '2022-01', consumo: 10, duracao: 12, pdv: 'multi', cods: ['794161', '792643'] }] }];
+  assert.notEqual(ctx.contratosSigFromRegistos(a), ctx.contratosSigFromRegistos(b));
 });
 
 check('contratosFpIgual: mesmo mês e mesmas vendas = cache válido', () => {

@@ -26,6 +26,7 @@ function extractFn(src, name) {
 
 const context = {
   console,
+  window: { _contratosAllRows: [] },
   normCod(v) { return String(v || '').trim().replace(/^0+/, '') || '0'; },
 };
 vm.createContext(context);
@@ -49,7 +50,10 @@ for (const name of [
   'contratoPdvChave',
   'indiceContratosPdvMulti',
   'contratoDupGrupoKey',
+  'contratoDupClientesNoMesmoPdvMulti',
   'contratoDupEhAlerta',
+  'fonteRegistosComContratos',
+  'resolverContratosDuplicados',
   'detectarNumerosContratoDuplicados',
   'htmlBannerContratosDuplicados',
 ]) {
@@ -170,6 +174,40 @@ check('banner ignora PDV Multi puro mesmo se a lista antiga o trouxer', () => {
   ]);
   assert.equal(html, '');
   assert.ok(!html.includes('031/2022'));
+});
+
+check('banner some 031/2022 do cabeçalho mesmo com dups de cache sem grupos', () => {
+  context.window._contratosAllRows = [{
+    cod: '794161',
+    contrato: '031/2022',
+    pdv: 'multi',
+    cods: ['794161', '792643'],
+  }];
+  const stale = [
+    { key: '007/2022', clientes: [{ num: '007/2022', cod: '1' }, { num: '007/2022', cod: '2' }] },
+    { key: 'B0047/24', clientes: [{ num: 'B0047/24', cod: '3' }, { num: 'B0047/24', cod: '4' }] },
+    { key: 'B0027/24', clientes: [{ num: 'B0027/24', cod: '5' }, { num: 'B0027/24', cod: '6' }] },
+    { key: '031/2022', clientes: [{ num: '031/2022', cod: '794161' }, { num: '031/2022', cod: '792643' }] },
+  ];
+  assert.equal(context.contratoDupEhAlerta(stale[3]), false);
+  const html = context.htmlBannerContratosDuplicados(stale);
+  assert.ok(html.includes('007/2022'));
+  assert.ok(html.includes('B0047/24'));
+  assert.ok(html.includes('B0027/24'));
+  assert.ok(!html.includes('031/2022'));
+  assert.ok(html.includes('3 número'));
+  context.window._contratosAllRows = [];
+});
+
+check('load/paint do banner recalcula dups e ignora cache IndexedDB antigo', () => {
+  const banner = extractFn(html, 'htmlBannerContratosDuplicados');
+  const apply = extractFn(html, 'contratosTabApplyPacked');
+  const paint = extractFn(html, 'contratosTabPaint');
+  assert.ok(banner.includes('resolverContratosDuplicados'));
+  assert.ok(apply.includes('resolverContratosDuplicados'));
+  assert.ok(paint.includes('resolverContratosDuplicados'));
+  assert.ok(html.includes("delta_contratos_tab_v2"));
+  assert.ok(!html.includes("delta_contratos_tab_v1"));
 });
 
 check('colapsa linhas repetidas no mesmo cliente e fica a que tem nº e anexos', () => {

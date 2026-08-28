@@ -40,6 +40,7 @@ const context = {
   String,
   Array,
   Set,
+  window: { _contratosAllRows: [] },
   normCod(v) { return String(v || '').trim().replace(/^0+/, '') || '0'; },
 };
 vm.createContext(context);
@@ -64,7 +65,10 @@ for (const name of [
   'numsContratoDoRegisto',
   'indiceContratosPdvMulti',
   'contratoDupGrupoKey',
+  'contratoDupClientesNoMesmoPdvMulti',
   'contratoDupEhAlerta',
+  'fonteRegistosComContratos',
+  'resolverContratosDuplicados',
   'detectarNumerosContratoDuplicados',
   'htmlBannerContratosDuplicados',
 ]) {
@@ -111,9 +115,11 @@ check('render e banner filtram PDV Multi puro', () => {
   const render = extractFn(html, 'renderContratosMultiCliente');
   assert.ok(render.includes('contratoDupEhAlerta'));
   const banner = extractFn(html, 'htmlBannerContratosDuplicados');
-  assert.ok(banner.includes('contratoDupEhAlerta'));
+  assert.ok(banner.includes('resolverContratosDuplicados'));
   const load = extractFn(html, 'loadContratosMultiCliente');
   assert.ok(load.includes('detectarNumerosContratoDuplicados'));
+  const apply = extractFn(html, 'contratosTabApplyPacked');
+  assert.ok(apply.includes('resolverContratosDuplicados'));
 });
 
 check('chave PDV Multi agrupa os mesmos códigos independentemente da ordem e do principal', () => {

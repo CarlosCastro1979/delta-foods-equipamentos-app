@@ -16418,11 +16418,73 @@ function contratoDupGrupoKey(r, n, indiceMulti) {
   return 'U|' + own;
 }
 
+/** Dups em cache (sem `grupos`) em que todos os códigos cabem num único PDV Multi. */
+function contratoDupClientesNoMesmoPdvMulti(g, tableRows) {
+  const clientes = (g && g.clientes) || [];
+  if (clientes.length < 2) return false;
+  if (Array.isArray(g.grupos)) {
+    return g.grupos.length === 1 && String(g.grupos[0] || '').startsWith('M|');
+  }
+  const nrm = (x) => (typeof normCod === 'function' ? String(normCod(x)) : String(x || '').trim());
+  const seen = new Set();
+  const clientCods = [];
+  for (const c of clientes) {
+    const k = nrm(c && c.cod);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    clientCods.push(k);
+  }
+  if (clientCods.length < 2) return false;
+  const num = (g && g.key) || (clientes[0] && clientes[0].num);
+  const rows = tableRows
+    || (typeof window !== 'undefined' && Array.isArray(window._contratosAllRows) ? window._contratosAllRows : []);
+  for (const r of rows) {
+    if (!r) continue;
+    if (!numsContratoIguais(r.contrato, num)) continue;
+    const tipo = r.pdv
+      || (typeof contratoPdvTipo === 'function' ? contratoPdvTipo(r) : 'unico');
+    const cods = Array.isArray(r.cods) && r.cods.length
+      ? r.cods
+      : (typeof contratoPdvCods === 'function' ? contratoPdvCods(r, r) : []);
+    if (tipo !== 'multi' && !(cods && cods.length > 1)) continue;
+    const set = new Set((cods || []).map(nrm).filter(Boolean));
+    if (set.size < 2) continue;
+    if (clientCods.every(c => set.has(c))) return true;
+  }
+  return false;
+}
+
 /** Só alerta se o nº existir em mais do que um cliente-grupo (PDV Multi puro não conta). */
-function contratoDupEhAlerta(g) {
+function contratoDupEhAlerta(g, tableRows) {
   if (!g) return false;
+  if (typeof contratoDupClientesNoMesmoPdvMulti === 'function' && contratoDupClientesNoMesmoPdvMulti(g, tableRows)) {
+    return false;
+  }
   if (Array.isArray(g.grupos)) return g.grupos.length > 1;
   return ((g.clientes) || []).length > 1;
+}
+
+function fonteRegistosComContratos() {
+  const ok = (rows) => Array.isArray(rows) && rows.some(r => Array.isArray(r.contratos) && r.contratos.length);
+  try {
+    if (typeof allData !== 'undefined' && ok(allData)) return allData;
+  } catch (_) {}
+  try {
+    if (typeof getRegistosCache === 'function') {
+      const c = getRegistosCache();
+      if (ok(c)) return c;
+    }
+  } catch (_) {}
+  return null;
+}
+
+/** Banner e menu usam a mesma lista: recalcula se houver registos; senão limpa PDV Multi do cache. */
+function resolverContratosDuplicados(dups) {
+  if (typeof detectarNumerosContratoDuplicados === 'function') {
+    const live = typeof fonteRegistosComContratos === 'function' ? fonteRegistosComContratos() : null;
+    if (live) return detectarNumerosContratoDuplicados(live);
+  }
+  return (dups || []).filter(g => typeof contratoDupEhAlerta === 'function' ? contratoDupEhAlerta(g) : ((g.clientes || []).length > 1));
 }
 
 function detectarNumerosContratoDuplicados(rows) {
@@ -16463,7 +16525,9 @@ function filtrarContratoDuplicado(num) {
 }
 
 function htmlBannerContratosDuplicados(dups) {
-  const list = (dups || []).filter(g => typeof contratoDupEhAlerta === 'function' ? contratoDupEhAlerta(g) : ((g.clientes || []).length > 1));
+  const list = typeof resolverContratosDuplicados === 'function'
+    ? resolverContratosDuplicados(dups)
+    : (dups || []).filter(g => typeof contratoDupEhAlerta === 'function' ? contratoDupEhAlerta(g) : ((g.clientes || []).length > 1));
   if (!list.length) return '';
   const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const items = list.slice(0, 8).map(d => {
@@ -16685,7 +16749,7 @@ function loadContratos(prefix, contratos = []) {
 }
 
 let contratosCache = null; // HTML legado; a fonte de verdade é _contratosAllRows + IndexedDB
-const CONTRATOS_TAB_IDB_KEY = 'delta_contratos_tab_v1';
+const CONTRATOS_TAB_IDB_KEY = 'delta_contratos_tab_v2';
 
 function contratosYmKey(d) {
   const x = d instanceof Date ? d : new Date();
@@ -16712,7 +16776,14 @@ function contratosSigFromRegistos(registos) {
   const list = Array.isArray(registos) ? registos : [];
   return list.map(r => {
     const cs = Array.isArray(r.contratos) ? r.contratos : [];
-    const bits = cs.map(c => [c.num || c.contrato || '', c.inicio || '', c.consumo || '', c.duracao || ''].join('|')).join(',');
+    const bits = cs.map(c => [
+      c.num || c.contrato || '',
+      c.inicio || '',
+      c.consumo || '',
+      c.duracao || '',
+      c.pdv || '',
+      (Array.isArray(c.cods) ? [...c.cods].map(String).sort().join(',') : ''),
+    ].join('|')).join(',');
     return `${r.cod || ''}:${bits}`;
   }).sort().join(';');
 }
@@ -16800,7 +16871,9 @@ async function loadRegistosParaContratos() {
 function contratosTabApplyPacked(packed) {
   window._contratosAllRows = packed.rows || [];
   window._contratosDocsMap = packed.docsMap || {};
-  window._contratosDuplicados = packed.dups || [];
+  window._contratosDuplicados = typeof resolverContratosDuplicados === 'function'
+    ? resolverContratosDuplicados(packed.dups || [])
+    : (packed.dups || []);
   window._contratosTabFp = packed.fp || null;
   contratosCache = packed.rows && packed.rows.length ? 'rows' : null;
 }
@@ -16850,6 +16923,9 @@ function contratosEnsureResumoListener(cont) {
 
 function contratosTabPaint() {
   const cont = document.getElementById('contratos-content');
+  if (typeof resolverContratosDuplicados === 'function') {
+    window._contratosDuplicados = resolverContratosDuplicados(window._contratosDuplicados || []);
+  }
   if (typeof fillVendedorSelectCanal === 'function') {
     fillVendedorSelectCanal('contratos-vendedor', { emptyLabel: 'Todos os vendedores' });
   }
@@ -28898,7 +28974,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-08-28-pdv-d: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-08-28-pdv-e: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
