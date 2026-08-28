@@ -19039,6 +19039,9 @@ const CC_FIXO_DIOGO = getEmailUtilizador('DIOGO OLIVEIRA') || 'diogo.oliveira@de
 const EMAIL_MC00_TO = 'condicoes.especiais@gruponabeiro.com';
 /** CC do MC00: Carlos. Horeca: Filipe via ccString. Varejo: Diogo via ccString. */
 const EMAIL_MC00_CC = ['carlos.castro@deltafoodsbrasil.com.br'];
+/** Cadastro / Abertura de Cliente: Carlos pede aprovação; Daniela recebe o já aprovado. */
+const EMAIL_CADASTRO_CARLOS = 'carlos.castro@deltafoodsbrasil.com.br';
+const EMAIL_CADASTRO_DANIELA = 'daniela.kucinski@deltafoodsbrasil.com.br';
 
 function isCanalHorecaActivo() {
   const id = typeof resolveCanalActivoId === 'function'
@@ -24095,33 +24098,97 @@ function prosCadastroResumoEmailText(dados) {
     .join('\n');
 }
 
-// Abre Outlook com HTML + Excel(s) já anexados (mesmo padrão do MC00).
-async function prosAbrirEmailCadastro(dados, opts = {}) {
-  const {
-    isCafe = false,
-    propTexto = '',
-    attachments = [],
-    // Lead ganho: Carlos + Daniela CC. Alteração CNPJ: Daniela + Carlos/Filipe CC.
-    // Varejo: Diogo entra via ccString se o remetente não for ele.
-    to = 'carlos.castro@deltafoodsbrasil.com.br',
-    cc = ['daniela.kucinski@deltafoodsbrasil.com.br'],
-  } = opts;
-  const hora = new Date().getHours();
-  const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
-  const motivo = dados.motivo || 'Abertura de Cliente';
+function prosPropostaEBomNegocio(veredito) {
+  const n = String(veredito || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return n === 'BOM NEGOCIO';
+}
+
+/**
+ * Abertura de Cliente: directo à Daniela (sem pedir aprovação) se
+ * cliente não café OU proposta = BOM NEGÓCIO. Café + não bom negócio
+ * continua Para Carlos, «para aprovação». Filipe só entra via ccString.
+ */
+function prosCadastroEmailPolitica({ isCafe, isBomNegocio, forcarPedidoAprovacao } = {}) {
+  const pedirAprovacao = !!forcarPedidoAprovacao
+    || (isCafe === true && !isBomNegocio);
+  return {
+    pedirAprovacao,
+    conformeAprovado: !pedirAprovacao,
+    to: pedirAprovacao ? EMAIL_CADASTRO_CARLOS : EMAIL_CADASTRO_DANIELA,
+    cc: pedirAprovacao ? [EMAIL_CADASTRO_DANIELA] : [EMAIL_CADASTRO_CARLOS],
+  };
+}
+
+function prosCadastroAnexosTxt(isCafe) {
+  return isCafe ? 'ficha de cadastro e a proposta de negócio' : 'ficha de cadastro';
+}
+
+function prosCadastroEmailIntro({ isCafe, isAltCnpj, conformeAprovado, nome, html } = {}) {
+  const anexosTxt = prosCadastroAnexosTxt(isCafe);
+  const cliente = nome || '';
+  if (isAltCnpj) {
+    return html
+      ? `Segue em anexo a <strong>${outlookEmailEsc(anexosTxt)}</strong> do cliente <strong>${outlookEmailEsc(cliente)}</strong> para <strong>alteração de CNPJ</strong>.`
+      : `Segue em anexo a ${anexosTxt} do cliente ${cliente} para alteração de CNPJ.`;
+  }
+  if (conformeAprovado) {
+    return html
+      ? `Conforme aprovado, segue em anexo a <strong>${outlookEmailEsc(anexosTxt)}</strong> do cliente <strong>${outlookEmailEsc(cliente)}</strong>.`
+      : `Conforme aprovado, segue em anexo a ${anexosTxt} do cliente ${cliente}.`;
+  }
+  return html
+    ? `Segue em anexo a <strong>${outlookEmailEsc(anexosTxt)}</strong> do cliente <strong>${outlookEmailEsc(cliente)}</strong> para aprovação.`
+    : `Segue em anexo a ${anexosTxt} do cliente ${cliente} para aprovação.`;
+}
+
+function prosCadastroSaudacaoHora(agora) {
+  const hora = (agora instanceof Date ? agora : new Date()).getHours();
+  return hora < 12 ? 'Bom dia' : 'Boa tarde';
+}
+
+/** Monta destinatários + corpo do email de cadastro (testável sem Outlook). */
+function prosCadastroMontarEmail(dados, opts = {}) {
+  const isCafe = !!opts.isCafe;
+  const isBomNegocio = !!opts.isBomNegocio;
+  const propTexto = opts.propTexto || '';
+  const motivo = (dados && dados.motivo) || 'Abertura de Cliente';
   const isAltCnpj = /altera[cç][aã]o\s+de\s+cnpj/i.test(motivo);
-  const anexosTxt = isCafe ? 'ficha de cadastro e a proposta de negócio' : 'ficha de cadastro';
-  const remetente = getUtilizadorAtual();
-  const remetenteEmail = getEmailUtilizador(remetente);
+  const temTo = opts.to != null && String(opts.to).trim() !== '';
+  const politica = temTo
+    ? {
+        to: opts.to,
+        cc: opts.cc != null ? opts.cc : [EMAIL_CADASTRO_CARLOS],
+        pedirAprovacao: !isAltCnpj,
+        conformeAprovado: false,
+      }
+    : prosCadastroEmailPolitica({
+        isCafe,
+        isBomNegocio,
+        forcarPedidoAprovacao: opts.forcarPedidoAprovacao,
+      });
+  const conformeAprovado = isAltCnpj ? false : !!politica.conformeAprovado;
+  const pedirAprovacao = isAltCnpj ? true : !!politica.pedirAprovacao;
+  const saudacao = prosCadastroSaudacaoHora(opts.agora);
+  const remetente = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
+  const remetenteEmail = typeof getEmailUtilizador === 'function' ? getEmailUtilizador(remetente) : '';
+  const intro = prosCadastroEmailIntro({
+    isCafe, isAltCnpj, conformeAprovado, nome: dados && dados.nome, html: true,
+  });
+  const introTxt = prosCadastroEmailIntro({
+    isCafe, isAltCnpj, conformeAprovado, nome: dados && dados.nome, html: false,
+  });
   const propHtml = propTexto
     ? `<p style="margin:16px 0 8px;font-weight:700;">Proposta de negócio:</p><pre style="font-family:Calibri,Arial,sans-serif;font-size:12px;background:#f9fafb;border:1px solid #e5e7eb;padding:12px;white-space:pre-wrap;">${outlookEmailEsc(String(propTexto).trim())}</pre>`
     : '';
-  const intro = isAltCnpj
-    ? `Segue em anexo a <strong>${outlookEmailEsc(anexosTxt)}</strong> do cliente <strong>${outlookEmailEsc(dados.nome || '')}</strong> para <strong>alteração de CNPJ</strong>.`
-    : `Segue em anexo a <strong>${outlookEmailEsc(anexosTxt)}</strong> do cliente <strong>${outlookEmailEsc(dados.nome || '')}</strong> para aprovação.`;
-  const introTxt = isAltCnpj
-    ? `Segue em anexo a ${anexosTxt} do cliente ${dados.nome || ''} para alteração de CNPJ.`
-    : `Segue em anexo a ${anexosTxt} do cliente ${dados.nome || ''} para aprovação.`;
+  const fechoHtml = pedirAprovacao
+    ? `<p style="margin-top:18px;">Aguardo aprovação.</p>\n`
+    : '';
+  const fechoTxt = pedirAprovacao ? 'Aguardo aprovação.\n\n' : '';
   const html =
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
@@ -24129,33 +24196,45 @@ async function prosAbrirEmailCadastro(dados, opts = {}) {
 <p>${outlookEmailEsc(saudacao)},<br><br>${intro}</p>
 ${prosCadastroResumoEmailHtml(dados)}
 ${propHtml}
-<p style="margin-top:18px;">Aguardo aprovação.</p>
-<p>Cumprimentos,<br>${outlookEmailEsc(remetente)}${remetenteEmail ? '<br>' + outlookEmailEsc(remetenteEmail) : ''}</p>
+${fechoHtml}<p>Cumprimentos,<br>${outlookEmailEsc(remetente)}${remetenteEmail ? '<br>' + outlookEmailEsc(remetenteEmail) : ''}</p>
 </body></html>`;
-
   const bodyTxt =
 `${saudacao},
 ${introTxt}
 
 ${prosCadastroResumoEmailText(dados)}
 ${propTexto ? `\nProposta de negócio:\n${String(propTexto).trim()}\n` : ''}
-Aguardo aprovação.
-
-Cumprimentos,
+${fechoTxt}Cumprimentos,
 ${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`;
-
-  return outlookAbrirRascunho({
-    to,
-    cc: ccString(cc),
-    subject: `${motivo} - ${dados.nome || 'Cliente'}`,
+  return {
+    to: politica.to,
+    cc: politica.cc,
+    subject: `${motivo} - ${(dados && dados.nome) || 'Cliente'}`,
     html,
-    attachments,
+    bodyTxt,
+    saudacao,
+    intro,
+    introTxt,
+    conformeAprovado,
+    pedirAprovacao,
+    isAltCnpj,
+  };
+}
+
+// Abre Outlook com HTML + Excel(s) já anexados (mesmo padrão do MC00).
+async function prosAbrirEmailCadastro(dados, opts = {}) {
+  const mail = prosCadastroMontarEmail(dados, opts);
+  return outlookAbrirRascunho({
+    to: mail.to,
+    cc: ccString(mail.cc),
+    subject: mail.subject,
+    html: mail.html,
+    attachments: opts.attachments || [],
     draftName: 'Cadastro_rascunho_Outlook.eml',
     toastMsg: '📧 Outlook aberto com cadastro em anexo.',
-    // Sem serve.ps1: abre o email (mailto) em vez de descarregar .eml
     mailtoFallback: {
-      body: bodyTxt,
-      toastMsg: isAltCnpj
+      body: mail.bodyTxt,
+      toastMsg: mail.isAltCnpj
         ? '📧 Outlook aberto. Anexa o Excel de alteração de CNPJ descarregado.'
         : '📧 Outlook aberto. Anexa o Excel de cadastro descarregado.',
     },
@@ -24358,8 +24437,8 @@ async function prosExportarAlteracaoCnpj() {
       isCafe: false,
       propTexto: '',
       attachments: cadastro?.blob ? [{ blob: cadastro.blob, filename: cadastro.filename }] : [],
-      to: 'daniela.kucinski@deltafoodsbrasil.com.br',
-      cc: ['carlos.castro@deltafoodsbrasil.com.br'], // Filipe (Horeca) / Diogo (Varejo) via ccString
+      to: EMAIL_CADASTRO_DANIELA,
+      cc: [EMAIL_CADASTRO_CARLOS], // Filipe (Horeca) / Diogo (Varejo) via ccString
     });
     if (st) {
       st.innerHTML = ok !== false
@@ -25664,6 +25743,7 @@ async function alteracaoCadastralExportar() {
       isCafe: false,
       propTexto: '',
       attachments: cadastro?.blob ? [{ blob: cadastro.blob, filename: cadastro.filename }] : [],
+      forcarPedidoAprovacao: true,
     });
     if (ok !== false && st) {
       st.innerHTML = '<span style="color:#16a34a">Cadastro guardado · Outlook aberto com Excel em anexo.</span>';
@@ -25759,9 +25839,19 @@ async function prosGanhoExportar() {
       propTexto = prosBuildEmailPropostaText();
     }
 
+    let isBomNegocio = false;
+    if (isCafe && typeof propComputeModel === 'function') {
+      const tipo = document.getElementById('pg-prop-tipo')?.value || 'Q';
+      try {
+        isBomNegocio = prosPropostaEBomNegocio(propComputeModel(tipo).veredito);
+      } catch (_) {
+        isBomNegocio = false;
+      }
+    }
+
     if (st) st.innerHTML = '<span style="color:#16a34a">A abrir Outlook com documentos em anexo...</span>';
 
-    const ok = await prosAbrirEmailCadastro(dados, { isCafe, propTexto, attachments });
+    const ok = await prosAbrirEmailCadastro(dados, { isCafe, isBomNegocio, propTexto, attachments });
     if (ok !== false && st) {
       st.innerHTML = '<span style="color:#16a34a">Outlook aberto com documentos em anexo.</span>';
     }
@@ -29209,7 +29299,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-08-28-varejo-b: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-08-28-prod: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

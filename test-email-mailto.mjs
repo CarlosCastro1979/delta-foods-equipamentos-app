@@ -16,9 +16,24 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 function extractFn(src, name) {
   const start = src.indexOf(`function ${name}(`);
   if (start < 0) throw new Error('Função em falta: ' + name);
-  const brace = src.indexOf('{', start);
+  // Saltar a lista de parâmetros (`({ a } = {}) {` não é o corpo).
+  const paren = src.indexOf('(', start);
   let depth = 0;
-  for (let i = brace; i < src.length; i++) {
+  let bodyBrace = -1;
+  for (let i = paren; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      depth--;
+      if (depth === 0) {
+        bodyBrace = src.indexOf('{', i);
+        break;
+      }
+    }
+  }
+  if (bodyBrace < 0) throw new Error('Corpo em falta: ' + name);
+  depth = 0;
+  for (let i = bodyBrace; i < src.length; i++) {
     const ch = src[i];
     if (ch === '{') depth++;
     else if (ch === '}') {
@@ -388,7 +403,7 @@ check('mapa EMAIL + rascunho Outlook aplicam CC Diogo no retalho', () => {
   assert.ok(fn.includes('{ to, remetente'));
   assert.ok(html.includes('async function prosAbrirEmailCadastro'));
   const cad = html.slice(html.indexOf('async function prosAbrirEmailCadastro'));
-  assert.ok(cad.includes('ccString(cc)'));
+  assert.ok(cad.includes('ccString(mail.cc'));
   assert.ok(cad.includes('outlookAbrirRascunho'));
 });
 
@@ -471,6 +486,156 @@ check('HTML de tabela vira quadro texto (tablet sem HTML no mailto)', () => {
   assert.ok(txt.includes('1001234'));
   assert.ok(txt.includes('CAFÉ'));
   assert.ok(txt.includes('|'), 'células da tabela separadas por |');
+});
+
+// ── Abertura de Cliente: Daniela se BOM NEGÓCIO ou não café ───────────────
+context.EMAIL_CADASTRO_CARLOS = 'carlos.castro@deltafoodsbrasil.com.br';
+context.EMAIL_CADASTRO_DANIELA = 'daniela.kucinski@deltafoodsbrasil.com.br';
+context.getUtilizadorAtual = () => 'Carlos Castro';
+context.getEmailUtilizador = () => 'carlos.castro@deltafoodsbrasil.com.br';
+for (const name of [
+  'outlookEmailEsc',
+  'prosCadastroResumoRows',
+  'prosCadastroResumoEmailHtml',
+  'prosCadastroResumoEmailText',
+  'prosPropostaEBomNegocio',
+  'prosCadastroEmailPolitica',
+  'prosCadastroAnexosTxt',
+  'prosCadastroEmailIntro',
+  'prosCadastroSaudacaoHora',
+  'prosCadastroMontarEmail',
+]) {
+  vm.runInContext(extractFn(html, name), context);
+}
+
+const cadastroDados = {
+  motivo: 'Abertura de Cliente',
+  nome: 'AURELLIA PAES E DOCES E RESTAURANTE LTDA',
+  empresa: 'GN52 - Delta Foods Brasil',
+  fantasia: 'AURELLIA',
+  cnpj: '00.000.000/0001-00',
+  email: 'x@y.com',
+  tel1: '11999999999',
+  rua: 'Rua A',
+  nro: '1',
+  bairro: 'Centro',
+  cep: '01000-000',
+  cidade: 'SÃO PAULO',
+  canal: 'HORECA',
+  regiao: 'SP',
+  pagto: '30 DDL',
+  vendedor: '03 - PAULO FONTES',
+};
+const agoraTarde = new Date('2026-08-28T15:00:00');
+
+check('veredito BOM NEGÓCIO (com e sem acento)', () => {
+  assert.equal(context.prosPropostaEBomNegocio('BOM NEGÓCIO'), true);
+  assert.equal(context.prosPropostaEBomNegocio('bom negocio'), true);
+  assert.equal(context.prosPropostaEBomNegocio('REQUER AVALIAÇÃO'), false);
+  assert.equal(context.prosPropostaEBomNegocio('REJEITAR'), false);
+  assert.equal(context.prosPropostaEBomNegocio(''), false);
+});
+
+check('bom negócio → To Daniela, CC Carlos (sem Filipe na lista; ccString Horeca acrescenta)', () => {
+  const pol = context.prosCadastroEmailPolitica({ isCafe: true, isBomNegocio: true });
+  assert.equal(pol.to, 'daniela.kucinski@deltafoodsbrasil.com.br');
+  assert.deepEqual(pol.cc, ['carlos.castro@deltafoodsbrasil.com.br']);
+  assert.equal(pol.conformeAprovado, true);
+  assert.equal(pol.pedirAprovacao, false);
+  assert.ok(!pol.cc.includes('filipe.neves@deltafoodsbrasil.com.br'));
+  horeca = true;
+  const cc = context.ccString(pol.cc);
+  assert.ok(cc.includes('carlos.castro@deltafoodsbrasil.com.br'));
+  assert.ok(cc.includes('filipe.neves@deltafoodsbrasil.com.br'));
+  assert.equal((cc.match(/filipe\.neves@deltafoodsbrasil\.com\.br/gi) || []).length, 1);
+  const mail = context.prosCadastroMontarEmail(cadastroDados, {
+    isCafe: true, isBomNegocio: true, agora: agoraTarde,
+    propTexto: 'Proposta de negócio (Grão)',
+  });
+  assert.equal(mail.to, pol.to);
+  assert.ok(/conforme aprovado/i.test(mail.introTxt));
+  assert.ok(/conforme aprovado/i.test(mail.html));
+  assert.ok(!/para aprovação/i.test(mail.introTxt));
+  assert.ok(!/para aprovação/i.test(mail.html));
+  assert.ok(!/Aguardo aprovação/i.test(mail.bodyTxt));
+  assert.ok(!/Aguardo aprovação/i.test(mail.html));
+  assert.ok(mail.html.includes('Resumo do cadastro'));
+  assert.ok(mail.bodyTxt.includes('Resumo do cadastro') || mail.bodyTxt.includes('Motivo'));
+  assert.ok(mail.html.includes('AURELLIA PAES E DOCES E RESTAURANTE LTDA'));
+  assert.ok(mail.html.includes('Boa tarde,'));
+  assert.ok(!/Boa tarde,\s*Daniela/i.test(mail.html));
+  assert.ok(!/Boa tarde,\s*Carlos/i.test(mail.html));
+  assert.ok(mail.html.includes('<p>Boa tarde,<br><br>Conforme aprovado'),
+    'saudação e intro no mesmo <p> (Outlook injeta assinatura após o 1.º </p>)');
+  assert.ok(!mail.html.includes('<p>Boa tarde,</p>'),
+    'saudação do cadastro não pode ser um <p> sozinho');
+});
+
+check('cliente não café → To Daniela, conforme aprovado (sem pedir aprovação)', () => {
+  const pol = context.prosCadastroEmailPolitica({ isCafe: false, isBomNegocio: false });
+  assert.equal(pol.to, 'daniela.kucinski@deltafoodsbrasil.com.br');
+  assert.deepEqual(pol.cc, ['carlos.castro@deltafoodsbrasil.com.br']);
+  assert.equal(pol.conformeAprovado, true);
+  const mail = context.prosCadastroMontarEmail(cadastroDados, {
+    isCafe: false, isBomNegocio: false, agora: agoraTarde,
+  });
+  assert.equal(mail.to, pol.to);
+  assert.ok(/conforme aprovado/i.test(mail.introTxt));
+  assert.ok(!/para aprovação/i.test(mail.introTxt));
+  assert.ok(!/Aguardo aprovação/i.test(mail.bodyTxt));
+  assert.ok(mail.introTxt.includes('ficha de cadastro'));
+  assert.ok(!mail.introTxt.includes('proposta de negócio'));
+  horeca = true;
+  const cc = context.ccString(mail.cc);
+  assert.ok(cc.includes('filipe.neves@deltafoodsbrasil.com.br'));
+  assert.equal((cc.match(/filipe\.neves@deltafoodsbrasil\.com\.br/gi) || []).length, 1);
+});
+
+check('café + não bom negócio → To Carlos, para aprovação', () => {
+  const pol = context.prosCadastroEmailPolitica({ isCafe: true, isBomNegocio: false });
+  assert.equal(pol.to, 'carlos.castro@deltafoodsbrasil.com.br');
+  assert.deepEqual(pol.cc, ['daniela.kucinski@deltafoodsbrasil.com.br']);
+  assert.equal(pol.pedirAprovacao, true);
+  assert.equal(pol.conformeAprovado, false);
+  const mail = context.prosCadastroMontarEmail(cadastroDados, {
+    isCafe: true, isBomNegocio: false, agora: agoraTarde,
+    propTexto: 'Proposta de negócio (Grão)',
+  });
+  assert.equal(mail.to, pol.to);
+  assert.ok(/para aprovação/i.test(mail.introTxt));
+  assert.ok(!/conforme aprovado/i.test(mail.introTxt));
+  assert.ok(/Aguardo aprovação/i.test(mail.bodyTxt));
+  assert.ok(/Aguardo aprovação/i.test(mail.html));
+  assert.ok(mail.introTxt.includes('ficha de cadastro e a proposta de negócio'));
+  horeca = true;
+  const cc = context.ccString(mail.cc);
+  assert.ok(cc.includes('daniela.kucinski@deltafoodsbrasil.com.br'));
+  assert.ok(cc.includes('filipe.neves@deltafoodsbrasil.com.br'));
+  assert.ok(mail.html.includes('<p>Boa tarde,<br><br>Segue em anexo'),
+    'café a pedir aprovação também junta saudação e intro no mesmo <p>');
+});
+
+check('lead ganho calcula BOM NEGÓCIO e passa isBomNegocio ao email', () => {
+  const start = html.indexOf('async function prosGanhoExportar');
+  const end = html.indexOf('\nasync function gerarCadastroXlsxLocal', start);
+  assert.ok(start >= 0 && end > start);
+  const fn = html.slice(start, end);
+  assert.ok(fn.includes('isBomNegocio'));
+  assert.ok(fn.includes('prosPropostaEBomNegocio'));
+  assert.ok(fn.includes('propComputeModel'));
+  assert.ok(fn.includes('prosAbrirEmailCadastro(dados, { isCafe, isBomNegocio, propTexto, attachments })'));
+});
+
+check('cadastro: constantes Daniela/Carlos e saudação sem nome', () => {
+  assert.ok(html.includes("const EMAIL_CADASTRO_DANIELA = 'daniela.kucinski@deltafoodsbrasil.com.br'"));
+  assert.ok(html.includes("const EMAIL_CADASTRO_CARLOS = 'carlos.castro@deltafoodsbrasil.com.br'"));
+  const start = html.indexOf('function prosCadastroMontarEmail');
+  const end = html.indexOf('\nasync function prosAbrirEmailCadastro', start);
+  const fn = html.slice(start, end);
+  assert.ok(fn.includes('${outlookEmailEsc(saudacao)},<br><br>${intro}'));
+  assert.ok(!fn.includes('${outlookEmailEsc(saudacao)},</p>'));
+  assert.ok(!fn.includes('Carlos,'));
+  assert.ok(!fn.includes('Daniela,'));
 });
 
 if (process.exitCode) {
