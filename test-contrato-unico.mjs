@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Unicidade do nº de contrato — um número = um contrato. */
+/** Unicidade: uma combinação código cliente + nº de contrato. */
 import fs from 'fs';
 import vm from 'vm';
 import assert from 'assert';
@@ -33,6 +33,14 @@ for (const name of [
   'normNumContrato',
   'isNumContratoPlaceholder',
   'numsContratoDoRegisto',
+  'numsContratoIguais',
+  'numContratoDaLinha',
+  'contratoLinhaTemAnexo',
+  'scoreLinhaContrato',
+  'escolherMelhorLinhaContrato',
+  'colapsarContratosArray',
+  'clienteJaTemNumero',
+  'marcarContratoParSeNovo',
   'msgContratoJaCriado',
   'encontrarContratoNasLinhas',
   'detectarNumerosContratoDuplicados',
@@ -75,41 +83,82 @@ const rows = [
   { id: '3', cod: '300', nome: 'Cliente C', contrato: 'X111' },
 ];
 
-check('mesmo número em dois clientes é duplicado', () => {
-  const hit = context.encontrarContratoNasLinhas('B0029/25', rows);
+check('mesmo número noutro cliente NÃO bloqueia (cadeia)', () => {
+  const hit = context.encontrarContratoNasLinhas('B0029/25', rows, { cod: '300' });
+  assert.equal(hit, null);
+});
+
+check('mesmo número no mesmo cliente bloqueia', () => {
+  const hit = context.encontrarContratoNasLinhas('B0029/25', rows, { cod: '100' });
   assert.ok(hit);
   assert.equal(hit.cod, '100');
 });
 
-check('editar o mesmo cliente (exceptId) não dispara', () => {
-  const hit = context.encontrarContratoNasLinhas('X111', rows, { exceptId: '3' });
+check('sem código de cliente não compara com outros', () => {
+  const hit = context.encontrarContratoNasLinhas('B0029/25', rows);
   assert.equal(hit, null);
 });
 
-check('gerar de novo o mesmo nº (sem except) encontra o existente', () => {
-  const hit = context.encontrarContratoNasLinhas('X111', rows);
-  assert.ok(hit);
-  assert.equal(hit.cod, '300');
+check('editar o mesmo cliente (exceptId) não dispara', () => {
+  const hit = context.encontrarContratoNasLinhas('X111', rows, { exceptId: '3', cod: '300' });
+  assert.equal(hit, null);
 });
 
-check('mensagem diz que o contrato já foi criado', () => {
+check('mensagem diz que este cliente já tem o nº', () => {
   const msg = context.msgContratoJaCriado('B0029/25', { cod: '100', nome: 'Cliente A' });
-  assert.ok(/já foi criado/i.test(msg));
+  assert.ok(/já tem o contrato/i.test(msg));
   assert.ok(msg.includes('B0029/25'));
   assert.ok(msg.includes('100'));
 });
 
-check('detecta números repetidos entre clientes', () => {
+check('detecta números partilhados entre clientes', () => {
   const dups = context.detectarNumerosContratoDuplicados(rows);
   assert.equal(dups.length, 1);
   assert.equal(dups[0].key, 'B0029/25');
   assert.equal(dups[0].clientes.length, 2);
 });
 
-check('index.html bloqueia gerar/guardar se o nº já existe', () => {
-  assert.ok(html.includes('erroSeContratoJaCriado(numGerar)'));
-  assert.ok(html.includes('dupNovo'));
-  assert.ok(html.includes('dupEdit'));
+check('colapsa linhas repetidas no mesmo cliente e fica a que tem nº e anexos', () => {
+  const r = {
+    contrato: 'B0027/26',
+    docs: { 'B0027/26': { nf: '421542/B0027/26/nf.pdf' } },
+    contratos: [
+      { inicio: '2026-08', consumo: '500', duracao: '36', unidade: 'Capsulas' },
+      { inicio: '2026-08', consumo: '500', duracao: '36', unidade: 'Capsulas' },
+      { num: 'B0027/26', lote: 'DELTA Q', prazo: 21, inicio: '2026-08', consumo: 500, duracao: 36, unidade: 'Caps' },
+    ],
+  };
+  const out = context.colapsarContratosArray(r.contratos, r);
+  assert.equal(out.changed, true);
+  assert.equal(out.removed, 2);
+  assert.equal(out.list.length, 1);
+  assert.equal(out.list[0].num, 'B0027/26');
+  assert.equal(out.list[0].lote, 'DELTA Q');
+});
+
+check('tabela ignora segunda linha do mesmo código+nº', () => {
+  const seen = [];
+  assert.equal(context.marcarContratoParSeNovo(seen, '421542', 'B0027/26'), true);
+  assert.equal(context.marcarContratoParSeNovo(seen, '421542', 'B0027/26'), false);
+  assert.equal(context.marcarContratoParSeNovo(seen, '456320', 'B0027/26'), true);
+});
+
+check('menu Contratos com mais de 1 Cliente existe ao lado de Gerar', () => {
+  assert.ok(html.includes('id="sub-contratos-multi-cliente"'));
+  assert.ok(html.includes('Contratos com mais de 1 Cliente'));
+  assert.ok(html.includes("switchSubTab('contratos','multi-cliente')"));
+  assert.ok(html.includes('loadContratosMultiCliente'));
+  const gerarAt = html.indexOf('id="sub-contratos-gerar"');
+  const multiAt = html.indexOf('id="sub-contratos-multi-cliente"');
+  const equipAt = html.indexOf('id="sub-contratos-equipamentos"');
+  assert.ok(gerarAt > 0 && multiAt > gerarAt && equipAt > multiAt);
+});
+
+check('gerar/guardar só bloqueia se o MESMO cliente já tiver o nº', () => {
+  assert.ok(html.includes("erroSeContratoJaCriado(numGerar, { cod: codGerar })"));
+  assert.ok(html.includes('clienteJaTemNumero'));
+  assert.ok(html.includes('contratosLimparDuplicadosMesmoCliente'));
+  assert.ok(!html.includes('cada número só pode ter um contrato'));
   assert.ok(!html.includes('actualizar se sim, adicionar se não'));
 });
 

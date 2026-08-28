@@ -2505,6 +2505,10 @@ var _unused_placeholder = 1;
         class="sub-tab">
         Gerar Contrato
       </button>
+      <button id="sub-contratos-multi-cliente" onclick="switchSubTab('contratos','multi-cliente')"
+        class="sub-tab">
+        Contratos com mais de 1 Cliente
+      </button>
       <button id="sub-contratos-equipamentos" onclick="switchSubTab('contratos','equipamentos');loadEquipCatalog();"
         class="sub-tab">
         Equipamentos
@@ -2657,6 +2661,17 @@ var _unused_placeholder = 1;
           <button id="ct_btn_gerar" class="btn btn-primary" onclick="ctGerar()" style="display:none;background:var(--accent)">⬇ Gerar Contrato Word</button>
         </div>
       </div>
+    </div>
+
+    <!-- SUB: Contratos com mais de 1 Cliente -->
+    <div id="sub-panel-contratos-multi-cliente" style="display:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+        <h2 style="font-size:16px;font-weight:600;color:var(--text);margin:0;margin-right:8px;">Contratos com mais de 1 Cliente</h2>
+        <input type="text" id="ct-multi-search" class="form-input" placeholder="Nº contrato, código ou nome" style="width:240px;height:32px;font-size:12px;padding:0 8px;" oninput="renderContratosMultiCliente()">
+        <span id="ct-multi-count" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+      </div>
+      <p style="margin:0 0 14px;font-size:13px;color:var(--muted);max-width:720px;">O mesmo nº pode existir em vários códigos (ex.: cadeia de lojas). Aqui vês essa lista. No mesmo cliente, código + nº só pode existir uma vez.</p>
+      <div id="contratos-multi-content"><div style="padding:40px;text-align:center;color:var(--muted)"><span class="spinner"></span> A carregar...</div></div>
     </div>
 
     <!-- SUB: Equipamentos Catálogo -->
@@ -4353,8 +4368,15 @@ async function salvarRegisto(opts = {}) {
   const numsNovo = isDist
     ? (dist_contratos || []).map(c => c.numero)
     : [contrato];
-  const dupNovo = await erroSeContratoJaCriado(numsNovo);
+  const dupNovo = await erroSeContratoJaCriado(numsNovo, { cod });
   if (dupNovo) { toast(dupNovo, 'error'); return; }
+
+  if (!isDist) {
+    contratos = colapsarContratosArray(
+      (contratos || []).map(c => ({ ...c, num: c.num || c.numero || contrato })),
+      { contrato }
+    ).list;
+  }
 
   const btn = document.getElementById('btn-save');
   btn.disabled = true; btn.textContent = 'A guardar...';
@@ -7570,7 +7592,7 @@ function switchSubTab(group, sub) {
   }
   if (group === 'contratos') {
     window._contratosSubTab = sub;
-    ['registados','por-registar','gerar','equipamentos'].forEach(s => {
+    ['registados','por-registar','gerar','multi-cliente','equipamentos'].forEach(s => {
       const btn = document.getElementById('sub-contratos-' + s);
       const panel = document.getElementById('sub-panel-contratos-' + s);
       const active = s === sub;
@@ -7581,6 +7603,7 @@ function switchSubTab(group, sub) {
     });
     if (sub === 'registados') loadContratosTab();
     if (sub === 'por-registar') loadContratosPorRegistar();
+    if (sub === 'multi-cliente') loadContratosMultiCliente();
   }
 }
 
@@ -7864,8 +7887,15 @@ async function salvarEdicao() {
   const numsEdit = isDist
     ? (dist_contratos || []).map(c => c.numero)
     : [contrato];
-  const dupEdit = await erroSeContratoJaCriado(numsEdit, { exceptId: editingId, exceptCod: cod });
+  const dupEdit = await erroSeContratoJaCriado(numsEdit, { exceptId: editingId, exceptCod: cod, cod });
   if (dupEdit) { toast(dupEdit, 'error'); return; }
+
+  if (!isDist) {
+    contratos = colapsarContratosArray(
+      (contratos || []).map(c => ({ ...c, num: c.num || c.numero || contrato })),
+      { contrato }
+    ).list;
+  }
 
   const body = {
     vendedor, cod, nome, cep, contrato, contratos, equipamentos,
@@ -15522,29 +15552,142 @@ function numsContratoDoRegisto(r) {
   return out;
 }
 
+function numsContratoIguais(a, b) {
+  if (typeof numsContratoEquivalentes === 'function') return numsContratoEquivalentes(a, b);
+  const na = normNumContrato(a);
+  const nb = normNumContrato(b);
+  return !!(na && nb && na === nb);
+}
+
+function numContratoDaLinha(c, r) {
+  return String((c && (c.num || c.numero)) || (r && r.contrato) || '').trim();
+}
+
+function contratoLinhaTemAnexo(docs, num) {
+  if (!num || isNumContratoPlaceholder(num)) return false;
+  if (typeof contratoDocsCampo === 'function') {
+    const nf = contratoDocsCampo(docs, num, 'nf');
+    const ct = contratoDocsCampo(docs, num, 'ct');
+    const ok = typeof contratoDocsValorOk === 'function' ? contratoDocsValorOk : (v => !!v);
+    return ok(nf) || ok(ct);
+  }
+  if (!docs || typeof docs !== 'object') return false;
+  for (const key of Object.keys(docs)) {
+    if (!numsContratoIguais(key, num) && key !== String(num)) continue;
+    const val = docs[key];
+    if (!val || typeof val !== 'object') continue;
+    if (val.nf && val.nf !== false) return true;
+    if (val.ct && val.ct !== false) return true;
+  }
+  return false;
+}
+
+function scoreLinhaContrato(c, r) {
+  let s = 0;
+  if (!c || typeof c !== 'object') return 0;
+  if (c.num || c.numero) s += 10;
+  if (c.inicio) s += 3;
+  if (c.consumo) s += 3;
+  if (c.duracao) s += 3;
+  if (c.lote) s += 2;
+  if (c.prazo) s += 1;
+  const num = numContratoDaLinha(c, r);
+  if (contratoLinhaTemAnexo(r && r.docs, num)) s += 8;
+  if (r && r.contrato && numsContratoIguais(c.num || c.numero, r.contrato)) s += 2;
+  return s;
+}
+
+function escolherMelhorLinhaContrato(items, r) {
+  const list = (items || []).filter(Boolean);
+  if (!list.length) return null;
+  const ranked = [...list].sort((a, b) => scoreLinhaContrato(b, r) - scoreLinhaContrato(a, r));
+  const best = { ...ranked[0] };
+  if (!best.num && !best.numero && r && r.contrato && !isNumContratoPlaceholder(r.contrato)) {
+    best.num = String(r.contrato).trim();
+  }
+  return best;
+}
+
+/** Uma combinação código+nº por cliente: fica a linha com anexos / mais completa. */
+function colapsarContratosArray(contratos, r) {
+  const items = Array.isArray(contratos) ? contratos.filter(Boolean) : [];
+  const groups = [];
+  for (const c of items) {
+    const num = numContratoDaLinha(c, r);
+    if (isNumContratoPlaceholder(num)) {
+      groups.push({ ph: true, items: [c] });
+      continue;
+    }
+    const found = groups.find(g => !g.ph && numsContratoIguais(g.num, num));
+    if (found) found.items.push(c);
+    else groups.push({ ph: false, num, items: [c] });
+  }
+  let removed = 0;
+  const out = [];
+  for (const g of groups) {
+    if (g.items.length === 1) {
+      out.push(g.items[0]);
+      continue;
+    }
+    removed += g.items.length - 1;
+    out.push(escolherMelhorLinhaContrato(g.items, r));
+  }
+  return { list: out, changed: removed > 0, removed };
+}
+
+function clienteJaTemNumero(r, num) {
+  if (!r || isNumContratoPlaceholder(num)) return false;
+  return numsContratoDoRegisto(r).some(n => numsContratoIguais(n, num));
+}
+
+function marcarContratoParSeNovo(seen, cod, num) {
+  if (isNumContratoPlaceholder(num)) return true;
+  const codK = typeof normCod === 'function' ? normCod(cod) : String(cod || '');
+  for (let i = 0; i < seen.length; i++) {
+    if (seen[i].cod === codK && numsContratoIguais(seen[i].num, num)) return false;
+  }
+  seen.push({ cod: codK, num: String(num) });
+  return true;
+}
+
 function msgContratoJaCriado(num, hit) {
   const n = String(num || '').trim();
   if (hit && (hit.cod || hit.nome)) {
     const quem = [hit.cod, hit.nome].filter(Boolean).join(' — ');
-    return `Esse contrato já foi criado (${n} no cliente ${quem}).`;
+    return `Este cliente já tem o contrato ${n} (${quem}). Só pode haver uma combinação código + nº de contrato.`;
   }
-  return n ? `Esse contrato já foi criado (${n}).` : 'Esse contrato já foi criado.';
+  return n
+    ? `Este cliente já tem o contrato ${n}. Só pode haver uma combinação código + nº de contrato.`
+    : 'Este cliente já tem este nº de contrato. Só pode haver uma combinação código + nº.';
+}
+
+function inferCodContratoInput(el) {
+  if (!el) return '';
+  if (el.id === 'ct_num_contrato') return (document.getElementById('ct_cod') || {}).value || '';
+  if (el.id === 'f-contrato') return (document.getElementById('f-cod') || {}).value || '';
+  if (el.id === 'e-contrato') return (document.getElementById('e-cod') || {}).value || '';
+  if (el.classList && el.classList.contains('dist-ct-numero')) {
+    const prefix = el.closest('#e-dist-contratos-list') ? 'e' : 'f';
+    return (document.getElementById(prefix + '-cod') || {}).value || '';
+  }
+  return '';
 }
 
 function encontrarContratoNasLinhas(num, rows, opts) {
   opts = opts || {};
   const exceptId = opts.exceptId;
-  const exceptCod = opts.exceptCod;
   const key = normNumContrato(num);
   if (!key || isNumContratoPlaceholder(key)) return null;
-  const exceptCodN = exceptCod && typeof normCod === 'function' ? normCod(exceptCod) : String(exceptCod || '');
+  const codFilt = opts.cod || opts.exceptCod;
+  const codN = codFilt && typeof normCod === 'function' ? normCod(codFilt) : String(codFilt || '');
+  if (!codN) return null;
   for (const r of rows || []) {
     if (!r) continue;
     if (exceptId && r.id === exceptId) continue;
-    if (exceptCodN && typeof normCod === 'function' && normCod(r.cod) === exceptCodN) continue;
-    if (exceptCodN && typeof normCod !== 'function' && String(r.cod || '') === String(exceptCod)) continue;
+    const rCod = typeof normCod === 'function' ? normCod(r.cod) : String(r.cod || '');
+    if (rCod !== codN) continue;
     for (const n of numsContratoDoRegisto(r)) {
-      if (normNumContrato(n) === key) {
+      if (numsContratoIguais(n, num)) {
         return { id: r.id, cod: r.cod, nome: r.nome, num: n };
       }
     }
@@ -15590,14 +15733,15 @@ async function erroSeContratoJaCriado(numeros, opts = {}) {
   const list = (Array.isArray(numeros) ? numeros : [numeros])
     .map(n => String(n || '').trim())
     .filter(n => !isNumContratoPlaceholder(n));
-  const seen = new Set();
+  const seen = [];
   for (const n of list) {
-    const k = normNumContrato(n);
-    if (seen.has(k)) return msgContratoJaCriado(n);
-    seen.add(k);
+    if (seen.some(s => numsContratoIguais(s, n))) return msgContratoJaCriado(n);
+    seen.push(n);
   }
+  const cod = opts.cod || opts.exceptCod;
+  if (!cod) return null;
   for (const n of list) {
-    const hit = await encontrarContratoExistente(n, { ...opts, force: true });
+    const hit = await encontrarContratoExistente(n, { ...opts, cod, force: true });
     if (hit) return msgContratoJaCriado(n, hit);
   }
   return null;
@@ -15610,7 +15754,17 @@ async function checkNumContratoInput(el, opts) {
     el.style.borderColor = '';
     return;
   }
-  const hit = await encontrarContratoExistente(num, opts || {});
+  opts = Object.assign({}, opts || {});
+  if (!opts.cod) opts.cod = inferCodContratoInput(el);
+  if (opts.exceptId) {
+    el.style.borderColor = '';
+    return;
+  }
+  if (!opts.cod) {
+    el.style.borderColor = '';
+    return;
+  }
+  const hit = await encontrarContratoExistente(num, opts);
   if (hit) {
     el.style.borderColor = 'var(--danger)';
     toast(msgContratoJaCriado(num, hit), 'error');
@@ -15623,12 +15777,17 @@ function detectarNumerosContratoDuplicados(rows) {
   const map = new Map();
   for (const r of rows || []) {
     const codK = typeof normCod === 'function' ? normCod(r.cod) : String(r.cod || '');
+    const seenNum = [];
     for (const n of numsContratoDoRegisto(r)) {
-      const k = normNumContrato(n);
-      if (!k) continue;
-      if (!map.has(k)) map.set(k, new Map());
-      const clients = map.get(k);
-      if (!clients.has(codK)) clients.set(codK, { cod: r.cod, nome: r.nome, num: n });
+      if (seenNum.some(s => numsContratoIguais(s, n))) continue;
+      seenNum.push(n);
+      let gKey = normNumContrato(n);
+      for (const existing of map.keys()) {
+        if (numsContratoIguais(existing, n)) { gKey = existing; break; }
+      }
+      if (!map.has(gKey)) map.set(gKey, new Map());
+      const clients = map.get(gKey);
+      if (!clients.has(codK)) clients.set(codK, { cod: r.cod, nome: r.nome, vendedor: r.vendedor, num: n, docs: r.docs });
     }
   }
   const dups = [];
@@ -15648,13 +15807,210 @@ function filtrarContratoDuplicado(num) {
 function htmlBannerContratosDuplicados(dups) {
   if (!dups || !dups.length) return '';
   const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const items = dups.slice(0, 12).map(d => {
+  const items = dups.slice(0, 8).map(d => {
     const n = d.clientes[0]?.num || d.key;
-    return `<button type="button" class="contrato-dup-num" data-num="${esc(n)}" onclick="filtrarContratoDuplicado(this.dataset.num)" style="background:none;border:none;padding:0;color:#9a3412;font-weight:700;cursor:pointer;text-decoration:underline;">${esc(n)}</button> <span style="color:#c2410c;">(${d.clientes.length})</span>`;
+    return `<button type="button" class="contrato-dup-num" data-num="${esc(n)}" onclick="filtrarContratoMultiCliente(this.dataset.num)" style="background:none;border:none;padding:0;color:#1d4ed8;font-weight:700;cursor:pointer;text-decoration:underline;">${esc(n)}</button> <span style="color:#1e40af;">(${d.clientes.length})</span>`;
   }).join(' · ');
-  return `<div style="margin-bottom:12px;padding:10px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:12.5px;color:#9a3412;line-height:1.45;">
-    ⚠ <strong>${dups.length}</strong> número(s) de contrato repetido(s) — cada número só pode ter um contrato. Clica para filtrar: ${items}
+  return `<div style="margin-bottom:12px;padding:10px 12px;background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;font-size:12.5px;color:#1e3a8a;line-height:1.45;">
+    ${dups.length} número(s) de contrato em mais do que um cliente (ex.: cadeia de lojas).
+    <button type="button" class="btn btn-secondary btn-sm" onclick="switchSubTab('contratos','multi-cliente')" style="margin-left:8px;font-size:11px;padding:3px 10px;vertical-align:middle;">Ver Contratos com mais de 1 Cliente</button>
+    <div style="margin-top:6px">${items}</div>
   </div>`;
+}
+
+function filtrarContratoMultiCliente(num) {
+  window._contratosMultiFiltro = num || null;
+  if (typeof switchSubTab === 'function') switchSubTab('contratos', 'multi-cliente');
+}
+
+async function contratosLimparDuplicadosMesmoCliente(registos) {
+  const list = Array.isArray(registos) ? registos : [];
+  let removed = 0;
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    if (!r || !Array.isArray(r.contratos) || r.contratos.length < 2) continue;
+    const out = colapsarContratosArray(r.contratos, r);
+    if (!out.changed) continue;
+    r.contratos = out.list;
+    removed += out.removed;
+    if (!r.id) continue;
+    try {
+      const patch = await fetch(`${SUPA_URL}?id=eq.${encodeURIComponent(r.id)}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: SUPA_KEY,
+          Authorization: 'Bearer ' + SUPA_KEY,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ contratos: out.list }),
+      });
+      if (!patch.ok) console.warn('dedup contratos HTTP', patch.status, r.cod);
+    } catch (e) {
+      console.warn('dedup contratos', e);
+    }
+  }
+  if (removed) {
+    try { _contratoUniqCache = { at: 0, rows: null }; } catch (_) {}
+  }
+  return removed;
+}
+
+async function loadContratosMultiCliente() {
+  const cont = document.getElementById('contratos-multi-content');
+  if (!cont) return;
+  try {
+    let regs = (typeof allData !== 'undefined' && Array.isArray(allData) && allData.length)
+      ? allData
+      : (typeof getRegistosCache === 'function' ? getRegistosCache() : null);
+    if (!regs || !regs.length) {
+      regs = typeof loadRegistosParaContratos === 'function'
+        ? await loadRegistosParaContratos()
+        : [];
+    }
+    if (!Array.isArray(regs)) regs = [];
+    if (typeof filterByCanalActivoVendedor === 'function') {
+      regs = filterByCanalActivoVendedor(regs);
+    }
+    if (typeof filterByUtilizadorActivo === 'function') {
+      regs = filterByUtilizadorActivo(regs, r => r && r.vendedor);
+    }
+    window._contratosMultiGroups = detectarNumerosContratoDuplicados(regs);
+    renderContratosMultiCliente();
+  } catch (e) {
+    cont.innerHTML = `<div style="padding:40px;text-align:center;color:var(--danger)">Erro: ${e.message}</div>`;
+  }
+}
+
+function limparFiltroContratosMulti() {
+  window._contratosMultiFiltro = null;
+  const inp = document.getElementById('ct-multi-search');
+  if (inp) inp.value = '';
+  renderContratosMultiCliente();
+}
+
+function renderContratosMultiCliente() {
+  const cont = document.getElementById('contratos-multi-content');
+  if (!cont) return;
+  const groups = Array.isArray(window._contratosMultiGroups) ? window._contratosMultiGroups : [];
+  const q = (document.getElementById('ct-multi-search')?.value || '').trim().toLowerCase();
+  const numFilt = window._contratosMultiFiltro || null;
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+  let shown = groups;
+  if (numFilt) {
+    shown = shown.filter(g => numsContratoIguais(g.key, numFilt) || numsContratoIguais(g.clientes[0]?.num, numFilt));
+  }
+  if (q) {
+    shown = shown.filter(g => {
+      const blob = [g.key, ...(g.clientes || []).flatMap(c => [c.cod, c.nome, c.num, c.vendedor])].join(' ').toLowerCase();
+      return blob.includes(q);
+    });
+  }
+
+  const countEl = document.getElementById('ct-multi-count');
+  if (countEl) {
+    const nCli = shown.reduce((s, g) => s + (g.clientes || []).length, 0);
+    countEl.textContent = shown.length ? `${shown.length} nº · ${nCli} clientes` : '';
+  }
+
+  if (!groups.length) {
+    cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Nenhum contrato partilhado entre clientes diferentes.</div>';
+    return;
+  }
+  if (!shown.length) {
+    const banner = numFilt
+      ? `<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="font-size:12px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;padding:4px 10px;border-radius:16px;font-weight:600;">Filtro: ${esc(numFilt)}</span>
+          <button type="button" onclick="limparFiltroContratosMulti()" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">✕ Limpar filtro</button>
+        </div>`
+      : '';
+    cont.innerHTML = banner + '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Nenhum resultado para este filtro.</div>';
+    return;
+  }
+
+  const filtroBanner = numFilt
+    ? `<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:12px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;padding:4px 10px;border-radius:16px;font-weight:600;">Filtro: ${esc(numFilt)}</span>
+        <button type="button" onclick="limparFiltroContratosMulti()" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">✕ Limpar filtro</button>
+      </div>`
+    : '';
+
+  const cellN = (n, key) => {
+    if (!n) return `<td style="padding:7px 14px;text-align:center;color:var(--muted);">—</td>`;
+    const isActive = numFilt && numsContratoIguais(numFilt, key);
+    return `<td style="padding:7px 14px;text-align:center;font-weight:700;color:#1d4ed8;cursor:pointer;text-decoration:underline;text-underline-offset:2px;${isActive ? 'background:#eff6ff;outline:2px solid #93c5fd;outline-offset:-2px;' : ''}" data-num="${esc(key)}" title="Ver estes ${n} clientes">${n}</td>`;
+  };
+
+  let html = filtroBanner;
+  html += `<div style="margin-bottom:20px;max-width:100%;">
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo — nº partilhado <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica no número de clientes para filtrar)</span></div>
+    <div class="table-wrap"><table style="border-collapse:collapse;font-size:13px;width:100%;">
+      <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+        <th style="padding:7px 14px;text-align:left;font-weight:600;">Nº Contrato</th>
+        <th style="padding:7px 14px;text-align:center;font-weight:600;">Clientes</th>
+      </tr></thead><tbody>`;
+  shown.forEach((g, i) => {
+    const nShow = g.clientes[0]?.num || g.key;
+    html += `<tr style="border-bottom:1px solid #f0f0f0;background:${i % 2 === 0 ? '#fff' : '#fafafa'}" class="ct-multi-resumo-row" data-num="${esc(nShow)}">
+      <td style="padding:7px 14px;font-weight:500;cursor:pointer;" data-num="${esc(nShow)}">${esc(nShow)}</td>
+      ${cellN(g.clientes.length, nShow)}
+    </tr>`;
+  });
+  html += `</tbody></table></div></div>
+    <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
+
+  const TH = 'padding:8px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:11px;background:#f5f5f5;';
+  html += `<div style="overflow-x:auto;width:100%"><table style="border-collapse:collapse;font-size:12px;width:max-content;min-width:100%">
+    <thead><tr>
+      <th style="${TH}">CONTRATO</th>
+      <th style="${TH}">CÓD</th>
+      <th style="${TH}min-width:180px">CLIENTE</th>
+      <th style="${TH}">VENDEDOR</th>
+      <th style="${TH}text-align:center;min-width:72px">NF</th>
+      <th style="${TH}text-align:center;min-width:92px">Contrato</th>
+    </tr></thead><tbody>`;
+
+  let idx = 0;
+  shown.forEach(g => {
+    (g.clientes || []).forEach(c => {
+      const td = `padding:8px 12px;border:1px solid #eee;font-size:12px;white-space:nowrap;${idx % 2 === 0 ? 'background:#fff;' : 'background:#fafafa;'}`;
+      const num = c.num || g.key;
+      const anex = {
+        nf: contratoLinhaTemAnexo(c.docs, num),
+        ct: false,
+      };
+      if (typeof contratoDocsCampo === 'function') {
+        const ok = typeof contratoDocsValorOk === 'function' ? contratoDocsValorOk : (v => !!v);
+        anex.nf = ok(contratoDocsCampo(c.docs, num, 'nf'));
+        anex.ct = ok(contratoDocsCampo(c.docs, num, 'ct'));
+      }
+      const pill = (tipo, on) => {
+        const label = tipo === 'nf' ? 'NF' : 'Contrato';
+        return `<span class="ct-doc-btn${on ? ' is-loaded' : ''}" style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700;">${on ? '✅ ' : ''}${label}</span>`;
+      };
+      html += `<tr>
+        <td style="${td}">${esc(num)}</td>
+        <td style="${td}color:var(--muted)">${esc(c.cod)}</td>
+        <td class="col-nome" style="${td}font-weight:500;" title="${esc(c.nome)}">${esc(c.nome)}</td>
+        <td style="${td}">${esc(c.vendedor || '—')}</td>
+        <td style="${td}text-align:center">${pill('nf', anex.nf)}</td>
+        <td style="${td}text-align:center">${pill('ct', anex.ct)}</td>
+      </tr>`;
+      idx++;
+    });
+  });
+  html += `</tbody></table></div>`;
+  cont.innerHTML = html;
+  if (!cont._multiListener) {
+    cont._multiListener = true;
+    cont.addEventListener('click', function(e) {
+      const td = e.target.closest('[data-num]');
+      if (!td || !cont.contains(td)) return;
+      window._contratosMultiFiltro = td.dataset.num || null;
+      renderContratosMultiCliente();
+    });
+  }
 }
 
 function loadContratos(prefix, contratos = []) {
@@ -15896,6 +16252,7 @@ async function loadContratosTab(forceRefresh = false) {
   try {
     let registos = await loadRegistosParaContratos();
     if (!Array.isArray(registos)) registos = [];
+    try { await contratosLimparDuplicadosMesmoCliente(registos); } catch (e) { console.warn(e); }
     const dupsCt = detectarNumerosContratoDuplicados(registos);
     window._contratosDuplicados = dupsCt;
     const nRegsAll = registos.length;
@@ -15949,9 +16306,12 @@ async function loadContratosTab(forceRefresh = false) {
 
     // Compute table rows
     const rows = [];
+    const vistosCodNum = [];
     registos.forEach(r => {
       (r.contratos || []).forEach(c => {
         if (!c.inicio || !c.consumo || !c.duracao) return;
+        const numDisplay = (c.num || c.numero || r.contrato || '—');
+        if (!marcarContratoParSeNovo(vistosCodNum, r.cod, numDisplay)) return;
         const unidade = c.unidade || 'Capsulas';
         const tipo = unidade === 'Kg' ? 'GRÃO' : 'CAPSULAS';
         const consumoMes = parseFloat(c.consumo) || 0;
@@ -16014,7 +16374,7 @@ async function loadContratosTab(forceRefresh = false) {
 
         rows.push({
           cod: r.cod, nome: r.nome, vendedor: r.vendedor || '—',
-          contrato: (c.num || c.numero || r.contrato || '—'),
+          contrato: numDisplay,
           inicioFmt, duracao, fimFmt, unidade,
           totalContratado, consumoMes, mesesDecorridos,
           consumoEsperado, consumoReal,
@@ -16237,6 +16597,8 @@ function filtrarContratosVendedor() {
     : (document.getElementById('contratos-vendedor')?.value || '');
   let allRows = window._contratosAllRows;
   if (!allRows) { loadContratosTab(false); return; }
+  const seenPar = [];
+  allRows = allRows.filter(r => marcarContratoParSeNovo(seenPar, r.cod, r.contrato));
   if (typeof filterByUtilizadorActivo === 'function') {
     allRows = filterByUtilizadorActivo(allRows, r => r && r.vendedor);
   }
@@ -27867,7 +28229,8 @@ async function ctNext() {
   if (errs.length) { showToast(errs[0], 'error'); return; }
   if (ctCurrentStep === 1) {
     const num = (document.getElementById('ct_num_contrato')?.value || '').trim();
-    const dup = await erroSeContratoJaCriado(num);
+    const cod = (document.getElementById('ct_cod')?.value || '').trim();
+    const dup = await erroSeContratoJaCriado(num, { cod });
     if (dup) { showToast(dup, 'error'); return; }
   }
   ctGoto(ctCurrentStep + 1);
@@ -28103,7 +28466,8 @@ async function ctGerar() {
     return;
   }
   const numGerar = (document.getElementById('ct_num_contrato')?.value || '').trim();
-  const dupGerar = await erroSeContratoJaCriado(numGerar);
+  const codGerar = (document.getElementById('ct_cod')?.value || '').trim();
+  const dupGerar = await erroSeContratoJaCriado(numGerar, { cod: codGerar });
   if (dupGerar) {
     document.getElementById('ct_erros').style.display = 'block';
     document.getElementById('ct_erros').innerHTML = '<strong>' + dupGerar + '</strong>';
@@ -28432,8 +28796,8 @@ async function ctGuardarContratoSuapbase(data) {
   if (!cod) return;
 
   // Buscar o registo actual do cliente
-  const res = await fetch(SUPA_URL + '?cod=eq.' + encodeURIComponent(cod) + '&select=id,contratos,vendedor', {
-    headers: HEADERS
+  const res = await fetch(SUPA_URL + '?cod=eq.' + encodeURIComponent(cod) + '&select=id,cod,nome,contrato,contratos,vendedor', {
+    headers: typeof registosReadHeaders === 'function' ? registosReadHeaders() : HEADERS
   });
   if (!res.ok) return;
   let registos = await res.json();
@@ -28472,13 +28836,13 @@ async function ctGuardarContratoSuapbase(data) {
     prazo:    parseInt(g('ct_dias_num')) || 30,
   };
 
-  const dupSave = await erroSeContratoJaCriado(novoContrato.num);
-  if (dupSave) {
-    toast(dupSave, 'error');
+  const colapsados = colapsarContratosArray(contratosActuais, registo);
+  if (clienteJaTemNumero({ ...registo, contratos: colapsados.list }, novoContrato.num)) {
+    toast(msgContratoJaCriado(novoContrato.num, registo), 'error');
     return false;
   }
 
-  const contratosNovos = [...contratosActuais, novoContrato];
+  const contratosNovos = [...colapsados.list, novoContrato];
 
   // Também actualizar o campo contrato (nº de registo visível)
   const patch = await fetch(SUPA_URL + '?id=eq.' + registo.id, {
