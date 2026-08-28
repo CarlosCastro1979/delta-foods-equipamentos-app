@@ -4374,7 +4374,7 @@ async function salvarRegisto(opts = {}) {
   if (!isDist) {
     contratos = colapsarContratosArray(
       (contratos || []).map(c => ({ ...c, num: c.num || c.numero || contrato })),
-      { contrato }
+      { contrato, cod }
     ).list;
   }
 
@@ -4432,6 +4432,9 @@ async function salvarRegisto(opts = {}) {
       throw new Error(errMsg);
     }
     toast(tem_comodato === false ? '✅ Distribuidor registado sem comodato.' : '✅ Registo guardado!');
+    if (!isDist) {
+      try { await propagarContratosPdvMulti(cod, contratos); } catch (pe) { console.warn('propagar PDV Multi', pe); }
+    }
     // Actualizar memória imediatamente (fonte local alinhada com o POST)
     let memRegs = [];
     try {
@@ -7698,21 +7701,59 @@ function renderContratosPorRegistar() {
 
   lista.sort((a,b) => (a.vendedor||'').localeCompare(b.vendedor||'') || (a.nome||'').localeCompare(b.nome||''));
 
+  const vendDrill = window._contratosPrFiltroVend || '';
+  if (vendDrill) {
+    const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vendDrill) : vendDrill;
+    lista = lista.filter(r =>
+      (typeof normNomeUtilizador === 'function' ? normNomeUtilizador(r.vendedor) : r.vendedor) === vn
+    );
+  }
+
   if (!lista.length) {
-    cont.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">✅ Todos os clientes com equipamento profissional já têm contrato registado!</div>';
+    const bannerVazio = vendDrill
+      ? `<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="font-size:12px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;padding:4px 10px;border-radius:16px;font-weight:600;">Filtro: ${escHtml(vendDrill)}</span>
+          <button type="button" onclick="limparFiltroContratosPorRegistar()" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">✕ Limpar filtro</button>
+        </div>`
+      : '';
+    cont.innerHTML = bannerVazio + '<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px;">✅ Todos os clientes com equipamento profissional já têm contrato registado!</div>';
     return;
   }
 
-  // Resumo por vendedor
+  // Resumo por vendedor (sobre a lista sem drill, para os totais clicáveis)
+  const listaResumo = (() => {
+    let base = window._contratosPorRegistar;
+    if (typeof filterByUtilizadorActivo === 'function') base = filterByUtilizadorActivo(base);
+    if (vendFilt) {
+      const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vendFilt) : vendFilt;
+      base = base.filter(r =>
+        (typeof normNomeUtilizador === 'function' ? normNomeUtilizador(r.vendedor) : r.vendedor) === vn
+      );
+    }
+    return base;
+  })();
   const porVend = {};
-  lista.forEach(r => {
+  listaResumo.forEach(r => {
     const v = r.vendedor || '—';
     if (!porVend[v]) porVend[v] = 0;
     porVend[v]++;
   });
 
-  let html = `<div style="margin-bottom:16px;display:inline-block;min-width:300px;">
-    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo</div>
+  const banner = vendDrill
+    ? `<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:12px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;padding:4px 10px;border-radius:16px;font-weight:600;">Filtro: ${escHtml(vendDrill)}</span>
+        <button type="button" onclick="limparFiltroContratosPorRegistar()" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">✕ Limpar filtro</button>
+      </div>`
+    : '';
+
+  const cellN = (n, vend) => {
+    if (!n) return `<td style="padding:7px 14px;text-align:center;color:var(--muted);">—</td>`;
+    const active = vendDrill && (typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vendDrill) === normNomeUtilizador(vend) : vendDrill === vend);
+    return `<td style="padding:7px 14px;text-align:center;font-weight:700;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px;${active ? 'background:#fff7ed;outline:2px solid #fdba74;outline-offset:-2px;' : ''}" data-pr-vend="${escHtml(vend)}" title="Ver estes ${n} clientes">${n}</td>`;
+  };
+
+  let html = banner + `<div style="margin-bottom:16px;display:inline-block;min-width:300px;">
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica nos números para filtrar)</span></div>
     <table style="border-collapse:collapse;font-size:13px;width:100%;">
       <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
         <th style="padding:7px 14px;text-align:left;font-weight:600;">Vendedor</th>
@@ -7720,12 +7761,12 @@ function renderContratosPorRegistar() {
       </tr></thead><tbody>
       ${Object.entries(porVend).sort((a,b)=>b[1]-a[1]).map(([v,n],i)=>`
       <tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
-        <td style="padding:7px 14px;font-weight:500;">${v}</td>
-        <td style="padding:7px 14px;text-align:center;font-weight:700;color:var(--accent);">${n}</td>
+        <td style="padding:7px 14px;font-weight:500;cursor:pointer;" data-pr-vend="${escHtml(v)}">${escHtml(v)}</td>
+        ${cellN(n, v)}
       </tr>`).join('')}
       <tr style="border-top:2px solid var(--border);background:#f9f9f9;">
         <td style="padding:7px 14px;font-weight:700;">Total</td>
-        <td style="padding:7px 14px;text-align:center;font-weight:700;color:var(--accent);">${lista.length}</td>
+        <td style="padding:7px 14px;text-align:center;font-weight:700;color:var(--accent);">${listaResumo.length}</td>
       </tr></tbody>
     </table>
   </div>
@@ -7737,20 +7778,237 @@ function renderContratosPorRegistar() {
         <th style="padding:9px 12px;text-align:left;font-weight:600;white-space:nowrap;">Cód.</th>
         <th style="padding:9px 12px;text-align:left;font-weight:600;">Cliente</th>
         <th style="padding:9px 12px;text-align:left;font-weight:600;">Equipamento(s)</th>
+        <th style="padding:9px 12px;text-align:center;font-weight:600;">PDV</th>
+        <th style="padding:9px 12px;text-align:center;font-weight:600;">Acção</th>
       </tr></thead><tbody>`;
 
   lista.forEach((r, i) => {
     const equipsStr = r.equipamentos.map(e => e.tipo + (e.tag ? ` #${e.tag}` : '')).join(', ');
+    const namePdv = 'pr-pdv-' + String(r.cod);
     html += `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
-      <td style="padding:8px 12px;font-size:12px;color:var(--muted);white-space:nowrap;">${r.vendedor}</td>
-      <td style="padding:8px 12px;font-size:12px;color:var(--muted);">${r.cod}</td>
-      <td style="padding:8px 12px;font-weight:500;">${r.nome}</td>
-      <td style="padding:8px 12px;font-size:12px;">${equipsStr}</td>
+      <td style="padding:8px 12px;font-size:12px;color:var(--muted);white-space:nowrap;">${escHtml(r.vendedor)}</td>
+      <td style="padding:8px 12px;font-size:12px;color:var(--muted);">${escHtml(r.cod)}</td>
+      <td style="padding:8px 12px;font-weight:500;">${escHtml(r.nome)}</td>
+      <td style="padding:8px 12px;font-size:12px;">${escHtml(equipsStr)}</td>
+      <td style="padding:8px 12px;text-align:center;white-space:nowrap;font-size:11px;">
+        <label style="cursor:pointer;margin-right:8px;"><input type="radio" name="${escHtml(namePdv)}" value="unico" checked> Único</label>
+        <label style="cursor:pointer;"><input type="radio" name="${escHtml(namePdv)}" value="multi"> Multi</label>
+      </td>
+      <td style="padding:8px 12px;text-align:center;white-space:nowrap;">
+        <button type="button" class="btn btn-primary btn-sm" data-reg-cod="${escHtml(r.cod)}" onclick="abrirRegistarContrato(this.dataset.regCod)" style="font-size:12px;padding:5px 12px;">Registar</button>
+      </td>
     </tr>`;
   });
 
   html += '</tbody></table></div>';
   cont.innerHTML = html;
+  if (!cont._prResumoListener) {
+    cont._prResumoListener = true;
+    cont.addEventListener('click', function(e) {
+      const cell = e.target.closest('[data-pr-vend]');
+      if (!cell || !cont.contains(cell) || e.target.closest('button.btn')) return;
+      window._contratosPrFiltroVend = cell.getAttribute('data-pr-vend') || null;
+      renderContratosPorRegistar();
+    });
+  }
+}
+
+function limparFiltroContratosPorRegistar() {
+  window._contratosPrFiltroVend = null;
+  renderContratosPorRegistar();
+}
+
+function ctRegPdvToggle() {
+  const multi = document.getElementById('ct-reg-pdv-multi')?.checked;
+  const box = document.getElementById('ct-reg-multi-box');
+  if (box) box.style.display = multi ? 'block' : 'none';
+  if (multi) ctRegRenderCods();
+}
+
+function ctRegRenderCods() {
+  const list = document.getElementById('ct-reg-cods-list');
+  if (!list) return;
+  const principal = String(document.getElementById('ct-reg-cod')?.value || '').trim();
+  const q = String(document.getElementById('ct-reg-cod-search')?.value || '').trim().toLowerCase();
+  const extras = Array.isArray(window._ctRegCodsExtra) ? window._ctRegCodsExtra : [];
+  const pend = Array.isArray(window._contratosPorRegistar) ? window._contratosPorRegistar : [];
+  const seen = new Set();
+  const rows = [];
+  const add = (cod, nome, vend) => {
+    const s = String(cod || '').trim();
+    if (!s) return;
+    const k = typeof normCod === 'function' ? String(normCod(s)) : s;
+    if (seen.has(k)) return;
+    if (principal && (s === principal || k === String(typeof normCod === 'function' ? normCod(principal) : principal))) return;
+    seen.add(k);
+    rows.push({ cod: s, nome: nome || s, vendedor: vend || '' });
+  };
+  pend.forEach(r => add(r.cod, r.nome, r.vendedor));
+  extras.forEach(r => add(r.cod, r.nome, r.vendedor));
+  const shown = q
+    ? rows.filter(r => `${r.cod} ${r.nome} ${r.vendedor}`.toLowerCase().includes(q))
+    : rows;
+  if (!shown.length) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px 0;">Nenhum outro código por registar. Pesquisa ou adiciona um código.</div>';
+    return;
+  }
+  const checked = new Set(window._ctRegCodsSel || []);
+  list.innerHTML = shown.slice(0, 40).map(r => `
+    <label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px;cursor:pointer;">
+      <input type="checkbox" data-ct-reg-cod="${escHtml(r.cod)}" ${checked.has(String(r.cod)) ? 'checked' : ''} onchange="ctRegToggleCod(this)">
+      <span><strong>${escHtml(r.cod)}</strong> · ${escHtml(r.nome)}${r.vendedor ? ` <span style="color:var(--muted)">(${escHtml(r.vendedor)})</span>` : ''}</span>
+    </label>`).join('');
+}
+
+function ctRegToggleCod(el) {
+  const cod = String(el.getAttribute('data-ct-reg-cod') || '').trim();
+  if (!cod) return;
+  const set = new Set(window._ctRegCodsSel || []);
+  if (el.checked) set.add(cod); else set.delete(cod);
+  window._ctRegCodsSel = [...set];
+}
+
+async function ctRegAddCodExtra() {
+  const inp = document.getElementById('ct-reg-cod-extra');
+  const raw = String(inp && inp.value || '').trim();
+  if (!raw) return;
+  try {
+    const found = typeof findRegistoByCod === 'function' ? await findRegistoByCod(raw) : null;
+    const item = found
+      ? { cod: found.cod, nome: found.nome, vendedor: found.vendedor }
+      : { cod: raw, nome: raw, vendedor: '' };
+    window._ctRegCodsExtra = [...(window._ctRegCodsExtra || []), item];
+    window._ctRegCodsSel = [...new Set([...(window._ctRegCodsSel || []), String(item.cod)])];
+    if (inp) inp.value = '';
+    ctRegRenderCods();
+  } catch (e) {
+    toast('Não foi possível adicionar o código: ' + (e.message || e), 'error');
+  }
+}
+
+function abrirRegistarContrato(cod, pdvPref) {
+  const lista = Array.isArray(window._contratosPorRegistar) ? window._contratosPorRegistar : [];
+  const row = lista.find(r => String(r.cod) === String(cod));
+  if (!row) { toast('Cliente não encontrado na lista por registar.', 'error'); return; }
+  window._ctRegCodsSel = [];
+  window._ctRegCodsExtra = [];
+  document.getElementById('ct-reg-cod').value = row.cod;
+  document.getElementById('ct-reg-nome').textContent = `${row.cod} · ${row.nome}`;
+  document.getElementById('ct-reg-equips').textContent = (row.equipamentos || []).map(e => e.tipo + (e.tag ? ' #' + e.tag : '')).join(', ') || '—';
+  document.getElementById('ct-reg-num').value = '';
+  document.getElementById('ct-reg-inicio').value = '';
+  document.getElementById('ct-reg-duracao').value = '';
+  document.getElementById('ct-reg-consumo').value = '';
+  document.getElementById('ct-reg-unidade').value = 'Capsulas';
+  if (!pdvPref) {
+    const rad = document.querySelector('input[name="pr-pdv-' + String(cod) + '"]:checked');
+    if (rad) pdvPref = rad.value;
+  }
+  const wantMulti = pdvPref === 'multi';
+  const unico = document.getElementById('ct-reg-pdv-unico');
+  if (unico) unico.checked = !wantMulti;
+  const multi = document.getElementById('ct-reg-pdv-multi');
+  if (multi) multi.checked = wantMulti;
+  ctRegPdvToggle();
+  document.getElementById('ct-reg-status').textContent = '';
+  document.getElementById('ct-registar-modal').style.display = 'flex';
+}
+
+function fecharRegistarContrato() {
+  const m = document.getElementById('ct-registar-modal');
+  if (m) m.style.display = 'none';
+}
+
+function ctRegCodsEscolhidos() {
+  const principal = String(document.getElementById('ct-reg-cod')?.value || '').trim();
+  const multi = document.getElementById('ct-reg-pdv-multi')?.checked;
+  if (!multi) return contratoPdvNormCods([], principal);
+  return contratoPdvNormCods(window._ctRegCodsSel || [], principal);
+}
+
+async function guardarRegistarContrato() {
+  const principal = String(document.getElementById('ct-reg-cod')?.value || '').trim();
+  const num = String(document.getElementById('ct-reg-num')?.value || '').trim().toUpperCase();
+  const inicio = String(document.getElementById('ct-reg-inicio')?.value || '').trim();
+  const duracao = parseInt(document.getElementById('ct-reg-duracao')?.value, 10) || 0;
+  const consumo = parseFloat(document.getElementById('ct-reg-consumo')?.value) || 0;
+  const unidade = document.getElementById('ct-reg-unidade')?.value || 'Capsulas';
+  const pdv = document.getElementById('ct-reg-pdv-multi')?.checked ? 'multi' : 'unico';
+  const statusEl = document.getElementById('ct-reg-status');
+  const btn = document.getElementById('ct-reg-guardar');
+  if (!principal) { toast('Código em falta.', 'error'); return; }
+  if (!num) { toast('Indica o nº do contrato.', 'error'); return; }
+  const vInicio = validarDataContrato(inicio);
+  if (!vInicio.ok) { toast(vInicio.erro, 'error'); return; }
+  if (!inicio) { toast('Indica o início do contrato.', 'error'); return; }
+  if (duracao < 1) { toast('Indica a duração em meses.', 'error'); return; }
+  if (!(consumo > 0)) { toast('Indica o consumo mensal.', 'error'); return; }
+  const cods = ctRegCodsEscolhidos();
+  if (pdv === 'multi' && cods.length < 2) {
+    toast('PDV Multi precisa de pelo menos mais um código de cliente.', 'error');
+    return;
+  }
+
+  const novo = {
+    num, inicio, duracao, consumo, unidade, pdv,
+  };
+  if (pdv === 'multi') {
+    novo.cods = cods;
+    novo.principal = principal;
+  }
+
+  if (statusEl) { statusEl.textContent = 'A guardar...'; statusEl.style.color = 'var(--muted)'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'A guardar...'; }
+  try {
+    const hdr = typeof registosReadHeaders === 'function' ? registosReadHeaders() : { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY };
+    const patchHdr = {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    };
+    for (const cod of cods) {
+      const res = await fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,cod,nome,vendedor,contrato,contratos`, { headers: hdr });
+      if (!res.ok) throw new Error('HTTP ' + res.status + ' a ler ' + cod);
+      let regs = await res.json();
+      if (!Array.isArray(regs) || !regs.length) throw new Error('Registo não encontrado: ' + cod);
+      if (typeof filterByCanalActivoVendedor === 'function') regs = filterByCanalActivoVendedor(regs);
+      if (!regs.length) throw new Error('Sem permissão no código ' + cod);
+      const reg = regs[0];
+      if (typeof podeEditarRegisto === 'function' && !podeEditarRegisto(reg.vendedor)) {
+        throw new Error('Sem permissão para guardar contrato em ' + cod);
+      }
+      if (typeof clienteJaTemNumero === 'function' && clienteJaTemNumero(reg, num)) {
+        if (String(reg.cod) !== String(principal) && String(normCod(reg.cod)) !== String(normCod(principal))) {
+          continue;
+        }
+        throw new Error(typeof msgContratoJaCriado === 'function' ? msgContratoJaCriado(num, reg) : ('Este cliente já tem o contrato ' + num));
+      }
+      const actual = Array.isArray(reg.contratos) ? reg.contratos : [];
+      const contratosNovos = [...actual, { ...novo }];
+      const patchBody = { contratos: contratosNovos };
+      if (!reg.contrato) patchBody.contrato = num;
+      const patch = await fetch(`${SUPA_URL}?id=eq.${encodeURIComponent(reg.id)}`, {
+        method: 'PATCH',
+        headers: patchHdr,
+        body: JSON.stringify(patchBody),
+      });
+      if (!patch.ok) throw new Error('PATCH HTTP ' + patch.status + ' em ' + cod);
+    }
+    try { if (typeof clearRegistosCache === 'function') clearRegistosCache(); } catch (_) {}
+    try { if (typeof clearContratosCache === 'function') clearContratosCache(); } catch (_) {}
+    window._contratosPorRegistar = null;
+    window._contratosAllRows = null;
+    toast('✅ Contrato ' + num + ' registado' + (pdv === 'multi' ? ' (PDV Multi, ' + cods.length + ' casas)' : '') + '.');
+    fecharRegistarContrato();
+    loadContratosPorRegistar();
+  } catch (e) {
+    console.warn(e);
+    toast('Erro a registar: ' + (e.message || e), 'error');
+    if (statusEl) { statusEl.textContent = e.message || String(e); statusEl.style.color = 'var(--danger)'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar contrato'; }
+  }
 }
 
 async function exportContratosPorRegistarExcel() {
@@ -7893,7 +8151,7 @@ async function salvarEdicao() {
   if (!isDist) {
     contratos = colapsarContratosArray(
       (contratos || []).map(c => ({ ...c, num: c.num || c.numero || contrato })),
-      { contrato }
+      { contrato, cod }
     ).list;
   }
 
@@ -7928,6 +8186,9 @@ async function salvarEdicao() {
     }
     if (!res.ok) throw new Error(await res.text());
     toast('✅ Registo atualizado!');
+    if (!isDist) {
+      try { await propagarContratosPdvMulti(cod, contratos); } catch (pe) { console.warn('propagar PDV Multi', pe); }
+    }
     clearRegistosCache();
     closeEdit();
     loadData(true);
@@ -15482,6 +15743,17 @@ function addContratoRow(prefix, data = {}) {
           <option value="Kg" ${data.unidade==='Kg'?'selected':''}>Kg</option>
         </select>
       </div>
+    </div>
+    <div style="margin-top:8px">
+      <label style="font-size:11px;color:var(--muted)">PDV</label>
+      <div style="display:flex;gap:14px;margin-top:4px;font-size:12px;">
+        <label style="cursor:pointer;display:flex;align-items:center;gap:4px;"><input type="radio" name="pdv-${prefix}-${idx}" data-field="pdv" value="unico" ${(data.pdv||'unico')!=='multi'?'checked':''} onchange="this.closest('.contrato-row').querySelector('[data-pdv-cods]').style.display='none'"> PDV único</label>
+        <label style="cursor:pointer;display:flex;align-items:center;gap:4px;"><input type="radio" name="pdv-${prefix}-${idx}" data-field="pdv" value="multi" ${data.pdv==='multi'?'checked':''} onchange="this.closest('.contrato-row').querySelector('[data-pdv-cods]').style.display='block'"> PDV Multi</label>
+      </div>
+      <div data-pdv-cods style="display:${data.pdv==='multi'?'block':'none'};margin-top:6px;">
+        <label style="font-size:11px;color:var(--muted)">Códigos das casas (separados por vírgula)</label>
+        <input class="form-input" style="padding:6px 8px;font-size:13px" data-field="cods" placeholder="Ex: 442779, 748174" value="${Array.isArray(data.cods)?data.cods.join(', '):(data.cods||'')}">
+      </div>
     </div>`;
   list.appendChild(div);
 }
@@ -15498,12 +15770,26 @@ function validarDataContrato(valor) {
 
 function getContratos(prefix) {
   const rows = document.querySelectorAll(`#${prefix}-contratos-list .contrato-row`);
-  return [...rows].map(row => ({
-    inicio:  row.querySelector('[data-field="inicio"]').value,
-    duracao: row.querySelector('[data-field="duracao"]').value,
-    consumo: row.querySelector('[data-field="consumo"]').value,
-    unidade: row.querySelector('[data-field="unidade"]').value,
-  })).filter(c => c.inicio || c.consumo || c.duracao);
+  const own = (document.getElementById(`${prefix}-cod`) || {}).value || '';
+  return [...rows].map(row => {
+    const pdvEl = row.querySelector('[data-field="pdv"]:checked');
+    const pdv = (pdvEl && pdvEl.value === 'multi') ? 'multi' : 'unico';
+    const extra = String(row.querySelector('[data-field="cods"]')?.value || '')
+      .split(/[,;]/).map(s => s.trim()).filter(Boolean);
+    const cods = pdv === 'multi' ? contratoPdvNormCods(extra, own) : [];
+    const o = {
+      inicio:  row.querySelector('[data-field="inicio"]').value,
+      duracao: row.querySelector('[data-field="duracao"]').value,
+      consumo: row.querySelector('[data-field="consumo"]').value,
+      unidade: row.querySelector('[data-field="unidade"]').value,
+      pdv,
+    };
+    if (pdv === 'multi') {
+      o.cods = cods;
+      o.principal = String(own || (cods[0] || '')).trim();
+    }
+    return o;
+  }).filter(c => c.inicio || c.consumo || c.duracao);
 }
 
 function validarContratos(contratos) {
@@ -15512,6 +15798,9 @@ function validarContratos(contratos) {
     if (c.inicio) {
       const v = validarDataContrato(c.inicio);
       if (!v.ok) return `Contrato ${i+1}: ${v.erro}`;
+    }
+    if ((c.pdv === 'multi' || c.pdv === 'Multi') && (!Array.isArray(c.cods) || c.cods.length < 2)) {
+      return `Contrato ${i+1}: PDV Multi precisa de pelo menos mais um código de cliente.`;
     }
   }
   return null; // sem erros
@@ -15559,6 +15848,136 @@ function numContratoDaLinha(c, r) {
   return String((c && (c.num || c.numero)) || (r && r.contrato) || '').trim();
 }
 
+function contratoPdvNormCods(list, own) {
+  const out = [];
+  const seen = new Set();
+  const add = (c) => {
+    const s = String(c || '').trim();
+    if (!s) return;
+    const k = typeof normCod === 'function' ? String(normCod(s)) : s;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(s);
+  };
+  add(own);
+  (Array.isArray(list) ? list : String(list || '').split(/[,;]/)).forEach(add);
+  return out;
+}
+
+function contratoPdvTipo(c) {
+  if (!c || typeof c !== 'object') return 'unico';
+  if (c.pdv === 'multi' || c.pdv === 'Multi' || c.pdv === true) return 'multi';
+  if (Array.isArray(c.cods) && c.cods.filter(Boolean).length > 1) return 'multi';
+  return 'unico';
+}
+
+function contratoPdvCods(c, r) {
+  const own = r && r.cod;
+  if (contratoPdvTipo(c) === 'multi') return contratoPdvNormCods(c.cods, own);
+  return contratoPdvNormCods([], own);
+}
+
+function contratoPdvChave(c, r) {
+  const num = typeof normNumContrato === 'function'
+    ? normNumContrato((c && (c.num || c.numero)) || (r && r.contrato) || '')
+    : String((c && (c.num || c.numero)) || '').toUpperCase();
+  const nrm = (x) => (typeof normCod === 'function' ? String(normCod(x)) : String(x || ''));
+  const cods = contratoPdvCods(c, r).map(nrm).filter(Boolean).sort();
+  if (contratoPdvTipo(c) === 'multi' && cods.length > 1) return 'M|' + num + '|' + cods.join(',');
+  return 'U|' + nrm(r && r.cod) + '|' + num;
+}
+
+function contratoPdvPrincipalCod(c, r) {
+  const p = c && (c.principal || (Array.isArray(c.cods) && c.cods[0]));
+  if (p) return String(p).trim();
+  return String((r && r.cod) || '').trim();
+}
+
+/** Replica o contrato PDV Multi nos códigos associados para saírem de Por Registar. */
+async function propagarContratosPdvMulti(ownCod, contratos) {
+  const list = Array.isArray(contratos) ? contratos : [];
+  const own = String(ownCod || '').trim();
+  if (!own || !list.length) return;
+  const ownK = typeof normCod === 'function' ? String(normCod(own)) : own;
+  const hdr = typeof registosReadHeaders === 'function'
+    ? registosReadHeaders()
+    : { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY };
+  const patchHdr = {
+    apikey: SUPA_KEY,
+    Authorization: 'Bearer ' + SUPA_KEY,
+    'Content-Type': 'application/json',
+    Prefer: 'return=minimal',
+  };
+  const avisos = [];
+  let patched = 0;
+  for (const c of list) {
+    if (typeof contratoPdvTipo === 'function' && contratoPdvTipo(c) !== 'multi') continue;
+    const num = String((c && (c.num || c.numero)) || '').trim();
+    const cods = contratoPdvNormCods(c && c.cods, own);
+    if (cods.length < 2) continue;
+    const novo = {
+      num, inicio: c.inicio, duracao: c.duracao, consumo: c.consumo, unidade: c.unidade,
+      pdv: 'multi', cods, principal: c.principal || own,
+    };
+    if (c.lote) novo.lote = c.lote;
+    if (c.prazo) novo.prazo = c.prazo;
+    for (const cod of cods) {
+      const k = typeof normCod === 'function' ? String(normCod(cod)) : String(cod);
+      if (k === ownK) continue;
+      try {
+        const res = await fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,cod,nome,vendedor,contrato,contratos`, { headers: hdr });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        let regs = await res.json();
+        if (!Array.isArray(regs) || !regs.length) throw new Error('Registo não encontrado: ' + cod);
+        if (typeof filterByCanalActivoVendedor === 'function') regs = filterByCanalActivoVendedor(regs);
+        if (!regs.length) throw new Error('Sem permissão no código ' + cod);
+        const reg = regs[0];
+        if (typeof podeEditarRegisto === 'function' && !podeEditarRegisto(reg.vendedor)) {
+          throw new Error('Sem permissão para guardar contrato em ' + cod);
+        }
+        if (typeof clienteJaTemNumero === 'function' && clienteJaTemNumero(reg, num)) continue;
+        const actual = Array.isArray(reg.contratos) ? reg.contratos : [];
+        const patchBody = { contratos: [...actual, { ...novo }] };
+        if (!reg.contrato && num) patchBody.contrato = num;
+        const patch = await fetch(`${SUPA_URL}?id=eq.${encodeURIComponent(reg.id)}`, {
+          method: 'PATCH',
+          headers: patchHdr,
+          body: JSON.stringify(patchBody),
+        });
+        if (!patch.ok) throw new Error('PATCH HTTP ' + patch.status);
+        patched++;
+      } catch (e) {
+        avisos.push(String(cod) + ': ' + (e.message || e));
+      }
+    }
+  }
+  if (patched) {
+    try { if (typeof clearRegistosCache === 'function') clearRegistosCache(); } catch (_) {}
+    try { if (typeof clearContratosCache === 'function') clearContratosCache(); } catch (_) {}
+    window._contratosPorRegistar = null;
+  }
+  if (avisos.length) {
+    toast('Contrato guardado, mas algumas casas não atualizaram: ' + avisos.join('; '), 'warn');
+  }
+}
+
+function contratoHtmlCodCliente(r) {
+  const multi = r && r.pdv === 'multi' && Array.isArray(r.cods) && r.cods.length > 1;
+  const esc = typeof escHtml === 'function' ? escHtml : (s => String(s || ''));
+  const badge = multi
+    ? ' <span style="background:#eff6ff;color:#1d4ed8;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;">PDV Multi</span>'
+    : '';
+  const extra = multi ? r.cods.length - 1 : 0;
+  const nomeExtra = extra > 0
+    ? ` <span style="color:var(--muted);font-weight:400;font-size:11px">(+${extra} casa${extra > 1 ? 's' : ''})</span>`
+    : '';
+  return {
+    codHtml: esc(multi ? r.cods.join(', ') : String((r && r.cod) || '')) + badge,
+    nomeHtml: esc((r && r.nome) || '') + nomeExtra,
+    titleNome: multi && Array.isArray(r.nomes) && r.nomes.length ? r.nomes.join(' · ') : ((r && r.nome) || ''),
+  };
+}
+
 function contratoLinhaTemAnexo(docs, num) {
   if (!num || isNumContratoPlaceholder(num)) return false;
   if (typeof contratoDocsCampo === 'function') {
@@ -15590,6 +16009,7 @@ function scoreLinhaContrato(c, r) {
   const num = numContratoDaLinha(c, r);
   if (contratoLinhaTemAnexo(r && r.docs, num)) s += 8;
   if (r && r.contrato && numsContratoIguais(c.num || c.numero, r.contrato)) s += 2;
+  if (typeof contratoPdvTipo === 'function' && contratoPdvTipo(c) === 'multi') s += 4;
   return s;
 }
 
@@ -15600,6 +16020,23 @@ function escolherMelhorLinhaContrato(items, r) {
   const best = { ...ranked[0] };
   if (!best.num && !best.numero && r && r.contrato && !isNumContratoPlaceholder(r.contrato)) {
     best.num = String(r.contrato).trim();
+  }
+  if (typeof contratoPdvTipo === 'function' && typeof contratoPdvNormCods === 'function') {
+    let pdv = 'unico';
+    let allCods = [];
+    let principal = best.principal;
+    list.forEach(it => {
+      if (contratoPdvTipo(it) === 'multi') {
+        pdv = 'multi';
+        allCods = contratoPdvNormCods([].concat(allCods, it.cods || []), r && r.cod);
+        if (!principal && it.principal) principal = it.principal;
+      }
+    });
+    if (pdv === 'multi') {
+      best.pdv = 'multi';
+      best.cods = allCods.length ? allCods : contratoPdvNormCods(best.cods, r && r.cod);
+      best.principal = principal || (r && r.cod) || (best.cods && best.cods[0]) || '';
+    }
   }
   return best;
 }
@@ -16270,17 +16707,37 @@ async function loadContratosTab(forceRefresh = false) {
       return;
     }
 
+    const byCodReg = new Map();
+    registos.forEach(rr => {
+      byCodReg.set(String(rr.cod), rr);
+      if (typeof normCod === 'function') byCodReg.set(String(normCod(rr.cod)), rr);
+    });
+
     const codSet = new Set();
-    for (let i = 0; i < registos.length; i++) {
-      const fam = typeof getCodsFamilia === 'function' ? getCodsFamilia(registos[i].cod) : [registos[i].cod];
-      for (const c of fam) {
-        const s = String(c || '').trim();
-        if (s) codSet.add(s);
-        if (typeof normalizaCodSC === 'function') {
-          const nrm = normalizaCodSC(s);
-          if (nrm) codSet.add(nrm);
-        }
+    const addCodVenda = (c) => {
+      const s = String(c || '').trim();
+      if (!s) return;
+      codSet.add(s);
+      if (typeof normalizaCodSC === 'function') {
+        const nrm = normalizaCodSC(s);
+        if (nrm) codSet.add(nrm);
       }
+      if (typeof getCodsFamilia === 'function') {
+        getCodsFamilia(s).forEach(x => {
+          const t = String(x || '').trim();
+          if (t) {
+            codSet.add(t);
+            if (typeof normalizaCodSC === 'function') {
+              const n2 = normalizaCodSC(t);
+              if (n2) codSet.add(n2);
+            }
+          }
+        });
+      }
+    };
+    for (let i = 0; i < registos.length; i++) {
+      addCodVenda(registos[i].cod);
+      (registos[i].contratos || []).forEach(ct => contratoPdvCods(ct, registos[i]).forEach(addCodVenda));
     }
     const [vendas, vendasN] = await Promise.all([
       getVendasParaContratos(codSet),
@@ -16300,14 +16757,18 @@ async function loadContratosTab(forceRefresh = false) {
       });
     });
 
-    // Compute table rows
+    // Compute table rows (PDV Multi = 1 linha, consumos reais somados)
     const rows = [];
     const vistosCodNum = [];
+    const vistosPdv = new Set();
     registos.forEach(r => {
       (r.contratos || []).forEach(c => {
         if (!c.inicio || !c.consumo || !c.duracao) return;
         const numDisplay = (c.num || c.numero || r.contrato || '—');
-        if (!marcarContratoParSeNovo(vistosCodNum, r.cod, numDisplay)) return;
+        const chavePdv = contratoPdvChave(c, r);
+        if (vistosPdv.has(chavePdv)) return;
+        vistosPdv.add(chavePdv);
+        if (!marcarContratoParSeNovo(vistosCodNum, contratoPdvPrincipalCod(c, r) || r.cod, numDisplay)) return;
         const unidade = c.unidade || 'Capsulas';
         const tipo = unidade === 'Kg' ? 'GRÃO' : 'CAPSULAS';
         const consumoMes = parseFloat(c.consumo) || 0;
@@ -16327,10 +16788,13 @@ async function loadContratosTab(forceRefresh = false) {
         mesesDecorridos = Math.max(0, Math.min(mesesDecorridos, duracao));
 
         const consumoEsperado = consumoMes * mesesDecorridos;
-        // Only count sales from contract start date onwards, matching tipo
-        // Somar vendas de todos os códigos da família (pai + filho)
-        // NOTA: usar 'codFam' para não colidir com 'c' do forEach do contrato
-        const familia = getCodsFamilia(r.cod);
+        const pdv = contratoPdvTipo(c);
+        const pdvCods = contratoPdvCods(c, r);
+        const familia = new Set();
+        pdvCods.forEach(codPdv => {
+          const fam = typeof getCodsFamilia === 'function' ? getCodsFamilia(codPdv) : [codPdv];
+          fam.forEach(x => familia.add(String(x)));
+        });
         const vendasFamilia = [...familia].flatMap(codFam => vendasPorCod[codFam] || []);
         // Deduplica por id para evitar contar a mesma venda duas vezes (cod original + normalizado)
         const vendasUnicas = Object.values(
@@ -16368,9 +16832,20 @@ async function loadContratosTab(forceRefresh = false) {
         // 3. Sem consumo: consumo real <= 50% do esperado YTD (muito abaixo do ritmo)
         else if (consumoEsperado > 0 && consumoReal <= consumoEsperado * 0.5) alerta = 'sem_consumo';
 
+        const principalCod = contratoPdvPrincipalCod(c, r) || r.cod;
+        const principalReg = byCodReg.get(String(principalCod))
+          || (typeof normCod === 'function' ? byCodReg.get(String(normCod(principalCod))) : null)
+          || r;
+        const nomes = pdvCods.map(cd => {
+          const hit = byCodReg.get(String(cd))
+            || (typeof normCod === 'function' ? byCodReg.get(String(normCod(cd))) : null);
+          return (hit && hit.nome) || String(cd);
+        });
+
         rows.push({
-          cod: r.cod, nome: r.nome, vendedor: r.vendedor || '—',
+          cod: principalReg.cod || r.cod, nome: principalReg.nome || r.nome, vendedor: principalReg.vendedor || r.vendedor || '—',
           contrato: numDisplay,
+          pdv, cods: pdvCods, nomes,
           inicioFmt, duracao, fimFmt, unidade,
           totalContratado, consumoMes, mesesDecorridos,
           consumoEsperado, consumoReal,
@@ -16448,9 +16923,10 @@ async function loadContratosTab(forceRefresh = false) {
         : r.alerta === 'sem_consumo'
         ? `<span style="background:#ffebee;color:#b71c1c;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🚫 Sem Consumo — Analisar</span>`
         : `<span style="color:#aaa;font-size:10px">—</span>`;
+      const cel = contratoHtmlCodCliente(r);
       html += `<tr>
-        <td style="${td}color:var(--muted)">${r.cod}</td>
-        <td class="col-nome" style="${td}font-weight:500;" title="${r.nome}">${r.nome}</td>
+        <td style="${td}color:var(--muted)">${cel.codHtml}</td>
+        <td class="col-nome" style="${td}font-weight:500;" title="${escHtml(cel.titleNome)}">${cel.nomeHtml}</td>
         <td style="${td}">${r.contrato}</td>
         <td style="${td}white-space:nowrap" title="${r.inicioFmt}">${r.inicioFmt}</td>
         <td style="${td}text-align:center">${r.duracao||'—'}</td>
@@ -16610,8 +17086,16 @@ function filtrarContratosVendedor() {
       (typeof normNomeUtilizador === 'function' ? normNomeUtilizador(r.vendedor) : r.vendedor) === vn
     );
   }
-  if (codFilt)  scopeRows = scopeRows.filter(r => String(r.cod||'').toLowerCase().includes(codFilt));
-  if (nomeFilt) scopeRows = scopeRows.filter(r => String(r.nome||'').toLowerCase().includes(nomeFilt));
+  if (codFilt) {
+    scopeRows = scopeRows.filter(r =>
+      [r.cod, ...(r.cods || [])].join(' ').toLowerCase().includes(codFilt)
+    );
+  }
+  if (nomeFilt) {
+    scopeRows = scopeRows.filter(r =>
+      [r.nome, ...(r.nomes || [])].join(' ').toLowerCase().includes(nomeFilt)
+    );
+  }
   if (numFilt)  scopeRows = scopeRows.filter(r => String(r.contrato||'').toLowerCase().includes(numFilt));
 
   const nivel = window._contratosNivelFiltro || null;
@@ -16694,9 +17178,10 @@ function filtrarContratosVendedor() {
       : r.alerta === 'sem_consumo'
       ? `<span style="background:#ffebee;color:#b71c1c;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🚫 Sem Consumo — Analisar</span>`
       : `<span style="color:#aaa;font-size:11px">—</span>`;
+    const cel = contratoHtmlCodCliente(r);
     html += `<tr>
-      <td style="${td}font-size:11px;color:var(--muted)">${r.cod}</td>
-      <td class="col-nome" style="${td}font-weight:500;" title="${r.nome}">${r.nome}</td>
+      <td style="${td}font-size:11px;color:var(--muted)">${cel.codHtml}</td>
+      <td class="col-nome" style="${td}font-weight:500;" title="${escHtml(cel.titleNome)}">${cel.nomeHtml}</td>
       <td style="${td}">${r.contrato}</td>
       <td style="${td}white-space:nowrap" title="${r.inicioFmt}">${r.inicioFmt}</td>
       <td style="${td}text-align:center">${r.duracao}</td>
@@ -16730,9 +17215,26 @@ function contratoDocsExtensao(name) {
   return m ? m[1].toLowerCase() : '';
 }
 
-function contratoDocFileName(tipo, originalName) {
+function contratoDocFileName(tipo, originalName, seq) {
   const ext = contratoDocsExtensao(originalName);
-  return (tipo === 'nf' ? 'nf' : 'contrato_assinado') + (ext || '');
+  const n = parseInt(seq, 10);
+  const suffix = (n > 1) ? ('_' + n) : '';
+  return (tipo === 'nf' ? 'nf' : 'contrato_assinado') + suffix + (ext || '');
+}
+
+function contratoDocsProximoNome(tipo, originalName, existingPathsOrNames) {
+  const used = new Set();
+  (existingPathsOrNames || []).forEach(p => {
+    const name = String(p || '').split('/').pop().toLowerCase();
+    if (name) used.add(name);
+  });
+  let seq = 1;
+  while (seq < 200) {
+    const name = contratoDocFileName(tipo, originalName, seq);
+    if (!used.has(name.toLowerCase())) return name;
+    seq++;
+  }
+  return contratoDocFileName(tipo, originalName, Date.now() % 100000);
 }
 
 function contratoDocsMime(file) {
@@ -16742,9 +17244,9 @@ function contratoDocsMime(file) {
 
 /** Qualquer ficheiro na pasta conta como anexado — não se lê nem valida o conteúdo. */
 function contratoDocsTipoFicheiro(file) {
-  const f = String(file || '').toLowerCase();
+  const f = String(file || '').toLowerCase().split('/').pop();
   if (!f) return null;
-  if (/^nf(\.|$)/.test(f)) return 'nf';
+  if (/^nf([._-]|$)/.test(f)) return 'nf';
   if (f.indexOf('contrato') >= 0 || f.indexOf('assinado') >= 0) return 'ct';
   if (/\.[a-z0-9]{1,8}$/i.test(f)) return 'ct';
   return null;
@@ -16758,10 +17260,61 @@ function contratoDocsIsStorageFile(it) {
   return /\.[A-Za-z0-9]{1,8}$/.test(it.name);
 }
 
+function contratoDocsNormLista(v) {
+  if (v === false || v == null || v === '') return [];
+  if (v === true) return [];
+  if (Array.isArray(v)) {
+    const out = [];
+    v.forEach(x => contratoDocsNormLista(x).forEach(p => out.push(p)));
+    return out;
+  }
+  const s = String(v).trim();
+  return s ? [s] : [];
+}
+
+function contratoDocsListaCanon(list) {
+  const u = [];
+  const seen = new Set();
+  (list || []).forEach(p => {
+    const s = String(p || '').trim();
+    if (!s || seen.has(s)) return;
+    seen.add(s);
+    u.push(s);
+  });
+  if (!u.length) return null;
+  if (u.length === 1) return u[0];
+  return u;
+}
+
 function contratoDocsValorOk(v) {
   if (v === false || v == null || v === '') return false;
   if (v === true) return true;
+  if (Array.isArray(v)) return v.some(x => contratoDocsValorOk(x));
   return String(v).trim().length > 0;
+}
+
+function contratoDocsContagem(v) {
+  if (!contratoDocsValorOk(v)) return 0;
+  const n = contratoDocsNormLista(v).length;
+  return n || 1;
+}
+
+function contratoDocsMergeValor(existing, incoming, op) {
+  const clear = incoming == null || incoming === false || incoming === '';
+  if (!op) op = clear ? 'set' : 'add';
+  if (op === 'remove') {
+    const drop = new Set(contratoDocsNormLista(incoming));
+    return contratoDocsListaCanon(contratoDocsNormLista(existing).filter(p => !drop.has(p)));
+  }
+  if (op === 'set') {
+    if (clear) return null;
+    if (incoming === true) return true;
+    if (Array.isArray(incoming)) return contratoDocsListaCanon(incoming);
+    return contratoDocsListaCanon(contratoDocsNormLista(incoming));
+  }
+  if (clear) return existing === undefined ? null : existing;
+  if (incoming === true) return contratoDocsValorOk(existing) ? existing : true;
+  return contratoDocsListaCanon(contratoDocsNormLista(existing).concat(contratoDocsNormLista(incoming)));
 }
 
 function numsContratoEquivalentes(a, b) {
@@ -16774,7 +17327,7 @@ function numsContratoEquivalentes(a, b) {
   return false;
 }
 
-/** 3 estados: caminho/true | false (apagado) | undefined (não há chave). */
+/** 3 estados: caminho/true/array | false (apagado) | undefined (não há chave). */
 function contratoDocsCampo(docsForCod, num, tipo) {
   if (!docsForCod || typeof docsForCod !== 'object') return undefined;
   let found;
@@ -16784,7 +17337,9 @@ function contratoDocsCampo(docsForCod, num, tipo) {
     const val = docsForCod[key];
     if (!val || typeof val !== 'object' || !(tipo in val)) continue;
     if (val[tipo] === false) explicitFalse = true;
-    else if (contratoDocsValorOk(val[tipo])) found = val[tipo];
+    else if (contratoDocsValorOk(val[tipo])) {
+      found = found == null ? val[tipo] : contratoDocsMergeValor(found, val[tipo], 'add');
+    }
   }
   if (contratoDocsValorOk(found)) return found;
   if (explicitFalse) return false;
@@ -16840,7 +17395,7 @@ async function contratoDocsListStorageFiles() {
   return files;
 }
 
-function contratoDocsMapSet(cod, num, tipo, value) {
+function contratoDocsMapSet(cod, num, tipo, value, op) {
   if (!window._contratosDocsMap) window._contratosDocsMap = {};
   const c = String(cod);
   if (!window._contratosDocsMap[c]) window._contratosDocsMap[c] = {};
@@ -16852,11 +17407,12 @@ function contratoDocsMapSet(cod, num, tipo, value) {
     if (!window._contratosDocsMap[c][k] || typeof window._contratosDocsMap[c][k] !== 'object') {
       window._contratosDocsMap[c][k] = {};
     }
-    window._contratosDocsMap[c][k][tipo] = value || false;
+    const next = contratoDocsMergeValor(window._contratosDocsMap[c][k][tipo], value, op);
+    window._contratosDocsMap[c][k][tipo] = (next == null) ? false : next;
   });
 }
 
-function contratoDocsApplyFlags(docs, num, tipo, value) {
+function contratoDocsApplyFlags(docs, num, tipo, value, op) {
   const src = (docs && typeof docs === 'object') ? docs : {};
   const display = String(num || '').trim();
   const keys = Object.keys(src);
@@ -16864,8 +17420,9 @@ function contratoDocsApplyFlags(docs, num, tipo, value) {
   keys.forEach(k => { if (numsContratoEquivalentes(k, display)) targets.add(k); });
   targets.forEach(k => {
     const cur = (src[k] && typeof src[k] === 'object') ? { ...src[k] } : {};
-    if (value) cur[tipo] = value;
-    else delete cur[tipo];
+    const next = contratoDocsMergeValor(cur[tipo], value, op);
+    if (next == null) delete cur[tipo];
+    else cur[tipo] = next;
     src[k] = cur;
   });
   return src;
@@ -16894,10 +17451,10 @@ async function contratoDocsPersistMany(updates) {
       const reg = regs[i];
       const docs = contratoDocsApplyFlags(
         (reg.docs && typeof reg.docs === 'object') ? { ...reg.docs } : {},
-        list[0].num, list[0].tipo, list[0].value
+        list[0].num, list[0].tipo, list[0].value, list[0].op
       );
       for (let j = 1; j < list.length; j++) {
-        contratoDocsApplyFlags(docs, list[j].num, list[j].tipo, list[j].value);
+        contratoDocsApplyFlags(docs, list[j].num, list[j].tipo, list[j].value, list[j].op);
       }
       const patch = await fetch(`${SUPA_URL}?id=eq.${encodeURIComponent(reg.id)}`, {
         method: 'PATCH',
@@ -16914,8 +17471,8 @@ async function contratoDocsPersistMany(updates) {
   }
 }
 
-async function contratoDocsPersistSupabase(cod, num, tipo, value) {
-  return contratoDocsPersistMany([{ cod, num, tipo, value }]);
+async function contratoDocsPersistSupabase(cod, num, tipo, value, op) {
+  return contratoDocsPersistMany([{ cod, num, tipo, value, op }]);
 }
 
 function contratoDocsRefreshVisible() {
@@ -16939,30 +17496,34 @@ async function contratoDocsHydrateFromStorage(rows, force) {
       const files = await contratoDocsListStorageFiles();
       const pending = [];
       let changed = 0;
+      const grouped = new Map();
       for (let i = 0; i < files.length; i++) {
         const parsed = contratoDocsParseStoragePath(files[i]);
         if (!parsed) continue;
         let localAll = {};
         try { localAll = JSON.parse(localStorage.getItem('delta_docs_' + parsed.cod) || '{}') || {}; } catch (_) {}
         if (contratoDocsCampo(localAll, parsed.num, parsed.tipo) === false) continue;
+        const gk = String(parsed.cod) + '\0' + parsed.num + '\0' + parsed.tipo;
+        if (!grouped.has(gk)) grouped.set(gk, { parsed, paths: [] });
+        grouped.get(gk).paths.push(parsed.path);
+      }
+      grouped.forEach(({ parsed, paths }) => {
         const byCod = (window._contratosDocsMap || {})[String(parsed.cod)] || {};
-        if (contratoDocsValorOk(contratoDocsCampo(byCod, parsed.num, parsed.tipo))) {
-          list.forEach(r => {
-            if (String(r.cod) === String(parsed.cod) && numsContratoEquivalentes(r.contrato, parsed.num)) {
-              contratoDocsMapSet(parsed.cod, r.contrato, parsed.tipo, parsed.path);
-            }
-          });
-          continue;
-        }
-        contratoDocsMapSet(parsed.cod, parsed.num, parsed.tipo, parsed.path);
+        const existing = contratoDocsCampo(byCod, parsed.num, parsed.tipo);
+        const union = contratoDocsListaCanon(contratoDocsNormLista(existing).concat(paths));
+        const before = JSON.stringify(contratoDocsNormLista(existing));
+        const after = JSON.stringify(contratoDocsNormLista(union));
+        contratoDocsMapSet(parsed.cod, parsed.num, parsed.tipo, union, 'set');
         list.forEach(r => {
           if (String(r.cod) === String(parsed.cod) && numsContratoEquivalentes(r.contrato, parsed.num)) {
-            contratoDocsMapSet(parsed.cod, r.contrato, parsed.tipo, parsed.path);
+            contratoDocsMapSet(parsed.cod, r.contrato, parsed.tipo, union, 'set');
           }
         });
-        changed++;
-        pending.push({ cod: parsed.cod, num: parsed.num, tipo: parsed.tipo, value: parsed.path });
-      }
+        if (before !== after) {
+          changed++;
+          pending.push({ cod: parsed.cod, num: parsed.num, tipo: parsed.tipo, value: union, op: 'set' });
+        }
+      });
       if (pending.length) {
         try {
           await contratoDocsPersistMany(pending);
@@ -17006,19 +17567,20 @@ function contratoDocsBtnsFor(cod, num) {
   );
 }
 
-function contratoDocsSetLoaded(el, loaded) {
+function contratoDocsSetLoaded(el, loaded, n) {
   if (!el) return;
   const tipo = el.dataset.uploadTipo;
   const label = tipo === 'nf' ? 'NF' : 'Contrato';
   const on = !!loaded;
+  const count = n > 1 ? ' (' + n + ')' : '';
   el.classList.toggle('is-loaded', on);
   el.dataset.hasDoc = on ? '1' : '';
   el.style.borderColor = '';
   el.style.color = '';
   el.style.background = '';
-  el.textContent = on ? '✅ ' + label : label;
+  el.textContent = on ? '✅ ' + label + count : label;
   el.title = on
-    ? (tipo === 'nf' ? 'NF carregada — clica para ver ou substituir' : 'Contrato carregado — clica para ver ou substituir')
+    ? (tipo === 'nf' ? 'NF carregada — clica para ver ou adicionar' : 'Contrato carregado — clica para ver ou adicionar')
     : (tipo === 'nf' ? 'NF em falta — clica para carregar um ficheiro' : 'Contrato em falta — clica para carregar um ficheiro');
 }
 
@@ -17031,18 +17593,89 @@ function contratoDocsLidos(cod, num, docsMap) {
   const localDocs = contratoDocsPickEntry(localAll, num);
   const nf = localDocs.nf === false ? false : (contratoDocsValorOk(localDocs.nf) ? localDocs.nf : supabaseDocs.nf);
   const ct = localDocs.ct === false ? false : (contratoDocsValorOk(localDocs.ct) ? localDocs.ct : supabaseDocs.ct);
-  return { nf: contratoDocsValorOk(nf), ct: contratoDocsValorOk(ct), all: { nf, ct } };
+  return {
+    nf: contratoDocsValorOk(nf),
+    ct: contratoDocsValorOk(ct),
+    all: { nf, ct },
+    nfN: contratoDocsContagem(nf),
+    ctN: contratoDocsContagem(ct),
+  };
 }
 
 function contratoDocsRefreshRow(cod, num) {
   const st = contratoDocsLidos(cod, num);
   contratoDocsBtnsFor(cod, num).forEach(btn => {
-    contratoDocsSetLoaded(btn, btn.dataset.uploadTipo === 'nf' ? st.nf : st.ct);
+    const on = btn.dataset.uploadTipo === 'nf' ? st.nf : st.ct;
+    const n = btn.dataset.uploadTipo === 'nf' ? st.nfN : st.ctN;
+    contratoDocsSetLoaded(btn, on, n);
   });
 }
 
-function contratoDocsPatchMap(cod, num, tipo, value) {
-  contratoDocsMapSet(cod, num, tipo, value);
+function contratoDocsPatchMap(cod, num, tipo, value, op) {
+  contratoDocsMapSet(cod, num, tipo, value, op);
+}
+
+function contratoDocsLocalPatch(cod, num, tipo, value, op) {
+  try {
+    const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}') || {};
+    if (!saved[num] || typeof saved[num] !== 'object') saved[num] = {};
+    const next = contratoDocsMergeValor(saved[num][tipo], value, op);
+    saved[num][tipo] = (next == null) ? false : next;
+    localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
+  } catch (e) {}
+}
+
+async function contratoDocsNomesUsados(cod, num, tipo) {
+  const st = contratoDocsLidos(cod, num);
+  const fromDocs = contratoDocsNormLista(tipo === 'nf' ? st.all.nf : st.all.ct);
+  let fromStorage = [];
+  try {
+    const items = await contratoStorageList(`${cod}/${num}/`);
+    fromStorage = (items || [])
+      .filter(it => contratoDocsIsStorageFile(it) && contratoDocsTipoFicheiro(it.name) === tipo)
+      .map(it => `${cod}/${num}/${it.name}`);
+  } catch (_) {}
+  return fromDocs.concat(fromStorage);
+}
+
+async function contratoDocsFazerUpload(cod, num, tipo, files, statusEl) {
+  const list = Array.from(files || []).filter(Boolean);
+  if (!list.length) return { added: [], persistOk: true };
+  const used = await contratoDocsNomesUsados(cod, num, tipo);
+  const added = [];
+  for (let i = 0; i < list.length; i++) {
+    const file = list[i];
+    const fileName = contratoDocsProximoNome(tipo, file.name, used.concat(added));
+    const storagePath = `${cod}/${num}/${fileName}`;
+    if (statusEl) {
+      statusEl.textContent = list.length > 1 ? ('A carregar ' + (i + 1) + '/' + list.length + '...') : 'A carregar...';
+      statusEl.style.color = 'var(--muted)';
+    }
+    const res = await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPA_KEY,
+        Authorization: 'Bearer ' + SUPA_KEY,
+        'Content-Type': contratoDocsMime(file),
+        'x-upsert': 'true',
+      },
+      body: file,
+    });
+    if (!res.ok) throw new Error((res.status === 0 ? 'Upload falhou' : 'HTTP ' + res.status));
+    added.push(storagePath);
+  }
+  contratoDocsLocalPatch(cod, num, tipo, added, 'add');
+  contratoDocsPatchMap(cod, num, tipo, added, 'add');
+  let persistOk = true;
+  try {
+    await contratoDocsPersistSupabase(cod, num, tipo, added, 'add');
+  } catch (e) {
+    persistOk = false;
+    console.warn('docs save supabase:', e);
+  }
+  contratoMarcarBotao(cod, num, tipo, false);
+  contratoDocsRefreshRow(cod, num);
+  return { added, persistOk };
 }
 
 // docs_index: { "cod/contrato": {nf: true/false, ct: true/false} }
@@ -17057,42 +17690,20 @@ function contratoUploadPdf(tipo, docPath) {
 
   const input = document.createElement('input');
   input.type = 'file';
+  input.multiple = true;
   input.onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const fileName = contratoDocFileName(tipo, file.name);
-    const storagePath = `${docPath}/${fileName}`;
-
+    const files = e.target.files;
+    if (!files || !files.length) return;
     const btnId = `btn-${tipo}-${cod}-${numContrato.replace(/_/g,'_')}`;
     const btn = document.getElementById(btnId);
     if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
     toast(`A fazer upload de ${label}...`);
 
     try {
-      const res = await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
-        method: 'POST',
-        headers: {
-          'apikey': SUPA_KEY,
-          'Authorization': 'Bearer ' + SUPA_KEY,
-          'Content-Type': contratoDocsMime(file),
-          'x-upsert': 'true'
-        },
-        body: file
-      });
-      if (!res.ok) throw new Error('Upload falhou: ' + res.status);
-
-      const pubUrl = `${STORAGE_PUBLIC}/${storagePath}`;
-
-      const docsLocalKey = 'delta_docs_' + cod;
-      try {
-        const saved = JSON.parse(localStorage.getItem(docsLocalKey) || '{}');
-        if (!saved[numContrato]) saved[numContrato] = {};
-        saved[numContrato][tipo] = storagePath;
-        localStorage.setItem(docsLocalKey, JSON.stringify(saved));
-      } catch(e) {}
-
-      contratoDocsPatchMap(cod, numContrato, tipo, storagePath);
+      const out = await contratoDocsFazerUpload(cod, numContrato, tipo, files);
       contratoMarcarBotao(cod, numContrato, tipo, false);
+      const storagePath = out.added && out.added[0];
+      const pubUrl = storagePath ? `${STORAGE_PUBLIC}/${storagePath}` : '';
       const targetBtn = contratoDocsBtnsFor(cod, numContrato).find(b => b.dataset.uploadTipo === tipo) || btn;
       if (targetBtn) {
         if (!targetBtn.classList || !targetBtn.classList.contains('ct-doc-btn')) {
@@ -17100,16 +17711,10 @@ function contratoUploadPdf(tipo, docPath) {
         }
         targetBtn.classList.add('is-loaded');
         targetBtn.disabled = false;
-        contratoSetDownloadBtn(targetBtn, pubUrl, label);
+        if (pubUrl) contratoSetDownloadBtn(targetBtn, pubUrl, label);
       }
-      try {
-        await contratoDocsPersistSupabase(cod, numContrato, tipo, storagePath);
-        try { await contratoDocsApagarOutrosDoTipo(cod, numContrato, tipo, storagePath); } catch (_) {}
-        toast(`✅ ${label} guardada.`, 'success');
-      } catch (e) {
-        console.warn('docs save supabase:', e);
-        toast('Ficheiro no Storage, mas o estado NF/Contrato não gravou no servidor. Abre Contratos outra vez para sincronizar.', 'warn');
-      }
+      if (out.persistOk) toast(`✅ ${label} guardada.`, 'success');
+      else toast('Ficheiro no Storage, mas o estado NF/Contrato não gravou no servidor. Abre Contratos outra vez para sincronizar.', 'warn');
     } catch(err) {
       toast('Erro: ' + err.message, 'error');
       if (btn) { btn.disabled = false; contratoDocsSetLoaded(btn, false); }
@@ -17129,9 +17734,13 @@ function contratoAbrirDocs(cod, num, focusTipo) {
   const cEsc = String(cod ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   const nEsc = String(num ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   const ds = `data-docs-cod="${cEsc}" data-docs-num="${nEsc}"`;
+  const escNome = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 
   ['nf','ct'].forEach(tipo => {
+    const val = tipo === 'nf' ? st.all.nf : st.all.ct;
+    const paths = contratoDocsNormLista(val);
     const hasDoc = tipo === 'nf' ? st.nf : st.ct;
+    const n = contratoDocsContagem(val);
     const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
     const icon = tipo === 'nf' ? '📄' : '✍';
     const row = document.getElementById('docs-row-' + tipo);
@@ -17141,17 +17750,29 @@ function contratoAbrirDocs(cod, num, focusTipo) {
     row.style.border = hasDoc ? '1.5px solid #16a34a' : '1.5px solid transparent';
     row.style.outline = (focusTipo === tipo) ? '2px solid #166534' : '';
     const clickArgs = `this.dataset.docsCod,this.dataset.docsNum,'${tipo}'`;
-    row.innerHTML = hasDoc
-      ? `<span style="color:#166534;font-weight:700">${icon} ${label} — carregado</span>
-         <div style="display:flex;gap:6px;margin-top:8px;">
-           <button class="btn btn-secondary btn-sm" ${ds} onclick="contratoDocsDownload(${clickArgs})" style="font-size:12px;">⬇ Abrir</button>
-           <button class="btn btn-secondary btn-sm" ${ds} onclick="contratoDocsUpload(${clickArgs})" style="font-size:12px;">↩ Substituir</button>
-           <button class="btn btn-secondary btn-sm" ${ds} onclick="contratoDocsDelete(${clickArgs})" style="font-size:12px;color:var(--danger);border-color:var(--danger);">🗑 Eliminar</button>
-         </div>`
-      : `<span style="color:var(--muted);font-weight:600">${icon} ${label} — não carregado</span>
-         <div style="margin-top:8px;">
-           <button class="btn btn-primary btn-sm" ${ds} onclick="contratoDocsUpload(${clickArgs})" style="font-size:12px;">⬆ Carregar ficheiro</button>
-         </div>`;
+    let filesHtml = '';
+    if (paths.length) {
+      filesHtml = paths.map(p => {
+        const pEsc = String(p).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        const nome = String(p).split('/').pop() || p;
+        return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;">
+          <span style="font-size:12px;font-weight:600;color:#166534;flex:1;min-width:80px;">${escNome(nome)}</span>
+          <button class="btn btn-secondary btn-sm" ${ds} data-docs-path="${pEsc}" onclick="contratoDocsDownload(this.dataset.docsCod,this.dataset.docsNum,'${tipo}',this.dataset.docsPath)" style="font-size:12px;">⬇ Abrir</button>
+          <button class="btn btn-secondary btn-sm" ${ds} data-docs-path="${pEsc}" onclick="contratoDocsDelete(this.dataset.docsCod,this.dataset.docsNum,'${tipo}',this.dataset.docsPath)" style="font-size:12px;color:var(--danger);border-color:var(--danger);">🗑 Eliminar</button>
+        </div>`;
+      }).join('');
+    } else if (hasDoc) {
+      filesHtml = `<div style="display:flex;gap:6px;margin-top:8px;">
+        <button class="btn btn-secondary btn-sm" ${ds} onclick="contratoDocsDownload(${clickArgs})" style="font-size:12px;">⬇ Abrir</button>
+        <button class="btn btn-secondary btn-sm" ${ds} onclick="contratoDocsDelete(${clickArgs})" style="font-size:12px;color:var(--danger);border-color:var(--danger);">🗑 Eliminar</button>
+      </div>`;
+    }
+    const countLbl = n > 1 ? ` (${n})` : '';
+    row.innerHTML = `<span style="color:${hasDoc ? '#166534' : 'var(--muted)'};font-weight:${hasDoc ? '700' : '600'}">${icon} ${label}${hasDoc ? ' — carregado' + countLbl : ' — não carregado'}</span>
+      ${filesHtml}
+      <div style="margin-top:8px;">
+        <button class="btn btn-primary btn-sm" ${ds} onclick="contratoDocsUpload(${clickArgs})" style="font-size:12px;">⬆ Adicionar ficheiro</button>
+      </div>`;
   });
 
   contratoDocsRefreshRow(cod, num);
@@ -17162,41 +17783,25 @@ function contratoDocsUpload(cod, num, tipo) {
   const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
   const input = document.createElement('input');
   input.type = 'file';
+  input.multiple = true;
   input.onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const fileName = contratoDocFileName(tipo, file.name);
-    const storagePath = `${cod}/${num}/${fileName}`;
+    const files = e.target.files;
+    if (!files || !files.length) return;
     const statusEl = document.getElementById('docs-status');
-    statusEl.textContent = 'A carregar...'; statusEl.style.color = 'var(--muted)';
+    if (statusEl) { statusEl.textContent = 'A carregar...'; statusEl.style.color = 'var(--muted)'; }
     try {
-      const res = await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
-        method: 'POST',
-        headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': contratoDocsMime(file), 'x-upsert': 'true' },
-        body: file
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
-      if (!saved[num]) saved[num] = {};
-      saved[num][tipo] = storagePath;
-      localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
-      try {
-        await contratoDocsPersistSupabase(cod, num, tipo, storagePath);
-        try { await contratoDocsApagarOutrosDoTipo(cod, num, tipo, storagePath); } catch (_) {}
-      } catch (e) {
-        console.warn('docs save supabase:', e);
-        statusEl.textContent = 'Ficheiro carregado, mas o servidor não confirmou o estado. Tenta abrir de novo.';
-        statusEl.style.color = '#b45309';
-      }
-      if (!statusEl.textContent || statusEl.textContent === 'A carregar...') {
+      const out = await contratoDocsFazerUpload(cod, num, tipo, files, statusEl);
+      if (!out.persistOk) {
+        if (statusEl) {
+          statusEl.textContent = 'Ficheiro carregado, mas o servidor não confirmou o estado. Tenta abrir de novo.';
+          statusEl.style.color = '#b45309';
+        }
+      } else if (statusEl) {
         statusEl.textContent = '✅ ' + label + ' guardada!'; statusEl.style.color = '#16a34a';
       }
-      contratoDocsPatchMap(cod, num, tipo, storagePath);
-      contratoMarcarBotao(cod, num, tipo, false);
-      contratoDocsRefreshRow(cod, num);
       setTimeout(() => contratoAbrirDocs(cod, num, tipo), 400);
     } catch(err) {
-      statusEl.textContent = 'Erro: ' + err.message; statusEl.style.color = 'var(--danger)';
+      if (statusEl) { statusEl.textContent = 'Erro: ' + err.message; statusEl.style.color = 'var(--danger)'; }
     }
   };
   input.click();
@@ -17205,6 +17810,8 @@ function contratoDocsUpload(cod, num, tipo) {
 function contratoDocsStoragePath(cod, num, tipo) {
   const st = contratoDocsLidos(cod, num);
   const stored = tipo === 'nf' ? st.all.nf : st.all.ct;
+  const list = contratoDocsNormLista(stored);
+  if (list[0] && list[0].indexOf('/') >= 0) return list[0].replace(/^\/+/, '');
   if (typeof stored === 'string' && stored.indexOf('/') >= 0) return stored.replace(/^\/+/, '');
   return `${cod}/${num}/${contratoDocFileName(tipo)}`;
 }
@@ -17235,30 +17842,44 @@ async function contratoDocsApagarOutrosDoTipo(cod, num, tipo, keepPath) {
   }
 }
 
-function contratoDocsDownload(cod, num, tipo) {
-  window.open(`${STORAGE_PUBLIC}/${contratoDocsStoragePath(cod, num, tipo)}`, '_blank');
+function contratoDocsDownload(cod, num, tipo, path) {
+  const p = String(path || contratoDocsStoragePath(cod, num, tipo) || '').replace(/^\/+/, '');
+  if (!p) return;
+  window.open(`${STORAGE_PUBLIC}/${p}`, '_blank');
 }
 
-async function contratoDocsDelete(cod, num, tipo) {
+async function contratoDocsDelete(cod, num, tipo, path) {
   const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
-  if (!confirm(`Eliminar ${label}?`)) return;
-  const storagePath = contratoDocsStoragePath(cod, num, tipo);
-  try { await contratoDocsStorageDelete(storagePath); } catch (_) {}
-  try { await contratoDocsApagarOutrosDoTipo(cod, num, tipo); } catch (_) {}
-  // false = eliminado; não deixar o mapa antigo ressuscitar o ficheiro
-  try {
-    const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
-    if (!saved[num]) saved[num] = {};
-    saved[num][tipo] = false;
-    localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
-  } catch(e) {}
-  try {
-    await contratoDocsPersistSupabase(cod, num, tipo, null);
-  } catch (e) {
-    console.warn('docs delete supabase:', e);
+  const st = contratoDocsLidos(cod, num);
+  const list = contratoDocsNormLista(tipo === 'nf' ? st.all.nf : st.all.ct);
+  const target = path || (list.length === 1 ? list[0] : '');
+  const msg = target && list.length > 1
+    ? `Eliminar ${String(target).split('/').pop()}?`
+    : `Eliminar ${label}?`;
+  if (!confirm(msg)) return;
+  if (target) {
+    try { await contratoDocsStorageDelete(target); } catch (_) {}
+    const remaining = contratoDocsListaCanon(list.filter(p => p !== target));
+    contratoDocsLocalPatch(cod, num, tipo, remaining == null ? null : remaining, 'set');
+    try {
+      await contratoDocsPersistSupabase(cod, num, tipo, remaining, 'set');
+    } catch (e) {
+      console.warn('docs delete supabase:', e);
+    }
+    contratoDocsPatchMap(cod, num, tipo, remaining, 'set');
+  } else {
+    const storagePath = contratoDocsStoragePath(cod, num, tipo);
+    try { await contratoDocsStorageDelete(storagePath); } catch (_) {}
+    try { await contratoDocsApagarOutrosDoTipo(cod, num, tipo); } catch (_) {}
+    contratoDocsLocalPatch(cod, num, tipo, null, 'set');
+    try {
+      await contratoDocsPersistSupabase(cod, num, tipo, null);
+    } catch (e) {
+      console.warn('docs delete supabase:', e);
+    }
+    contratoDocsPatchMap(cod, num, tipo, null, 'set');
   }
-  contratoDocsPatchMap(cod, num, tipo, null);
-  contratoMarcarBotao(cod, num, tipo, true);
+  contratoMarcarBotao(cod, num, tipo, !contratoDocsLidos(cod, num)[tipo === 'nf' ? 'nf' : 'ct']);
   contratoDocsRefreshRow(cod, num);
   contratoAbrirDocs(cod, num, tipo);
 }
@@ -17268,9 +17889,11 @@ function contratoMarcarBotao(cod, num, tipo, removed) {
     contratoDocsRefreshRow(cod, num);
     return;
   }
-  const loaded = !removed;
+  const st = contratoDocsLidos(cod, num);
+  const loaded = removed ? false : (tipo === 'nf' ? st.nf : st.ct);
+  const n = tipo === 'nf' ? st.nfN : st.ctN;
   contratoDocsBtnsFor(cod, num).forEach(btn => {
-    if (btn.dataset.uploadTipo === tipo) contratoDocsSetLoaded(btn, loaded);
+    if (btn.dataset.uploadTipo === tipo) contratoDocsSetLoaded(btn, loaded, n);
   });
 }
 
@@ -31026,7 +31649,7 @@ if (document.readyState === 'loading') {
 </script>
 <!-- MODAL DOCS CONTRATOS -->
 <div id="docs-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3000;align-items:center;justify-content:center;">
-  <div style="background:var(--surface);border-radius:12px;padding:24px;width:90%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+  <div style="background:var(--surface);border-radius:12px;padding:24px;width:90%;max-width:520px;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
       <h3 id="docs-modal-titulo" style="font-size:15px;font-weight:600;margin:0;">Documentos</h3>
       <button onclick="contratoFecharDocs()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
@@ -31038,6 +31661,65 @@ if (document.readyState === 'loading') {
       <div id="docs-row-ct" style="padding:12px;background:var(--surface2);border-radius:8px;border:1.5px solid transparent;"></div>
     </div>
     <div id="docs-status" style="margin-top:12px;font-size:13px;text-align:center;min-height:20px;"></div>
+  </div>
+</div>
+
+<!-- MODAL REGISTAR CONTRATO (Por Registar) -->
+<div id="ct-registar-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3001;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border-radius:12px;padding:24px;width:90%;max-width:520px;max-height:92vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="font-size:15px;font-weight:600;margin:0;">Registar contrato</h3>
+      <button type="button" onclick="fecharRegistarContrato()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+    </div>
+    <input type="hidden" id="ct-reg-cod">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px;" id="ct-reg-nome"></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;" id="ct-reg-equips"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div>
+        <label style="font-size:11px;color:var(--muted);">Nº do contrato</label>
+        <input class="form-input" id="ct-reg-num" style="padding:6px 8px;font-size:13px;" placeholder="Ex: B0902/26">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);">Início (mês/ano)</label>
+        <input type="month" class="form-input" id="ct-reg-inicio" style="padding:6px 8px;font-size:13px;">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);">Duração (meses)</label>
+        <input type="number" class="form-input" id="ct-reg-duracao" min="1" style="padding:6px 8px;font-size:13px;" placeholder="Ex: 36">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);">Consumo / mês (contrato completo)</label>
+        <input type="number" class="form-input" id="ct-reg-consumo" min="0" step="0.1" style="padding:6px 8px;font-size:13px;" placeholder="Quantidade">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);">Unidade</label>
+        <select class="form-input" id="ct-reg-unidade" style="padding:6px 8px;font-size:13px;">
+          <option value="Capsulas">Cápsulas</option>
+          <option value="Kg">Kg</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin:10px 0 8px;">
+      <label style="font-size:11px;color:var(--muted);">PDV</label>
+      <div style="display:flex;gap:14px;margin-top:4px;font-size:13px;">
+        <label style="cursor:pointer;display:flex;align-items:center;gap:4px;"><input type="radio" name="ct-reg-pdv" id="ct-reg-pdv-unico" value="unico" checked onchange="ctRegPdvToggle()"> PDV único</label>
+        <label style="cursor:pointer;display:flex;align-items:center;gap:4px;"><input type="radio" name="ct-reg-pdv" id="ct-reg-pdv-multi" value="multi" onchange="ctRegPdvToggle()"> PDV Multi</label>
+      </div>
+    </div>
+    <div id="ct-reg-multi-box" style="display:none;margin-top:8px;padding:10px;background:var(--surface2);border-radius:8px;">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px;">Outras casas deste contrato</div>
+      <input class="form-input" id="ct-reg-cod-search" style="padding:6px 8px;font-size:13px;margin-bottom:8px;" placeholder="Pesquisar código, nome ou vendedor" oninput="ctRegRenderCods()">
+      <div id="ct-reg-cods-list" style="max-height:180px;overflow:auto;"></div>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <input class="form-input" id="ct-reg-cod-extra" style="padding:6px 8px;font-size:13px;flex:1;" placeholder="Adicionar código que não está na lista" onkeydown="if(event.key==='Enter'){event.preventDefault();ctRegAddCodExtra();}">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="ctRegAddCodExtra()" style="font-size:12px;">Adicionar</button>
+      </div>
+    </div>
+    <div id="ct-reg-status" style="margin-top:10px;font-size:12px;min-height:18px;"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+      <button type="button" class="btn btn-secondary" onclick="fecharRegistarContrato()">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="ct-reg-guardar" onclick="guardarRegistarContrato()">Guardar contrato</button>
+    </div>
   </div>
 </div>
 

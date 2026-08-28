@@ -114,12 +114,14 @@ check('gravação NF/Contrato espera o PATCH em docs (não fire-and-forget com H
   const up = extractFn(html, 'contratoUploadPdf');
   const modal = extractFn(html, 'contratoDocsUpload');
   const del = extractFn(html, 'contratoDocsDelete');
+  const fazer = extractFn(html, 'contratoDocsFazerUpload');
   assert.ok(many.includes('registosReadHeaders'));
   assert.ok(many.includes("method: 'PATCH'"));
   assert.ok(!many.includes('headers: HEADERS') && !many.includes('headers:HEADERS'));
   assert.ok(persist.includes('contratoDocsPersistMany'));
-  assert.ok(up.includes('await contratoDocsPersistSupabase'));
-  assert.ok(modal.includes('await contratoDocsPersistSupabase'));
+  assert.ok(fazer.includes('await contratoDocsPersistSupabase'));
+  assert.ok(up.includes('contratoDocsFazerUpload'));
+  assert.ok(modal.includes('contratoDocsFazerUpload'));
   assert.ok(del.includes('await contratoDocsPersistSupabase'));
   assert.ok(!del.includes('headers:HEADERS') && !del.includes('headers: HEADERS'));
 });
@@ -147,14 +149,19 @@ const context = {
 vm.createContext(context);
 for (const name of [
   'normNumContrato',
+  'contratoDocsExtensao',
+  'contratoDocFileName',
+  'contratoDocsProximoNome',
+  'contratoDocsTipoFicheiro',
+  'contratoDocsIsStorageFile',
+  'contratoDocsNormLista',
+  'contratoDocsListaCanon',
   'contratoDocsValorOk',
+  'contratoDocsMergeValor',
+  'contratoDocsContagem',
   'numsContratoEquivalentes',
   'contratoDocsCampo',
   'contratoDocsPickEntry',
-  'contratoDocsExtensao',
-  'contratoDocFileName',
-  'contratoDocsTipoFicheiro',
-  'contratoDocsIsStorageFile',
   'contratoDocsParseStoragePath',
   'contratoDocsApplyFlags',
   'contratoDocsLidos',
@@ -251,7 +258,7 @@ check('qualquer ficheiro anexado conta como OK (não se lê o PDF)', () => {
   assert.ok(!/input\.accept = 'application\/pdf'/.test(modal));
   assert.ok(!/Apenas PDFs são aceites/.test(up));
   assert.ok(!/Apenas PDFs são aceites/.test(modal));
-  assert.ok(html.includes('⬆ Carregar ficheiro'));
+  assert.ok(html.includes('⬆ Adicionar ficheiro'));
   assert.ok(!list.includes('if (!/\\.pdf$/i.test(it.name)) continue;'));
   assert.ok(!/\.pdf\$\/i\.test\(name\)/.test(list));
   assert.ok(list.includes('contratoDocsIsStorageFile'));
@@ -308,6 +315,45 @@ check('PATCH docs aplica NF e CT no mesmo objecto (sem uma gravar por cima da ou
   assert.equal(split.B0902.ct, '753534/B0902/26/contrato_assinado.pdf');
   assert.equal(split['B0902/26'].ct, '753534/B0902/26/contrato_assinado.pdf');
   assert.equal(split.B0902.nf, '753534/B0902/26/nf.pdf');
+});
+
+check('lista de ficheiros: string para 1, array para 2+', () => {
+  assert.equal(context.contratoDocsValorOk(['a/nf.pdf', 'a/nf_2.pdf']), true);
+  assert.equal(context.contratoDocsValorOk([]), false);
+  assert.deepEqual(context.contratoDocsNormLista('cod/B1/nf.pdf'), ['cod/B1/nf.pdf']);
+  assert.deepEqual(context.contratoDocsNormLista(['cod/B1/nf.pdf', 'cod/B1/nf_2.pdf']), ['cod/B1/nf.pdf', 'cod/B1/nf_2.pdf']);
+  assert.deepEqual(context.contratoDocsListaCanon(['x', 'x', 'y']), ['x', 'y']);
+  const two = context.contratoDocsListaCanon(['cod/B1/nf.pdf', 'cod/B1/nf_2.pdf']);
+  assert.ok(Array.isArray(two) && two.length === 2);
+  assert.equal(context.contratoDocsListaCanon(['so-um.pdf']), 'so-um.pdf');
+  const docs = context.contratoDocsApplyFlags({}, 'B1', 'nf', 'cod/B1/nf.pdf');
+  assert.equal(docs.B1.nf, 'cod/B1/nf.pdf');
+  context.contratoDocsApplyFlags(docs, 'B1', 'nf', 'cod/B1/nf_2.pdf');
+  assert.deepEqual(docs.B1.nf, ['cod/B1/nf.pdf', 'cod/B1/nf_2.pdf']);
+  context.contratoDocsApplyFlags(docs, 'B1', 'nf', 'cod/B1/nf_2.pdf', 'remove');
+  assert.equal(docs.B1.nf, 'cod/B1/nf.pdf');
+});
+
+check('nf_2.pdf é NF; próximo nome incrementa', () => {
+  assert.equal(context.contratoDocsTipoFicheiro('nf_2.pdf'), 'nf');
+  assert.equal(context.contratoDocsTipoFicheiro('nf-3.jpg'), 'nf');
+  assert.equal(context.contratoDocFileName('nf', 'nota.docx'), 'nf.docx');
+  assert.equal(context.contratoDocFileName('nf', 'nota.docx', 2), 'nf_2.docx');
+  assert.equal(context.contratoDocsProximoNome('nf', 'x.pdf', ['cod/B1/nf.pdf']), 'nf_2.pdf');
+});
+
+check('upload acrescenta e não apaga os outros do mesmo tipo; modal Adicionar', () => {
+  const up = extractFn(html, 'contratoUploadPdf');
+  const modal = extractFn(html, 'contratoDocsUpload');
+  const fazer = extractFn(html, 'contratoDocsFazerUpload');
+  const abrir = extractFn(html, 'contratoAbrirDocs');
+  assert.ok(!up.includes('contratoDocsApagarOutrosDoTipo'));
+  assert.ok(!modal.includes('contratoDocsApagarOutrosDoTipo'));
+  assert.ok(!fazer.includes('contratoDocsApagarOutrosDoTipo'));
+  assert.ok(abrir.includes('Adicionar ficheiro'));
+  assert.ok(html.includes('Adicionar ficheiro'));
+  assert.ok(up.includes('multiple = true') || up.includes('input.multiple'));
+  assert.ok(modal.includes('multiple = true') || modal.includes('input.multiple'));
 });
 
 if (process.exitCode) {
