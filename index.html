@@ -5309,11 +5309,39 @@ function getAnuladosSet() {
   } catch(e) { return new Set(); }
 }
 
+/**
+ * Há uma lista SAP real neste browser (memória / localStorage)?
+ * O fallback CLIENTES_SISTEMA é só um seed Horeca — não serve para decidir
+ * se um Dist/Varejo «já não existe» (apagava pedidos Contencioso).
+ */
+function listaSapRealCarregada() {
+  try {
+    if (typeof _listaClientesMem !== 'undefined' && Array.isArray(_listaClientesMem) && _listaClientesMem.length) {
+      return true;
+    }
+  } catch (_) {}
+  try {
+    if (typeof localStorage === 'undefined' || typeof CLIENTES_LS_KEY === 'undefined') return false;
+    const s = localStorage.getItem(CLIENTES_LS_KEY);
+    if (!s) return false;
+    const parsed = JSON.parse(s);
+    return Array.isArray(parsed) && parsed.length > 0;
+  } catch (_) {}
+  return false;
+}
+
+/** Cliente ainda na lista SAP completa (todos os canais) — não usar a lista filtrada do canal. */
 function codClienteAindaActivo(cod) {
   const k = normCod(cod);
   if (!k) return false;
   if (getAnuladosSet().has(k)) return false;
-  return getListaClientesActiva().some(c => normCod(c.cod) === k);
+  // Sem dump SAP real não dá para concluir que o cliente saiu (seed ≠ Dist/Varejo).
+  if (typeof listaSapRealCarregada === 'function' && !listaSapRealCarregada()) return true;
+  const full = typeof getListaClientesCompleta === 'function'
+    ? getListaClientesCompleta()
+    : [];
+  if (!Array.isArray(full) || !full.length) return true;
+  return full.some(c => normCod(c.cod) === k);
 }
 
 let scEncerramentosPendentes = new Map();
@@ -21307,6 +21335,8 @@ async function loadSCContenciosoPendentes(forceRefresh = false) {
     return;
   }
   return sessionCacheRun('contencioso', async () => {
+    // Pedidos acabados de gravar (ainda só em memória) — não perder no refetch
+    const keepLocal = [...scContenciosoPendentes.values()];
     scContenciosoPendentes = new Map();
     migrarContenciosoPendentesDeLocalStorage();
     const idsApagar = [];
@@ -21319,6 +21349,8 @@ async function loadSCContenciosoPendentes(forceRefresh = false) {
       for (const d of lista) {
         const k = normCod(d.cod);
         if (!k) continue;
+        // Só sai se já está *13 no SAP, anulado, ou desapareceu da lista SAP COMPLETA.
+        // Nunca usar a lista do canal activo — Dist/Varejo eram apagados no Horeca.
         if (contenciosoSap.has(k) || !codClienteAindaActivo(k)) {
           if (d.id) idsApagar.push(d.id);
           continue;
@@ -21366,6 +21398,16 @@ async function loadSCContenciosoPendentes(forceRefresh = false) {
       ingest(migrated);
     }
 
+    // Repor pedido local (ex.: Distrisul gravado agora) se o fetch ainda não o trouxe
+    for (const p of keepLocal) {
+      const k = normCod(p && p.cod);
+      if (!k || scContenciosoPendentes.has(k)) continue;
+      if (contenciosoSap.has(k)) continue;
+      if (typeof getAnuladosSet === 'function' && getAnuladosSet().has(k)) continue;
+      if (typeof codClienteAindaActivo === 'function' && !codClienteAindaActivo(k)) continue;
+      scContenciosoPendentes.set(k, p);
+    }
+
     limparLegacyContenciosoPendentesLS();
     sessionCacheTouch('contencioso');
     if (idsApagar.length) await apagarContenciosoPorIds(idsApagar);
@@ -21375,6 +21417,7 @@ async function loadSCContenciosoPendentes(forceRefresh = false) {
 async function guardarPedidoContencioso(pedido) {
   const k = normCod(pedido.cod);
   scContenciosoPendentes.set(k, pedido);
+  try { if (typeof sessionCacheTouch === 'function') sessionCacheTouch('contencioso'); } catch (_) {}
   try {
     const res = await fetch(CONTENCIOSO_URL, {
       method: 'POST',
@@ -21426,6 +21469,69 @@ async function removerPedidosContenciosoPorCods(cods) {
   return removidos;
 }
 
+/**
+ * Pedido Contencioso pertence a este canal da app?
+ * Usa o cliente na lista SAP completa (NPess), não só o nome canónico do vendedor
+ * (Dist/Varejo falhavam se o SAP tivesse "BOTTELLO" vs "Massimo Bottello").
+ * Sem cliente na lista → não esconder (lista vazia / seed Horeca).
+ */
+function pedidoContenciosoPertenceAoCanal(d, canalId) {
+  if (!d) return false;
+  const id = canalId || (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : null);
+  if (!id || typeof CANAIS_APP === 'undefined' || !CANAIS_APP[id]) return true;
+  const k = typeof normCod === 'function' ? normCod(d.cod) : String(d.cod || '').trim();
+  const full = typeof getListaClientesCompleta === 'function' ? getListaClientesCompleta() : [];
+  const cli = (Array.isArray(full) ? full : []).find(c =>
+    (typeof normCod === 'function' ? normCod(c.cod) : String(c.cod || '')) === k
+  );
+  if (cli && typeof clientePertenceAoCanal === 'function') {
+    return clientePertenceAoCanal(cli, id);
+  }
+  const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(d.vendedor) : String(d.vendedor || '').toUpperCase();
+  if (vn && typeof getCanalIdPorVendedorNome === 'function') {
+    const canalNome = getCanalIdPorVendedorNome(d.vendedor);
+    if (canalNome) return canalNome === id;
+  }
+  const nomes = typeof getVendedoresNomesDoCanal === 'function' ? getVendedoresNomesDoCanal(id) : [];
+  if (vn && nomes.length && nomes.includes(vn)) return true;
+  // Cliente não está na lista SAP deste browser — mostrar em vez de lista vazia
+  if (!cli) return true;
+  return false;
+}
+
+/**
+ * Pedidos Contencioso pendentes para a UI.
+ * opts.todosCanais: Área Financeira (todos os canais).
+ * Admin (Carlos, …): vê todos os canais também no menu do canal.
+ * Restantes: filtra pelo cliente na lista SAP do canal (não só pelo nome do vendedor).
+ */
+function getContenciosoPendentesLista(vendFilt, opts) {
+  const todosCanais = !!(opts && opts.todosCanais);
+  let lista = [...(typeof scContenciosoPendentes !== 'undefined' && scContenciosoPendentes?.values
+    ? scContenciosoPendentes.values()
+    : [])];
+  if (typeof filterByUtilizadorActivo === 'function') {
+    lista = filterByUtilizadorActivo(lista, d => d && d.vendedor);
+  }
+  const vend = vendFilt || '';
+  if (vend) {
+    const vn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(vend) : vend;
+    lista = lista.filter(d =>
+      (typeof normNomeUtilizador === 'function' ? normNomeUtilizador(d.vendedor) : d.vendedor) === vn
+    );
+  }
+  if (!todosCanais) {
+    const canalId = typeof resolveCanalActivoId === 'function'
+      ? resolveCanalActivoId()
+      : (typeof _canalActivo !== 'undefined' ? _canalActivo : null);
+    const admin = typeof isAdmin === 'function' && isAdmin();
+    if (canalId && typeof CANAIS_APP !== 'undefined' && CANAIS_APP[canalId] && !admin) {
+      lista = lista.filter(d => pedidoContenciosoPertenceAoCanal(d, canalId));
+    }
+  }
+  return lista.sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
+}
+
 async function initContenciosoPendente() {
   if (typeof fillVendedorSelectCanal === 'function') {
     fillVendedorSelectCanal('cp-vendedor', { emptyLabel: 'Todos os vendedores' });
@@ -21450,22 +21556,9 @@ async function renderContenciosoPendente() {
     const vendFilt = typeof resolveVendFilt === 'function'
       ? resolveVendFilt('cp-vendedor')
       : (document.getElementById('cp-vendedor')?.value || '');
-    const nomesCanal = (typeof _canalActivo !== 'undefined' && _canalActivo && typeof getVendedoresNomesDoCanal === 'function')
-      ? getVendedoresNomesDoCanal(_canalActivo) : [];
-    let lista = [...scContenciosoPendentes.values()];
-    if (typeof filterByUtilizadorActivo === 'function') {
-      lista = filterByUtilizadorActivo(lista, d => d && d.vendedor);
-    }
-    lista = lista
-      .filter(d => {
-        if (vendFilt && normNomeUtilizador(d.vendedor) !== normNomeUtilizador(vendFilt)) return false;
-        // No canal activo: só pedidos dos vendedores desse canal
-        if (nomesCanal.length) {
-          return nomesCanal.includes(normNomeUtilizador(d.vendedor));
-        }
-        return true;
-      })
-      .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
+    const lista = typeof getContenciosoPendentesLista === 'function'
+      ? getContenciosoPendentesLista(vendFilt)
+      : [...scContenciosoPendentes.values()];
     if (info) {
       info.innerHTML = lista.length
         ? `<span style="color:#7f1d1d;font-weight:600;">${lista.length} cliente${lista.length > 1 ? 's' : ''}</span> com pedido Contencioso a aguardar (saem da lista quando o SAP passar para vendedor *13)`
@@ -26391,8 +26484,10 @@ async function exportAfEncerramentosExcel() {
 }
 
 async function exportAfContenciosoPendentesExcel() {
-  let lista = [...(scContenciosoPendentes?.values?.() || [])]
-    .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
+  let lista = typeof getContenciosoPendentesLista === 'function'
+    ? getContenciosoPendentesLista('', { todosCanais: true })
+    : [...(scContenciosoPendentes?.values?.() || [])]
+      .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
   const tbl = document.querySelector('#af-cp-content table');
   lista = filterRowsToVisibleTable(lista, tbl, d => d.cod, 1);
   const rows = lista.map(d => ({
@@ -26721,8 +26816,10 @@ async function loadAfContencioso() {
       typeof sincronizarContenciosoMeta === 'function' ? sincronizarContenciosoMeta() : Promise.resolve(),
     ]);
     if (typeof applyContenciosoPddSeed === 'function') applyContenciosoPddSeed();
-    const pend = [...(scContenciosoPendentes?.values?.() || [])]
-      .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
+    const pend = typeof getContenciosoPendentesLista === 'function'
+      ? getContenciosoPendentesLista('', { todosCanais: true })
+      : [...(scContenciosoPendentes?.values?.() || [])]
+        .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
     if (cpInfo) {
       cpInfo.innerHTML = pend.length
         ? `<span style="color:#7f1d1d;font-weight:600;">${pend.length}</span> pedido(s) Contencioso a aguardar SAP`
@@ -28974,7 +29071,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-08-28-pdv-e: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-08-28-cp-pend: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
