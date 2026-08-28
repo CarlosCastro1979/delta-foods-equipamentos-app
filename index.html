@@ -7816,7 +7816,88 @@ function ctRegPdvToggle() {
   const multi = document.getElementById('ct-reg-pdv-multi')?.checked;
   const box = document.getElementById('ct-reg-multi-box');
   if (box) box.style.display = multi ? 'block' : 'none';
-  if (multi) ctRegRenderCods();
+  if (multi) {
+    ctRegEnsureCanalClientes();
+    ctRegRenderCods();
+  }
+}
+
+/** Fonte de clientes para o picker PDV Multi: allData / cache / fetch — não Por Registar. */
+function ctRegFonteRegistosCanal() {
+  try {
+    if (typeof allData !== 'undefined' && Array.isArray(allData) && allData.length) return allData;
+  } catch (_) {}
+  try {
+    const cache = typeof getRegistosCache === 'function' ? getRegistosCache() : null;
+    if (Array.isArray(cache) && cache.length) return cache;
+  } catch (_) {}
+  try {
+    if (Array.isArray(window._ctRegCanalClientes) && window._ctRegCanalClientes.length) {
+      return window._ctRegCanalClientes;
+    }
+  } catch (_) {}
+  return [];
+}
+
+/** Todos os clientes do canal activo (sem getVendedorScope / filterByUtilizadorActivo). */
+function ctRegClientesDoCanal() {
+  const src = ctRegFonteRegistosCanal();
+  const canal = typeof filterByCanalActivo === 'function'
+    ? filterByCanalActivo(src)
+    : (typeof vendedorPertenceAoCanalActivo === 'function'
+      ? src.filter(r => vendedorPertenceAoCanalActivo(r && r.vendedor))
+      : src.slice());
+  const seen = new Set();
+  const out = [];
+  for (const r of canal) {
+    const s = String(r && r.cod || '').trim();
+    if (!s) continue;
+    const k = typeof normCod === 'function' ? String(normCod(s)) : s;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({
+      cod: s,
+      nome: (r && r.nome) || s,
+      vendedor: (r && r.vendedor) || '',
+    });
+  }
+  out.sort((a, b) =>
+    String(a.vendedor || '').localeCompare(String(b.vendedor || ''), 'pt') ||
+    String(a.nome || '').localeCompare(String(b.nome || ''), 'pt') ||
+    String(a.cod || '').localeCompare(String(b.cod || ''), 'pt')
+  );
+  return out;
+}
+
+let _ctRegCanalFetch = null;
+async function ctRegEnsureCanalClientes() {
+  if (ctRegFonteRegistosCanal().length) return;
+  if (_ctRegCanalFetch) return _ctRegCanalFetch;
+  _ctRegCanalFetch = (async () => {
+    try {
+      const rows = typeof fetchRegistosPaginado === 'function'
+        ? await fetchRegistosPaginado('cod,nome,vendedor', 'cod.asc')
+        : [];
+      if (Array.isArray(rows) && rows.length) {
+        window._ctRegCanalClientes = rows;
+        if (document.getElementById('ct-reg-pdv-multi')?.checked) ctRegRenderCods();
+      }
+    } catch (e) {
+      console.warn('ctRegEnsureCanalClientes', e);
+    } finally {
+      _ctRegCanalFetch = null;
+    }
+  })();
+  return _ctRegCanalFetch;
+}
+
+function ctRegCodEhPrincipal(cod, principal) {
+  const s = String(cod || '').trim();
+  const p = String(principal || '').trim();
+  if (!s || !p) return false;
+  if (s === p) return true;
+  if (typeof normCod === 'function') return String(normCod(s)) === String(normCod(p));
+  return false;
 }
 
 function ctRegRenderCods() {
@@ -7825,7 +7906,12 @@ function ctRegRenderCods() {
   const principal = String(document.getElementById('ct-reg-cod')?.value || '').trim();
   const q = String(document.getElementById('ct-reg-cod-search')?.value || '').trim().toLowerCase();
   const extras = Array.isArray(window._ctRegCodsExtra) ? window._ctRegCodsExtra : [];
-  const pend = Array.isArray(window._contratosPorRegistar) ? window._contratosPorRegistar : [];
+  const pool = ctRegClientesDoCanal();
+  if (!pool.length && !extras.length) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:2px 4px;">A carregar clientes do canal…</div>';
+    ctRegEnsureCanalClientes();
+    return;
+  }
   const seen = new Set();
   const rows = [];
   const add = (cod, nome, vend) => {
@@ -7833,25 +7919,30 @@ function ctRegRenderCods() {
     if (!s) return;
     const k = typeof normCod === 'function' ? String(normCod(s)) : s;
     if (seen.has(k)) return;
-    if (principal && (s === principal || k === String(typeof normCod === 'function' ? normCod(principal) : principal))) return;
+    if (ctRegCodEhPrincipal(s, principal) || ctRegCodEhPrincipal(k, principal)) return;
     seen.add(k);
     rows.push({ cod: s, nome: nome || s, vendedor: vend || '' });
   };
-  pend.forEach(r => add(r.cod, r.nome, r.vendedor));
+  pool.forEach(r => add(r.cod, r.nome, r.vendedor));
   extras.forEach(r => add(r.cod, r.nome, r.vendedor));
   const shown = q
     ? rows.filter(r => `${r.cod} ${r.nome} ${r.vendedor}`.toLowerCase().includes(q))
     : rows;
   if (!shown.length) {
-    list.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px 0;">Nenhum outro código por registar. Pesquisa ou adiciona um código.</div>';
+    list.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:2px 4px;">Nenhum cliente do canal. Pesquisa ou adiciona um código.</div>';
     return;
   }
   const checked = new Set(window._ctRegCodsSel || []);
-  list.innerHTML = shown.slice(0, 40).map(r => `
-    <label style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px;cursor:pointer;">
-      <input type="checkbox" data-ct-reg-cod="${escHtml(r.cod)}" ${checked.has(String(r.cod)) ? 'checked' : ''} onchange="ctRegToggleCod(this)">
-      <span><strong>${escHtml(r.cod)}</strong> · ${escHtml(r.nome)}${r.vendedor ? ` <span style="color:var(--muted)">(${escHtml(r.vendedor)})</span>` : ''}</span>
-    </label>`).join('');
+  const LIM = 200;
+  const more = shown.length > LIM;
+  const vis = shown.slice(0, LIM);
+  list.innerHTML = vis.map(r => `
+    <label style="display:flex;gap:6px;align-items:center;padding:2px 4px;border-bottom:1px solid #f3f3f3;font-size:12px;line-height:1.25;cursor:pointer;">
+      <input type="checkbox" data-ct-reg-cod="${escHtml(r.cod)}" ${checked.has(String(r.cod)) ? 'checked' : ''} onchange="ctRegToggleCod(this)" style="margin:0;flex-shrink:0;">
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>${escHtml(r.cod)}</strong> · ${escHtml(r.nome)} <span style="color:var(--muted)">${escHtml(r.vendedor || '—')}</span></span>
+    </label>`).join('') + (more
+    ? `<div style="font-size:11px;color:var(--muted);padding:2px 4px;">A mostrar ${LIM} de ${shown.length}. Pesquisa para filtrar.</div>`
+    : '');
 }
 
 function ctRegToggleCod(el) {
@@ -7886,6 +7977,7 @@ function abrirRegistarContrato(cod) {
   if (!row) { toast('Cliente não encontrado na lista por registar.', 'error'); return; }
   window._ctRegCodsSel = [];
   window._ctRegCodsExtra = [];
+  ctRegEnsureCanalClientes();
   document.getElementById('ct-reg-cod').value = row.cod;
   document.getElementById('ct-reg-nome').textContent = `${row.cod} · ${row.nome}`;
   document.getElementById('ct-reg-equips').textContent = (row.equipamentos || []).map(e => e.tipo + (e.tag ? ' #' + e.tag : '')).join(', ') || '—';
@@ -7961,14 +8053,20 @@ async function guardarRegistarContrato() {
       if (!res.ok) throw new Error('HTTP ' + res.status + ' a ler ' + cod);
       let regs = await res.json();
       if (!Array.isArray(regs) || !regs.length) throw new Error('Registo não encontrado: ' + cod);
-      if (typeof filterByCanalActivoVendedor === 'function') regs = filterByCanalActivoVendedor(regs);
+      if (typeof filterByCanalActivo === 'function') regs = filterByCanalActivo(regs);
+      else if (typeof vendedorPertenceAoCanalActivo === 'function') {
+        regs = regs.filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+      }
       if (!regs.length) throw new Error('Sem permissão no código ' + cod);
       const reg = regs[0];
-      if (typeof podeEditarRegisto === 'function' && !podeEditarRegisto(reg.vendedor)) {
+      const isPrincipal = typeof ctRegCodEhPrincipal === 'function'
+        ? ctRegCodEhPrincipal(reg.cod, principal)
+        : String(reg.cod) === String(principal);
+      if (isPrincipal && typeof podeEditarRegisto === 'function' && !podeEditarRegisto(reg.vendedor)) {
         throw new Error('Sem permissão para guardar contrato em ' + cod);
       }
       if (typeof clienteJaTemNumero === 'function' && clienteJaTemNumero(reg, num)) {
-        if (String(reg.cod) !== String(principal) && String(normCod(reg.cod)) !== String(normCod(principal))) {
+        if (!isPrincipal) {
           continue;
         }
         throw new Error(typeof msgContratoJaCriado === 'function' ? msgContratoJaCriado(num, reg) : ('Este cliente já tem o contrato ' + num));
@@ -9971,12 +10069,21 @@ function fillVendedorSelectCanal(selOrId, { emptyLabel, selected, keepExtra } = 
   sel.title = scope ? 'Vista filtrada ao teu utilizador' : '';
 }
 
-/** Filtra linhas pelo vendedor do canal activo (Horeca/Ecommerce/Varejo/Dist). */
-function filterByCanalActivoVendedor(rows, getVend = r => r && r.vendedor) {
+/** Filtra linhas pelo canal activo (Horeca/Ecommerce/Varejo/Dist) — sem escopo do vendedor logado. */
+function filterByCanalActivo(rows, getVend = r => r && r.vendedor) {
   if (!rows || !rows.length) return [];
   const canalId = typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : null;
-  if (!canalId || !CANAIS_APP[canalId]) return rows.slice();
-  const canalRows = rows.filter(r => vendedorPertenceAoCanalActivo(getVend(r)));
+  if (!canalId || typeof CANAIS_APP === 'undefined' || !CANAIS_APP[canalId]) return rows.slice();
+  return rows.filter(r => typeof vendedorPertenceAoCanalActivo === 'function'
+    ? vendedorPertenceAoCanalActivo(getVend(r))
+    : true);
+}
+
+/** Filtra pelo canal activo e, no Horeca, pelo vendedor do login. */
+function filterByCanalActivoVendedor(rows, getVend = r => r && r.vendedor) {
+  const canalRows = typeof filterByCanalActivo === 'function'
+    ? filterByCanalActivo(rows, getVend)
+    : (rows || []).slice();
   return typeof filterByUtilizadorActivo === 'function'
     ? filterByUtilizadorActivo(canalRows, getVend)
     : canalRows;
@@ -15918,12 +16025,12 @@ async function propagarContratosPdvMulti(ownCod, contratos) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         let regs = await res.json();
         if (!Array.isArray(regs) || !regs.length) throw new Error('Registo não encontrado: ' + cod);
-        if (typeof filterByCanalActivoVendedor === 'function') regs = filterByCanalActivoVendedor(regs);
+        if (typeof filterByCanalActivo === 'function') regs = filterByCanalActivo(regs);
+        else if (typeof vendedorPertenceAoCanalActivo === 'function') {
+          regs = regs.filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+        }
         if (!regs.length) throw new Error('Sem permissão no código ' + cod);
         const reg = regs[0];
-        if (typeof podeEditarRegisto === 'function' && !podeEditarRegisto(reg.vendedor)) {
-          throw new Error('Sem permissão para guardar contrato em ' + cod);
-        }
         if (typeof clienteJaTemNumero === 'function' && clienteJaTemNumero(reg, num)) continue;
         const actual = Array.isArray(reg.contratos) ? reg.contratos : [];
         const patchBody = { contratos: [...actual, { ...novo }] };
@@ -31695,13 +31802,13 @@ if (document.readyState === 'loading') {
         <label style="cursor:pointer;display:flex;align-items:center;gap:4px;"><input type="radio" name="ct-reg-pdv" id="ct-reg-pdv-multi" value="multi" onchange="ctRegPdvToggle()"> PDV Multi</label>
       </div>
     </div>
-    <div id="ct-reg-multi-box" style="display:none;margin-top:8px;padding:10px;background:var(--surface2);border-radius:8px;">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px;">Outras casas deste contrato</div>
-      <input class="form-input" id="ct-reg-cod-search" style="padding:6px 8px;font-size:13px;margin-bottom:8px;" placeholder="Pesquisar código, nome ou vendedor" oninput="ctRegRenderCods()">
-      <div id="ct-reg-cods-list" style="max-height:180px;overflow:auto;"></div>
-      <div style="display:flex;gap:6px;margin-top:8px;">
-        <input class="form-input" id="ct-reg-cod-extra" style="padding:6px 8px;font-size:13px;flex:1;" placeholder="Adicionar código que não está na lista" onkeydown="if(event.key==='Enter'){event.preventDefault();ctRegAddCodExtra();}">
-        <button type="button" class="btn btn-secondary btn-sm" onclick="ctRegAddCodExtra()" style="font-size:12px;">Adicionar</button>
+    <div id="ct-reg-multi-box" style="display:none;margin-top:6px;padding:6px 8px;background:var(--surface2);border-radius:6px;">
+      <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Outras casas deste contrato <span style="font-weight:400;color:var(--muted)">(todos os clientes do canal)</span></div>
+      <input class="form-input" id="ct-reg-cod-search" style="padding:3px 6px;font-size:12px;margin-bottom:4px;" placeholder="Pesquisar código, nome ou vendedor" oninput="ctRegRenderCods()">
+      <div id="ct-reg-cods-list" style="max-height:200px;overflow:auto;border:1px solid var(--border);border-radius:4px;background:#fff;"></div>
+      <div style="display:flex;gap:4px;margin-top:4px;">
+        <input class="form-input" id="ct-reg-cod-extra" style="padding:3px 6px;font-size:12px;flex:1;" placeholder="Adicionar código que não está na lista" onkeydown="if(event.key==='Enter'){event.preventDefault();ctRegAddCodExtra();}">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="ctRegAddCodExtra()" style="font-size:12px;padding:3px 8px;">Adicionar</button>
       </div>
     </div>
     <div id="ct-reg-status" style="margin-top:10px;font-size:12px;min-height:18px;"></div>

@@ -156,6 +156,148 @@ check('Por Registar tem botão Registar e o modal com os IDs', () => {
   });
   assert.ok(html.includes('function guardarRegistarContrato'));
   assert.ok(html.includes('function propagarContratosPdvMulti'));
+  assert.ok(render.includes('data-pr-vend'));
+  assert.ok(render.includes('limparFiltroContratosPorRegistar'));
+  assert.ok(render.includes('Limpar filtro'));
+});
+
+check('filterByCanalActivo não aplica escopo de vendedor', () => {
+  const ctx = vm.createContext({
+    resolveCanalActivoId: () => 'horeca',
+    CANAIS_APP: { horeca: { id: 'horeca' } },
+    vendedorPertenceAoCanalActivo: (v) => v === 'DANIELA SANTOS' || v === 'CHRISTIAN',
+    filterByUtilizadorActivo: (rows) => rows.filter(r => r.vendedor === 'DANIELA SANTOS'),
+    getVendedorScope: () => 'DANIELA SANTOS',
+  });
+  vm.runInContext(extractFn(html, 'filterByCanalActivo'), ctx);
+  const out = ctx.filterByCanalActivo([
+    { cod: '1', vendedor: 'DANIELA SANTOS' },
+    { cod: '2', vendedor: 'CHRISTIAN' },
+    { cod: '3', vendedor: 'MASSIMO' },
+  ]);
+  assert.equal(out.length, 2);
+  assert.ok(out.some(r => r.cod === '2'));
+  assert.ok(!out.some(r => r.cod === '3'));
+});
+
+check('ctRegClientesDoCanal lista o canal inteiro e mostra vendedor', () => {
+  const ctx = {
+    console,
+    String,
+    Array,
+    Set,
+    allData: [
+      { cod: '100', nome: 'Loja A', vendedor: 'DANIELA SANTOS' },
+      { cod: '200', nome: 'Loja B', vendedor: 'CHRISTIAN' },
+      { cod: '300', nome: 'Loja C', vendedor: 'MASSIMO' },
+    ],
+    window: {},
+    getRegistosCache: () => null,
+    filterByCanalActivo(rows) {
+      return rows.filter(r => r.vendedor === 'DANIELA SANTOS' || r.vendedor === 'CHRISTIAN');
+    },
+    vendedorPertenceAoCanalActivo(v) {
+      return v === 'DANIELA SANTOS' || v === 'CHRISTIAN';
+    },
+    getVendedorScope: () => 'DANIELA SANTOS',
+    filterByUtilizadorActivo: (rows) => rows.filter(r => r.vendedor === 'DANIELA SANTOS'),
+    normCod(v) { return String(v || '').trim().replace(/^0+/, '') || '0'; },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractFn(html, 'ctRegFonteRegistosCanal'), ctx);
+  vm.runInContext(extractFn(html, 'ctRegClientesDoCanal'), ctx);
+  const list = ctx.ctRegClientesDoCanal();
+  assert.equal(list.length, 2);
+  assert.ok(list.some(r => r.cod === '200' && r.vendedor === 'CHRISTIAN' && r.nome === 'Loja B'));
+  assert.ok(!list.some(r => r.cod === '300'));
+});
+
+check('ctRegRenderCods não usa Por Registar nem escopo de vendedor', () => {
+  const render = extractFn(html, 'ctRegRenderCods');
+  assert.ok(!render.includes('_contratosPorRegistar'));
+  assert.ok(!render.includes('filterByUtilizadorActivo'));
+  assert.ok(!render.includes('getVendedorScope'));
+  assert.ok(!render.includes('filterByCanalActivoVendedor'));
+  assert.ok(render.includes('ctRegClientesDoCanal'));
+  assert.ok(render.includes('padding:2px 4px'));
+  assert.ok(render.includes('font-size:12px'));
+  assert.ok(render.includes('r.vendedor'));
+  const fonte = extractFn(html, 'ctRegFonteRegistosCanal');
+  assert.ok(fonte.includes('allData'));
+  assert.ok(fonte.includes('getRegistosCache'));
+  assert.ok(!fonte.includes('_contratosPorRegistar'));
+  const clientes = extractFn(html, 'ctRegClientesDoCanal');
+  assert.ok(clientes.includes('filterByCanalActivo') || clientes.includes('vendedorPertenceAoCanalActivo'));
+  assert.ok(!clientes.includes('filterByUtilizadorActivo'));
+  assert.ok(!clientes.includes('getVendedorScope'));
+});
+
+check('modal PDV Multi compacto com pesquisa e adicionar código', () => {
+  const i = html.indexOf('id="ct-reg-multi-box"');
+  const j = html.indexOf('id="ct-reg-status"');
+  assert.ok(i >= 0 && j > i);
+  const modal = html.slice(i, j);
+  assert.ok(/max-height:(1[89]\d|20\d|21\d|220)px/.test(modal), modal.match(/max-height:[^;]+/)?.[0]);
+  assert.ok(modal.includes('overflow:auto'));
+  assert.ok(modal.includes('ct-reg-cod-search'));
+  assert.ok(modal.includes('Adicionar código que não está na lista'));
+  assert.ok(modal.includes('font-size:12px'));
+});
+
+check('guardar PDV Multi filtra só por canal nas casas extra', () => {
+  const g = extractFn(html, 'guardarRegistarContrato');
+  assert.ok(g.includes('filterByCanalActivo'));
+  assert.ok(!g.includes('filterByCanalActivoVendedor'));
+  assert.ok(g.includes('isPrincipal'));
+  const p = extractFn(html, 'propagarContratosPdvMulti');
+  assert.ok(p.includes('filterByCanalActivo'));
+  assert.ok(!p.includes('filterByCanalActivoVendedor'));
+});
+
+check('ctRegCodEhPrincipal exclui o código da casa principal', () => {
+  vm.runInContext(extractFn(html, 'ctRegCodEhPrincipal'), context);
+  assert.equal(context.ctRegCodEhPrincipal('442779', '442779'), true);
+  assert.equal(context.ctRegCodEhPrincipal('0442779', '442779'), true);
+  assert.equal(context.ctRegCodEhPrincipal('748174', '442779'), false);
+});
+
+check('ctRegRenderCods exclui o principal e mostra vendedor de outro seller', () => {
+  const listEl = { innerHTML: '' };
+  const ctx = {
+    console,
+    String,
+    Array,
+    Set,
+    allData: [
+      { cod: '100', nome: 'Loja A', vendedor: 'DANIELA SANTOS' },
+      { cod: '200', nome: 'Loja B', vendedor: 'CHRISTIAN' },
+    ],
+    window: { _ctRegCodsExtra: [], _ctRegCodsSel: [] },
+    document: {
+      getElementById(id) {
+        if (id === 'ct-reg-cods-list') return listEl;
+        if (id === 'ct-reg-cod') return { value: '100' };
+        if (id === 'ct-reg-cod-search') return { value: '' };
+        return null;
+      },
+    },
+    escHtml: (s) => String(s ?? ''),
+    filterByCanalActivo: (rows) => rows,
+    vendedorPertenceAoCanalActivo: () => true,
+    getRegistosCache: () => null,
+    normCod(v) { return String(v || '').trim().replace(/^0+/, '') || '0'; },
+    ctRegEnsureCanalClientes() {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractFn(html, 'ctRegFonteRegistosCanal'), ctx);
+  vm.runInContext(extractFn(html, 'ctRegClientesDoCanal'), ctx);
+  vm.runInContext(extractFn(html, 'ctRegCodEhPrincipal'), ctx);
+  vm.runInContext(extractFn(html, 'ctRegRenderCods'), ctx);
+  ctx.ctRegRenderCods();
+  assert.ok(listEl.innerHTML.includes('200'));
+  assert.ok(listEl.innerHTML.includes('CHRISTIAN'));
+  assert.ok(listEl.innerHTML.includes('Loja B'));
+  assert.ok(!listEl.innerHTML.includes('Loja A'));
 });
 
 if (process.exitCode) {
