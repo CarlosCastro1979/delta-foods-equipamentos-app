@@ -1906,7 +1906,7 @@ var _unused_placeholder = 1;
         <button type="button" class="home-canal-card" data-canal="varejo" onclick="entrarCanal('varejo')">
           <span class="hc-code">Canal 3</span>
           <span class="hc-name">Varejo e Distr. Varejo</span>
-          <span class="hc-desc">Mesmos menus (réplica). Ajustes por canal a seguir.</span>
+          <span class="hc-desc">Retalho e Dist. Varejo (Diogo). Clientes SAP já registados — lista e MC00 no editar.</span>
         </button>
         <button type="button" class="home-canal-card" data-canal="distribuidores" onclick="entrarCanal('distribuidores')">
           <span class="hc-code">Canal 4</span>
@@ -1950,7 +1950,7 @@ var _unused_placeholder = 1;
   </div>
 
   <div class="panel active" id="panel-registos">
-    <!-- Sub-tab buttons (Dist: sem Novo; Por registar / Contratos em falta / Registos OK) -->
+    <!-- Sub-tab buttons (Dist: sem Novo; Varejo: sem Novo/Por Registar — lista SAP) -->
     <div class="sub-nav">
       <button id="sub-novo" onclick="switchSubTab('registos','novo')"
         class="sub-tab active">
@@ -5550,6 +5550,13 @@ function renderTable() {
   if (typeof filterByUtilizadorActivo === 'function') {
     activos = filterByUtilizadorActivo(activos);
   }
+  // Varejo: NPess do Diogo = já registados — junta a lista SAP aos registos gravados
+  if (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo()
+      && typeof mergeVarejoSapComoRegistos === 'function') {
+    const sap = typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : [];
+    activos = mergeVarejoSapComoRegistos(activos, sap);
+    activos = getRegistosActivos(activos);
+  }
   let filtered = activos;
   const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
   const vendFiltEffective = scope || vendFilt;
@@ -5606,14 +5613,22 @@ function renderTable() {
   const countEl = document.getElementById('record-count');
   if (countEl) {
     const isDistLista = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
+    const isVarejoLista = typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo();
     countEl.textContent = isDistLista
       ? `${filtered.length} registos OK`
-      : `${filtered.length} de ${activos.length} registos`;
+      : isVarejoLista
+        ? `${filtered.length} de ${activos.length} clientes`
+        : `${filtered.length} de ${activos.length} registos`;
   }
   setStatus(true, activos.length);
 
   if (!filtered.length) {
-    if (tabelaBody) tabelaBody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum registo encontrado.</td></tr>';
+    if (tabelaBody) {
+      const isVarejoLista = typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo();
+      tabelaBody.innerHTML = isVarejoLista
+        ? '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente encontrado.</td></tr>'
+        : '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum registo encontrado.</td></tr>';
+    }
     return;
   }
 
@@ -5645,7 +5660,7 @@ function renderTable() {
       <td class="col-contract">${contratoCell}</td>
       <td class="col-equip">${equipHtml || '—'}</td>
       <td class="col-vend"><span class="vendedor-badge">${r.vendedor || '—'}</span></td>
-      <td class="col-action">${podeEditarRegisto(r.vendedor) ? `<button class="btn-edit" onclick="openEdit('${r.id}')">Editar</button>` : '<span style="color:#ccc;font-size:11px;">—</span>'}</td>
+      <td class="col-action">${podeEditarRegisto(r.vendedor) ? `<button class="btn-edit" onclick="openEditRegistoOuSap('${r.id ? String(r.id).replace(/'/g, '') : ''}','${String(r.cod || '').replace(/'/g, '')}')">Editar</button>` : '<span style="color:#ccc;font-size:11px;">—</span>'}</td>
     </tr>`;
   }).join('');
 }
@@ -5667,6 +5682,33 @@ function _applyRegistosToListaUI(rows) {
   renderTable();
 }
 
+/** Junta clientes SAP do Varejo (NPess Diogo) que ainda não têm linha em `registos`. */
+function mergeVarejoSapComoRegistos(registos, sapClientes) {
+  const rows = Array.isArray(registos) ? registos.slice() : [];
+  const have = new Set();
+  for (const r of rows) {
+    const k = typeof normCod === 'function' ? normCod(r && r.cod) : String((r && r.cod) || '').trim();
+    if (k && k !== '0') have.add(k);
+  }
+  for (const c of sapClientes || []) {
+    const k = typeof normCod === 'function' ? normCod(c && c.cod) : String((c && c.cod) || '').trim();
+    if (!k || k === '0' || have.has(k)) continue;
+    have.add(k);
+    rows.push({
+      id: '',
+      cod: c.cod,
+      nome: c.nome || '',
+      cep: c.cep || '',
+      vendedor: c.vendedor || 'DIOGO OLIVEIRA',
+      contrato: '',
+      contratos: [],
+      equipamentos: [],
+      _varejoSap: true,
+    });
+  }
+  return rows;
+}
+
 async function _fetchRegistosFresh() {
   return sessionCacheRun('registos', async () => {
     const rows = await fetchRegistosPaginado('*', 'criado_em.desc');
@@ -5682,6 +5724,11 @@ async function loadData(forceRefresh = false) {
   if (typeof isCanalDistribuidores === 'function' && isCanalDistribuidores()
       && typeof distCargaLoadAll === 'function') {
     try { await distCargaLoadAll(false); } catch (_) {}
+  }
+  // Varejo: lista = clientes SAP do Diogo (já considerados registados)
+  if (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo()
+      && typeof sincronizarListaClientes === 'function') {
+    try { await sincronizarListaClientes(); } catch (_) {}
   }
 
   // Memória fresca → pintar já (SWR em background se a TTL estiver a expirar)
@@ -7604,10 +7651,13 @@ async function exportForaSPExcel() {
 
 function switchSubTab(group, sub) {
   if (group === 'registos') {
-    // Dist: não há "Novo Registo" — redireccionar para Por registar
-    if (sub === 'novo' && typeof isCanalDistribuidores === 'function' && isCanalDistribuidores()
-        && !window._distAllowNovoForm) {
-      sub = 'pendentes';
+    const tabs = typeof canalRegistosTabsState === 'function' ? canalRegistosTabsState() : {};
+    // Dist: Novo → Por registar (excepto form forçado). Varejo: Novo/Por Registar → lista SAP.
+    if (sub === 'novo' && tabs.hideNovo && !window._distAllowNovoForm) {
+      sub = tabs.startSub || 'lista';
+    }
+    if (sub === 'pendentes' && tabs.hidePendentes) {
+      sub = tabs.startSub || 'lista';
     }
     window._registosSubTab = sub;
     ['novo','lista','pendentes','contratos-falta','vendedores','carga-sap'].forEach(s => {
@@ -8177,6 +8227,101 @@ async function exportContratosPorRegistarExcel() {
 }
 
 // ─── EDIT ─────────────────────────────────────────────
+/** Abre edição por id de registo, ou por código SAP (Varejo — cliente já considerado registado). */
+function openEditRegistoOuSap(id, cod) {
+  if (id) {
+    openEdit(id);
+    return;
+  }
+  if (typeof openEditClienteSap === 'function') openEditClienteSap(cod);
+}
+
+async function fetchRegistoById(id) {
+  if (!id) return null;
+  try {
+    const res = await fetch(
+      `${SUPA_URL}?id=eq.${encodeURIComponent(id)}&select=*`,
+      { headers: HEADERS }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows[0] || null : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Garante uma linha em `registos` para o cliente SAP do Varejo (lazy, no Editar/MC00). */
+async function ensureRegistoVarejoCliente(cliOrCod) {
+  const cli = (cliOrCod && typeof cliOrCod === 'object') ? cliOrCod : { cod: cliOrCod };
+  const cod = cli.cod;
+  const alvo = typeof normCod === 'function' ? normCod(cod) : String(cod || '').trim();
+  if (!alvo || alvo === '0') return null;
+
+  const sap = (typeof getListaClientesActiva === 'function'
+    ? (getListaClientesActiva() || []).find(c => (typeof normCod === 'function' ? normCod(c.cod) : String(c.cod || '').trim()) === alvo)
+    : null) || {};
+  const nome = cli.nome || sap.nome || '';
+  const vendedor = cli.vendedor || sap.vendedor || 'DIOGO OLIVEIRA';
+  const cep = cli.cep || sap.cep || '';
+
+  const mem = (allData || []).find(r => r && r.id && (typeof normCod === 'function' ? normCod(r.cod) : String(r.cod || '').trim()) === alvo);
+  if (mem && mem.id) {
+    const full = await fetchRegistoById(mem.id);
+    return full || mem;
+  }
+  const existente = typeof findRegistoByCod === 'function' ? await findRegistoByCod(cod) : null;
+  if (existente && existente.id) {
+    const full = await fetchRegistoById(existente.id);
+    return full || existente;
+  }
+  if (!nome) {
+    toast('Cliente SAP incompleto (código/nome).', 'error');
+    return null;
+  }
+  const body = {
+    id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('v' + Date.now()),
+    vendedor, cod, nome, cep,
+    contrato: '',
+    contratos: [],
+    equipamentos: [],
+    data: new Date().toISOString().slice(0, 10),
+    manual: true,
+  };
+  const res = await fetch(SUPA_URL, {
+    method: 'POST',
+    headers: HEADERS,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    const again = typeof findRegistoByCod === 'function' ? await findRegistoByCod(cod) : null;
+    if (again && again.id) return (await fetchRegistoById(again.id)) || again;
+    throw new Error('HTTP ' + res.status + (t ? ' — ' + t : ''));
+  }
+  try {
+    allData = Array.isArray(allData)
+      ? [body].concat(allData.filter(r => (typeof normCod === 'function' ? normCod(r.cod) : String(r.cod || '').trim()) !== alvo && r.id !== body.id))
+      : [body];
+    if (typeof setRegistosCache === 'function') setRegistosCache(allData);
+  } catch (_) {}
+  return body;
+}
+
+async function openEditClienteSap(cod) {
+  try {
+    toast('A abrir cliente…');
+    const sap = (typeof getListaClientesActiva === 'function'
+      ? (getListaClientesActiva() || []).find(c => (typeof normCod === 'function' ? normCod(c.cod) : String(c.cod || '').trim()) === (typeof normCod === 'function' ? normCod(cod) : String(cod || '').trim()))
+      : null) || { cod };
+    const r = await ensureRegistoVarejoCliente(sap);
+    if (!r) return;
+    openEditWithRegisto(r);
+  } catch (e) {
+    toast('Erro ao abrir cliente: ' + (e.message || e), 'error');
+  }
+}
+
 /** Abre o modal de edição com o objecto registo já carregado. */
 function openEditWithRegisto(registo) {
   if (!registo || !registo.id) {
@@ -8200,6 +8345,7 @@ function openEditWithRegisto(registo) {
   // A ficha de cadastro só é preenchida na 1.ª vez que se abre a aba; começa sempre na aba Registo.
   _editCadPreenchido = false;
   _editMc00Preenchido = false;
+  if (typeof adaptarEditTabsCanal === 'function') adaptarEditTabsCanal();
   editSwitchTab('registo');
   document.getElementById('modal-overlay').classList.add('open');
 }
@@ -8692,6 +8838,11 @@ async function corrigirCodRevisao(codOrig) {
 }
 
 function preencherNovo(cod, nome, cep, vendedor) {
+  // Varejo: não há Novo Registo — abrir editar (MC00) do cliente SAP
+  if (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo()) {
+    if (typeof openEditClienteSap === 'function') openEditClienteSap(cod);
+    return;
+  }
   // Dist: form sem tab "Novo Registo" — abrir painel via flag temporária
   switchTab('registos');
   const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
@@ -10379,12 +10530,17 @@ function abrirCanalConfirmado(canalId) {
   } catch (eFill) { console.warn('fillVendedorSelectCanal:', eFill); }
   try {
     if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal();
-    const distStart = (canalId === 'distribuidores') ? 'pendentes' : 'novo';
-    window._registosSubTab = distStart;
-    switchSubTab('registos', distStart);
+    const start = (typeof canalRegistosTabsState === 'function'
+      ? canalRegistosTabsState(canalId).startSub
+      : (canalId === 'distribuidores' ? 'pendentes' : 'novo'));
+    window._registosSubTab = start;
+    switchSubTab('registos', start);
   } catch (e2) {
     console.warn('switchSubTab:', e2);
-    const sub = document.getElementById(canalId === 'distribuidores' ? 'sub-panel-pendentes' : 'sub-panel-novo');
+    const startId = (canalId === 'distribuidores')
+      ? 'sub-panel-pendentes'
+      : (canalId === 'varejo' ? 'sub-panel-lista' : 'sub-panel-novo');
+    const sub = document.getElementById(startId);
     if (sub) sub.style.display = 'block';
   }
   setTimeout(() => {
@@ -12023,9 +12179,10 @@ function switchTab(tab) {
   if (tab === 'at') loadAtTab();
   if (tab === 'registos') {
     try { if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal(); } catch (_) {}
-    // Dist: Por registar; outros canais: Novo Registo
-    const dist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
-    const start = dist ? 'pendentes' : 'novo';
+    // Dist: Por registar; Varejo: lista (SAP já registados); Horeca: Novo Registo
+    const start = (typeof canalRegistosTabsState === 'function')
+      ? canalRegistosTabsState().startSub
+      : ((typeof isCanalDistribuidores === 'function' && isCanalDistribuidores()) ? 'pendentes' : 'novo');
     window._registosSubTab = start;
     switchSubTab('registos', start);
     // Pré-selecionar vendedor pelo utilizador logado
@@ -18876,9 +19033,11 @@ function getEmailUtilizador(nome) {
 
 // Filipe Neves = supervisor só do Horeca — CC automático apenas nesse canal.
 const CC_FIXO_FILIPE = 'filipe.neves@deltafoodsbrasil.com.br';
+// Diogo Oliveira = supervisor Varejo / Dist. retalho — CC se o remetente não for ele.
+const CC_FIXO_DIOGO = getEmailUtilizador('DIOGO OLIVEIRA') || 'diogo.oliveira@deltafoodsbrasil.com.br';
 /** Destino único do email MC00 (HTML, mailto e .eml). Não usar o email do Carlos em Para. */
 const EMAIL_MC00_TO = 'condicoes.especiais@gruponabeiro.com';
-/** CC do MC00: Carlos. No Horeca o Filipe entra via ccString. */
+/** CC do MC00: Carlos. Horeca: Filipe via ccString. Varejo: Diogo via ccString. */
 const EMAIL_MC00_CC = ['carlos.castro@deltafoodsbrasil.com.br'];
 
 function isCanalHorecaActivo() {
@@ -18886,6 +19045,31 @@ function isCanalHorecaActivo() {
     ? resolveCanalActivoId()
     : (typeof _canalActivo !== 'undefined' ? _canalActivo : null);
   return id === 'horeca';
+}
+
+function isCanalVarejoActivo() {
+  const id = typeof resolveCanalActivoId === 'function'
+    ? resolveCanalActivoId()
+    : (typeof _canalActivo !== 'undefined' ? _canalActivo : null);
+  return id === 'varejo';
+}
+
+/** True se o remetente (nome ou email) for o Diogo Oliveira. */
+function remetenteEhDiogo(remetente) {
+  const diogo = String(CC_FIXO_DIOGO || '').toLowerCase();
+  if (!diogo) return false;
+  let nome = String(remetente == null ? '' : remetente).trim();
+  if (!nome && typeof getUtilizadorAtual === 'function') {
+    nome = String(getUtilizadorAtual() || '').trim();
+  }
+  if (!nome) return false;
+  if (nome.includes('@')) return nome.toLowerCase() === diogo;
+  if (typeof getEmailUtilizador === 'function') {
+    const em = getEmailUtilizador(nome);
+    if (em && em.toLowerCase() === diogo) return true;
+  }
+  const norm = nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  return norm === 'DIOGO OLIVEIRA';
 }
 
 /** Remove lixo invisível / pontuação que o Gmail marca a vermelho. */
@@ -18918,15 +19102,30 @@ function outlookMailtoAddrList(input) {
   return out;
 }
 
-// Monta CC. No Horeca inclui sempre o Filipe; noutros canais nunca o inclui.
+// Monta CC.
+// Horeca: inclui sempre o Filipe; noutros canais nunca o inclui.
+// Varejo / Dist. retalho: inclui o Diogo excepto se já estiver no To/CC ou for o remetente.
 // Separador no .eml / Outlook desktop: ponto-e-vírgula (PT-BR).
-function ccString(cc) {
+function ccString(cc, opts) {
   const filipe = CC_FIXO_FILIPE.toLowerCase();
+  const diogo = String((typeof CC_FIXO_DIOGO !== 'undefined' && CC_FIXO_DIOGO) || '').toLowerCase();
+  const toList = outlookMailtoAddrList(opts && opts.to);
+  const remetente = opts && Object.prototype.hasOwnProperty.call(opts, 'remetente')
+    ? opts.remetente
+    : undefined;
   let arr = outlookMailtoAddrList(cc);
   if (typeof isCanalHorecaActivo === 'function' && isCanalHorecaActivo()) {
     arr = outlookMailtoAddrList(arr.concat(CC_FIXO_FILIPE));
   } else {
     arr = arr.filter(e => e.toLowerCase() !== filipe);
+  }
+  if (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo() && diogo) {
+    const jaEmTo = toList.some(e => e.toLowerCase() === diogo);
+    if ((typeof remetenteEhDiogo === 'function' && remetenteEhDiogo(remetente)) || jaEmTo) {
+      arr = arr.filter(e => e.toLowerCase() !== diogo);
+    } else if (!arr.some(e => e.toLowerCase() === diogo)) {
+      arr = outlookMailtoAddrList(arr.concat(CC_FIXO_DIOGO));
+    }
   }
   return arr.join('; ');
 }
@@ -18946,8 +19145,8 @@ function mailtoToPath(to) {
  * Gmail/iOS/Android marcam `;` como endereço inválido («Verificar endereço de email»).
  * Outlook aceita vírgula no mailto. O .eml do PC continua com `;` via ccString.
  */
-function ccMailtoParam(cc) {
-  const emails = outlookMailtoAddrList(ccString(cc));
+function ccMailtoParam(cc, opts) {
+  const emails = outlookMailtoAddrList(ccString(cc, opts));
   return emails.length ? ('cc=' + encodeURIComponent(emails.join(','))) : '';
 }
 
@@ -18962,7 +19161,7 @@ function buildMailtoAprovacao({ remetenteNome, destinatario, cc = [], assunto, c
     ccArr.push(remetenteEmail);
   }
   const parts = [];
-  const ccP = ccMailtoParam(ccArr);
+  const ccP = ccMailtoParam(ccArr, { to, remetente: remetenteNome });
   if (ccP) parts.push(ccP);
   parts.push('subject=' + assunto);
   parts.push('body=' + corpo);
@@ -19426,7 +19625,7 @@ async function outlookOpenMailtoPlusExcel({
 
   const buildMailto = (body) => {
     const parts = [];
-    const ccP = ccMailtoParam(ccList);
+    const ccP = ccMailtoParam(ccList, { to });
     if (ccP) parts.push(ccP);
     parts.push('subject=' + encodeURIComponent(subject || ''));
     parts.push('body=' + encodeURIComponent(body || ''));
@@ -19689,9 +19888,13 @@ async function outlookAbrirRascunho({
   mailtoFallback = null,
 } = {}) {
   // Outlook PT-BR: vários endereços no CC separados por ponto-e-vírgula
-  let ccVal = (cc == null || cc === '')
-    ? (typeof ccString === 'function' ? ccString([]) : (isCanalHorecaActivo() ? CC_FIXO_FILIPE : ''))
-    : String(cc);
+  // Sempre ccString: Filipe (Horeca) e Diogo (Varejo, se o remetente não for ele).
+  const remetenteNome = (typeof getUtilizadorAtual === 'function') ? getUtilizadorAtual() : '';
+  let ccVal = (typeof ccString === 'function')
+    ? ccString((cc == null || cc === '') ? [] : cc, { to, remetente: remetenteNome })
+    : ((cc == null || cc === '')
+      ? (isCanalHorecaActivo() ? CC_FIXO_FILIPE : '')
+      : String(cc));
   // Noutros canais: nunca manter Filipe no CC (supervisor só Horeca)
   if (!isCanalHorecaActivo() && ccVal) {
     ccVal = ccVal.split(/[,;]/).map(s => s.trim()).filter(s => s && s.toLowerCase() !== CC_FIXO_FILIPE.toLowerCase()).join('; ');
@@ -23899,6 +24102,7 @@ async function prosAbrirEmailCadastro(dados, opts = {}) {
     propTexto = '',
     attachments = [],
     // Lead ganho: Carlos + Daniela CC. Alteração CNPJ: Daniela + Carlos/Filipe CC.
+    // Varejo: Diogo entra via ccString se o remetente não for ele.
     to = 'carlos.castro@deltafoodsbrasil.com.br',
     cc = ['daniela.kucinski@deltafoodsbrasil.com.br'],
   } = opts;
@@ -24155,7 +24359,7 @@ async function prosExportarAlteracaoCnpj() {
       propTexto: '',
       attachments: cadastro?.blob ? [{ blob: cadastro.blob, filename: cadastro.filename }] : [],
       to: 'daniela.kucinski@deltafoodsbrasil.com.br',
-      cc: ['carlos.castro@deltafoodsbrasil.com.br'], // Filipe entra sempre via ccString
+      cc: ['carlos.castro@deltafoodsbrasil.com.br'], // Filipe (Horeca) / Diogo (Varejo) via ccString
     });
     if (st) {
       st.innerHTML = ok !== false
@@ -24590,6 +24794,32 @@ function mc00NormalizeGrupo(v) {
   return 'HORECA';
 }
 
+/** Grupo MC00 por canal: Varejo/Dist. retalho → RETALHO (13 → DISTRIBUIDORES). Horeca inalterado. */
+function mc00GrupoDefaultCanal(r) {
+  if (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo()) {
+    const sap = (typeof getListaClientesActiva === 'function'
+      ? (getListaClientesActiva() || []).find(c => (typeof normCod === 'function' ? normCod(c.cod) : String(c.cod || '').trim()) === (typeof normCod === 'function' ? normCod(r && r.cod) : String((r && r.cod) || '').trim()))
+      : null) || {};
+    const cad = (r && r.cadastro_json && typeof r.cadastro_json === 'object') ? r.cadastro_json : {};
+    const canal = typeof mc00NormalizeCanal === 'function'
+      ? mc00NormalizeCanal(cad.canal || sap.canal || '')
+      : String(cad.canal || sap.canal || '');
+    if (String(canal).startsWith('13')) return 'DISTRIBUIDORES';
+    return 'RETALHO';
+  }
+  return 'HORECA';
+}
+
+/** Mostra a aba MC00 no editar (Horeca e Varejo). Dist Massimo não é alterado. */
+function adaptarEditTabsCanal() {
+  const btnM = document.getElementById('edit-tab-btn-mc00');
+  if (!btnM) return;
+  if ((typeof isCanalHorecaActivo === 'function' && isCanalHorecaActivo())
+      || (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo())) {
+    btnM.style.display = '';
+  }
+}
+
 function mc00CollectHeader() {
   return {
     departamento: mc00NormalizeDepartamento(mc00Get('mc00-departamento')),
@@ -24623,7 +24853,7 @@ async function mc00Preencher(r) {
   mc00SyncHeaderFromCadastro();
 
   // Só Grupo / processo / info / produtos vêm do MC00 guardado
-  mc00Set('mc00-grupo', mc00NormalizeGrupo(saved?.grupo || 'HORECA'));
+  mc00Set('mc00-grupo', mc00NormalizeGrupo(saved?.grupo || (typeof mc00GrupoDefaultCanal === 'function' ? mc00GrupoDefaultCanal(r) : 'HORECA')));
   mc00Set('mc00-processo', saved?.processo || '');
   const infoEl = document.getElementById('mc00-info');
   if (infoEl) infoEl.value = saved?.info || '';
@@ -25213,10 +25443,15 @@ ${remetente}`;
 
   return outlookAbrirRascunho({
     to: EMAIL_MC00_TO,
-    // Para: condições especiais; CC Carlos (e Filipe no Horeca via ccString)
+    // Para: condições especiais; CC Carlos (Filipe no Horeca / Diogo no Varejo via ccString)
     cc: typeof ccString === 'function'
-      ? ccString(EMAIL_MC00_CC)
-      : EMAIL_MC00_CC.concat(isCanalHorecaActivo() ? [CC_FIXO_FILIPE] : []).join('; '),
+      ? ccString(EMAIL_MC00_CC, { to: EMAIL_MC00_TO, remetente })
+      : EMAIL_MC00_CC.concat(
+          isCanalHorecaActivo() ? [CC_FIXO_FILIPE] : [],
+          (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo()
+            && !(typeof remetenteEhDiogo === 'function' && remetenteEhDiogo(remetente))
+            ? [CC_FIXO_DIOGO] : [])
+        ).join('; '),
     subject: `MC00 - Condições Especiais - ${d.nome || d.cod || 'Cliente'}`,
     html,
     attachments: excelBlob ? [{ blob: excelBlob, filename: excelFilename || 'MC00.xlsx' }] : [],
@@ -28974,7 +29209,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-08-28-pdv-e: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-08-28-varejo-b: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
@@ -30224,6 +30459,29 @@ function isCanalDistribuidores() {
   return id === 'distribuidores';
 }
 
+/**
+ * Tabs do menu Registo Clientes por canal.
+ * Varejo (Diogo): sem Novo / Por Registar — NPess do Diogo = já registados.
+ * Dist (Massimo): sem Novo; Por registar + Contratos em falta.
+ * Horeca: Novo + Por Registar + Todos os Registos.
+ */
+function canalRegistosTabsState(canalId) {
+  const id = canalId
+    || (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : (typeof _canalActivo !== 'undefined' ? _canalActivo : null))
+    || null;
+  const isDist = id === 'distribuidores';
+  const isVarejo = id === 'varejo';
+  return {
+    canalId: id,
+    hideNovo: isDist || isVarejo,
+    hidePendentes: isVarejo,
+    hideContratosFalta: !isDist,
+    listaLabel: isDist ? 'Registos OK' : 'Todos os Registos',
+    pendLabel: isDist ? 'Por registar' : 'Por Registar',
+    startSub: isDist ? 'pendentes' : (isVarejo ? 'lista' : 'novo'),
+  };
+}
+
 function adaptarFormRegistoCanal() {
   const isDist = isCanalDistribuidores();
   const stdNovo = document.getElementById('registo-std-equip-block');
@@ -30250,20 +30508,26 @@ function adaptarFormRegistoCanal() {
     distApplyComodatoUi('e');
   }
   if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal();
+  if (typeof adaptarEditTabsCanal === 'function') adaptarEditTabsCanal();
 }
 
-/** Dist: esconde Novo Registo; mostra Contratos em falta; renomeia lista → Registos OK. */
+/** Dist: esconde Novo; Varejo: esconde Novo e Por Registar. */
 function adaptarRegistoTabsCanal() {
-  const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
+  const st = typeof canalRegistosTabsState === 'function'
+    ? canalRegistosTabsState()
+    : { hideNovo: false, hidePendentes: false, hideContratosFalta: true, listaLabel: 'Todos os Registos', pendLabel: 'Por Registar' };
   const btnNovo = document.getElementById('sub-novo');
   const btnFalta = document.getElementById('sub-contratos-falta');
   const btnLista = document.getElementById('sub-lista');
   const btnPend = document.getElementById('sub-pendentes');
-  if (btnNovo) btnNovo.style.display = isDist ? 'none' : '';
-  if (btnFalta) btnFalta.style.display = isDist ? '' : 'none';
-  if (btnLista) btnLista.textContent = isDist ? 'Registos OK' : 'Todos os Registos';
-  if (btnPend) btnPend.textContent = isDist ? 'Por registar' : 'Por Registar';
-  if (!isDist) {
+  if (btnNovo) btnNovo.style.display = st.hideNovo ? 'none' : '';
+  if (btnPend) {
+    btnPend.style.display = st.hidePendentes ? 'none' : '';
+    btnPend.textContent = st.pendLabel;
+  }
+  if (btnFalta) btnFalta.style.display = st.hideContratosFalta ? 'none' : '';
+  if (btnLista) btnLista.textContent = st.listaLabel;
+  if (st.hideContratosFalta) {
     const panelFalta = document.getElementById('sub-panel-contratos-falta');
     if (panelFalta) panelFalta.style.display = 'none';
   }

@@ -32,6 +32,7 @@ function extractFn(src, name) {
 const names = [
   'outlookSanitizeEmail',
   'outlookMailtoAddrList',
+  'remetenteEhDiogo',
   'ccString',
   'mailtoAddr',
   'mailtoToPath',
@@ -44,9 +45,23 @@ const names = [
 ];
 
 let horeca = true;
+let varejo = false;
+let utilizador = 'Carlos Castro';
+const EMAILS = {
+  'DIOGO OLIVEIRA': 'diogo.oliveira@deltafoodsbrasil.com.br',
+  'CARLOS CASTRO': 'carlos.castro@deltafoodsbrasil.com.br',
+  'FILIPE NEVES': 'filipe.neves@deltafoodsbrasil.com.br',
+};
 const context = {
   CC_FIXO_FILIPE: 'filipe.neves@deltafoodsbrasil.com.br',
+  CC_FIXO_DIOGO: 'diogo.oliveira@deltafoodsbrasil.com.br',
   isCanalHorecaActivo: () => horeca,
+  isCanalVarejoActivo: () => varejo,
+  getUtilizadorAtual: () => utilizador,
+  getEmailUtilizador: (nome) => {
+    const k = String(nome || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    return EMAILS[k] || '';
+  },
   console,
   Date,
 };
@@ -90,8 +105,13 @@ check('To com ; vira vírgulas (RFC 6068)', () => {
   );
 });
 
+function countAddr(s, needle) {
+  return String(s || '').split(/[,;]/).filter(e => e.toLowerCase().includes(needle)).length;
+}
+
 check('cc mailto do chamado (Horeca) — Gmail não vê ponto-e-vírgula', () => {
   horeca = true;
+  varejo = false;
   const param = context.ccMailtoParam([
     'carlos.castro@deltafoodsbrasil.com.br',
     'ricardo.vicentesilva@deltafoodsbrasil.com.br',
@@ -106,13 +126,93 @@ check('cc mailto do chamado (Horeca) — Gmail não vê ponto-e-vírgula', () =>
   assert.ok(decoded.includes(','));
   assert.ok(decoded.includes('filipe.neves@deltafoodsbrasil.com.br'));
   assert.ok(decoded.includes('daniela.silva@deltafoodsbrasil.com.br'));
+  assert.ok(!decoded.toLowerCase().includes('diogo.oliveira'), 'Horeca não força Diogo');
 });
 
 check('cc .eml (ccString) continua com ; para Outlook desktop', () => {
   horeca = true;
+  varejo = false;
   const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br']);
   assert.ok(s.includes(';') || s.includes('filipe.neves@deltafoodsbrasil.com.br'));
   assert.ok(s.includes('carlos.castro@deltafoodsbrasil.com.br'));
+});
+
+check('Horeca: Filipe em CC, Diogo não é forçado (Carlos a enviar)', () => {
+  horeca = true;
+  varejo = false;
+  utilizador = 'Carlos Castro';
+  const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br'], {
+    remetente: 'Carlos Castro',
+  });
+  assert.ok(s.includes('filipe.neves@deltafoodsbrasil.com.br'));
+  assert.equal(countAddr(s, 'diogo.oliveira'), 0);
+});
+
+check('Retalho + Carlos: Diogo em CC (sem duplicar, sem Filipe)', () => {
+  horeca = false;
+  varejo = true;
+  utilizador = 'Carlos Castro';
+  const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br'], {
+    remetente: 'Carlos Castro',
+  });
+  assert.ok(s.includes('carlos.castro@deltafoodsbrasil.com.br'));
+  assert.ok(s.includes('diogo.oliveira@deltafoodsbrasil.com.br'));
+  assert.ok(!s.includes('filipe.neves@deltafoodsbrasil.com.br'));
+  assert.equal(countAddr(s, 'diogo.oliveira'), 1);
+  const dup = context.ccString(
+    ['carlos.castro@deltafoodsbrasil.com.br', 'diogo.oliveira@deltafoodsbrasil.com.br'],
+    { remetente: 'Carlos Castro' }
+  );
+  assert.equal(countAddr(dup, 'diogo.oliveira'), 1);
+  const param = context.ccMailtoParam(['carlos.castro@deltafoodsbrasil.com.br'], {
+    to: 'condicoes.especiais@gruponabeiro.com',
+    remetente: 'Carlos Castro',
+  });
+  const decoded = decodeURIComponent(param.slice(3));
+  assert.ok(decoded.includes('diogo.oliveira@deltafoodsbrasil.com.br'));
+  assert.ok(!decoded.includes('filipe.neves@deltafoodsbrasil.com.br'));
+});
+
+check('Retalho + Diogo remetente: não duplica o Diogo no CC', () => {
+  horeca = false;
+  varejo = true;
+  utilizador = 'Diogo Oliveira';
+  const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br'], {
+    remetente: 'Diogo Oliveira',
+  });
+  assert.equal(countAddr(s, 'diogo.oliveira'), 0);
+  assert.ok(s.includes('carlos.castro@deltafoodsbrasil.com.br'));
+  const jaLa = context.ccString(
+    ['carlos.castro@deltafoodsbrasil.com.br', 'diogo.oliveira@deltafoodsbrasil.com.br'],
+    { remetente: 'Diogo Oliveira' }
+  );
+  assert.equal(countAddr(jaLa, 'diogo.oliveira'), 0);
+  const porEmail = context.ccString(['carlos.castro@deltafoodsbrasil.com.br'], {
+    remetente: 'diogo.oliveira@deltafoodsbrasil.com.br',
+  });
+  assert.equal(countAddr(porEmail, 'diogo.oliveira'), 0);
+  const porLogin = context.ccString(['carlos.castro@deltafoodsbrasil.com.br']);
+  assert.equal(countAddr(porLogin, 'diogo.oliveira'), 0, 'login Diogo via getUtilizadorAtual');
+});
+
+check('Retalho: Diogo já no To não entra em CC', () => {
+  horeca = false;
+  varejo = true;
+  utilizador = 'Carlos Castro';
+  const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br'], {
+    to: 'diogo.oliveira@deltafoodsbrasil.com.br',
+    remetente: 'Carlos Castro',
+  });
+  assert.equal(countAddr(s, 'diogo.oliveira'), 0);
+});
+
+check('fora do retalho (ex. Dist) não força Diogo nem Filipe', () => {
+  horeca = false;
+  varejo = false;
+  utilizador = 'Carlos Castro';
+  const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br']);
+  assert.equal(countAddr(s, 'diogo.oliveira'), 0);
+  assert.ok(!s.includes('filipe.neves@deltafoodsbrasil.com.br'));
 });
 
 check('sanitiza lixo invisível / <> que o Gmail rejeita', () => {
@@ -122,6 +222,8 @@ check('sanitiza lixo invisível / <> que o Gmail rejeita', () => {
 
 check('URL mailto do chamado AT (screenshot Daniela) é Gmail-safe', () => {
   horeca = true;
+  varejo = false;
+  utilizador = 'Carlos Castro';
   const to = context.mailtoToPath('info.br@gruponabeiro.com');
   const cc = context.ccMailtoParam([
     'carlos.castro@deltafoodsbrasil.com.br',
@@ -138,6 +240,8 @@ check('URL mailto do chamado AT (screenshot Daniela) é Gmail-safe', () => {
   const ccQ = new URLSearchParams(q).get('cc');
   assert.ok(ccQ && !ccQ.includes(';'), 'Gmail recebe CC com vírgulas');
   assert.ok(ccQ.includes(','));
+  assert.ok(ccQ.includes('filipe.neves@deltafoodsbrasil.com.br'));
+  assert.ok(!ccQ.toLowerCase().includes('diogo.oliveira'));
   const bodyQ = new URLSearchParams(q).get('body');
   assert.ok(bodyQ.includes('PEDIDO DE ASSISTÊNCIA TÉCNICA'));
   assert.ok(!bodyQ.includes('Pedido Delta Foods.'));
@@ -245,7 +349,7 @@ check('MC00 Para é condições especiais; Carlos em CC; saudação sem nome', (
   const bloco = html.slice(html.indexOf('async function mc00AbrirEmail'));
   const fn = bloco.slice(0, bloco.indexOf('\n}\n\n') + 1);
   assert.ok(fn.includes('to: EMAIL_MC00_TO'));
-  assert.ok(fn.includes('ccString(EMAIL_MC00_CC)'));
+  assert.ok(/ccString\(EMAIL_MC00_CC/.test(fn), 'MC00 usa ccString (Filipe/Diogo por canal)');
   assert.ok(!fn.includes("to: 'carlos.castro@deltafoodsbrasil.com.br'"));
   assert.ok(!fn.includes("to: 'condicoes.especiais@gruponabeiro.com'"),
     'usar a constante EMAIL_MC00_TO, não o literal no rascunho');
@@ -269,6 +373,23 @@ check('MC00 Para é condições especiais; Carlos em CC; saudação sem nome', (
   assert.ok(fn.includes('Aguardo a vossa aprovação.'));
   assert.equal((html.match(/async function mc00AbrirEmail/g) || []).length, 1,
     'um único caminho a abrir o email MC00');
+});
+
+check('mapa EMAIL + rascunho Outlook aplicam CC Diogo no retalho', () => {
+  assert.ok(html.includes("'DIOGO OLIVEIRA': 'diogo.oliveira@deltafoodsbrasil.com.br'"));
+  assert.ok(html.includes("getEmailUtilizador('DIOGO OLIVEIRA')"));
+  assert.ok(html.includes('function isCanalVarejoActivo'));
+  assert.ok(html.includes('function remetenteEhDiogo'));
+  const start = html.indexOf('async function outlookAbrirRascunho');
+  const end = html.indexOf('\nfunction isAdmin()', start);
+  assert.ok(start >= 0 && end > start);
+  const fn = html.slice(start, end);
+  assert.ok(fn.includes('ccString('));
+  assert.ok(fn.includes('{ to, remetente'));
+  assert.ok(html.includes('async function prosAbrirEmailCadastro'));
+  const cad = html.slice(html.indexOf('async function prosAbrirEmailCadastro'));
+  assert.ok(cad.includes('ccString(cc)'));
+  assert.ok(cad.includes('outlookAbrirRascunho'));
 });
 
 check('mc00SaudacaoHora nunca inclui Carlos', () => {
