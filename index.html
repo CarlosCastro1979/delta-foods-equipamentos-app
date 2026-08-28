@@ -16723,14 +16723,43 @@ function filtrarContratosVendedor() {
   try { contratoDocsHydrateFromStorage(rows); } catch (_) {}
 }
 
-// ─── SUPABASE STORAGE — PDFs de Contratos ────────────
+// ─── SUPABASE STORAGE — ficheiros de Contratos (qualquer tipo; não se lê o conteúdo) ────────────
 const STORAGE_BUCKET = 'contratos';
 const STORAGE_BASE = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
 const STORAGE_PUBLIC = STORAGE_BASE + '/public/' + STORAGE_BUCKET;
 const STORAGE_LIST = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/list/' + STORAGE_BUCKET;
 
-function contratoDocFileName(tipo) {
-  return tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
+function contratoDocsExtensao(name) {
+  const m = String(name || '').match(/(\.[A-Za-z0-9]{1,8})$/);
+  return m ? m[1].toLowerCase() : '';
+}
+
+function contratoDocFileName(tipo, originalName) {
+  const ext = contratoDocsExtensao(originalName);
+  return (tipo === 'nf' ? 'nf' : 'contrato_assinado') + (ext || '');
+}
+
+function contratoDocsMime(file) {
+  const t = file && file.type;
+  return (t && String(t).trim()) ? t : 'application/octet-stream';
+}
+
+/** Qualquer ficheiro na pasta conta como anexado — não se lê nem valida o conteúdo. */
+function contratoDocsTipoFicheiro(file) {
+  const f = String(file || '').toLowerCase();
+  if (!f) return null;
+  if (/^nf(\.|$)/.test(f)) return 'nf';
+  if (f.indexOf('contrato') >= 0 || f.indexOf('assinado') >= 0) return 'ct';
+  if (/\.[a-z0-9]{1,8}$/i.test(f)) return 'ct';
+  return null;
+}
+
+function contratoDocsIsStorageFile(it) {
+  if (!it || !it.name) return false;
+  if (it.id) return true;
+  const meta = it.metadata;
+  if (meta && typeof meta === 'object' && (meta.size != null || meta.mimetype || meta.eTag)) return true;
+  return /\.[A-Za-z0-9]{1,8}$/.test(it.name);
 }
 
 function contratoDocsValorOk(v) {
@@ -16776,11 +16805,9 @@ function contratoDocsPickEntry(docsForCod, num) {
 function contratoDocsParseStoragePath(path) {
   const parts = String(path || '').split('/').filter(Boolean);
   if (parts.length < 3) return null;
-  const file = parts[parts.length - 1].toLowerCase();
-  let tipo = null;
-  if (file === 'nf.pdf') tipo = 'nf';
-  else if (file.indexOf('contrato') >= 0) tipo = 'ct';
-  else return null;
+  const file = parts[parts.length - 1];
+  const tipo = contratoDocsTipoFicheiro(file);
+  if (!tipo) return null;
   return { cod: parts[0], num: parts.slice(1, -1).join('/'), tipo, path: parts.join('/') };
 }
 
@@ -16809,7 +16836,7 @@ async function contratoDocsListStorageFiles() {
       const name = it && it.name;
       if (!name || name === 'previsao') continue;
       const path = prefix ? (String(prefix).replace(/\/$/, '') + '/' + name) : name;
-      if (/\.pdf$/i.test(name)) files.push(path);
+      if (contratoDocsIsStorageFile(it)) files.push(path);
       else await walk(path, depth + 1);
     }
   }
@@ -16996,7 +17023,7 @@ function contratoDocsSetLoaded(el, loaded) {
   el.textContent = on ? '✅ ' + label : label;
   el.title = on
     ? (tipo === 'nf' ? 'NF carregada — clica para ver ou substituir' : 'Contrato carregado — clica para ver ou substituir')
-    : (tipo === 'nf' ? 'NF em falta — clica para carregar PDF' : 'Contrato em falta — clica para carregar PDF');
+    : (tipo === 'nf' ? 'NF em falta — clica para carregar um ficheiro' : 'Contrato em falta — clica para carregar um ficheiro');
 }
 
 function contratoDocsLidos(cod, num, docsMap) {
@@ -17028,19 +17055,17 @@ function contratoDocsPatchMap(cod, num, tipo, value) {
 
 function contratoUploadPdf(tipo, docPath) {
   const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
-  const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
-  const storagePath = `${docPath}/${fileName}`;
   const slashIdx = docPath.indexOf('/');
   const cod = docPath.slice(0, slashIdx);
   const numContrato = docPath.slice(slashIdx + 1); // pode ter / no nome do contrato
 
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'application/pdf';
   input.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.type !== 'application/pdf') { toast('Apenas PDFs são aceites.', 'error'); return; }
+    const fileName = contratoDocFileName(tipo, file.name);
+    const storagePath = `${docPath}/${fileName}`;
 
     const btnId = `btn-${tipo}-${cod}-${numContrato.replace(/_/g,'_')}`;
     const btn = document.getElementById(btnId);
@@ -17048,13 +17073,12 @@ function contratoUploadPdf(tipo, docPath) {
     toast(`A fazer upload de ${label}...`);
 
     try {
-      // Upload para o Storage (bucket público)
       const res = await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
         method: 'POST',
         headers: {
           'apikey': SUPA_KEY,
           'Authorization': 'Bearer ' + SUPA_KEY,
-          'Content-Type': 'application/pdf',
+          'Content-Type': contratoDocsMime(file),
           'x-upsert': 'true'
         },
         body: file
@@ -17063,7 +17087,6 @@ function contratoUploadPdf(tipo, docPath) {
 
       const pubUrl = `${STORAGE_PUBLIC}/${storagePath}`;
 
-      // 1. Guardar em localStorage imediatamente
       const docsLocalKey = 'delta_docs_' + cod;
       try {
         const saved = JSON.parse(localStorage.getItem(docsLocalKey) || '{}');
@@ -17072,12 +17095,10 @@ function contratoUploadPdf(tipo, docPath) {
         localStorage.setItem(docsLocalKey, JSON.stringify(saved));
       } catch(e) {}
 
-      // 2. Actualizar pílulas NF / Contrato imediatamente
       contratoDocsPatchMap(cod, numContrato, tipo, storagePath);
       contratoMarcarBotao(cod, numContrato, tipo, false);
       const targetBtn = contratoDocsBtnsFor(cod, numContrato).find(b => b.dataset.uploadTipo === tipo) || btn;
       if (targetBtn) {
-        // Legado: ✅ NF / ✅ CT. Nas pílulas .ct-doc-btn o texto já vem de contratoMarcarBotao.
         if (!targetBtn.classList || !targetBtn.classList.contains('ct-doc-btn')) {
           targetBtn.textContent = tipo === 'nf' ? '✅ NF' : '✅ CT';
         }
@@ -17085,13 +17106,13 @@ function contratoUploadPdf(tipo, docPath) {
         targetBtn.disabled = false;
         contratoSetDownloadBtn(targetBtn, pubUrl, label);
       }
-      // 3. Guardar o estado NF/Contrato no registo (não só o ficheiro no Storage)
       try {
         await contratoDocsPersistSupabase(cod, numContrato, tipo, storagePath);
+        try { await contratoDocsApagarOutrosDoTipo(cod, numContrato, tipo, storagePath); } catch (_) {}
         toast(`✅ ${label} guardada.`, 'success');
       } catch (e) {
         console.warn('docs save supabase:', e);
-        toast('PDF no Storage, mas o estado NF/Contrato não gravou no servidor. Abre Contratos outra vez para sincronizar.', 'warn');
+        toast('Ficheiro no Storage, mas o estado NF/Contrato não gravou no servidor. Abre Contratos outra vez para sincronizar.', 'warn');
       }
     } catch(err) {
       toast('Erro: ' + err.message, 'error');
@@ -17133,7 +17154,7 @@ function contratoAbrirDocs(cod, num, focusTipo) {
          </div>`
       : `<span style="color:var(--muted);font-weight:600">${icon} ${label} — não carregado</span>
          <div style="margin-top:8px;">
-           <button class="btn btn-primary btn-sm" ${ds} onclick="contratoDocsUpload(${clickArgs})" style="font-size:12px;">⬆ Carregar PDF</button>
+           <button class="btn btn-primary btn-sm" ${ds} onclick="contratoDocsUpload(${clickArgs})" style="font-size:12px;">⬆ Carregar ficheiro</button>
          </div>`;
   });
 
@@ -17144,18 +17165,18 @@ function contratoAbrirDocs(cod, num, focusTipo) {
 function contratoDocsUpload(cod, num, tipo) {
   const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
   const input = document.createElement('input');
-  input.type = 'file'; input.accept = 'application/pdf';
+  input.type = 'file';
   input.onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
+    const fileName = contratoDocFileName(tipo, file.name);
     const storagePath = `${cod}/${num}/${fileName}`;
     const statusEl = document.getElementById('docs-status');
     statusEl.textContent = 'A carregar...'; statusEl.style.color = 'var(--muted)';
     try {
       const res = await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
         method: 'POST',
-        headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
+        headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': contratoDocsMime(file), 'x-upsert': 'true' },
         body: file
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -17165,9 +17186,10 @@ function contratoDocsUpload(cod, num, tipo) {
       localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
       try {
         await contratoDocsPersistSupabase(cod, num, tipo, storagePath);
+        try { await contratoDocsApagarOutrosDoTipo(cod, num, tipo, storagePath); } catch (_) {}
       } catch (e) {
         console.warn('docs save supabase:', e);
-        statusEl.textContent = 'PDF carregado, mas o servidor não confirmou o estado. Tenta abrir de novo.';
+        statusEl.textContent = 'Ficheiro carregado, mas o servidor não confirmou o estado. Tenta abrir de novo.';
         statusEl.style.color = '#b45309';
       }
       if (!statusEl.textContent || statusEl.textContent === 'A carregar...') {
@@ -17191,6 +17213,32 @@ function contratoDocsStoragePath(cod, num, tipo) {
   return `${cod}/${num}/${contratoDocFileName(tipo)}`;
 }
 
+async function contratoDocsStorageDelete(storagePath) {
+  const p = String(storagePath || '').replace(/^\/+/, '');
+  if (!p) return;
+  await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${p}`, {
+    method: 'DELETE',
+    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY },
+  });
+}
+
+/** Ao substituir/apagar, remove os outros ficheiros do mesmo papel (nf vs contrato) na pasta. */
+async function contratoDocsApagarOutrosDoTipo(cod, num, tipo, keepPath) {
+  const prefix = `${cod}/${num}/`;
+  const keep = String(keepPath || '').replace(/^\/+/, '');
+  let items = [];
+  try { items = await contratoStorageList(prefix); } catch (_) { return; }
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const name = it && it.name;
+    if (!name || !contratoDocsIsStorageFile(it)) continue;
+    if (contratoDocsTipoFicheiro(name) !== tipo) continue;
+    const path = prefix.replace(/\/$/, '') + '/' + name;
+    if (keep && path === keep) continue;
+    try { await contratoDocsStorageDelete(path); } catch (_) {}
+  }
+}
+
 function contratoDocsDownload(cod, num, tipo) {
   window.open(`${STORAGE_PUBLIC}/${contratoDocsStoragePath(cod, num, tipo)}`, '_blank');
 }
@@ -17198,14 +17246,10 @@ function contratoDocsDownload(cod, num, tipo) {
 async function contratoDocsDelete(cod, num, tipo) {
   const label = tipo === 'nf' ? 'Nota Fiscal' : 'Contrato Assinado';
   if (!confirm(`Eliminar ${label}?`)) return;
-  const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
-  const storagePath = `${cod}/${num}/${fileName}`;
-  // DELETE no Supabase Storage — endpoint correcto para bucket público
-  await fetch(`https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/${STORAGE_BUCKET}/${storagePath}`, {
-    method:'DELETE',
-    headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json'}
-  });
-  // Remover localStorage (false = eliminado; não deixar o mapa antigo ressuscitar o PDF)
+  const storagePath = contratoDocsStoragePath(cod, num, tipo);
+  try { await contratoDocsStorageDelete(storagePath); } catch (_) {}
+  try { await contratoDocsApagarOutrosDoTipo(cod, num, tipo); } catch (_) {}
+  // false = eliminado; não deixar o mapa antigo ressuscitar o ficheiro
   try {
     const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
     if (!saved[num]) saved[num] = {};
@@ -17245,21 +17289,16 @@ function contratoSetDownloadBtn(uploadBtn, pubUrl, label) {
 
 async function contratoDeletePdf(tipo, cod, num, pubUrl, uploadBtn, label) {
   if (!confirm(`Eliminar ${label}?`)) return;
-  const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
-  const storagePath = `${cod}/${num}/${fileName}`;
+  const storagePath = contratoDocsStoragePath(cod, num, tipo);
   try {
-    // Apagar do Storage
-    await fetch(`${STORAGE_BASE}/${STORAGE_BUCKET}/${storagePath}`, {
-      method: 'DELETE',
-      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
-    });
-    // Remover do localStorage
+    try { await contratoDocsStorageDelete(storagePath); } catch (_) {}
+    try { await contratoDocsApagarOutrosDoTipo(cod, num, tipo); } catch (_) {}
     try {
       const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
       if (!saved[num]) saved[num] = {};
       saved[num][tipo] = false;
       localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
-    } catch(e) {}
+    } catch (e) {}
     contratoDocsPatchMap(cod, num, tipo, null);
     contratoMarcarBotao(cod, num, tipo, true);
     if (uploadBtn && uploadBtn.classList && uploadBtn.classList.contains('ct-doc-btn')) {
@@ -17273,7 +17312,7 @@ async function contratoDeletePdf(tipo, cod, num, pubUrl, uploadBtn, label) {
       console.warn('docs delete supabase:', e);
     }
     toast(`${label} eliminada.`, 'success');
-  } catch(e) { toast('Erro: ' + e.message, 'error'); }
+  } catch (e) { toast('Erro: ' + e.message, 'error'); }
 }
 
 function contratoMarkExisting(allRows, docsMap) {

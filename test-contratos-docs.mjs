@@ -151,6 +151,10 @@ for (const name of [
   'numsContratoEquivalentes',
   'contratoDocsCampo',
   'contratoDocsPickEntry',
+  'contratoDocsExtensao',
+  'contratoDocFileName',
+  'contratoDocsTipoFicheiro',
+  'contratoDocsIsStorageFile',
   'contratoDocsParseStoragePath',
   'contratoDocsApplyFlags',
   'contratoDocsLidos',
@@ -222,6 +226,35 @@ check('caminho Storage com / no nº (cod/B0027/26/nf.pdf)', () => {
   assert.equal(ct.num, 'B0902/26');
   assert.equal(ct.tipo, 'ct');
   assert.equal(context.contratoDocsParseStoragePath('previsao/x.json'), null);
+});
+
+check('qualquer ficheiro anexado conta como OK (não se lê o PDF)', () => {
+  assert.equal(context.contratoDocsExtensao('nota.docx'), '.docx');
+  assert.equal(context.contratoDocsExtensao('ficheiro.sem.ext'), '.ext');
+  assert.equal(context.contratoDocFileName('nf', 'nota.docx'), 'nf.docx');
+  assert.equal(context.contratoDocFileName('ct', 'scan.jpg'), 'contrato_assinado.jpg');
+  assert.equal(context.contratoDocsTipoFicheiro('nf.docx'), 'nf');
+  assert.equal(context.contratoDocsTipoFicheiro('contrato_assinado.jpg'), 'ct');
+  assert.equal(context.contratoDocsTipoFicheiro('scan.png'), 'ct');
+  assert.equal(context.contratoDocsValorOk('456320/B0902/26/nf.docx'), true);
+  assert.equal(context.contratoDocsCampo({ 'B0902/26': { nf: '456320/B0902/26/nf.docx' } }, 'B0902/26', 'nf'), '456320/B0902/26/nf.docx');
+  const word = context.contratoDocsParseStoragePath('421542/B0027/26/nf.docx');
+  assert.equal(word.tipo, 'nf');
+  assert.equal(context.contratoDocsParseStoragePath('753534/B0902/26/scan.png').tipo, 'ct');
+  assert.equal(context.contratoDocsIsStorageFile({ name: 'nf.docx', id: 'abc' }), true);
+  assert.equal(context.contratoDocsIsStorageFile({ name: '456320', id: null, metadata: null }), false);
+  const up = extractFn(html, 'contratoUploadPdf');
+  const modal = extractFn(html, 'contratoDocsUpload');
+  const list = extractFn(html, 'contratoDocsListStorageFiles');
+  assert.ok(html.includes('contratoDocsMime'));
+  assert.ok(!/input\.accept = 'application\/pdf'/.test(up));
+  assert.ok(!/input\.accept = 'application\/pdf'/.test(modal));
+  assert.ok(!/Apenas PDFs são aceites/.test(up));
+  assert.ok(!/Apenas PDFs são aceites/.test(modal));
+  assert.ok(html.includes('⬆ Carregar ficheiro'));
+  assert.ok(!list.includes('if (!/\\.pdf$/i.test(it.name)) continue;'));
+  assert.ok(!/\.pdf\$\/i\.test\(name\)/.test(list));
+  assert.ok(list.includes('contratoDocsIsStorageFile'));
 });
 
 check('false no JSON docs não conta como carregado', () => {
