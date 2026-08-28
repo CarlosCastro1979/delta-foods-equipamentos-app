@@ -13832,8 +13832,7 @@ async function enviarPedidoDistEquip() {
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
-<p>${outlookEmailEsc(saudacao)} Equipa de AT,</p>
-<p>Pedido de <strong>envio de equipamentos</strong> — canal Distribuidores (não é conserto).</p>
+<p>${outlookEmailEsc(saudacao)} Equipa de AT,<br><br>Pedido de <strong>envio de equipamentos</strong> — canal Distribuidores (não é conserto).</p>
 <p style="margin:0 0 4px"><strong>Data/Hora:</strong> ${outlookEmailEsc(data)} às ${outlookEmailEsc(hora)}<br>
 <strong>Urgência:</strong> ${outlookEmailEsc(urgenciaLabel)}<br>
 <strong>Vendedor:</strong> ${outlookEmailEsc(vendedor)}</p>
@@ -13851,7 +13850,6 @@ ${obs ? `<p style="margin-top:14px"><strong>Observações:</strong><br>${outlook
 
   const bodyTxt =
 `${saudacao} Equipa de AT,
-
 Pedido de envio de equipamentos — canal Distribuidores (não é conserto).
 
 Data/Hora: ${data} às ${hora}
@@ -13971,8 +13969,7 @@ async function enviarPedidoDistPecas() {
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
-<p>${outlookEmailEsc(saudacao)} Equipa de AT,</p>
-<p>Pedido de peças — canal Distribuidores (depósito SAP <strong>0033</strong>).</p>
+<p>${outlookEmailEsc(saudacao)} Equipa de AT,<br><br>Pedido de peças — canal Distribuidores (depósito SAP <strong>0033</strong>).</p>
 <p style="margin:0 0 4px"><strong>Data/Hora:</strong> ${outlookEmailEsc(data)} às ${outlookEmailEsc(hora)}<br>
 <strong>Urgência:</strong> ${outlookEmailEsc(urgenciaLabel)}<br>
 <strong>Vendedor:</strong> ${outlookEmailEsc(vendedor)}</p>
@@ -13990,7 +13987,6 @@ ${obs ? `<p style="margin-top:14px"><strong>Observações:</strong><br>${outlook
 
   const bodyTxt =
 `${saudacao} Equipa de AT,
-
 Pedido de peças — canal Distribuidores (depósito SAP 0033).
 
 Data/Hora: ${data} às ${hora}
@@ -18052,6 +18048,70 @@ function outlookEmailEsc(s) {
     .replace(/"/g, '&quot;');
 }
 
+const OUTLOOK_MSG_WRAP_ID = 'outlook-msg-wrap';
+const OUTLOOK_BODY_FONT =
+  'font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;';
+
+/**
+ * Outlook (Word) injeta a assinatura predefinida a seguir ao primeiro </p>
+ * (ou à primeira linha em branco no texto). Sem contentor único, o rascunho
+ * fica: saudação → assinatura → resto do email.
+ */
+function outlookCorpoJaEnvolvido(html) {
+  return new RegExp('\\bid\\s*=\\s*[\'"]' + OUTLOOK_MSG_WRAP_ID + '[\'"]', 'i')
+    .test(String(html || ''));
+}
+
+function outlookInnerHtml(html) {
+  const raw = String(html || '');
+  const m = raw.match(/<body\b([^>]*)>([\s\S]*)<\/body>/i);
+  if (m) return { attrs: m[1] || '', inner: String(m[2] || '').trim() };
+  const stripped = raw
+    .replace(/<!DOCTYPE[^>]*>/gi, '')
+    .replace(/<\/?(?:html|head|meta)[^>]*>/gi, '')
+    .trim();
+  return { attrs: '', inner: stripped };
+}
+
+/** Remove a 1.ª linha em branco após a saudação (mailto / texto). */
+function outlookTxtJuntarSaudacao(texto) {
+  return String(texto || '').replace(/^\uFEFF?([^\n\r]+)(?:\r?\n){2,}/, '$1\n');
+}
+
+/**
+ * Um único contentor (tabela 100% + divs MSO) e <p> → <div>, para não haver
+ * «encaixe» de assinatura a meio. Idempotente.
+ */
+function outlookWrapHtmlCorpo(html) {
+  const raw = String(html || '').trim();
+  const { attrs, inner } = outlookInnerHtml(raw);
+  const bodyAttrs = /style\s*=/i.test(attrs)
+    ? attrs
+    : ((attrs || '') + ' style="' + OUTLOOK_BODY_FONT + '"');
+  if (outlookCorpoJaEnvolvido(raw)) {
+    if (/<html[\s>]/i.test(raw) && /<body\b/i.test(raw)) return raw;
+    return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body${bodyAttrs}>
+${inner}
+</body></html>`;
+  }
+  const bloco = String(inner || '')
+    .replace(/<p(\s[^>]*)?>/gi, '<div$1>')
+    .replace(/<\/p>/gi, '</div>');
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body${bodyAttrs}>
+<div><!--[if !mso]><!--><div><!--<![endif]-->
+<table id="${OUTLOOK_MSG_WRAP_ID}" class="${OUTLOOK_MSG_WRAP_ID}" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;">
+<tr><td valign="top" style="${OUTLOOK_BODY_FONT}">
+${bloco}
+</td></tr>
+</table>
+<!--[if !mso]><!--></div><!--<![endif]--></div>
+</body></html>`;
+}
+
 function outlookEncodeSubjectUtf8(s) {
   const bytes = unescape(encodeURIComponent(String(s || '')));
   return `=?UTF-8?B?${btoa(bytes)}?=`;
@@ -18424,6 +18484,9 @@ async function outlookOpenMailtoPlusExcel({
     || (hasExcel
       ? 'Segue o Excel — anexa o ficheiro descarregado a este email.'
       : '');
+  if (typeof outlookTxtJuntarSaudacao === 'function') {
+    bodyTxt = outlookTxtJuntarSaudacao(bodyTxt);
+  }
   if (hasExcel && bodyTxt && !/anex/i.test(bodyTxt)) {
     bodyTxt += '\n\n(Anexa o ficheiro Excel descarregado a este email.)';
   }
@@ -18653,7 +18716,9 @@ async function outlookAbrirEmailTexto({
   toastMsg,
   mailtoToastMsg,
 } = {}) {
-  const texto = String(body || '');
+  const texto = (typeof outlookTxtJuntarSaudacao === 'function')
+    ? outlookTxtJuntarSaudacao(body)
+    : String(body || '');
   const esc = (typeof outlookEmailEsc === 'function')
     ? outlookEmailEsc
     : (s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'));
@@ -18661,7 +18726,7 @@ async function outlookAbrirEmailTexto({
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
-${esc(texto).replace(/\n/g, '<br>')}
+<div>${esc(texto).replace(/\n/g, '<br>')}</div>
 </body></html>`;
   let ccVal = cc;
   if (Array.isArray(cc)) {
@@ -18704,6 +18769,11 @@ async function outlookAbrirRascunho({
   // Normalizar: aceitar vírgula ou ; na entrada → sempre ;
   if (ccVal) {
     ccVal = ccVal.split(/[,;]/).map(s => s.trim()).filter(Boolean).join('; ');
+  }
+  // Assinatura do Outlook: após o 1.º </p> se o corpo tiver vários blocos.
+  // Um único contentor (tabela) + <div> em vez de <p> mete a assinatura no fim.
+  if (typeof outlookWrapHtmlCorpo === 'function') {
+    html = outlookWrapHtmlCorpo(html);
   }
   const hasAttachments = (attachments || []).some(a => a && a.blob);
   const isWindowsPc = typeof outlookIsWindowsPc === 'function' && outlookIsWindowsPc();
@@ -22922,8 +22992,7 @@ async function prosAbrirEmailCadastro(dados, opts = {}) {
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
-<p>${outlookEmailEsc(saudacao)},</p>
-<p>${intro}</p>
+<p>${outlookEmailEsc(saudacao)},<br><br>${intro}</p>
 ${prosCadastroResumoEmailHtml(dados)}
 ${propHtml}
 <p style="margin-top:18px;">Aguardo aprovação.</p>
@@ -22932,7 +23001,6 @@ ${propHtml}
 
   const bodyTxt =
 `${saudacao},
-
 ${introTxt}
 
 ${prosCadastroResumoEmailText(dados)}
@@ -24185,8 +24253,7 @@ async function mc00AbrirEmail(d, excelBlob, excelFilename) {
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
-<p>${mc00EmailEsc(saudacao)},</p>
-<p>Peço o carregamento das condições especiais de fornecimento (MC00) em anexo no <strong>ZDAB</strong>
+<p>${mc00EmailEsc(saudacao)},<br><br>Peço o carregamento das condições especiais de fornecimento (MC00) em anexo no <strong>ZDAB</strong>
 para o cliente <strong>${mc00EmailEsc(d.nome || '')}</strong> (cód. ${mc00EmailEsc(d.cod || '')}).</p>
 <p style="margin:16px 0 8px;font-weight:700;">Resumo para validação:</p>
 ${tabela}
@@ -24196,7 +24263,6 @@ ${tabela}
 
   const bodyTxt =
 `${saudacao},
-
 Peço o carregamento das condições especiais de fornecimento (MC00) em anexo no ZDAB
 para o cliente ${d.nome || ''} (cód. ${d.cod || ''}).
 
@@ -25240,8 +25306,7 @@ async function ataEnviarEmailConcluir() {
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
-<p>${outlookEmailEsc(saudacao)},</p>
-<p>Chamado <strong>AT #${outlookEmailEsc(num)}</strong> concluído pela Área Técnica — ${outlookEmailEsc(tipoLabel)}.</p>
+<p>${outlookEmailEsc(saudacao)},<br><br>Chamado <strong>AT #${outlookEmailEsc(num)}</strong> concluído pela Área Técnica — ${outlookEmailEsc(tipoLabel)}.</p>
 <p style="margin:0 0 4px"><strong>Data conclusão:</strong> ${outlookEmailEsc(data)} às ${outlookEmailEsc(hora)}<br>
 <strong>Tratado por:</strong> ${outlookEmailEsc(getUtilizadorAtual())}<br>
 <strong>Vendedor:</strong> ${outlookEmailEsc(c.vendedor || '—')}<br>
@@ -25255,7 +25320,7 @@ ${c.descricao ? `<p style="margin-top:14px"><strong>Observações do pedido:</st
 <p style="margin-top:18px;color:#6b7280;font-size:12px;">Enviado via Delta Foods App — Área Técnica</p>
 </body></html>`;
 
-  const bodyTxt = `${saudacao},\n\nChamado AT #${num} concluído — ${tipoLabel}.\nCliente: ${c.cliente_nome} (${c.cliente_cod})\nTratado por: ${getUtilizadorAtual()}\n`;
+  const bodyTxt = `${saudacao},\nChamado AT #${num} concluído — ${tipoLabel}.\nCliente: ${c.cliente_nome} (${c.cliente_cod})\nTratado por: ${getUtilizadorAtual()}\n`;
 
   await outlookAbrirRascunho({
     to: emailTo,
@@ -28918,8 +28983,7 @@ async function ctAbrirEmail(filename, data, docBlob) {
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
-<p>Daniela,</p>
-<p>Segue em anexo o <strong>Contrato de Comodato Delta Q</strong> para o cliente
+<p>Daniela,<br><br>Segue em anexo o <strong>Contrato de Comodato Delta Q</strong> para o cliente
 <strong>${outlookEmailEsc(data.COMOD_EMPRESA || '')}</strong> (${outlookEmailEsc(data.COMOD_CNPJ || '')}),
 para assinatura digital por <strong>${outlookEmailEsc(data.ASSINA_NOME || '')}</strong>
 (${outlookEmailEsc(clientEmail)}).</p>
@@ -28942,7 +29006,6 @@ para assinatura digital por <strong>${outlookEmailEsc(data.ASSINA_NOME || '')}</
     mailtoFallback: {
       body:
 `Daniela,
-
 Segue em anexo o Contrato de Comodato Delta Q para o cliente ${data.COMOD_EMPRESA || ''} (${data.COMOD_CNPJ || ''}), para assinatura digital por ${data.ASSINA_NOME || ''} (${clientEmail}).
 
 Anexa o ficheiro do contrato descarregado a este email.

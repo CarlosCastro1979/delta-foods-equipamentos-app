@@ -245,8 +245,76 @@ check('MC00 Para é condições especiais; Carlos em CC; saudação sem nome', (
   assert.ok(fn.includes('${saudacao},'));
   assert.ok(!fn.includes('${mc00EmailEsc(saudacao)} Carlos,'));
   assert.ok(!fn.includes('${saudacao} Carlos,'));
+  assert.ok(!/\$\{mc00EmailEsc\(saudacao\)\}[^<]{0,40}Carlos,/.test(fn));
+  assert.ok(!/\$\{saudacao\}[^$\n]{0,40}Carlos,/.test(fn));
+  assert.ok(fn.includes('${mc00EmailEsc(saudacao)},<br><br>Peço o carregamento'),
+    'saudação e pedido no mesmo <p> (Outlook injeta assinatura após o 1.º </p>)');
+  assert.ok(!fn.includes('${mc00EmailEsc(saudacao)},</p>'),
+    'saudação MC00 não pode ser um <p> sozinho');
+  assert.ok(!/\$\{saudacao\},\s*\n\s*\n\s*Peço/.test(fn),
+    'mailto MC00 sem linha em branco a seguir à saudação');
   assert.ok(fn.includes('Peço o carregamento das condições especiais de fornecimento (MC00)'));
   assert.ok(fn.includes('Aguardo a vossa aprovação.'));
+});
+
+// ── Outlook: assinatura a meio do rascunho HTML ────────────────────────────
+context.OUTLOOK_MSG_WRAP_ID = 'outlook-msg-wrap';
+context.OUTLOOK_BODY_FONT =
+  'font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;';
+for (const name of [
+  'outlookCorpoJaEnvolvido',
+  'outlookInnerHtml',
+  'outlookTxtJuntarSaudacao',
+  'outlookWrapHtmlCorpo',
+]) {
+  vm.runInContext(extractFn(html, name), context);
+}
+
+check('outlookWrapHtmlCorpo: um único wrapper, sem <p>, conteúdo intacto', () => {
+  const src =
+    `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>` +
+    `<body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">` +
+    `<p>Bom dia,</p><p>Peço o carregamento das condições especiais.</p>` +
+    `<p style="font-weight:700;">Resumo para validação:</p>` +
+    `<table><tr><td>1001234</td><td>CAFÉ</td></tr></table>` +
+    `</body></html>`;
+  const out = context.outlookWrapHtmlCorpo(src);
+  assert.ok(out.includes('id="outlook-msg-wrap"'), 'tabela contentor');
+  assert.ok(out.includes('Peço o carregamento das condições especiais.'));
+  assert.ok(out.includes('Bom dia,'));
+  assert.ok(out.includes('Resumo para validação:'));
+  assert.ok(out.includes('1001234'));
+  assert.equal((out.match(/<p[\s>]/gi) || []).length, 0, 'sem <p> — slot da assinatura Outlook');
+  assert.ok(out.includes('Bom dia,'));
+  const out2 = context.outlookWrapHtmlCorpo(out);
+  assert.equal((out2.match(/id="outlook-msg-wrap"/g) || []).length, 1, 'idempotente');
+});
+
+check('outlookTxtJuntarSaudacao: sem parágrafo vazio após Bom dia', () => {
+  const j = context.outlookTxtJuntarSaudacao('Bom dia,\n\nPeço o carregamento\n\nResumo');
+  assert.equal(j.startsWith('Bom dia,\nPeço o carregamento'), true);
+  assert.ok(!j.startsWith('Bom dia,\n\n'));
+  assert.ok(j.includes('\n\nResumo'), 'resto das linhas em branco mantém-se');
+});
+
+check('outlookAbrirRascunho envolve o HTML; EML continua text/html UTF-8', () => {
+  const fn = extractFn(html, 'outlookAbrirRascunho');
+  assert.ok(fn.includes('outlookWrapHtmlCorpo'));
+  assert.ok(fn.includes('X-Unsent: 1'));
+  assert.ok(fn.includes('Content-Type: text/html; charset=UTF-8'));
+  assert.ok(!fn.includes('Content-Type: text/plain'),
+    'sem text/plain curto que o Outlook use para meter a assinatura no meio');
+});
+
+check('quadro HTML continua legível em texto depois do wrapper', () => {
+  const src =
+    `<p>Resumo</p><table><tr><th>Cód.SAP</th><th>Produto</th></tr>` +
+    `<tr><td>1001234</td><td>CAFÉ</td></tr></table>`;
+  const wrapped = context.outlookWrapHtmlCorpo(src);
+  const txt = context.outlookHtmlToPlainText(wrapped);
+  assert.ok(txt.includes('1001234'));
+  assert.ok(txt.includes('CAFÉ'));
+  assert.ok(txt.includes('|'), 'células da tabela separadas por |');
 });
 
 check('HTML de tabela vira quadro texto (tablet sem HTML no mailto)', () => {
