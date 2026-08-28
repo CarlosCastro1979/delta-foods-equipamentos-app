@@ -219,9 +219,11 @@ check('ctRegRenderCods não usa Por Registar nem escopo de vendedor', () => {
   assert.ok(!render.includes('getVendedorScope'));
   assert.ok(!render.includes('filterByCanalActivoVendedor'));
   assert.ok(render.includes('ctRegClientesDoCanal'));
-  assert.ok(render.includes('padding:2px 4px'));
-  assert.ok(render.includes('font-size:12px'));
   assert.ok(render.includes('r.vendedor'));
+  assert.ok(render.includes('r.nome'));
+  assert.ok(render.includes('r.cod'));
+  assert.ok(html.includes('padding: 2px 4px'));
+  assert.ok(html.includes('#ct-reg-cods-list .ct-reg-cod-txt'));
   const fonte = extractFn(html, 'ctRegFonteRegistosCanal');
   assert.ok(fonte.includes('allData'));
   assert.ok(fonte.includes('getRegistosCache'));
@@ -294,10 +296,18 @@ check('ctRegRenderCods exclui o principal e mostra vendedor de outro seller', ()
   vm.runInContext(extractFn(html, 'ctRegCodEhPrincipal'), ctx);
   vm.runInContext(extractFn(html, 'ctRegRenderCods'), ctx);
   ctx.ctRegRenderCods();
-  assert.ok(listEl.innerHTML.includes('200'));
-  assert.ok(listEl.innerHTML.includes('CHRISTIAN'));
-  assert.ok(listEl.innerHTML.includes('Loja B'));
-  assert.ok(!listEl.innerHTML.includes('Loja A'));
+  assert.ok(listEl.innerHTML.includes('type="checkbox"'));
+  const soTexto = listEl.innerHTML.replace(/<input[^>]*>/g, '');
+  assert.ok(soTexto.includes('200'), 'código tem de estar no texto, não só no checkbox');
+  assert.ok(soTexto.includes('Loja B'), 'nome tem de estar visível no HTML da linha');
+  assert.ok(soTexto.includes('CHRISTIAN'), 'vendedor tem de estar visível no HTML da linha');
+  assert.ok(soTexto.includes('200 · Loja B') || soTexto.includes('200</strong> · Loja B'));
+  assert.ok(!soTexto.includes('Loja A'));
+  assert.ok(listEl.innerHTML.includes('ct-reg-cod-txt'));
+  const renderSrc = extractFn(html, 'ctRegRenderCods');
+  assert.ok(/width:14px/.test(renderSrc), 'checkbox com largura fixa para não herdar width:100%');
+  assert.ok(html.includes('#ct-reg-cods-list .ct-reg-cod-row input[type="checkbox"]'));
+  assert.ok(html.includes('input[type="checkbox"], input[type="radio"]'));
 });
 
 if (process.exitCode) {

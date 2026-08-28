@@ -197,6 +197,57 @@
   input::placeholder, textarea::placeholder { color: #94a3b8; }
   input:disabled, select:disabled, textarea:disabled { background: var(--surface2); color: var(--muted); cursor: not-allowed; }
 
+  /* Checkboxes/radios não herdam width:100% dos inputs (senão o texto do label desaparece). */
+  input[type="checkbox"], input[type="radio"] {
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+    flex-shrink: 0;
+  }
+
+  #ct-reg-cods-list .ct-reg-cod-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 4px;
+    border-bottom: 1px solid #f3f3f3;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.25;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text);
+    cursor: pointer;
+    width: 100%;
+  }
+  #ct-reg-cods-list .ct-reg-cod-row input[type="checkbox"] {
+    width: 14px !important;
+    min-width: 14px;
+    max-width: 14px;
+    height: 14px;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 14px;
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    accent-color: var(--accent);
+  }
+  #ct-reg-cods-list .ct-reg-cod-txt {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: none;
+  }
+  #ct-reg-cods-list .ct-reg-cod-vend { color: var(--muted); font-weight: 400; }
+
   /* Lead modal tabs */
   .pros-tab-btn {
     flex: 1;
@@ -7937,9 +7988,9 @@ function ctRegRenderCods() {
   const more = shown.length > LIM;
   const vis = shown.slice(0, LIM);
   list.innerHTML = vis.map(r => `
-    <label style="display:flex;gap:6px;align-items:center;padding:2px 4px;border-bottom:1px solid #f3f3f3;font-size:12px;line-height:1.25;cursor:pointer;">
-      <input type="checkbox" data-ct-reg-cod="${escHtml(r.cod)}" ${checked.has(String(r.cod)) ? 'checked' : ''} onchange="ctRegToggleCod(this)" style="margin:0;flex-shrink:0;">
-      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>${escHtml(r.cod)}</strong> · ${escHtml(r.nome)} <span style="color:var(--muted)">${escHtml(r.vendedor || '—')}</span></span>
+    <label class="ct-reg-cod-row">
+      <input type="checkbox" data-ct-reg-cod="${escHtml(r.cod)}" ${checked.has(String(r.cod)) ? 'checked' : ''} onchange="ctRegToggleCod(this)" style="width:14px;min-width:14px;max-width:14px;height:14px;margin:0;padding:0;flex:0 0 14px;">
+      <span class="ct-reg-cod-txt"><strong>${escHtml(r.cod)}</strong> · ${escHtml(r.nome)} <span class="ct-reg-cod-vend">(${escHtml(r.vendedor || '—')})</span></span>
     </label>`).join('') + (more
     ? `<div style="font-size:11px;color:var(--muted);padding:2px 4px;">A mostrar ${LIM} de ${shown.length}. Pesquisa para filtrar.</div>`
     : '');
