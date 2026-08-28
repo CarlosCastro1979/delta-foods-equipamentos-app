@@ -48,6 +48,7 @@ const context = {
   CC_FIXO_FILIPE: 'filipe.neves@deltafoodsbrasil.com.br',
   isCanalHorecaActivo: () => horeca,
   console,
+  Date,
 };
 vm.createContext(context);
 for (const name of names) {
@@ -236,17 +237,28 @@ check('MC00 mailtoFallback no código chama o quadro de produtos', () => {
 });
 
 check('MC00 Para é condições especiais; Carlos em CC; saudação sem nome', () => {
+  const toM = html.match(/const EMAIL_MC00_TO = '([^']+)'/);
+  const ccM = html.match(/const EMAIL_MC00_CC = \[([^\]]+)\]/);
+  assert.ok(toM, 'EMAIL_MC00_TO definida');
+  assert.equal(toM[1], 'condicoes.especiais@gruponabeiro.com');
+  assert.ok(ccM && ccM[1].includes('carlos.castro@deltafoodsbrasil.com.br'));
   const bloco = html.slice(html.indexOf('async function mc00AbrirEmail'));
   const fn = bloco.slice(0, bloco.indexOf('\n}\n\n') + 1);
-  assert.ok(fn.includes("to: 'condicoes.especiais@gruponabeiro.com'"));
-  assert.ok(fn.includes("ccString(['carlos.castro@deltafoodsbrasil.com.br'])"));
+  assert.ok(fn.includes('to: EMAIL_MC00_TO'));
+  assert.ok(fn.includes('ccString(EMAIL_MC00_CC)'));
   assert.ok(!fn.includes("to: 'carlos.castro@deltafoodsbrasil.com.br'"));
+  assert.ok(!fn.includes("to: 'condicoes.especiais@gruponabeiro.com'"),
+    'usar a constante EMAIL_MC00_TO, não o literal no rascunho');
+  assert.ok(fn.includes('mc00SaudacaoHora()'));
   assert.ok(fn.includes('${mc00EmailEsc(saudacao)},'));
   assert.ok(fn.includes('${saudacao},'));
   assert.ok(!fn.includes('${mc00EmailEsc(saudacao)} Carlos,'));
   assert.ok(!fn.includes('${saudacao} Carlos,'));
   assert.ok(!/\$\{mc00EmailEsc\(saudacao\)\}[^<]{0,40}Carlos,/.test(fn));
   assert.ok(!/\$\{saudacao\}[^$\n]{0,40}Carlos,/.test(fn));
+  assert.ok(!html.includes('${mc00EmailEsc(saudacao)} Carlos,'),
+    'nenhum caminho MC00 pode saudar «Carlos»');
+  assert.ok(!html.includes('${saudacao} Carlos,'));
   assert.ok(fn.includes('${mc00EmailEsc(saudacao)},<br><br>Peço o carregamento'),
     'saudação e pedido no mesmo <p> (Outlook injeta assinatura após o 1.º </p>)');
   assert.ok(!fn.includes('${mc00EmailEsc(saudacao)},</p>'),
@@ -255,6 +267,18 @@ check('MC00 Para é condições especiais; Carlos em CC; saudação sem nome', (
     'mailto MC00 sem linha em branco a seguir à saudação');
   assert.ok(fn.includes('Peço o carregamento das condições especiais de fornecimento (MC00)'));
   assert.ok(fn.includes('Aguardo a vossa aprovação.'));
+  assert.equal((html.match(/async function mc00AbrirEmail/g) || []).length, 1,
+    'um único caminho a abrir o email MC00');
+});
+
+check('mc00SaudacaoHora nunca inclui Carlos', () => {
+  vm.runInContext(extractFn(html, 'mc00SaudacaoHora'), context);
+  const manha = context.mc00SaudacaoHora(new Date('2026-08-28T10:00:00'));
+  const tarde = context.mc00SaudacaoHora(new Date('2026-08-28T15:00:00'));
+  assert.equal(manha, 'Bom dia');
+  assert.equal(tarde, 'Boa tarde');
+  assert.ok(!manha.includes('Carlos'));
+  assert.ok(!tarde.includes('Carlos'));
 });
 
 // ── Outlook: assinatura a meio do rascunho HTML ────────────────────────────

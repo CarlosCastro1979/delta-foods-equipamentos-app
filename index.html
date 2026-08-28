@@ -17950,6 +17950,10 @@ function getEmailUtilizador(nome) {
 
 // Filipe Neves = supervisor só do Horeca — CC automático apenas nesse canal.
 const CC_FIXO_FILIPE = 'filipe.neves@deltafoodsbrasil.com.br';
+/** Destino único do email MC00 (HTML, mailto e .eml). Não usar o email do Carlos em Para. */
+const EMAIL_MC00_TO = 'condicoes.especiais@gruponabeiro.com';
+/** CC do MC00: Carlos. No Horeca o Filipe entra via ccString. */
+const EMAIL_MC00_CC = ['carlos.castro@deltafoodsbrasil.com.br'];
 
 function isCanalHorecaActivo() {
   const id = typeof resolveCanalActivoId === 'function'
@@ -23361,6 +23365,12 @@ let _mc00PickSel = new Set();  // eans seleccionados no picker
 let _mc00AutoSaveBound = false;
 let _mc00AutoSaveTimer = null;
 
+/** Saudação do MC00 — só «Bom dia» / «Boa tarde», sem nome (nunca «Carlos»). */
+function mc00SaudacaoHora(agora) {
+  const d = agora instanceof Date ? agora : new Date();
+  return d.getHours() < 12 ? 'Bom dia' : 'Boa tarde';
+}
+
 function mc00Num(v) {
   if (v == null || v === '') return 0;
   let s = String(v).trim().replace(/[R$\s€]/gi, '');
@@ -24245,8 +24255,7 @@ function mc00ResumoProdutosEmailText(produtos) {
 }
 
 async function mc00AbrirEmail(d, excelBlob, excelFilename) {
-  const hora = new Date().getHours();
-  const saudacao = hora < 12 ? 'Bom dia' : 'Boa tarde';
+  const saudacao = mc00SaudacaoHora();
   const remetente = getUtilizadorAtual();
   const tabela = mc00ResumoProdutosEmailHtml(d.produtos);
   const html =
@@ -24277,11 +24286,11 @@ Cumprimentos,
 ${remetente}`;
 
   return outlookAbrirRascunho({
-    to: 'condicoes.especiais@gruponabeiro.com',
+    to: EMAIL_MC00_TO,
     // Para: condições especiais; CC Carlos (e Filipe no Horeca via ccString)
     cc: typeof ccString === 'function'
-      ? ccString(['carlos.castro@deltafoodsbrasil.com.br'])
-      : ['carlos.castro@deltafoodsbrasil.com.br'].concat(isCanalHorecaActivo() ? [CC_FIXO_FILIPE] : []).join('; '),
+      ? ccString(EMAIL_MC00_CC)
+      : EMAIL_MC00_CC.concat(isCanalHorecaActivo() ? [CC_FIXO_FILIPE] : []).join('; '),
     subject: `MC00 - Condições Especiais - ${d.nome || d.cod || 'Cliente'}`,
     html,
     attachments: excelBlob ? [{ blob: excelBlob, filename: excelFilename || 'MC00.xlsx' }] : [],
@@ -28039,19 +28048,14 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// Unregister any service workers to prevent stale cache issues
+// v2026-08-28-mc00: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
   });
 }
-</script>
-<script>
-// Unregister any service workers to prevent stale cache issues
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(r => r.unregister());
-  });
+if (typeof caches !== 'undefined' && caches.keys) {
+  caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
 }
 
 // ══════════════════════════════════════════
