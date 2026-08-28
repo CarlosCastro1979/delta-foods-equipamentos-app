@@ -1,2 +1,4 @@
 delta-foods-equipamentos-app/
 _quebra_samples/
+__pycache__/
+*.pyc
