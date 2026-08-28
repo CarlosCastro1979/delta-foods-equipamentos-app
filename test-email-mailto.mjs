@@ -235,6 +235,20 @@ check('MC00 mailtoFallback no código chama o quadro de produtos', () => {
   assert.equal(bodyTxt.includes('Anexa o ficheiro Excel MC00') && !bodyTxt.includes('mc00ResumoProdutosEmailText'), false);
 });
 
+check('MC00 Para é condições especiais; Carlos em CC; saudação sem nome', () => {
+  const bloco = html.slice(html.indexOf('async function mc00AbrirEmail'));
+  const fn = bloco.slice(0, bloco.indexOf('\n}\n\n') + 1);
+  assert.ok(fn.includes("to: 'condicoes.especiais@gruponabeiro.com'"));
+  assert.ok(fn.includes("ccString(['carlos.castro@deltafoodsbrasil.com.br'])"));
+  assert.ok(!fn.includes("to: 'carlos.castro@deltafoodsbrasil.com.br'"));
+  assert.ok(fn.includes('${mc00EmailEsc(saudacao)},'));
+  assert.ok(fn.includes('${saudacao},'));
+  assert.ok(!fn.includes('${mc00EmailEsc(saudacao)} Carlos,'));
+  assert.ok(!fn.includes('${saudacao} Carlos,'));
+  assert.ok(fn.includes('Peço o carregamento das condições especiais de fornecimento (MC00)'));
+  assert.ok(fn.includes('Aguardo a vossa aprovação.'));
+});
+
 check('HTML de tabela vira quadro texto (tablet sem HTML no mailto)', () => {
   const htmlTbl = `<p>Resumo</p><table><tr><th>Cód.SAP</th><th>Produto</th></tr><tr><td>1001234</td><td>CAFÉ</td></tr></table>`;
   const txt = context.outlookHtmlToPlainText(htmlTbl);

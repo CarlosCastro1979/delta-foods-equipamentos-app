@@ -24185,7 +24185,7 @@ async function mc00AbrirEmail(d, excelBlob, excelFilename) {
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
-<p>${mc00EmailEsc(saudacao)} Carlos,</p>
+<p>${mc00EmailEsc(saudacao)},</p>
 <p>Peço o carregamento das condições especiais de fornecimento (MC00) em anexo no <strong>ZDAB</strong>
 para o cliente <strong>${mc00EmailEsc(d.nome || '')}</strong> (cód. ${mc00EmailEsc(d.cod || '')}).</p>
 <p style="margin:16px 0 8px;font-weight:700;">Resumo para validação:</p>
@@ -24195,7 +24195,7 @@ ${tabela}
 </body></html>`;
 
   const bodyTxt =
-`${saudacao} Carlos,
+`${saudacao},
 
 Peço o carregamento das condições especiais de fornecimento (MC00) em anexo no ZDAB
 para o cliente ${d.nome || ''} (cód. ${d.cod || ''}).
@@ -24211,9 +24211,11 @@ Cumprimentos,
 ${remetente}`;
 
   return outlookAbrirRascunho({
-    to: 'carlos.castro@deltafoodsbrasil.com.br',
-    // MC00 é fluxo Horeca — CC Filipe só nesse canal
-    cc: typeof ccString === 'function' ? ccString([]) : (isCanalHorecaActivo() ? CC_FIXO_FILIPE : ''),
+    to: 'condicoes.especiais@gruponabeiro.com',
+    // Para: condições especiais; CC Carlos (e Filipe no Horeca via ccString)
+    cc: typeof ccString === 'function'
+      ? ccString(['carlos.castro@deltafoodsbrasil.com.br'])
+      : ['carlos.castro@deltafoodsbrasil.com.br'].concat(isCanalHorecaActivo() ? [CC_FIXO_FILIPE] : []).join('; '),
     subject: `MC00 - Condições Especiais - ${d.nome || d.cod || 'Cliente'}`,
     html,
     attachments: excelBlob ? [{ blob: excelBlob, filename: excelFilename || 'MC00.xlsx' }] : [],
