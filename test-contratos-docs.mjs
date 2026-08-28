@@ -108,14 +108,57 @@ check('contratoUploadPdf mantém ✅ NF / ✅ CT e is-loaded', () => {
   assert.ok(up.includes('contratoMarcarBotao'));
 });
 
+check('gravação NF/Contrato espera o PATCH em docs (não fire-and-forget com HEADERS)', () => {
+  const persist = extractFn(html, 'contratoDocsPersistSupabase');
+  const many = extractFn(html, 'contratoDocsPersistMany');
+  const up = extractFn(html, 'contratoUploadPdf');
+  const modal = extractFn(html, 'contratoDocsUpload');
+  const del = extractFn(html, 'contratoDocsDelete');
+  assert.ok(many.includes('registosReadHeaders'));
+  assert.ok(many.includes("method: 'PATCH'"));
+  assert.ok(!many.includes('headers: HEADERS') && !many.includes('headers:HEADERS'));
+  assert.ok(persist.includes('contratoDocsPersistMany'));
+  assert.ok(up.includes('await contratoDocsPersistSupabase'));
+  assert.ok(modal.includes('await contratoDocsPersistSupabase'));
+  assert.ok(del.includes('await contratoDocsPersistSupabase'));
+  assert.ok(!del.includes('headers:HEADERS') && !del.includes('headers: HEADERS'));
+});
+
+check('abre a lista a partir do Storage e sincroniza o JSON docs', () => {
+  assert.ok(filtrarFn.includes('contratoDocsHydrateFromStorage'));
+  assert.ok(html.includes('contratoDocsHydrateFromStorage(window._contratosAllRows)'));
+  assert.ok(html.includes('contratoDocsListStorageFiles'));
+  assert.ok(html.includes('contratoDocsPersistMany(pending)'));
+  assert.ok(html.includes("STORAGE_LIST = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/list/'"));
+});
+
 const context = {
   console,
   String,
   document: { querySelectorAll() { return []; } },
+  window: {},
+  localStorage: {
+    _s: Object.create(null),
+    getItem(k) { return k in this._s ? this._s[k] : null; },
+    setItem(k, v) { this._s[k] = String(v); },
+    removeItem(k) { delete this._s[k]; },
+  },
 };
 vm.createContext(context);
-vm.runInContext(extractFn(html, 'contratoDocBtnHtml'), context);
-vm.runInContext(extractFn(html, 'contratoDocsSetLoaded'), context);
+for (const name of [
+  'normNumContrato',
+  'contratoDocsValorOk',
+  'numsContratoEquivalentes',
+  'contratoDocsCampo',
+  'contratoDocsPickEntry',
+  'contratoDocsParseStoragePath',
+  'contratoDocsApplyFlags',
+  'contratoDocsLidos',
+  'contratoDocBtnHtml',
+  'contratoDocsSetLoaded',
+]) {
+  vm.runInContext(extractFn(html, name), context);
+}
 
 check('nº de contrato com / vai no data-attribute, não parte o onclick', () => {
   const btn = context.contratoDocBtnHtml('ct', '100', 'B0029/25');
@@ -163,6 +206,75 @@ check('contratoDocsSetLoaded liga/desliga is-loaded e o visto', () => {
   context.contratoDocsSetLoaded(ct, true);
   assert.equal(ct.textContent, '✅ Contrato');
   assert.ok(ct.classList.contains('is-loaded'));
+});
+
+check('B0902 e B0902/26 são o mesmo número de contrato', () => {
+  assert.ok(context.numsContratoEquivalentes('B0902', 'B0902/26'));
+  assert.ok(context.numsContratoEquivalentes('B0027/26', 'B0027 / 26'));
+  assert.ok(!context.numsContratoEquivalentes('B0902', 'B0001/24'));
+});
+
+check('caminho Storage com / no nº (cod/B0027/26/nf.pdf)', () => {
+  const nf = context.contratoDocsParseStoragePath('421542/B0027/26/nf.pdf');
+  assert.deepEqual(nf, { cod: '421542', num: 'B0027/26', tipo: 'nf', path: '421542/B0027/26/nf.pdf' });
+  const ct = context.contratoDocsParseStoragePath('753534/B0902/26/contrato_assinado.pdf');
+  assert.equal(ct.cod, '753534');
+  assert.equal(ct.num, 'B0902/26');
+  assert.equal(ct.tipo, 'ct');
+  assert.equal(context.contratoDocsParseStoragePath('previsao/x.json'), null);
+});
+
+check('false no JSON docs não conta como carregado', () => {
+  assert.equal(context.contratoDocsValorOk(false), false);
+  assert.equal(context.contratoDocsValorOk(null), false);
+  assert.equal(context.contratoDocsValorOk(''), false);
+  assert.equal(context.contratoDocsValorOk(true), true);
+  assert.equal(context.contratoDocsValorOk('753534/B0902/26/nf.pdf'), true);
+});
+
+check('chave B0902 pinta a linha B0902/26; {} vazio não tapa o PDF', () => {
+  const docs = {
+    B0902: { nf: '753534/B0902/26/nf.pdf' },
+    'B0902/26': {},
+  };
+  const e = context.contratoDocsPickEntry(docs, 'B0902/26');
+  assert.equal(e.nf, '753534/B0902/26/nf.pdf');
+  assert.equal(e.ct, undefined);
+});
+
+check('localStorage vazio não esconde docs do servidor', () => {
+  context.window._contratosDocsMap = {
+    794161: { '031/2022': { nf: '794161/031/2022/nf.pdf', ct: '794161/031/2022/contrato_assinado.pdf' } },
+  };
+  context.localStorage.removeItem('delta_docs_794161');
+  const st = context.contratoDocsLidos('794161', '031/2022');
+  assert.equal(st.nf, true);
+  assert.equal(st.ct, true);
+});
+
+check('localStorage false (apagado) prevalece sobre o servidor', () => {
+  context.window._contratosDocsMap = {
+    794161: { '031/2022': { nf: '794161/031/2022/nf.pdf' } },
+  };
+  context.localStorage.setItem('delta_docs_794161', JSON.stringify({ '031/2022': { nf: false } }));
+  const st = context.contratoDocsLidos('794161', '031/2022');
+  assert.equal(st.nf, false);
+});
+
+check('PATCH docs aplica NF e CT no mesmo objecto (sem uma gravar por cima da outra)', () => {
+  const docs = context.contratoDocsApplyFlags({}, '031/2022', 'nf', '794161/031/2022/nf.pdf');
+  context.contratoDocsApplyFlags(docs, '031/2022', 'ct', '794161/031/2022/contrato_assinado.pdf');
+  assert.equal(docs['031/2022'].nf, '794161/031/2022/nf.pdf');
+  assert.equal(docs['031/2022'].ct, '794161/031/2022/contrato_assinado.pdf');
+  const split = context.contratoDocsApplyFlags(
+    { B0902: { nf: '753534/B0902/26/nf.pdf' }, 'B0902/26': {} },
+    'B0902/26',
+    'ct',
+    '753534/B0902/26/contrato_assinado.pdf'
+  );
+  assert.equal(split.B0902.ct, '753534/B0902/26/contrato_assinado.pdf');
+  assert.equal(split['B0902/26'].ct, '753534/B0902/26/contrato_assinado.pdf');
+  assert.equal(split.B0902.nf, '753534/B0902/26/nf.pdf');
 });
 
 if (process.exitCode) {

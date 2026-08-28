@@ -75,6 +75,7 @@ check('Por registar reutiliza allData/cache', () => {
 check('invalidar cache limpa memória e IndexedDB', () => {
   assert.ok(clearFn.includes('_contratosAllRows = null'));
   assert.ok(clearFn.includes('CONTRATOS_TAB_IDB_KEY'));
+  assert.ok(clearFn.includes('_contratosDocsHydrated = false'));
 });
 
 const ctx = {

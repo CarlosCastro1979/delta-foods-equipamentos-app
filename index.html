@@ -15838,6 +15838,7 @@ function contratosTabPaint() {
     fillVendedorSelectCanal('contratos-vendedor', { emptyLabel: 'Todos os vendedores' });
   }
   if (typeof filtrarContratosVendedor === 'function') filtrarContratosVendedor();
+  try { contratoDocsHydrateFromStorage(window._contratosAllRows); } catch (_) {}
   contratosEnsureResumoListener(cont);
 }
 
@@ -16012,7 +16013,8 @@ async function loadContratosTab(forceRefresh = false) {
         else if (consumoEsperado > 0 && consumoReal <= consumoEsperado * 0.5) alerta = 'sem_consumo';
 
         rows.push({
-          cod: r.cod, nome: r.nome, vendedor: r.vendedor || '—', contrato: r.contrato || '—',
+          cod: r.cod, nome: r.nome, vendedor: r.vendedor || '—',
+          contrato: (c.num || c.numero || r.contrato || '—'),
           inicioFmt, duracao, fimFmt, unidade,
           totalContratado, consumoMes, mesesDecorridos,
           consumoEsperado, consumoReal,
@@ -16126,6 +16128,8 @@ async function loadContratosTab(forceRefresh = false) {
     const docsMap = {};
     registos.forEach(r => { if (r.docs) docsMap[String(r.cod)] = r.docs; });
     window._contratosDocsMap = docsMap;
+    window._contratosDocsHydrated = false;
+    window._contratosDocsHydrateInflight = null;
     window._contratosAllRows = rows;
     html = htmlBannerContratosDuplicados(dupsCt) + html;
     contratosCache = html;
@@ -16354,12 +16358,251 @@ function filtrarContratosVendedor() {
   html += `</tbody></table></div>`;
   document.getElementById('contratos-content').innerHTML = html;
   try { contratoMarkExisting(rows, window._contratosDocsMap); } catch (_) {}
+  try { contratoDocsHydrateFromStorage(rows); } catch (_) {}
 }
 
 // ─── SUPABASE STORAGE — PDFs de Contratos ────────────
 const STORAGE_BUCKET = 'contratos';
 const STORAGE_BASE = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
 const STORAGE_PUBLIC = STORAGE_BASE + '/public/' + STORAGE_BUCKET;
+const STORAGE_LIST = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/list/' + STORAGE_BUCKET;
+
+function contratoDocFileName(tipo) {
+  return tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
+}
+
+function contratoDocsValorOk(v) {
+  if (v === false || v == null || v === '') return false;
+  if (v === true) return true;
+  return String(v).trim().length > 0;
+}
+
+function numsContratoEquivalentes(a, b) {
+  const na = typeof normNumContrato === 'function' ? normNumContrato(a) : String(a || '').toUpperCase().replace(/\s+/g, '');
+  const nb = typeof normNumContrato === 'function' ? normNumContrato(b) : String(b || '').toUpperCase().replace(/\s+/g, '');
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.replace(/[^A-Z0-9]/g, '') === nb.replace(/[^A-Z0-9]/g, '')) return true;
+  if (nb.startsWith(na + '/') || na.startsWith(nb + '/')) return true;
+  return false;
+}
+
+/** 3 estados: caminho/true | false (apagado) | undefined (não há chave). */
+function contratoDocsCampo(docsForCod, num, tipo) {
+  if (!docsForCod || typeof docsForCod !== 'object') return undefined;
+  let found;
+  let explicitFalse = false;
+  for (const key of Object.keys(docsForCod)) {
+    if (!numsContratoEquivalentes(key, num) && key !== String(num)) continue;
+    const val = docsForCod[key];
+    if (!val || typeof val !== 'object' || !(tipo in val)) continue;
+    if (val[tipo] === false) explicitFalse = true;
+    else if (contratoDocsValorOk(val[tipo])) found = val[tipo];
+  }
+  if (contratoDocsValorOk(found)) return found;
+  if (explicitFalse) return false;
+  return undefined;
+}
+
+function contratoDocsPickEntry(docsForCod, num) {
+  return {
+    nf: contratoDocsCampo(docsForCod, num, 'nf'),
+    ct: contratoDocsCampo(docsForCod, num, 'ct'),
+  };
+}
+
+function contratoDocsParseStoragePath(path) {
+  const parts = String(path || '').split('/').filter(Boolean);
+  if (parts.length < 3) return null;
+  const file = parts[parts.length - 1].toLowerCase();
+  let tipo = null;
+  if (file === 'nf.pdf') tipo = 'nf';
+  else if (file.indexOf('contrato') >= 0) tipo = 'ct';
+  else return null;
+  return { cod: parts[0], num: parts.slice(1, -1).join('/'), tipo, path: parts.join('/') };
+}
+
+async function contratoStorageList(prefix) {
+  const res = await fetch(STORAGE_LIST, {
+    method: 'POST',
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ prefix: prefix || '', limit: 1000, offset: 0 }),
+  });
+  if (!res.ok) throw new Error('storage list HTTP ' + res.status);
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+async function contratoDocsListStorageFiles() {
+  const files = [];
+  async function walk(prefix, depth) {
+    if (depth > 6) return;
+    const items = await contratoStorageList(prefix);
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const name = it && it.name;
+      if (!name || name === 'previsao') continue;
+      const path = prefix ? (String(prefix).replace(/\/$/, '') + '/' + name) : name;
+      if (/\.pdf$/i.test(name)) files.push(path);
+      else await walk(path, depth + 1);
+    }
+  }
+  await walk('', 0);
+  return files;
+}
+
+function contratoDocsMapSet(cod, num, tipo, value) {
+  if (!window._contratosDocsMap) window._contratosDocsMap = {};
+  const c = String(cod);
+  if (!window._contratosDocsMap[c]) window._contratosDocsMap[c] = {};
+  const display = String(num || '').trim();
+  const keys = Object.keys(window._contratosDocsMap[c]);
+  const targets = new Set([display]);
+  keys.forEach(k => { if (numsContratoEquivalentes(k, display)) targets.add(k); });
+  targets.forEach(k => {
+    if (!window._contratosDocsMap[c][k] || typeof window._contratosDocsMap[c][k] !== 'object') {
+      window._contratosDocsMap[c][k] = {};
+    }
+    window._contratosDocsMap[c][k][tipo] = value || false;
+  });
+}
+
+function contratoDocsApplyFlags(docs, num, tipo, value) {
+  const src = (docs && typeof docs === 'object') ? docs : {};
+  const display = String(num || '').trim();
+  const keys = Object.keys(src);
+  const targets = new Set([display]);
+  keys.forEach(k => { if (numsContratoEquivalentes(k, display)) targets.add(k); });
+  targets.forEach(k => {
+    const cur = (src[k] && typeof src[k] === 'object') ? { ...src[k] } : {};
+    if (value) cur[tipo] = value;
+    else delete cur[tipo];
+    src[k] = cur;
+  });
+  return src;
+}
+
+async function contratoDocsPersistMany(updates) {
+  const byCod = new Map();
+  (updates || []).forEach(u => {
+    if (!u || u.cod == null) return;
+    const k = String(u.cod);
+    if (!byCod.has(k)) byCod.set(k, []);
+    byCod.get(k).push(u);
+  });
+  const hdr = typeof registosReadHeaders === 'function'
+    ? registosReadHeaders()
+    : { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY };
+  for (const [cod, list] of byCod) {
+    const res = await fetch(
+      `${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`,
+      { headers: hdr }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const regs = await res.json();
+    if (!Array.isArray(regs) || !regs.length) throw new Error('Registo não encontrado');
+    for (let i = 0; i < regs.length; i++) {
+      const reg = regs[i];
+      const docs = contratoDocsApplyFlags(
+        (reg.docs && typeof reg.docs === 'object') ? { ...reg.docs } : {},
+        list[0].num, list[0].tipo, list[0].value
+      );
+      for (let j = 1; j < list.length; j++) {
+        contratoDocsApplyFlags(docs, list[j].num, list[j].tipo, list[j].value);
+      }
+      const patch = await fetch(`${SUPA_URL}?id=eq.${encodeURIComponent(reg.id)}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: SUPA_KEY,
+          Authorization: 'Bearer ' + SUPA_KEY,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ docs }),
+      });
+      if (!patch.ok) throw new Error('PATCH docs HTTP ' + patch.status);
+    }
+  }
+}
+
+async function contratoDocsPersistSupabase(cod, num, tipo, value) {
+  return contratoDocsPersistMany([{ cod, num, tipo, value }]);
+}
+
+function contratoDocsRefreshVisible() {
+  const seen = new Set();
+  document.querySelectorAll('.ct-doc-btn').forEach(btn => {
+    const c = btn.dataset.uploadCod;
+    const n = btn.dataset.uploadNum;
+    const k = String(c) + '\0' + String(n);
+    if (seen.has(k)) return;
+    seen.add(k);
+    contratoDocsRefreshRow(c, n);
+  });
+}
+
+async function contratoDocsHydrateFromStorage(rows, force) {
+  const list = Array.isArray(rows) ? rows : (window._contratosAllRows || []);
+  if (!force && window._contratosDocsHydrated) return;
+  if (window._contratosDocsHydrateInflight) return window._contratosDocsHydrateInflight;
+  window._contratosDocsHydrateInflight = (async () => {
+    try {
+      const files = await contratoDocsListStorageFiles();
+      const pending = [];
+      let changed = 0;
+      for (let i = 0; i < files.length; i++) {
+        const parsed = contratoDocsParseStoragePath(files[i]);
+        if (!parsed) continue;
+        let localAll = {};
+        try { localAll = JSON.parse(localStorage.getItem('delta_docs_' + parsed.cod) || '{}') || {}; } catch (_) {}
+        if (contratoDocsCampo(localAll, parsed.num, parsed.tipo) === false) continue;
+        const byCod = (window._contratosDocsMap || {})[String(parsed.cod)] || {};
+        if (contratoDocsValorOk(contratoDocsCampo(byCod, parsed.num, parsed.tipo))) {
+          list.forEach(r => {
+            if (String(r.cod) === String(parsed.cod) && numsContratoEquivalentes(r.contrato, parsed.num)) {
+              contratoDocsMapSet(parsed.cod, r.contrato, parsed.tipo, parsed.path);
+            }
+          });
+          continue;
+        }
+        contratoDocsMapSet(parsed.cod, parsed.num, parsed.tipo, parsed.path);
+        list.forEach(r => {
+          if (String(r.cod) === String(parsed.cod) && numsContratoEquivalentes(r.contrato, parsed.num)) {
+            contratoDocsMapSet(parsed.cod, r.contrato, parsed.tipo, parsed.path);
+          }
+        });
+        changed++;
+        pending.push({ cod: parsed.cod, num: parsed.num, tipo: parsed.tipo, value: parsed.path });
+      }
+      if (pending.length) {
+        try {
+          await contratoDocsPersistMany(pending);
+        } catch (e) {
+          console.warn('docs hydrate persist', e);
+        }
+      }
+      window._contratosDocsHydrated = true;
+      contratoDocsRefreshVisible();
+      if (changed && window._contratosAllRows && window._contratosTabFp) {
+        persistContratosTabPacked({
+          rows: window._contratosAllRows,
+          docsMap: window._contratosDocsMap,
+          dups: window._contratosDuplicados || [],
+          fp: window._contratosTabFp,
+        });
+      }
+    } catch (e) {
+      console.warn('contratoDocsHydrateFromStorage', e);
+    } finally {
+      window._contratosDocsHydrateInflight = null;
+    }
+  })();
+  return window._contratosDocsHydrateInflight;
+}
 
 function contratoDocBtnHtml(tipo, cod, num) {
   const label = tipo === 'nf' ? 'NF' : 'Contrato';
@@ -16395,11 +16638,15 @@ function contratoDocsSetLoaded(el, loaded) {
 }
 
 function contratoDocsLidos(cod, num, docsMap) {
-  const supabaseDocs = (docsMap || window._contratosDocsMap || {})[String(cod)]?.[num] || {};
-  let localDocs = {};
-  try { localDocs = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch (_) {}
-  const all = { ...supabaseDocs, ...localDocs };
-  return { nf: !!all.nf, ct: !!all.ct, all };
+  const map = docsMap || window._contratosDocsMap || {};
+  const byCod = map[String(cod)] || {};
+  const supabaseDocs = contratoDocsPickEntry(byCod, num);
+  let localAll = {};
+  try { localAll = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}') || {}; } catch (_) {}
+  const localDocs = contratoDocsPickEntry(localAll, num);
+  const nf = localDocs.nf === false ? false : (contratoDocsValorOk(localDocs.nf) ? localDocs.nf : supabaseDocs.nf);
+  const ct = localDocs.ct === false ? false : (contratoDocsValorOk(localDocs.ct) ? localDocs.ct : supabaseDocs.ct);
+  return { nf: contratoDocsValorOk(nf), ct: contratoDocsValorOk(ct), all: { nf, ct } };
 }
 
 function contratoDocsRefreshRow(cod, num) {
@@ -16410,11 +16657,7 @@ function contratoDocsRefreshRow(cod, num) {
 }
 
 function contratoDocsPatchMap(cod, num, tipo, value) {
-  if (!window._contratosDocsMap) window._contratosDocsMap = {};
-  const c = String(cod);
-  if (!window._contratosDocsMap[c]) window._contratosDocsMap[c] = {};
-  if (!window._contratosDocsMap[c][num]) window._contratosDocsMap[c][num] = {};
-  window._contratosDocsMap[c][num][tipo] = value || false;
+  contratoDocsMapSet(cod, num, tipo, value);
 }
 
 // docs_index: { "cod/contrato": {nf: true/false, ct: true/false} }
@@ -16480,24 +16723,14 @@ function contratoUploadPdf(tipo, docPath) {
         targetBtn.disabled = false;
         contratoSetDownloadBtn(targetBtn, pubUrl, label);
       }
-      toast(`✅ ${label} guardada.`, 'success');
-
-      // 3. Guardar no Supabase em background
-      fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS })
-        .then(r => r.json())
-        .then(regs => {
-          if (!regs.length) return;
-          const reg = regs[0];
-          const docs = reg.docs || {};
-          if (!docs[numContrato]) docs[numContrato] = {};
-          docs[numContrato][tipo] = storagePath;
-          return fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
-            method: 'PATCH',
-            headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-            body: JSON.stringify({ docs })
-          });
-        })
-        .catch(e => console.warn('docs save supabase:', e));
+      // 3. Guardar o estado NF/Contrato no registo (não só o ficheiro no Storage)
+      try {
+        await contratoDocsPersistSupabase(cod, numContrato, tipo, storagePath);
+        toast(`✅ ${label} guardada.`, 'success');
+      } catch (e) {
+        console.warn('docs save supabase:', e);
+        toast('PDF no Storage, mas o estado NF/Contrato não gravou no servidor. Abre Contratos outra vez para sincronizar.', 'warn');
+      }
     } catch(err) {
       toast('Erro: ' + err.message, 'error');
       if (btn) { btn.disabled = false; contratoDocsSetLoaded(btn, false); }
@@ -16564,21 +16797,20 @@ function contratoDocsUpload(cod, num, tipo) {
         body: file
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      // Guardar no localStorage
       const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
       if (!saved[num]) saved[num] = {};
       saved[num][tipo] = storagePath;
       localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
-      // Guardar no Supabase
-      fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS })
-        .then(r=>r.json()).then(regs => {
-          if (!regs.length) return;
-          const reg = regs[0]; const docs = reg.docs || {};
-          if (!docs[num]) docs[num] = {};
-          docs[num][tipo] = storagePath;
-          return fetch(`${SUPA_URL}?id=eq.${reg.id}`, { method:'PATCH', headers:{...HEADERS,'Content-Type':'application/json','Prefer':'return=minimal'}, body:JSON.stringify({docs}) });
-        }).catch(()=>{});
-      statusEl.textContent = '✅ ' + label + ' guardada!'; statusEl.style.color = '#16a34a';
+      try {
+        await contratoDocsPersistSupabase(cod, num, tipo, storagePath);
+      } catch (e) {
+        console.warn('docs save supabase:', e);
+        statusEl.textContent = 'PDF carregado, mas o servidor não confirmou o estado. Tenta abrir de novo.';
+        statusEl.style.color = '#b45309';
+      }
+      if (!statusEl.textContent || statusEl.textContent === 'A carregar...') {
+        statusEl.textContent = '✅ ' + label + ' guardada!'; statusEl.style.color = '#16a34a';
+      }
       contratoDocsPatchMap(cod, num, tipo, storagePath);
       contratoMarcarBotao(cod, num, tipo, false);
       contratoDocsRefreshRow(cod, num);
@@ -16590,9 +16822,15 @@ function contratoDocsUpload(cod, num, tipo) {
   input.click();
 }
 
+function contratoDocsStoragePath(cod, num, tipo) {
+  const st = contratoDocsLidos(cod, num);
+  const stored = tipo === 'nf' ? st.all.nf : st.all.ct;
+  if (typeof stored === 'string' && stored.indexOf('/') >= 0) return stored.replace(/^\/+/, '');
+  return `${cod}/${num}/${contratoDocFileName(tipo)}`;
+}
+
 function contratoDocsDownload(cod, num, tipo) {
-  const fileName = tipo === 'nf' ? 'nf.pdf' : 'contrato_assinado.pdf';
-  window.open(`${STORAGE_PUBLIC}/${cod}/${num}/${fileName}`, '_blank');
+  window.open(`${STORAGE_PUBLIC}/${contratoDocsStoragePath(cod, num, tipo)}`, '_blank');
 }
 
 async function contratoDocsDelete(cod, num, tipo) {
@@ -16612,14 +16850,11 @@ async function contratoDocsDelete(cod, num, tipo) {
     saved[num][tipo] = false;
     localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
   } catch(e) {}
-  // Remover Supabase
-  fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers:HEADERS })
-    .then(r=>r.json()).then(regs => {
-      if (!regs.length) return;
-      const reg = regs[0]; const docs = reg.docs || {};
-      if (docs[num]) { delete docs[num][tipo]; }
-      return fetch(`${SUPA_URL}?id=eq.${reg.id}`, { method:'PATCH', headers:{...HEADERS,'Content-Type':'application/json','Prefer':'return=minimal'}, body:JSON.stringify({docs}) });
-    }).catch(()=>{});
+  try {
+    await contratoDocsPersistSupabase(cod, num, tipo, null);
+  } catch (e) {
+    console.warn('docs delete supabase:', e);
+  }
   contratoDocsPatchMap(cod, num, tipo, null);
   contratoMarcarBotao(cod, num, tipo, true);
   contratoDocsRefreshRow(cod, num);
@@ -16670,36 +16905,36 @@ async function contratoDeletePdf(tipo, cod, num, pubUrl, uploadBtn, label) {
     }
     const parent = uploadBtn && uploadBtn.parentElement;
     if (parent) parent.querySelectorAll(`[data-dl-tipo="${tipo}"]`).forEach(e => e.remove());
-    fetch(`${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,docs`, { headers: HEADERS })
-      .then(r => r.json()).then(regs => {
-        if (!regs.length) return;
-        const reg = regs[0]; const docs = reg.docs || {};
-        if (docs[num]) { delete docs[num][tipo]; }
-        return fetch(`${SUPA_URL}?id=eq.${reg.id}`, {
-          method: 'PATCH',
-          headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ docs })
-        });
-      }).catch(e => console.warn(e));
+    try {
+      await contratoDocsPersistSupabase(cod, num, tipo, null);
+    } catch (e) {
+      console.warn('docs delete supabase:', e);
+    }
     toast(`${label} eliminada.`, 'success');
   } catch(e) { toast('Erro: ' + e.message, 'error'); }
 }
 
 function contratoMarkExisting(allRows, docsMap) {
   if (!allRows) return;
-  if (docsMap && !window._contratosDocsMap) window._contratosDocsMap = docsMap;
+  if (docsMap) window._contratosDocsMap = Object.assign({}, window._contratosDocsMap || {}, docsMap);
   allRows.forEach(r => {
     const cod = String(r.cod);
     const num = r.contrato;
-    const supabaseDocs = (docsMap || window._contratosDocsMap || {})[cod]?.[num] || {};
+    const supabaseDocs = contratoDocsPickEntry((docsMap || window._contratosDocsMap || {})[cod] || {}, num);
     let localDocs = {};
-    try { localDocs = (JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}'))[num] || {}; } catch(e) {}
-    if (Object.keys(supabaseDocs).length) {
+    try {
+      localDocs = contratoDocsPickEntry(JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}') || {}, num);
+    } catch (e) {}
+    if (contratoDocsValorOk(supabaseDocs.nf) || contratoDocsValorOk(supabaseDocs.ct)
+        || contratoDocsValorOk(localDocs.nf) || contratoDocsValorOk(localDocs.ct)) {
       try {
         const saved = JSON.parse(localStorage.getItem('delta_docs_' + cod) || '{}');
-        saved[num] = { ...supabaseDocs, ...localDocs };
+        saved[num] = {
+          nf: contratoDocsValorOk(localDocs.nf) ? localDocs.nf : supabaseDocs.nf,
+          ct: contratoDocsValorOk(localDocs.ct) ? localDocs.ct : supabaseDocs.ct,
+        };
         localStorage.setItem('delta_docs_' + cod, JSON.stringify(saved));
-      } catch(e) {}
+      } catch (e) {}
     }
     contratoDocsRefreshRow(cod, num);
   });
@@ -16716,6 +16951,7 @@ function clearContratosCache() {
   window._contratosAllRows = null;
   window._contratosTabFp = null;
   window._contratosPorRegistar = null;
+  window._contratosDocsHydrated = false;
   try { sessionCacheInvalidate('contratosTabCompute'); } catch (_) {}
   try {
     if (typeof idbSet === 'function') idbSet(CONTRATOS_TAB_IDB_KEY, null).catch(() => {});
