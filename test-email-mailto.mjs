@@ -16,9 +16,24 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 function extractFn(src, name) {
   const start = src.indexOf(`function ${name}(`);
   if (start < 0) throw new Error('Função em falta: ' + name);
-  const brace = src.indexOf('{', start);
+  // Saltar a lista de parâmetros (`({ a } = {}) {` não é o corpo).
+  const paren = src.indexOf('(', start);
   let depth = 0;
-  for (let i = brace; i < src.length; i++) {
+  let bodyBrace = -1;
+  for (let i = paren; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      depth--;
+      if (depth === 0) {
+        bodyBrace = src.indexOf('{', i);
+        break;
+      }
+    }
+  }
+  if (bodyBrace < 0) throw new Error('Corpo em falta: ' + name);
+  depth = 0;
+  for (let i = bodyBrace; i < src.length; i++) {
     const ch = src[i];
     if (ch === '{') depth++;
     else if (ch === '}') {
