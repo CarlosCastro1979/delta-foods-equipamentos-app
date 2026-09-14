@@ -64,13 +64,14 @@ check('tabela principal tem colunas NF e Contrato (não 📄 DOCS)', () => {
   assert.equal((loadFn.match(/contratoDocBtnHtml\('ct'/g) || []).length, 1);
 });
 
-check('tabela filtrada tem colunas NF e Contrato (não 📄 DOCS)', () => {
-  assert.ok(/min-width:72px">NF<\/th>/.test(filtrarFn));
-  assert.ok(/min-width:92px">Contrato<\/th>/.test(filtrarFn));
+check('tabela filtrada reutiliza o helper com colunas NF e Contrato', () => {
+  assert.ok(filtrarFn.includes('buildContratosCumprimentoTableHtml'));
+  assert.ok(/min-width:72px">NF<\/th>/.test(loadFn));
+  assert.ok(/min-width:92px">Contrato<\/th>/.test(loadFn));
   assert.ok(!filtrarFn.includes('📄 DOCS'));
   assert.ok(!filtrarFn.includes('>📁<'));
-  assert.equal((filtrarFn.match(/contratoDocBtnHtml\('nf'/g) || []).length, 1);
-  assert.equal((filtrarFn.match(/contratoDocBtnHtml\('ct'/g) || []).length, 1);
+  assert.equal((loadFn.match(/contratoDocBtnHtml\('nf'/g) || []).length, 1);
+  assert.equal((loadFn.match(/contratoDocBtnHtml\('ct'/g) || []).length, 1);
 });
 
 check('nenhuma coluna única 📁/📄 DOCS nas tabelas de contratos', () => {

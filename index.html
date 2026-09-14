@@ -692,6 +692,132 @@
     box-shadow: var(--shadow-sm);
   }
 
+  /* Freeze panes (Excel): cabeçalho + CÓD/CLIENTE no viewport da tabela */
+  .table-wrap.table-wrap--freeze {
+    position: relative;
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    max-height: min(70vh, calc(100vh - 220px));
+    width: 100%;
+    --freeze-1: 104px;
+    --freeze-2: 168px;
+    --freeze-3: 140px;
+  }
+  .table-wrap--freeze table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+  }
+  .table-wrap--freeze thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #f5f5f5;
+    box-shadow: 0 1px 0 #ddd;
+  }
+  .table-wrap--freeze th.sticky-col,
+  .table-wrap--freeze td.sticky-col {
+    position: sticky;
+    z-index: 2;
+    background-clip: padding-box;
+    white-space: nowrap;
+  }
+  .table-wrap--freeze thead th.sticky-col {
+    z-index: 4;
+    background: #f5f5f5 !important;
+  }
+  .table-wrap--freeze .freeze-1 { left: 0; }
+  .table-wrap--freeze .freeze-2 { left: var(--freeze-1, 104px); }
+  .table-wrap--freeze .freeze-3 { left: calc(var(--freeze-1, 104px) + var(--freeze-2, 168px)); }
+  .table-wrap--freeze tbody tr:nth-child(odd) td.sticky-col { background: #fff !important; }
+  .table-wrap--freeze tbody tr:nth-child(even) td.sticky-col { background: #fafafa !important; }
+  .table-wrap--freeze tbody tr:hover td.sticky-col { background: var(--surface-hover) !important; }
+  .table-wrap--freeze .sticky-col-last {
+    box-shadow: 4px 0 8px -2px rgba(15, 23, 42, 0.18);
+  }
+  .table-wrap--freeze thead th.sticky-col-last {
+    box-shadow: 4px 0 8px -2px rgba(15, 23, 42, 0.18), 0 1px 0 #ddd;
+  }
+  .table-wrap--freeze th.col-code.sticky-col,
+  .table-wrap--freeze td.col-code.sticky-col {
+    min-width: 88px;
+    max-width: 140px;
+    width: 104px;
+    padding-left: 8px;
+    padding-right: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .table-wrap--freeze table.data-table.wide .col-nome.sticky-col,
+  .table-wrap--freeze th.col-nome.sticky-col,
+  .table-wrap--freeze td.col-nome.sticky-col {
+    min-width: 140px;
+    max-width: 200px;
+    width: 168px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: normal;
+    line-height: 1.35;
+  }
+  .table-wrap--freeze th.col-vend.sticky-col,
+  .table-wrap--freeze td.col-vend.sticky-col {
+    min-width: 88px;
+    max-width: 160px;
+    width: var(--freeze-3, 140px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .table-wrap--freeze th.col-contract.sticky-col,
+  .table-wrap--freeze td.col-contract.sticky-col {
+    min-width: 88px;
+    max-width: 140px;
+    width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .table-wrap--freeze .ct-cod-freeze {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    vertical-align: middle;
+  }
+  .table-wrap--freeze .ct-cod-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .table-wrap--freeze .ct-pdv-multi-badge {
+    flex-shrink: 0;
+  }
+  @media (max-width: 900px) {
+    .table-wrap.table-wrap--freeze {
+      max-height: min(65vh, calc(100vh - 200px));
+      --freeze-1: 112px;
+      --freeze-2: 132px;
+      --freeze-3: 120px;
+    }
+    .table-wrap--freeze th.col-code.sticky-col,
+    .table-wrap--freeze td.col-code.sticky-col {
+      min-width: 96px;
+      max-width: 120px;
+      width: 112px;
+    }
+    .table-wrap--freeze table.data-table.wide .col-nome.sticky-col,
+    .table-wrap--freeze th.col-nome.sticky-col,
+    .table-wrap--freeze td.col-nome.sticky-col {
+      min-width: 112px;
+      max-width: 148px;
+      width: 132px;
+    }
+  }
+
   table {
     width: 100%;
     border-collapse: collapse;
@@ -2148,12 +2274,12 @@ var _unused_placeholder = 1;
     <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">
       Clientes com equipamentos da carga (Excel NF) ainda por associar a contratos de comodato.
     </p>
-    <div class="table-wrap">
+    <div class="table-wrap table-wrap--freeze">
       <table>
         <thead>
           <tr>
-            <th>Cód.</th>
-            <th>Nome Cliente</th>
+            <th class="col-code sticky-col freeze-1">Cód.</th>
+            <th class="col-nome sticky-col freeze-2 sticky-col-last">Nome Cliente</th>
             <th>Carga</th>
             <th>Associado</th>
             <th>Vendedor</th>
@@ -7900,12 +8026,12 @@ function renderContratosPorRegistar() {
     </table>
   </div>
   <div style="border-top:2px dashed #e0e0e0;margin:16px 0;"></div>
-  <div style="border:1px solid var(--border);border-radius:8px;overflow-x:auto;">
-    <table style="width:auto;border-collapse:collapse;font-size:13px;">
-      <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
-        <th style="padding:9px 12px;text-align:left;font-weight:600;">Vendedor</th>
-        <th style="padding:9px 12px;text-align:left;font-weight:600;white-space:nowrap;">Cód.</th>
-        <th style="padding:9px 12px;text-align:left;font-weight:600;">Cliente</th>
+  <div class="table-wrap table-wrap--freeze">
+    <table class="data-table wide" style="border-collapse:separate;border-spacing:0;font-size:13px;">
+      <thead><tr>
+        <th class="col-vend sticky-col freeze-1" style="padding:9px 12px;text-align:left;font-weight:600;">Vendedor</th>
+        <th class="col-code sticky-col freeze-2" style="padding:9px 12px;text-align:left;font-weight:600;white-space:nowrap;">Cód.</th>
+        <th class="col-nome sticky-col freeze-3 sticky-col-last" style="padding:9px 12px;text-align:left;font-weight:600;">Cliente</th>
         <th style="padding:9px 12px;text-align:left;font-weight:600;">Equipamento(s)</th>
         <th style="padding:9px 12px;text-align:center;font-weight:600;">Acção</th>
       </tr></thead><tbody>`;
@@ -7913,9 +8039,9 @@ function renderContratosPorRegistar() {
   lista.forEach((r, i) => {
     const equipsStr = r.equipamentos.map(e => e.tipo + (e.tag ? ` #${e.tag}` : '')).join(', ');
     html += `<tr style="border-bottom:1px solid #f0f0f0;background:${i%2===0?'#fff':'#fafafa'}">
-      <td style="padding:8px 12px;font-size:12px;color:var(--muted);white-space:nowrap;">${escHtml(r.vendedor)}</td>
-      <td style="padding:8px 12px;font-size:12px;color:var(--muted);">${escHtml(r.cod)}</td>
-      <td style="padding:8px 12px;font-weight:500;">${escHtml(r.nome)}</td>
+      <td class="col-vend sticky-col freeze-1" style="padding:8px 12px;font-size:12px;color:var(--muted);white-space:nowrap;">${escHtml(r.vendedor)}</td>
+      <td class="col-code sticky-col freeze-2" style="padding:8px 12px;font-size:12px;color:var(--muted);">${escHtml(r.cod)}</td>
+      <td class="col-nome sticky-col freeze-3 sticky-col-last" style="padding:8px 12px;font-weight:500;" title="${escHtml(r.nome)}">${escHtml(r.nome)}</td>
       <td style="padding:8px 12px;font-size:12px;">${escHtml(equipsStr)}</td>
       <td style="padding:8px 12px;text-align:center;white-space:nowrap;">
         <button type="button" class="btn btn-primary btn-sm" data-reg-cod="${escHtml(r.cod)}" onclick="abrirRegistarContrato(this.dataset.regCod)" style="font-size:12px;padding:5px 12px;">Registar</button>
@@ -7925,6 +8051,10 @@ function renderContratosPorRegistar() {
 
   html += '</tbody></table></div>';
   cont.innerHTML = html;
+  try {
+    contratosEnsureFreezeResize();
+    contratosSyncFreezeOffsets(cont);
+  } catch (_) {}
   if (!cont._prResumoListener) {
     cont._prResumoListener = true;
     cont.addEventListener('click', function(e) {
@@ -8698,8 +8828,8 @@ function renderDistContratosFalta() {
         const assoc = c._assocQty || 0;
         const regId = c._registo?.id || '';
         return `<tr>
-          <td>${c.cod}</td>
-          <td>${c.nome || '—'}</td>
+          <td class="col-code sticky-col freeze-1">${c.cod}</td>
+          <td class="col-nome sticky-col freeze-2 sticky-col-last" title="${String(c.nome || '—').replace(/"/g, '&quot;')}">${c.nome || '—'}</td>
           <td>${carga || '—'}</td>
           <td>${carga ? `${assoc}/${carga}` : (assoc || '—')}</td>
           <td><span class="vendedor-badge">${c.vendedor || '—'}</span></td>
@@ -8709,6 +8839,11 @@ function renderDistContratosFalta() {
         </tr>`;
       }).join('')
     : '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente com contratos em falta.</td></tr>';
+
+  try {
+    contratosEnsureFreezeResize();
+    contratosSyncFreezeOffsets(tbody.closest('.table-wrap--freeze') || tbody);
+  } catch (_) {}
 
   if (!tbody._hasFaltaListener) {
     tbody._hasFaltaListener = true;
@@ -16297,14 +16432,15 @@ function contratoHtmlCodCliente(r) {
   const multi = r && r.pdv === 'multi' && Array.isArray(r.cods) && r.cods.length > 1;
   const esc = typeof escHtml === 'function' ? escHtml : (s => String(s || ''));
   const badge = multi
-    ? ' <span style="background:#eff6ff;color:#1d4ed8;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;">PDV Multi</span>'
+    ? ' <span class="ct-pdv-multi-badge" style="background:#eff6ff;color:#1d4ed8;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;">PDV Multi</span>'
     : '';
   const extra = multi ? r.cods.length - 1 : 0;
   const nomeExtra = extra > 0
     ? ` <span style="color:var(--muted);font-weight:400;font-size:11px">(+${extra} casa${extra > 1 ? 's' : ''})</span>`
     : '';
+  const codText = esc(multi ? r.cods.join(', ') : String((r && r.cod) || ''));
   return {
-    codHtml: esc(multi ? r.cods.join(', ') : String((r && r.cod) || '')) + badge,
+    codHtml: `<span class="ct-cod-freeze"><span class="ct-cod-text" title="${codText}">${codText}</span>${badge}</span>`,
     nomeHtml: esc((r && r.nome) || '') + nomeExtra,
     titleNome: multi && Array.isArray(r.nomes) && r.nomes.length ? r.nomes.join(' · ') : ((r && r.nome) || ''),
   };
@@ -16870,12 +17006,12 @@ function renderContratosMultiCliente() {
     <div style="border-top:2px dashed #e0e0e0;margin:20px 0;"></div>`;
 
   const TH = 'padding:8px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:11px;background:#f5f5f5;';
-  html += `<div style="overflow-x:auto;width:100%"><table style="border-collapse:collapse;font-size:12px;width:max-content;min-width:100%">
+  html += `<div class="table-wrap table-wrap--freeze"><table class="data-table wide" style="border-collapse:separate;border-spacing:0;font-size:12px;width:max-content;min-width:100%">
     <thead><tr>
-      <th style="${TH}">CONTRATO</th>
-      <th style="${TH}">CÓD</th>
-      <th style="${TH}min-width:180px">CLIENTE</th>
-      <th style="${TH}">VENDEDOR</th>
+      <th class="col-contract sticky-col freeze-1" style="${TH}">CONTRATO</th>
+      <th class="col-code sticky-col freeze-2" style="${TH}">CÓD</th>
+      <th class="col-nome sticky-col freeze-3 sticky-col-last" style="${TH}">CLIENTE</th>
+      <th class="col-vend" style="${TH}">VENDEDOR</th>
       <th style="${TH}text-align:center;min-width:72px">NF</th>
       <th style="${TH}text-align:center;min-width:92px">Contrato</th>
     </tr></thead><tbody>`;
@@ -16899,10 +17035,10 @@ function renderContratosMultiCliente() {
         return `<span class="ct-doc-btn${on ? ' is-loaded' : ''}" style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700;">${on ? '✅ ' : ''}${label}</span>`;
       };
       html += `<tr>
-        <td style="${td}">${esc(num)}</td>
-        <td style="${td}color:var(--muted)">${esc(c.cod)}</td>
-        <td class="col-nome" style="${td}font-weight:500;" title="${esc(c.nome)}">${esc(c.nome)}</td>
-        <td style="${td}">${esc(c.vendedor || '—')}</td>
+        <td class="col-contract sticky-col freeze-1" style="${td}">${esc(num)}</td>
+        <td class="col-code sticky-col freeze-2" style="${td}color:var(--muted)">${esc(c.cod)}</td>
+        <td class="col-nome sticky-col freeze-3 sticky-col-last" style="${td}font-weight:500;" title="${esc(c.nome)}">${esc(c.nome)}</td>
+        <td class="col-vend" style="${td}">${esc(c.vendedor || '—')}</td>
         <td style="${td}text-align:center">${pill('nf', anex.nf)}</td>
         <td style="${td}text-align:center">${pill('ct', anex.ct)}</td>
       </tr>`;
@@ -16911,6 +17047,13 @@ function renderContratosMultiCliente() {
   });
   html += `</tbody></table></div>`;
   cont.innerHTML = html;
+  try {
+    contratosEnsureFreezeResize();
+    contratosSyncFreezeOffsets(cont);
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => contratosSyncFreezeOffsets(cont));
+    }
+  } catch (_) {}
   if (!cont._multiListener) {
     cont._multiListener = true;
     cont.addEventListener('click', function(e) {
@@ -17364,73 +17507,9 @@ async function loadContratosTab(forceRefresh = false) {
     });
     window._contratosSortRank = contratoSortRank;
 
-    const unidadeLabel = u => u === 'Kg' ? 'Kg' : 'Cáps';
-    const fmtNum = (n, u) => {
-      if (u === 'Kg') return n.toLocaleString('pt-BR', {minimumFractionDigits:1, maximumFractionDigits:1}) + ' Kg';
-      return Math.round(n).toLocaleString('pt-BR') + ' Cáps';
-    };
-    const pctColor = p => p === null ? '#888' : p >= 90 ? '#2e7d32' : p >= 60 ? '#f57c00' : '#c62828';
-    const pctBg = p => p === null ? '#f5f5f5' : p >= 90 ? '#e8f5e9' : p >= 60 ? '#fff3e0' : '#ffebee';
-
     // ── RESUMO POR VENDEDOR ──
     let html = buildContratosResumoHtml(rows, window._contratosNivelFiltro || null);
-    // Tabela de contratos — colunas visíveis NF | Contrato
-    const TH2 = 'padding:8px 12px;font-weight:700;font-size:11px;border:1px solid #ddd;background:#f5f5f5;';
-    html += `<div class="table-wrap"><table class="data-table wide" style="border-collapse:collapse;font-size:12px;">
-      <thead><tr>
-        <th class="col-code" style="${TH2}">CÓD</th>
-        <th class="col-nome" style="${TH2}">CLIENTE</th>
-        <th style="${TH2}min-width:90px">CONTRATO</th>
-        <th style="${TH2}min-width:90px">INÍCIO</th>
-        <th style="${TH2}text-align:center;min-width:50px">DUR.</th>
-        <th style="${TH2}min-width:80px">FIM</th>
-        <th style="${TH2}text-align:right;min-width:100px">CONS./MÊS</th>
-        <th style="${TH2}text-align:right;min-width:100px">TOTAL</th>
-        <th style="${TH2}text-align:right;min-width:110px">ESPERADO</th>
-        <th style="${TH2}text-align:right;min-width:100px">REAL</th>
-        <th style="${TH2}text-align:center;min-width:80px">% TOTAL</th>
-        <th style="${TH2}text-align:center;min-width:80px">% YTD</th>
-        <th style="${TH2}text-align:center;min-width:200px">ALERTA</th>
-        <th style="${TH2}text-align:center;min-width:72px">NF</th>
-        <th style="${TH2}text-align:center;min-width:92px">Contrato</th>
-      </tr></thead><tbody>`;
-
-    const fmtNum2 = (n, u) => u === 'Kg'
-      ? n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' Kg'
-      : Math.round(n).toLocaleString('pt-BR')+' Cáps';
-    const pctColor2 = p => p===null?'#888':p>=90?'#2e7d32':p>=60?'#f57c00':'#c62828';
-    const pctBg2    = p => p===null?'#f5f5f5':p>=90?'#e8f5e9':p>=60?'#fff3e0':'#ffebee';
-
-    rows.forEach((r, idx) => {
-      const td = `padding:8px 12px;border:1px solid #eee;font-size:11px;${idx%2===0?'background:#fff;':'background:#fafafa;'}`;
-      const pBg = pctBg2(r.pct); const pCol = pctColor2(r.pct);
-      const alertaHtml = r.alerta === 'finalizado'
-        ? `<span style="background:#e8f5e9;color:#1b5e20;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">✅ Contrato Finalizado — Negociar</span>`
-        : r.alerta === 'perto_fim'
-        ? `<span style="background:#fff3e0;color:#e65100;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🔔 Perto do Final — Negociar</span>`
-        : r.alerta === 'sem_consumo'
-        ? `<span style="background:#ffebee;color:#b71c1c;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🚫 Sem Consumo — Analisar</span>`
-        : `<span style="color:#aaa;font-size:10px">—</span>`;
-      const cel = contratoHtmlCodCliente(r);
-      html += `<tr>
-        <td style="${td}color:var(--muted)">${cel.codHtml}</td>
-        <td class="col-nome" style="${td}font-weight:500;" title="${escHtml(cel.titleNome)}">${cel.nomeHtml}</td>
-        <td style="${td}">${r.contrato}</td>
-        <td style="${td}white-space:nowrap" title="${r.inicioFmt}">${r.inicioFmt}</td>
-        <td style="${td}text-align:center">${r.duracao||'—'}</td>
-        <td style="${td}white-space:nowrap" title="${r.fimFmt}">${r.fimFmt}</td>
-        <td style="${td}text-align:right">${fmtNum2(r.consumoMes,r.unidade)}</td>
-        <td style="${td}text-align:right">${fmtNum2(r.totalContratado,r.unidade)}</td>
-        <td style="${td}text-align:right" title="${r.consumoEsperado!==null?fmtNum2(r.consumoEsperado,r.unidade):'—'}">${r.consumoEsperado!==null?fmtNum2(r.consumoEsperado,r.unidade):'—'}</td>
-        <td style="${td}text-align:right;font-weight:600" title="${r.consumoReal!==null?fmtNum2(r.consumoReal,r.unidade):'—'}">${r.consumoReal!==null?fmtNum2(r.consumoReal,r.unidade):'—'}</td>
-        <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal!==null?`<span style="background:${pctBg2(r.pctTotal)};color:${pctColor2(r.pctTotal)};padding:2px 8px;border-radius:10px;font-weight:700">${r.pctTotal}%</span>`:'—'}</td>
-        <td style="${td}text-align:center;background:#F8FFF9">${r.pct!==null&&r.mesesDecorridos>0?`<span style="background:${pBg};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700">${r.pct}%</span>`:'—'}</td>
-        <td style="${td}text-align:center;overflow:hidden;">${alertaHtml}</td>
-        <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('nf', r.cod, r.contrato)}</td>
-        <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('ct', r.cod, r.contrato)}</td>
-      </tr>`;
-    });
-    html += `</tbody></table></div>`;
+    html += buildContratosCumprimentoTableHtml(rows);
   
     // Popula filtro de vendedores = canal activo
     if (typeof fillVendedorSelectCanal === 'function') {
@@ -17473,6 +17552,99 @@ async function loadContratosTab(forceRefresh = false) {
     }
   }
   });
+}
+
+function contratosSyncFreezeOffsets(root) {
+  const scope = root || document;
+  const wraps = [];
+  if (scope && scope.classList && scope.classList.contains('table-wrap--freeze')) wraps.push(scope);
+  if (scope && scope.querySelectorAll) {
+    scope.querySelectorAll('.table-wrap--freeze').forEach(w => {
+      if (wraps.indexOf(w) < 0) wraps.push(w);
+    });
+  }
+  wraps.forEach(wrap => {
+    const ths = Array.from(wrap.querySelectorAll('thead th.sticky-col'));
+    if (!ths.length) return;
+    let acc = 0;
+    let laidOut = false;
+    ths.forEach((th, i) => {
+      const w = Math.round(th.getBoundingClientRect().width) || th.offsetWidth || 0;
+      if (w >= 8) laidOut = true;
+      const px = (w >= 8 ? w : (i === 0 ? 104 : 168)) + 'px';
+      wrap.style.setProperty('--freeze-' + (i + 1), px);
+      th.style.left = acc + 'px';
+      wrap.querySelectorAll('td.freeze-' + (i + 1)).forEach(td => { td.style.left = acc + 'px'; });
+      acc += (w >= 8 ? w : (i === 0 ? 104 : 168));
+    });
+    if (!laidOut) return;
+  });
+}
+
+function contratosEnsureFreezeResize() {
+  if (window._contratosFreezeResizeBound) return;
+  window._contratosFreezeResizeBound = true;
+  window.addEventListener('resize', () => {
+    try { contratosSyncFreezeOffsets(document); } catch (_) {}
+  });
+}
+
+function buildContratosCumprimentoTableHtml(rows) {
+  const TH2 = 'padding:8px 12px;font-weight:700;font-size:11px;border:1px solid #ddd;background:#f5f5f5;';
+  const fmtNum2 = (n, u) => u === 'Kg'
+    ? n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' Kg'
+    : Math.round(n).toLocaleString('pt-BR')+' Cáps';
+  const pctColor2 = p => p===null?'#888':p>=90?'#2e7d32':p>=60?'#f57c00':'#c62828';
+  const pctBg2    = p => p===null?'#f5f5f5':p>=90?'#e8f5e9':p>=60?'#fff3e0':'#ffebee';
+  let html = `<div class="table-wrap table-wrap--freeze"><table class="data-table wide" style="border-collapse:separate;border-spacing:0;font-size:12px;width:max-content;min-width:100%;">
+      <thead><tr>
+        <th class="col-code sticky-col freeze-1" style="${TH2}">CÓD</th>
+        <th class="col-nome sticky-col freeze-2 sticky-col-last" style="${TH2}">CLIENTE</th>
+        <th style="${TH2}min-width:90px">CONTRATO</th>
+        <th style="${TH2}min-width:90px">INÍCIO</th>
+        <th style="${TH2}text-align:center;min-width:50px">DUR.</th>
+        <th style="${TH2}min-width:80px">FIM</th>
+        <th style="${TH2}text-align:right;min-width:100px">CONS./MÊS</th>
+        <th style="${TH2}text-align:right;min-width:100px">TOTAL</th>
+        <th style="${TH2}text-align:right;min-width:110px">ESPERADO</th>
+        <th style="${TH2}text-align:right;min-width:100px">REAL</th>
+        <th style="${TH2}text-align:center;min-width:80px">% TOTAL</th>
+        <th style="${TH2}text-align:center;min-width:80px">% YTD</th>
+        <th style="${TH2}text-align:center;min-width:200px">ALERTA</th>
+        <th style="${TH2}text-align:center;min-width:72px">NF</th>
+        <th style="${TH2}text-align:center;min-width:92px">Contrato</th>
+      </tr></thead><tbody>`;
+  (rows || []).forEach((r, idx) => {
+    const td = `padding:8px 12px;border:1px solid #eee;font-size:11px;${idx%2===0?'background:#fff;':'background:#fafafa;'}`;
+    const pBg = pctBg2(r.pct); const pCol = pctColor2(r.pct);
+    const alertaHtml = r.alerta === 'finalizado'
+      ? `<span style="background:#e8f5e9;color:#1b5e20;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">✅ Contrato Finalizado — Negociar</span>`
+      : r.alerta === 'perto_fim'
+      ? `<span style="background:#fff3e0;color:#e65100;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🔔 Perto do Final — Negociar</span>`
+      : r.alerta === 'sem_consumo'
+      ? `<span style="background:#ffebee;color:#b71c1c;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🚫 Sem Consumo — Analisar</span>`
+      : `<span style="color:#aaa;font-size:10px">—</span>`;
+    const cel = contratoHtmlCodCliente(r);
+    html += `<tr>
+        <td class="col-code sticky-col freeze-1" style="${td}color:var(--muted)">${cel.codHtml}</td>
+        <td class="col-nome sticky-col freeze-2 sticky-col-last" style="${td}font-weight:500;" title="${escHtml(cel.titleNome)}">${cel.nomeHtml}</td>
+        <td style="${td}">${r.contrato}</td>
+        <td style="${td}white-space:nowrap" title="${r.inicioFmt}">${r.inicioFmt}</td>
+        <td style="${td}text-align:center">${r.duracao||'—'}</td>
+        <td style="${td}white-space:nowrap" title="${r.fimFmt}">${r.fimFmt}</td>
+        <td style="${td}text-align:right">${fmtNum2(r.consumoMes,r.unidade)}</td>
+        <td style="${td}text-align:right">${fmtNum2(r.totalContratado,r.unidade)}</td>
+        <td style="${td}text-align:right" title="${r.consumoEsperado!==null?fmtNum2(r.consumoEsperado,r.unidade):'—'}">${r.consumoEsperado!==null?fmtNum2(r.consumoEsperado,r.unidade):'—'}</td>
+        <td style="${td}text-align:right;font-weight:600" title="${r.consumoReal!==null?fmtNum2(r.consumoReal,r.unidade):'—'}">${r.consumoReal!==null?fmtNum2(r.consumoReal,r.unidade):'—'}</td>
+        <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal!==null?`<span style="background:${pctBg2(r.pctTotal)};color:${pctColor2(r.pctTotal)};padding:2px 8px;border-radius:10px;font-weight:700">${r.pctTotal}%</span>`:'—'}</td>
+        <td style="${td}text-align:center;background:#F8FFF9">${r.pct!==null&&r.mesesDecorridos>0?`<span style="background:${pBg};color:${pCol};padding:2px 8px;border-radius:10px;font-weight:700">${r.pct}%</span>`:'—'}</td>
+        <td style="${td}text-align:center;overflow:hidden;">${alertaHtml}</td>
+        <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('nf', r.cod, r.contrato)}</td>
+        <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('ct', r.cod, r.contrato)}</td>
+      </tr>`;
+  });
+  html += `</tbody></table></div>`;
+  return html;
 }
 
 // Filtra a tabela de contratos por vendedor e nível de cumprimento
@@ -17627,69 +17799,20 @@ function filtrarContratosVendedor() {
     return;
   }
 
-  // Re-render resumo + tabela com rows filtradas
-  const pctColor = p => p === null ? '#888' : p >= 90 ? '#2e7d32' : p >= 60 ? '#f57c00' : '#c62828';
-  const pctBg    = p => p === null ? '#f5f5f5' : p >= 90 ? '#e8f5e9' : p >= 60 ? '#fff3e0' : '#ffebee';
-  const fmtNum   = (n, u) => u === 'Kg'
-    ? n.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+' Kg'
-    : Math.round(n).toLocaleString('pt-BR')+' Cáps';
-
+  // Re-render resumo + tabela com rows filtradas (mesmas classes freeze que o paint inicial)
   let html = htmlBannerContratosDuplicados(window._contratosDuplicados) + buildContratosResumoHtml(scopeRows, nivel);
-  // Tabela de contratos (reutiliza HTML do contrato original por linha)
-  const TH = 'padding:8px 12px;font-weight:700;white-space:nowrap;border:1px solid #ddd;font-size:11px;background:#f5f5f5;';
-  html += `<div style="overflow-x:auto;width:100%"><table style="border-collapse:collapse;font-size:12px;width:max-content;min-width:100%">
-    <thead><tr>
-      <th style="${TH}text-align:left">CÓD</th>
-      <th style="${TH}text-align:left;min-width:180px">CLIENTE</th>
-      <th style="${TH}text-align:left">CONTRATO</th>
-      <th style="${TH}text-align:left">INÍCIO</th>
-      <th style="${TH}text-align:center">DUR.</th>
-      <th style="${TH}text-align:left">FIM</th>
-      <th style="${TH}text-align:right">CONS./MÊS</th>
-      <th style="${TH}text-align:right">TOTAL</th>
-      <th style="${TH}text-align:right">ESPERADO</th>
-      <th style="${TH}text-align:right">REAL</th>
-      <th style="${TH}text-align:center">% TOTAL</th>
-      <th style="${TH}text-align:center">% YTD</th>
-      <th style="${TH}text-align:center;min-width:160px">ALERTA</th>
-      <th style="${TH}text-align:center;min-width:72px">NF</th>
-      <th style="${TH}text-align:center;min-width:92px">Contrato</th>
-    </tr></thead><tbody>`;
-
-  rows.forEach((r, idx) => {
-    const td = `padding:8px 12px;border:1px solid #eee;font-size:12px;white-space:nowrap;${idx%2===0?'background:#fff;':'background:#fafafa;'}`;
-    const pBg  = pctBg(r.pct);  const pCol  = pctColor(r.pct);
-    const alertaHtml = r.alerta === 'finalizado'
-      ? `<span style="background:#e8f5e9;color:#1b5e20;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">✅ Contrato Finalizado — Negociar</span>`
-      : r.alerta === 'perto_fim'
-      ? `<span style="background:#fff3e0;color:#e65100;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🔔 Perto do Final — Negociar</span>`
-      : r.alerta === 'sem_consumo'
-      ? `<span style="background:#ffebee;color:#b71c1c;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🚫 Sem Consumo — Analisar</span>`
-      : `<span style="color:#aaa;font-size:11px">—</span>`;
-    const cel = contratoHtmlCodCliente(r);
-    html += `<tr>
-      <td style="${td}font-size:11px;color:var(--muted)">${cel.codHtml}</td>
-      <td class="col-nome" style="${td}font-weight:500;" title="${escHtml(cel.titleNome)}">${cel.nomeHtml}</td>
-      <td style="${td}">${r.contrato}</td>
-      <td style="${td}white-space:nowrap" title="${r.inicioFmt}">${r.inicioFmt}</td>
-      <td style="${td}text-align:center">${r.duracao}</td>
-      <td style="${td}">${r.fimFmt}</td>
-      <td style="${td}text-align:right">${fmtNum(r.consumoMes, r.unidade)}</td>
-      <td style="${td}text-align:right">${fmtNum(r.totalContratado, r.unidade)}</td>
-      <td style="${td}text-align:right">${r.consumoEsperado !== null ? fmtNum(r.consumoEsperado, r.unidade) : '—'}</td>
-      <td style="${td}text-align:right;font-weight:600">${r.consumoReal !== null ? fmtNum(r.consumoReal, r.unidade) : '—'}</td>
-      <td style="${td}text-align:center;background:#F8FAFF">${r.pctTotal !== null ? `<span style="background:${pctBg(r.pctTotal)};color:${pctColor(r.pctTotal)};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pctTotal}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
-      <td style="${td}text-align:center;background:#F8FFF9">${r.pct !== null && r.mesesDecorridos > 0 ? `<span style="background:${pBg};color:${pCol};padding:3px 10px;border-radius:20px;font-weight:700;font-size:13px">${r.pct}%</span>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
-      <td style="${td}text-align:center">${alertaHtml}</td>
-      <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('nf', r.cod, r.contrato)}</td>
-      <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('ct', r.cod, r.contrato)}</td>
-    </tr>`;
-  });
-
-  html += `</tbody></table></div>`;
+  html += buildContratosCumprimentoTableHtml(rows);
   document.getElementById('contratos-content').innerHTML = html;
   try { contratoMarkExisting(rows, window._contratosDocsMap); } catch (_) {}
   try { contratoDocsHydrateFromStorage(rows); } catch (_) {}
+  try {
+    contratosEnsureFreezeResize();
+    const contEl = document.getElementById('contratos-content');
+    contratosSyncFreezeOffsets(contEl);
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => contratosSyncFreezeOffsets(contEl));
+    }
+  } catch (_) {}
 }
 
 // ─── SUPABASE STORAGE — ficheiros de Contratos (qualquer tipo; não se lê o conteúdo) ────────────
@@ -18451,6 +18574,13 @@ function contratoMarkExisting(allRows, docsMap) {
 function renderContratosFromCache(html) {
   const cont = document.getElementById('contratos-content');
   if (cont) cont.innerHTML = html;
+  try {
+    contratosEnsureFreezeResize();
+    contratosSyncFreezeOffsets(cont);
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => contratosSyncFreezeOffsets(cont));
+    }
+  } catch (_) {}
 }
 
 // Invalida cache dos contratos quando há novos registos
