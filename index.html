@@ -29526,7 +29526,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-08-28-all: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-09-14-freeze: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
