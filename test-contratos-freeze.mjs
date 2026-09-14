@@ -53,6 +53,7 @@ check('não se renomeou filtrarContratosTabela (slice dos testes de docs)', () =
 check('CSS: viewport da tabela (não da página) com max-height e overflow auto', () => {
   assert.ok(freezeCss.includes('position: relative'));
   assert.ok(freezeCss.includes('overflow: auto'));
+  assert.ok(/overflow:\s*auto\s*!important/.test(freezeCss));
   assert.ok(freezeCss.includes('max-height: min(70vh, calc(100vh - 220px))'));
   assert.ok(freezeCss.includes('width: 100%'));
 });
