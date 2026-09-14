@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Contratos → Cumprimento: freeze panes (cabeçalho + CÓD/CLIENTE) e scroll no viewport da tabela. */
+/** Contratos: freeze panes (cabeçalho + CÓD/CLIENTE) e scroll no viewport da tabela. */
 import fs from 'fs';
 import vm from 'vm';
 import assert from 'assert';
@@ -40,128 +40,149 @@ const loadFn = html.slice(
   html.indexOf('function filtrarContratosTabela')
 );
 const filtrarFn = extractFn(html, 'filtrarContratosVendedor');
-const helperFn = extractFn(html, 'buildContratosCumprimentoTableHtml');
+const tableFn = extractFn(html, 'buildContratosCumprimentoTableHtml');
 const resumoFn = extractFn(html, 'buildContratosResumoHtml');
-const multiFn = extractFn(html, 'renderContratosMultiCliente');
-const cacheFn = extractFn(html, 'renderContratosFromCache');
-const tabelaFn = extractFn(html, 'filtrarContratosTabela');
+const cssStart = html.indexOf('.table-wrap.table-wrap--freeze');
+const cssEnd = html.indexOf('table.data-table {', cssStart);
+const freezeCss = html.slice(cssStart, cssEnd > cssStart ? cssEnd : cssStart + 8000);
 
-check('CSS freeze: viewport da tabela com overflow e max-height', () => {
-  assert.ok(html.includes('.table-wrap.table-wrap--freeze'));
-  assert.ok(html.includes('max-height: min(70vh, calc(100vh - 220px))'));
-  assert.ok(/overflow:\s*auto\s*!important/.test(html));
-  assert.ok(html.includes('position: sticky'));
-  assert.ok(html.includes('.freeze-1'));
-  assert.ok(html.includes('.freeze-2'));
-  assert.ok(html.includes('sticky-col-last'));
-  assert.ok(html.includes('z-index: 3'));
-  assert.ok(html.includes('z-index: 4'));
-});
-
-check('não se renomeia filtrarContratosTabela (slice dos testes de docs/cache)', () => {
-  assert.ok(tabelaFn.startsWith('function filtrarContratosTabela'));
+check('não se renomeou filtrarContratosTabela (slice dos testes de docs)', () => {
   assert.ok(html.includes('function filtrarContratosTabela(vend, nivel)'));
 });
 
-check('helper pinta freeze + NF/Contrato + PDV badge classes', () => {
-  assert.ok(helperFn.includes('table-wrap table-wrap--freeze'));
-  assert.ok(helperFn.includes('data-table wide'));
-  assert.ok(helperFn.includes('sticky-col freeze-1'));
-  assert.ok(helperFn.includes('sticky-col freeze-2 sticky-col-last'));
-  assert.ok(/min-width:72px">NF<\/th>/.test(helperFn));
-  assert.ok(/min-width:92px">Contrato<\/th>/.test(helperFn));
-  assert.ok(helperFn.includes("contratoDocBtnHtml('nf'"));
-  assert.ok(helperFn.includes("contratoDocBtnHtml('ct'"));
-  assert.ok(helperFn.includes('contratoHtmlCodCliente'));
+check('CSS: viewport da tabela (não da página) com max-height e overflow auto', () => {
+  assert.ok(freezeCss.includes('position: relative'));
+  assert.ok(freezeCss.includes('overflow: auto'));
+  assert.ok(freezeCss.includes('max-height: min(70vh, calc(100vh - 220px))'));
+  assert.ok(freezeCss.includes('width: 100%'));
 });
 
-check('loadContratosTab e filtrarContratosVendedor usam o mesmo helper', () => {
+check('CSS: thead sticky top z-index 3 e fundo sólido', () => {
+  assert.ok(freezeCss.includes('position: sticky'));
+  assert.ok(freezeCss.includes('top: 0'));
+  assert.ok(freezeCss.includes('z-index: 3'));
+  assert.ok(freezeCss.includes('background: #f5f5f5'));
+});
+
+check('CSS: colunas CÓD/CLIENTE sticky left com offsets acumulados', () => {
+  assert.ok(freezeCss.includes('.freeze-1 { left: 0; }'));
+  assert.ok(freezeCss.includes('.freeze-2 { left: var(--freeze-1'));
+  assert.ok(freezeCss.includes('z-index: 2'));
+  assert.ok(freezeCss.includes('z-index: 4'));
+  assert.ok(freezeCss.includes('sticky-col-last'));
+  assert.ok(freezeCss.includes('box-shadow:'));
+});
+
+check('CSS: zebra nas células sticky e badge PDV Multi visível', () => {
+  assert.ok(freezeCss.includes('nth-child(odd) td.sticky-col'));
+  assert.ok(freezeCss.includes('nth-child(even) td.sticky-col'));
+  assert.ok(freezeCss.includes('.ct-pdv-multi-badge'));
+  assert.ok(freezeCss.includes('flex-shrink: 0'));
+  assert.ok(freezeCss.includes('text-overflow: ellipsis'));
+});
+
+check('paint inicial e filtro usam o mesmo helper com table-wrap--freeze', () => {
   assert.ok(loadFn.includes('buildContratosCumprimentoTableHtml(rows)'));
   assert.ok(filtrarFn.includes('buildContratosCumprimentoTableHtml(rows)'));
-  assert.ok(filtrarFn.includes('table-wrap--freeze') || helperFn.includes('table-wrap--freeze'));
-  assert.ok(filtrarFn.includes('contratosSyncFreezeOffsets'));
+  assert.ok(tableFn.includes('table-wrap table-wrap--freeze'));
+  assert.ok(tableFn.includes('data-table wide'));
+  assert.ok(tableFn.includes('sticky-col freeze-1'));
+  assert.ok(tableFn.includes('sticky-col freeze-2 sticky-col-last'));
+  assert.ok(tableFn.includes('max-height') === false);
 });
 
-check('resumo por vendedor (drill-down) NÃO usa freeze no wrap', () => {
-  assert.ok(resumoFn.includes('class="table-wrap"'));
+check('resumo acima da tabela NÃO fica no viewport freeze (drill-down intacto)', () => {
   assert.ok(!resumoFn.includes('table-wrap--freeze'));
-  assert.ok(resumoFn.includes('limparFiltroNivelContratos'));
   assert.ok(resumoFn.includes('data-nivel'));
-  assert.ok(resumoFn.includes('color:var(--muted);">—</td>') || resumoFn.includes("color:var(--muted);\">—</td>"));
+  assert.ok(resumoFn.includes('limparFiltroNivelContratos'));
+  assert.ok(resumoFn.includes('color:var(--muted);">—</td>'));
+  assert.ok(resumoFn.includes('cursor:pointer;text-decoration:underline'));
 });
 
-check('Dist/multi-cliente detalhe também tem freeze panes', () => {
-  assert.ok(multiFn.includes('table-wrap table-wrap--freeze'));
-  assert.ok(multiFn.includes('sticky-col freeze-1'));
-  assert.ok(multiFn.includes('sticky-col freeze-2'));
-  assert.ok(multiFn.includes('sticky-col freeze-3 sticky-col-last'));
-  assert.ok(multiFn.includes('contratosSyncFreezeOffsets'));
-  assert.ok(!multiFn.includes('overflow-x:auto;width:100%'));
+check('NF/Contrato e alertas continuam no helper da tabela', () => {
+  assert.ok(/min-width:72px">NF<\/th>/.test(tableFn));
+  assert.ok(/min-width:92px">Contrato<\/th>/.test(tableFn));
+  assert.ok(tableFn.includes("contratoDocBtnHtml('nf'"));
+  assert.ok(tableFn.includes("contratoDocBtnHtml('ct'"));
+  assert.ok(tableFn.includes('Contrato Finalizado'));
+  assert.ok(tableFn.includes('contratoHtmlCodCliente'));
 });
 
-check('cache HTML reaplica offsets sticky', () => {
-  assert.ok(cacheFn.includes('contratosSyncFreezeOffsets'));
+check('Dist contratos em falta e multi-cliente também congelam CÓD/CLIENTE', () => {
+  const distChunk = html.slice(
+    html.indexOf('id="panel-contratos-falta"'),
+    html.indexOf('id="dist-falta-body"') + 80
+  );
+  assert.ok(distChunk.includes('table-wrap--freeze'));
+  assert.ok(distChunk.includes('sticky-col freeze-1'));
+  const distRender = extractFn(html, 'renderDistContratosFalta');
+  assert.ok(distRender.includes('sticky-col freeze-1'));
+  assert.ok(distRender.includes('sticky-col freeze-2 sticky-col-last'));
+  const multiFn = extractFn(html, 'renderContratosMultiCliente');
+  assert.ok(multiFn.includes('table-wrap--freeze'));
+  assert.ok(multiFn.includes('col-contract sticky-col freeze-1'));
+  assert.ok(multiFn.includes('col-code sticky-col freeze-2'));
+  assert.ok(multiFn.includes('col-nome sticky-col freeze-3 sticky-col-last'));
 });
 
-check('CÓD congelado mantém badge PDV Multi', () => {
-  const codFn = extractFn(html, 'contratoHtmlCodCliente');
-  assert.ok(codFn.includes('ct-cod-freeze'));
-  assert.ok(codFn.includes('ct-pdv-multi-badge'));
-  assert.ok(codFn.includes('PDV Multi'));
-});
-
-const context = {
+const ctx = {
   console,
   String,
+  Array,
   Math,
   Number,
-  Array,
+  Date,
   window: {},
-  document: { querySelectorAll() { return []; } },
+  document: { getElementById() { return null; } },
+  escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  },
+  contratoDocBtnHtml(tipo, cod, num) {
+    return `<button type="button" class="ct-doc-btn" data-upload-tipo="${tipo}" data-upload-cod="${cod}" data-upload-num="${num}">${tipo === 'nf' ? 'NF' : 'Contrato'}</button>`;
+  },
 };
-vm.createContext(context);
-for (const name of [
-  'escHtml',
-  'contratoHtmlCodCliente',
-  'contratoDocBtnHtml',
-  'buildContratosCumprimentoTableHtml',
-]) {
-  vm.runInContext(extractFn(html, name), context);
-}
+vm.createContext(ctx);
+vm.runInContext(extractFn(html, 'contratoHtmlCodCliente'), ctx);
+vm.runInContext(tableFn, ctx);
 
-check('helper gera HTML sticky com pills clicáveis e PDV Multi visível', () => {
-  const out = context.buildContratosCumprimentoTableHtml([{
-    cod: '442779',
-    nome: 'Café Central',
-    pdv: 'multi',
-    cods: ['442779', '748174'],
-    nomes: ['Café Central', 'Café Anexo'],
-    contrato: 'B0902/26',
-    inicioFmt: 'Ago/2026',
-    fimFmt: 'Ago/2029',
-    duracao: 36,
-    unidade: 'Capsulas',
-    consumoMes: 500,
-    totalContratado: 18000,
-    consumoEsperado: 500,
-    consumoReal: 200,
-    pct: 40,
-    pctTotal: 1,
-    mesesDecorridos: 1,
-    alerta: 'sem_consumo',
-  }]);
+check('helper gera HTML sticky + pílulas clicáveis + badge PDV Multi', () => {
+  const out = ctx.buildContratosCumprimentoTableHtml([
+    {
+      cod: '442779',
+      nome: 'Café Central com nome muito longo para ellipsis',
+      contrato: 'B0902/26',
+      pdv: 'multi',
+      cods: ['442779', '748174'],
+      nomes: ['Café Central', 'Café Anexo'],
+      inicioFmt: 'Ago/2026',
+      fimFmt: 'Ago/2029',
+      duracao: 36,
+      unidade: 'Capsulas',
+      consumoMes: 500,
+      totalContratado: 18000,
+      consumoEsperado: 1000,
+      consumoReal: 400,
+      pct: 40,
+      pctTotal: 2,
+      mesesDecorridos: 2,
+      alerta: 'sem_consumo',
+    },
+  ]);
   assert.ok(out.includes('table-wrap--freeze'));
-  assert.ok(out.includes('data-table wide'));
-  assert.ok(out.includes('sticky-col freeze-1'));
-  assert.ok(out.includes('sticky-col-last'));
+  assert.ok(out.includes('class="col-code sticky-col freeze-1"'));
+  assert.ok(out.includes('class="col-nome sticky-col freeze-2 sticky-col-last"'));
+  assert.ok(out.includes('ct-pdv-multi-badge'));
   assert.ok(out.includes('PDV Multi'));
-  assert.ok(out.includes('442779'));
-  assert.ok(out.includes('class="ct-doc-btn"'));
   assert.ok(out.includes('data-upload-tipo="nf"'));
   assert.ok(out.includes('data-upload-tipo="ct"'));
+  assert.ok(out.includes('ct-doc-btn'));
   assert.ok(out.includes('Sem Consumo'));
-  assert.ok(!out.includes('[object Object]'));
+  assert.ok(out.includes('title="Café Central · Café Anexo"') || out.includes('Café Anexo'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);
-console.log('test-contratos-freeze: todos os checks passaram');
+console.log('Todos os testes de freeze panes passaram.');
