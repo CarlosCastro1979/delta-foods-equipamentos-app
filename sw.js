@@ -1,4 +1,4 @@
-// Service Worker v2026-09-14-freeze — limpa cache e auto-destrói
+// Service Worker v2026-09-15-accuracy — limpa cache e auto-destrói
 // (a app não deve servir index.html antigo após merge no GitHub Pages)
 self.addEventListener('install', e => {
   self.skipWaiting();

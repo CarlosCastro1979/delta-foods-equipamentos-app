@@ -3896,7 +3896,7 @@ var _unused_placeholder = 1;
       </div>
 
       <div id="pv-banner" style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e3a5f;margin-bottom:16px;">
-        <strong>Agosto</strong> — Previsão de fecho + N (fecho real após fecho do mês) · Accuracy = N ÷ Previsão.
+        <strong>Agosto</strong> — Previsão de fecho + N (fecho real após fecho do mês) · Accuracy = 100 × (1 − |N − Previsão| / Previsão), 0–100%.
       </div>
 
       <div id="pv-canal-panels" style="overflow:auto;"></div>
@@ -10782,7 +10782,7 @@ const PV_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set',
  * prevFecho = Previsão de fecho (editável).
  * n = fecho real (preenchido após fechar o mês).
  * Acum. N = (acumNYtd − nMes) + (n se gravado, senão prevFecho).
- * Accuracy = n / prevFecho × 100 (atingimento).
+ * Accuracy = 100 × (1 − |n − prevFecho| / prevFecho), limitado a 0–100 (não é atingimento).
  */
 const PV_SEED_AGOSTO_2026 = {
   mes: 7,
@@ -11402,13 +11402,22 @@ function pvAcumNFecho(row) {
 
 function pvAcumNMapa(row) { return pvAcumNFecho(row); }
 
-/** Accuracy % = fecho real N / Previsão de fecho × 100. */
+/**
+ * Accuracy % simétrica: 100 × (1 − |N − Previsão| / Previsão), limitado a 0–100.
+ * 100% só quando N = Previsão; fechar acima ou abaixo reduz o valor (não é atingimento).
+ */
 function pvAccuracyPct(row) {
-  const prev = row.prevFecho;
-  const real = row.n;
-  if (prev == null || prev === '' || Number(prev) === 0) return null;
-  if (real == null || real === '') return null;
-  return (Number(real) / Number(prev)) * 100;
+  if (!row) return null;
+  const prevRaw = row.prevFecho;
+  const realRaw = row.n;
+  if (prevRaw == null || prevRaw === '') return null;
+  if (realRaw == null || realRaw === '') return null;
+  const prev = Number(prevRaw);
+  const real = Number(realRaw);
+  if (!Number.isFinite(prev) || prev <= 0) return null;
+  if (!Number.isFinite(real) || real < 0) return null;
+  const acc = 100 * (1 - Math.abs(real - prev) / prev);
+  return Math.max(0, Math.round(acc));
 }
 
 /** Var % Previsão vs MYR = (Previsão − MYR) / MYR × 100. */
@@ -11807,8 +11816,9 @@ function pvRender(opts) {
   const banner = document.getElementById('pv-banner');
   if (banner) {
     if (_pvView === 'accuracy') {
-      banner.innerHTML = `<strong>Accuracy de fecho ${ano}</strong> — % = <strong>N (fecho real)</strong> ÷ <strong>Previsão de fecho</strong> × 100, por canal e mês.
-        Preenche Previsão e N no mapa mensal; aqui só vês o atingimento.
+      banner.innerHTML = `<strong>Accuracy de fecho ${ano}</strong> — % = 100 × (1 − |<strong>N (fecho real)</strong> − <strong>Previsão de fecho</strong>| / Previsão), limitado a 0–100%.
+        100% só quando N = Previsão; fechar acima ou abaixo reduz o valor (não é atingimento).
+        Preenche Previsão e N no mapa mensal.
         <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
     } else {
       const cloudHint = _pvCloudCache && _pvCloudCache.actualizadoEm
@@ -11991,7 +12001,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Mapa ${mesNome} ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">N VS N-1 % = (N ou Previsão − N-1) / N-1 · Var Prev/MYR % = (Previsão − MYR) / MYR · Var N/MYR % = (N − MYR) / MYR · Accuracy = N÷Previsão</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">N VS N-1 % = (N ou Previsão − N-1) / N-1 · Var Prev/MYR % = (Previsão − MYR) / MYR · Var N/MYR % = (N − MYR) / MYR · Accuracy = 100×(1−|N−Previsão|/Previsão) (0–100%)</span>
       </div>
       <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1380px;">
         <thead>
@@ -12011,7 +12021,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
             <th style="text-align:right;">N VS N-1 % Ac.</th>
             <th style="text-align:right;">Budget Acm.</th>
             <th style="text-align:right;">Var Bud Ac %</th>
-            <th style="text-align:right;" title="N ÷ Previsão">Accuracy</th>
+            <th style="text-align:right;" title="100 × (1 − |N − Previsão| / Previsão) · 0–100%">Accuracy</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -12131,7 +12141,7 @@ function pvRenderAccuracyHtml(edit, ano) {
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Accuracy de fecho ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">% = N ÷ Previsão · ≥85% verde · &lt;85% vermelho · Média = meses com valor</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">% = 100 × (1 − |N − Previsão| / Previsão) · 0–100% · ≥85% verde · &lt;85% vermelho · Média = meses com valor</span>
       </div>
       <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:980px;">
         <thead>
@@ -12196,7 +12206,10 @@ async function pvExportarExcel() {
     }
     if (_pvView === 'accuracy') {
       const list = pvLoadAnoMeses(ano);
-      const rows = [['Canal', ...PV_MESES, 'Média']];
+      const rows = [
+        ['Accuracy = 100 × (1 − |N − Previsão| / Previsão), limitado a 0–100% (não é atingimento)'],
+        ['Canal', ...PV_MESES, 'Média'],
+      ];
       list.forEach(item => {
         const line = [item.empresa];
         for (let m = 0; m < 12; m++) {
@@ -12219,7 +12232,7 @@ async function pvExportarExcel() {
     pvRecalcSomas('myr');
     const rows = [[
       'Empresa', 'N-1', 'Previsão de fecho', 'N', 'N VS N-1 %', 'Budget', 'Var Bud %',
-      'MYR', 'Var Prev/MYR %', 'Var N/MYR %', 'Acum. N-1', 'Acum. N', 'N VS N-1 % Ac.', 'Budget Acm.', 'Var Bud Ac %', 'Accuracy %',
+      'MYR', 'Var Prev/MYR %', 'Var N/MYR %', 'Acum. N-1', 'Acum. N', 'N VS N-1 % Ac.', 'Budget Acm.', 'Var Bud Ac %', 'Accuracy % (0–100)',
     ]];
     (_pvData.linhas || []).forEach(row => {
       const acumN = pvAcumNFecho(row);
@@ -29526,7 +29539,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-09-14-freeze: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-09-15-accuracy: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
