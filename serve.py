@@ -39,10 +39,41 @@ class DeltaHandler(SimpleHTTPRequestHandler):
         sys.stdout.write("%s - %s\n" % (self.address_string(), fmt % args))
         sys.stdout.flush()
 
-    def end_headers(self) -> None:
+    def _is_nocache_path(self) -> bool:
+        """HTML/JS/JSON e pastas com index.html — Simple Browser não pode 304."""
         path = urllib.parse.urlsplit(self.path).path.lower()
-        if path.endswith((".html", ".js", ".json", "/")) or path == APP_PREFIX:
-            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        return (
+            path.endswith((".html", ".js", ".json", "/", ".css"))
+            or path == APP_PREFIX.lower()
+            or path.rstrip("/").endswith("index")
+        )
+
+    def _strip_conditional_get(self) -> None:
+        """Evita 304 ao mudar de ramo: o ficheiro novo pode ter mtime mais antigo
+        que o If-Modified-Since do HTML antigo (ex.: main vs PR), e o Simple
+        Browser fica eternamente com a previsão velha."""
+        if not self._is_nocache_path():
+            return
+        for key in ("If-Modified-Since", "If-None-Match"):
+            if key in self.headers:
+                del self.headers[key]
+
+    def do_GET(self) -> None:
+        self._strip_conditional_get()
+        super().do_GET()
+
+    def do_HEAD(self) -> None:
+        self._strip_conditional_get()
+        super().do_HEAD()
+
+    def send_header(self, keyword: str, value: str) -> None:
+        if self._is_nocache_path() and keyword.lower() in ("last-modified", "etag"):
+            return
+        super().send_header(keyword, value)
+
+    def end_headers(self) -> None:
+        if self._is_nocache_path():
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
             self.send_header("Pragma", "no-cache")
             self.send_header("Expires", "0")
         super().end_headers()
