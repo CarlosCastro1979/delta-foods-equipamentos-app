@@ -2062,7 +2062,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal (N-1 / Budget / MYR). Acesso: Filipe, Diogo, Marcio, Massimo + admins (edição completa).</div>
+          <div class="hd-desc">Mapa mensal (N-1 / Budget / MYR). Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -3858,7 +3858,7 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Previsão de fecho · N (fecho real) · Accuracy · MYR — autosave.
+            Previsão de fecho · N (fecho real) · Accuracy · MYR.
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
@@ -3886,7 +3886,7 @@ var _unused_placeholder = 1;
             </select>
           </label>
           <button type="button" class="btn btn-secondary btn-sm" onclick="pvExportarExcel()" style="min-height:36px;">⬇ Excel</button>
-          <button type="button" class="btn btn-primary btn-sm" id="pv-btn-publicar" onclick="pvPublicarProducao()" style="min-height:36px;" title="Envia MYR / Previsão / N do teu browser para a produção">☁ Publicar produção</button>
+          <button type="button" class="btn btn-primary btn-sm" id="pv-btn-publicar" onclick="pvPublicarProducao()" style="min-height:36px;display:none;" title="Envia MYR / Previsão / N do teu browser para a produção">☁ Publicar produção</button>
         </div>
       </div>
 
@@ -3895,6 +3895,9 @@ var _unused_placeholder = 1;
         <button type="button" class="sub-tab" id="pv-tab-accuracy" onclick="pvShowView('accuracy')">Accuracy de fecho</button>
       </div>
 
+      <div id="pv-readonly-banner" style="display:none;padding:10px 14px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:12px;color:#9a3412;margin-bottom:12px;">
+        <strong>Só consulta</strong> — a previsão é editada pela direcção.
+      </div>
       <div id="pv-banner" style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e3a5f;margin-bottom:16px;">
         <strong>Agosto</strong> — Previsão de fecho + N (fecho real após fecho do mês) · Accuracy = 100 × (1 − |N − Previsão| / Previsão), 0–100%.
       </div>
@@ -10764,7 +10767,10 @@ const DADOS_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kuc
 
 /**
  * Previsão de vendas e acompanhamento.
- * Edição: Filipe, Diogo, Marcio, Massimo + admins (Carlos, Christian, Andrea, Daniela K.).
+ * Consulta: Filipe, Diogo, Marcio, Massimo (+ admins).
+ * Edição / Publicar produção / autosave: só a lista ADMINS
+ * (Carlos, Christian, Andrea, Daniela K.). Sem rastreio de alterações —
+ * vendedores não editam o mapa.
  */
 const PREV_VENDAS_ACESSO = [
   'Filipe Neves',
@@ -10772,7 +10778,12 @@ const PREV_VENDAS_ACESSO = [
   'Marcio Gorga',
   'Massimo Bottello',
 ];
-const PREV_VENDAS_SO_CONSULTA = [];
+const PREV_VENDAS_SO_CONSULTA = [
+  'Filipe Neves',
+  'Diogo Oliveira',
+  'Marcio Gorga',
+  'Massimo Bottello',
+];
 
 const PV_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -11342,7 +11353,12 @@ async function pvPublicarProducao() {
     console.error('pvPublicarProducao', e);
     toast('Erro ao publicar: ' + (e.message || e), 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '☁ Publicar produção'; }
+    if (btn) {
+      const pode = typeof pvPodeEditar === 'function' && pvPodeEditar();
+      btn.disabled = !pode;
+      btn.textContent = '☁ Publicar produção';
+      btn.style.display = pode ? '' : 'none';
+    }
   }
 }
 
@@ -11563,6 +11579,7 @@ function pvOverlayCloudOnData(ano, mes) {
 }
 
 function pvSaveData() {
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
   if (!_pvData) return false;
   _pvData.actualizadoEm = new Date().toISOString();
   _pvData.actualizadoPor = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
@@ -11582,13 +11599,12 @@ function podeAcederPrevisaoVendas() {
   return PREV_VENDAS_ACESSO.some(n => normNomeUtilizador(n) === atual);
 }
 
-/** Chris e outros em PREV_VENDAS_SO_CONSULTA: só leitura + export. Admins editam sempre. */
+/** Só ADMINS editam o mapa. Filipe/Diogo/Marcio/Massimo = consulta (PREV_VENDAS_SO_CONSULTA). */
 function pvPodeEditar() {
-  if (typeof isAdmin === 'function' && isAdmin()) return true;
-  const atual = normNomeUtilizador(getUtilizadorAtual());
+  const atual = typeof getUtilizadorAtual === 'function' ? normNomeUtilizador(getUtilizadorAtual()) : '';
   if (!atual) return false;
   if (PREV_VENDAS_SO_CONSULTA.some(n => normNomeUtilizador(n) === atual)) return false;
-  return PREV_VENDAS_ACESSO.some(n => normNomeUtilizador(n) === atual);
+  return typeof isAdmin === 'function' && isAdmin();
 }
 
 function podeAcederAreaTecnica() {
@@ -11704,7 +11720,7 @@ async function abrirPrevisaoVendasHome() {
       return;
     }
     if (!podeAcederPrevisaoVendas()) {
-      toast('Sem acesso à Previsão de vendas. Só Filipe, Diogo, Marcio, Massimo, Carlos e Chris (consulta).', 'error');
+      toast('Sem acesso à Previsão de vendas. Vendedores (Filipe, Diogo, Marcio, Massimo): só consulta. Edição: direcção.', 'error');
       return;
     }
     _canalActivo = null;
@@ -11806,28 +11822,39 @@ function pvRender(opts) {
   if (modo) {
     modo.textContent = edit
       ? '· Edição com autosave'
-      : '· Modo consulta (exportar Excel)';
-    modo.style.color = edit ? '#166534' : '#1d4ed8';
+      : '· Só consulta — a previsão é editada pela direcção.';
+    modo.style.color = edit ? '#166534' : '#9a3412';
   }
+  const roBanner = document.getElementById('pv-readonly-banner');
+  if (roBanner) roBanner.style.display = edit ? 'none' : '';
   const btnPub = document.getElementById('pv-btn-publicar');
-  if (btnPub) btnPub.style.display = edit ? '' : 'none';
+  if (btnPub) {
+    btnPub.style.display = edit ? '' : 'none';
+    btnPub.disabled = !edit;
+  }
 
   const mesNome = PV_MESES[m] || '—';
   const banner = document.getElementById('pv-banner');
   if (banner) {
     if (_pvView === 'accuracy') {
+      const accHint = edit
+        ? 'Preenche Previsão e N no mapa mensal.'
+        : 'Valores definidos pela direcção no mapa mensal.';
       banner.innerHTML = `<strong>Accuracy de fecho ${ano}</strong> — % = 100 × (1 − |<strong>N (fecho real)</strong> − <strong>Previsão de fecho</strong>| / Previsão), limitado a 0–100%.
         100% só quando N = Previsão; fechar acima ou abaixo reduz o valor (não é atingimento).
-        Preenche Previsão e N no mapa mensal.
+        ${accHint}
         <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
     } else {
       const cloudHint = _pvCloudCache && _pvCloudCache.actualizadoEm
         ? ` · Cloud: ${_pvCloudCache.actualizadoPor || '—'} ${new Date(_pvCloudCache.actualizadoEm).toLocaleString('pt-PT')}`
         : '';
+      const editHint = edit
+        ? `<strong>Previsão de fecho</strong> (autosave) · <strong>N</strong> = fecho real após fechar o mês ·`
+        : `<strong>Previsão de fecho</strong> · <strong>N</strong> = fecho real após fechar o mês ·`;
       banner.innerHTML = `<strong>${mesNome} ${ano}</strong> — N-1 = histórico · Budget = objectivo ·
-        <strong>Previsão de fecho</strong> (autosave) · <strong>N</strong> = fecho real após fechar o mês ·
+        ${editHint}
         <strong>N VS N-1 %</strong> = (N, senão Previsão) vs N-1 ·
-        <strong>Acum. N</strong> = (YTD sem o mês) + N (ou Previsão se N vazio) · <strong>MYR</strong> à mão${cloudHint}.
+        <strong>Acum. N</strong> = (YTD sem o mês) + N (ou Previsão se N vazio) · <strong>MYR</strong>${cloudHint}.
         <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
     }
   }
@@ -11926,7 +11953,8 @@ function pvEditCell(campo, idx, row, edit, bg) {
   if (isGrupo) {
     return `<span class="pv-${campo}-soma" data-idx="${idx}">${row[campo] == null ? '—' : pvFmtEdit(row[campo])}</span>`;
   }
-  if (!edit) return pvFmtNum(row[campo]);
+  const canEdit = !!(edit && (typeof pvPodeEditar !== 'function' || pvPodeEditar()));
+  if (!canEdit) return pvFmtNum(row[campo]);
   const handlers = {
     prevFecho: 'pvOnPrevInput(this)" onblur="pvOnPrevBlur(this)',
     n: 'pvOnRealNInput(this)" onblur="pvOnRealNBlur(this)',
@@ -20299,7 +20327,7 @@ function atualizarHomeCanais() {
     prevCard.disabled = !okPrev;
     prevCard.title = okPrev
       ? 'Previsão de vendas — PIN do utilizador'
-      : 'Só Filipe, Diogo, Marcio, Massimo, Carlos e Chris (consulta)';
+      : 'Só Filipe, Diogo, Marcio, Massimo (consulta) e direcção (editar)';
     prevCard.style.opacity = okPrev ? '' : '0.45';
     prevCard.style.cursor = okPrev ? '' : 'not-allowed';
   }
@@ -29539,7 +29567,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-09-15-accuracy: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-09-21-pv-ro: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
