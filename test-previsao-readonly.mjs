@@ -133,9 +133,9 @@ const VENDEDORES = ['Filipe Neves', 'Diogo Oliveira', 'Marcio Gorga', 'Massimo B
 const ADMINS_TEST = ['Carlos Castro', 'Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski', 'Daniela Kucinsky'];
 
 check('listas: vendedores em consulta, não em ADMINS', () => {
-  const adm = context.ADMINS.map(context.normNomeUtilizador);
-  const cons = context.PREV_VENDAS_SO_CONSULTA.map(context.normNomeUtilizador);
-  const aceso = context.PREV_VENDAS_ACESSO.map(context.normNomeUtilizador);
+  const adm = vm.runInContext('ADMINS', context).map(context.normNomeUtilizador);
+  const cons = vm.runInContext('PREV_VENDAS_SO_CONSULTA', context).map(context.normNomeUtilizador);
+  const aceso = vm.runInContext('PREV_VENDAS_ACESSO', context).map(context.normNomeUtilizador);
   VENDEDORES.forEach(n => {
     const k = context.normNomeUtilizador(n);
     assert.ok(cons.includes(k), n + ' deveria estar em SO_CONSULTA');
