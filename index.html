@@ -1874,6 +1874,9 @@
   .ct-table td input,.ct-table td select{width:100%;box-sizing:border-box;border:none;background:transparent;font-size:12px;padding:4px 6px;}
   .ct-table td input:focus,.ct-table td select:focus{outline:2px solid var(--accent);border-radius:3px;}
   .ct-table tr:hover{background:#fafafa;}
+  .pv-acc-click{cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
+  .pv-acc-click:hover{color:var(--accent);}
+  .pv-acc-rank-active{background:#fff7ed;}
   .ct-review-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
   .ct-review-item strong{display:block;font-size:10px;text-transform:uppercase;color:var(--muted);margin-bottom:2px;}
   .ct-review-item div{padding:5px 8px;background:#f5f5f5;border-radius:4px;font-size:13px;}
@@ -11238,6 +11241,8 @@ function pvSeedLinhas(ano, mes) {
 
 let _pvData = null;
 let _pvView = 'mapa'; // 'mapa' | 'accuracy'
+/** Filtro do detalhe Accuracy: nome do vendedor, '__incerto__', ou ''. Só nesta vista. */
+let _pvAccFiltro = '';
 
 function pvStoreKey(ano, mes) {
   return 'dfb_previsao_mapa_v3_' + String(ano || 2026) + '_' + String(mes ?? 7);
@@ -11717,6 +11722,189 @@ function pvAccuracyMedia(meses) {
   return n ? (sum / n) : null;
 }
 
+/**
+ * Ranking de incentivo — Accuracy de fecho agrupado por vendedor.
+ * NÃO se aplica ao mapa mensal (continua linha a linha por empresa/canal).
+ * Lista = PREV_VENDAS_ACESSO. ADMINS (Carlos, Christian, Andrea, Daniela K.)
+ * não entram. Eduardo Moreira tem NPess Dist (99520020) mas não está no mapa.
+ */
+const PV_ACC_RANKING_VENDEDORES = [
+  'Filipe Neves',
+  'Diogo Oliveira',
+  'Marcio Gorga',
+  'Massimo Bottello',
+];
+
+/**
+ * Canal do mapa de previsão → vendedor do ranking (códigos NPess do repo).
+ * certainty:
+ *   ok       — código + dono inequívocos (CANAIS_APP + VENDEDORES_DEFAULT + PG_VENDEDORES)
+ *   proposto — cruzamento comercial documentado, a confirmar com Carlos
+ *   incerto  — sem dono no ranking (não entra em nenhuma soma)
+ */
+const PV_ACC_CANAL_VENDEDOR = {
+  dfb_ret_mod: { vendedor: 'Diogo Oliveira', codes: [99520018], certainty: 'ok', label: 'Retalho moderno DFB' },
+  dfb_dist_ret: { vendedor: 'Diogo Oliveira', codes: [99520004], certainty: 'ok', label: 'Dist. retalho DFB' },
+  qb_ret_mod: { vendedor: 'Diogo Oliveira', codes: [99530001], certainty: 'ok', label: 'Retalho moderno QB' },
+  qb_dist_ret: { vendedor: 'Diogo Oliveira', codes: [99530005], certainty: 'ok', label: 'Dist. retalho QB' },
+  dfb_inst: { vendedor: 'Marcio Gorga', codes: [99520011, 99520012], certainty: 'ok', label: 'Institucional DFB' },
+  dfb_site: { vendedor: 'Marcio Gorga', codes: [], certainty: 'proposto', label: 'Site próprio DFB' },
+  dfb_lojas: { vendedor: 'Marcio Gorga', codes: [99520001], certainty: 'proposto', label: 'Lojas online DFB' },
+  dfb_rest: { vendedor: 'Filipe Neves', codes: [99520010, 99520019], certainty: 'proposto', label: 'Restauração DFB' },
+  dfb_dist_reg: { vendedor: 'Massimo Bottello', codes: [99520003], certainty: 'proposto', label: 'Dist. regionais DFB' },
+  qb_dist_reg: { vendedor: 'Massimo Bottello', codes: [99530002], certainty: 'proposto', label: 'Dist. regionais QB' },
+  qb_rest: { vendedor: '', codes: [99530003], certainty: 'incerto', label: 'Restauração QB' },
+};
+
+function pvAccMetaDeCanal(canalId) {
+  if (!canalId) return null;
+  return PV_ACC_CANAL_VENDEDOR[canalId] || null;
+}
+
+/** Vendedor do ranking para este canal; vazio se incerto / sem dono / admin. */
+function pvAccVendedorDeCanal(canalId) {
+  const meta = pvAccMetaDeCanal(canalId);
+  if (!meta || meta.certainty === 'incerto') return '';
+  const nome = String(meta.vendedor || '').trim();
+  if (!nome) return '';
+  if (!(PV_ACC_RANKING_VENDEDORES || []).includes(nome)) return '';
+  return nome;
+}
+
+function pvAccLabelDeCanal(item) {
+  if (!item) return '';
+  const meta = pvAccMetaDeCanal(item.id);
+  if (meta && meta.label) return meta.label;
+  if (item.parent === 'qb') return String(item.empresa || '') + ' (QB)';
+  return String(item.empresa || '');
+}
+
+function pvAccLinhaValidaParaSoma(prev, n) {
+  if (prev == null || prev === '' || n == null || n === '') return false;
+  const p = Number(prev);
+  const r = Number(n);
+  return Number.isFinite(p) && p > 0 && Number.isFinite(r) && r >= 0;
+}
+
+/**
+ * Soma Previsão e N das linhas válidas e calcula accuracy no agregado
+ * (não é média das % — canais pequenos não enviesam).
+ */
+function pvAccAgregarPares(pares) {
+  let prev = 0;
+  let n = 0;
+  let nLinhas = 0;
+  (pares || []).forEach(p => {
+    if (!p || !pvAccLinhaValidaParaSoma(p.prevFecho, p.n)) return;
+    prev += Number(p.prevFecho);
+    n += Number(p.n);
+    nLinhas++;
+  });
+  if (!nLinhas) return { prev: null, n: null, acc: null, nLinhas: 0 };
+  return { prev, n, acc: pvAccuracyPct({ prevFecho: prev, n }), nLinhas };
+}
+
+function pvAccParesDeItem(item) {
+  const pares = [];
+  if (!item) return pares;
+  for (let m = 0; m < 12; m++) {
+    pares.push({
+      prevFecho: item.prevMeses ? item.prevMeses[m] : undefined,
+      n: item.nMeses ? item.nMeses[m] : undefined,
+    });
+  }
+  return pares;
+}
+
+/**
+ * Ranking: melhor = accuracy mais perto de 100%.
+ * Empate: mesmo lugar (rank denso 1,2,2,3); desempate de apresentação = nome.
+ * Linhas sem N e Previsão válidos são ignoradas.
+ */
+function pvAccBuildRanking(list) {
+  const allowed = {};
+  (PV_ACC_RANKING_VENDEDORES || []).forEach(nome => {
+    allowed[nome] = { vendedor: nome, canalIds: [], canais: [], certainties: [], pares: [] };
+  });
+  const semDono = [];
+  (list || []).forEach(item => {
+    if (!item || item.tipo !== 'canal') return;
+    const vend = pvAccVendedorDeCanal(item.id);
+    const meta = pvAccMetaDeCanal(item.id);
+    if (!vend || !allowed[vend]) {
+      semDono.push({
+        id: item.id,
+        empresa: item.empresa,
+        parent: item.parent,
+        codes: meta && meta.codes ? meta.codes.slice() : [],
+        certainty: meta ? meta.certainty : 'incerto',
+        vendedorProposto: meta && meta.vendedor ? meta.vendedor : '',
+        label: pvAccLabelDeCanal(item),
+      });
+      return;
+    }
+    allowed[vend].canalIds.push(item.id);
+    allowed[vend].canais.push(pvAccLabelDeCanal(item));
+    allowed[vend].certainties.push(meta ? meta.certainty : 'ok');
+    allowed[vend].pares = allowed[vend].pares.concat(pvAccParesDeItem(item));
+  });
+
+  const rows = (PV_ACC_RANKING_VENDEDORES || []).map(nome => {
+    const b = allowed[nome];
+    const agg = pvAccAgregarPares(b.pares);
+    return {
+      vendedor: nome,
+      canalIds: b.canalIds,
+      canais: b.canais,
+      nCanais: b.canalIds.length,
+      hasProposto: b.certainties.some(c => c === 'proposto'),
+      hasOk: b.certainties.some(c => c === 'ok'),
+      prev: agg.prev,
+      n: agg.n,
+      acc: agg.acc,
+      pos: null,
+    };
+  });
+
+  rows.sort((a, b) => {
+    if (a.acc == null && b.acc == null) return a.vendedor.localeCompare(b.vendedor, 'pt');
+    if (a.acc == null) return 1;
+    if (b.acc == null) return -1;
+    if (b.acc !== a.acc) return b.acc - a.acc;
+    return a.vendedor.localeCompare(b.vendedor, 'pt');
+  });
+
+  rows.forEach((r, i) => {
+    if (r.acc == null) {
+      r.pos = null;
+      return;
+    }
+    if (i > 0 && rows[i - 1].acc === r.acc) r.pos = rows[i - 1].pos;
+    else r.pos = (i > 0 && rows[i - 1].pos != null) ? rows[i - 1].pos + 1 : 1;
+  });
+
+  return { rows, semDono };
+}
+
+function pvAccItemNoFiltro(item) {
+  if (!_pvAccFiltro) return true;
+  if (!item) return false;
+  if (item.tipo === 'grupo' || item.tipo === 'total') return false;
+  if (_pvAccFiltro === '__incerto__') return !pvAccVendedorDeCanal(item.id);
+  return pvAccVendedorDeCanal(item.id) === _pvAccFiltro;
+}
+
+function pvAccFiltrar(keyEnc) {
+  const key = decodeURIComponent(keyEnc || '');
+  _pvAccFiltro = (_pvAccFiltro === key) ? '' : key;
+  if (_pvView === 'accuracy') pvRender();
+}
+
+function pvAccLimparFiltro() {
+  _pvAccFiltro = '';
+  if (_pvView === 'accuracy') pvRender();
+}
+
 function pvNormalizeLinhas(linhas, fromV2) {
   return (linhas || []).map(r => {
     let prevFecho = r.prevFecho;
@@ -12054,6 +12242,7 @@ function pvPct(a, b) {
 
 function pvShowView(view) {
   _pvView = view === 'accuracy' ? 'accuracy' : 'mapa';
+  if (_pvView !== 'accuracy') _pvAccFiltro = '';
   const tabM = document.getElementById('pv-tab-mapa');
   const tabA = document.getElementById('pv-tab-accuracy');
   if (tabM) tabM.classList.toggle('active', _pvView === 'mapa');
@@ -12112,7 +12301,8 @@ function pvRender(opts) {
       const accHint = edit
         ? 'Preenche Previsão e N no mapa mensal.'
         : 'Valores definidos pela direcção no mapa mensal.';
-      banner.innerHTML = `<strong>Accuracy de fecho ${ano}</strong> — % = 100 × (1 − |<strong>N (fecho real)</strong> − <strong>Previsão de fecho</strong>| / Previsão), limitado a 0–100%.
+      banner.innerHTML = `<strong>Accuracy de fecho ${ano}</strong> — ranking por vendedor (soma dos canais) + detalhe por canal.
+        % = 100 × (1 − |<strong>N (fecho real)</strong> − <strong>Previsão de fecho</strong>| / Previsão), limitado a 0–100%.
         100% só quando N = Previsão; fechar acima ou abaixo reduz o valor (não é atingimento).
         ${accHint}
         <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
@@ -12390,9 +12580,13 @@ function pvLoadAnoMeses(ano) {
     data.linhas.forEach(row => {
       if (row.tipo !== 'canal' && row.tipo !== 'grupo' && row.tipo !== 'total') return;
       if (!byId[row.id]) {
-        byId[row.id] = { id: row.id, empresa: row.empresa, tipo: row.tipo, parent: row.parent, meses: {} };
+        byId[row.id] = { id: row.id, empresa: row.empresa, tipo: row.tipo, parent: row.parent, meses: {}, prevMeses: {}, nMeses: {} };
       }
       byId[row.id].meses[m] = pvAccuracyPct(row);
+      if (row.tipo === 'canal') {
+        byId[row.id].prevMeses[m] = row.prevFecho;
+        byId[row.id].nMeses[m] = row.n;
+      }
     });
   }
   // ordem = seed Agosto (estrutura estável)
@@ -12448,13 +12642,118 @@ function pvRecalcSomasOn(linhas, campo) {
   }
 }
 
+function pvRenderAccuracyRankingHtml(ranking, ano) {
+  const rows = (ranking && ranking.rows) || [];
+  const semDono = (ranking && ranking.semDono) || [];
+  const rankRows = rows.map(r => {
+    const isActive = _pvAccFiltro === r.vendedor;
+    const canFilter = r.nCanais > 0;
+    const click = canFilter
+      ? `class="pv-acc-click" onclick="pvAccFiltrar('${encodeURIComponent(r.vendedor)}')" title="Mostrar só os canais deste vendedor"`
+      : '';
+    const accClick = (canFilter && r.acc != null && r.acc !== 0)
+      ? `class="pv-acc-click" onclick="pvAccFiltrar('${encodeURIComponent(r.vendedor)}')" title="Filtrar canais de ${r.vendedor}"`
+      : '';
+    const nClick = (canFilter && r.nCanais > 0)
+      ? `class="pv-acc-click" onclick="pvAccFiltrar('${encodeURIComponent(r.vendedor)}')" title="Filtrar canais de ${r.vendedor}"`
+      : 'style="color:var(--muted);"';
+    const badge = r.hasProposto
+      ? ' <span style="font-size:10px;font-weight:600;color:#9a3412;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:1px 7px;">a confirmar</span>'
+      : '';
+    const canaisTxt = r.canais.length ? r.canais.join(' · ') : '—';
+    const trBg = isActive ? 'pv-acc-rank-active' : '';
+    return `<tr class="${trBg}" style="font-weight:${r.pos === 1 ? '700' : '400'};">
+      <td style="text-align:center;font-variant-numeric:tabular-nums;" ${click}>${r.pos == null ? '—' : r.pos + 'º'}</td>
+      <td style="text-align:left;white-space:nowrap;" ${click}>${r.vendedor}${badge}</td>
+      <td style="text-align:left;font-size:11px;color:var(--muted);">${canaisTxt}</td>
+      <td style="text-align:center;font-variant-numeric:tabular-nums;" ${nClick}>${r.nCanais || '—'}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(r.prev)}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums;">${pvFmtNum(r.n)}</td>
+      <td style="text-align:center;" ${accClick}>${pvFmtAccuracy(r.acc)}</td>
+    </tr>`;
+  }).join('');
+
+  let incertoBox = '';
+  if (semDono.length) {
+    const nClick = semDono.length > 0
+      ? `class="pv-acc-click" onclick="pvAccFiltrar('${encodeURIComponent('__incerto__')}')" title="Mostrar só canais sem dono no ranking"`
+      : '';
+    const incRows = semDono.map(c => {
+      const codes = (c.codes && c.codes.length) ? c.codes.join(', ') : '—';
+      const prop = c.vendedorProposto || '—';
+      return `<tr>
+        <td style="text-align:left;">${c.label || c.empresa}</td>
+        <td style="text-align:left;font-variant-numeric:tabular-nums;">${codes}</td>
+        <td style="text-align:left;">${prop}</td>
+        <td style="text-align:left;color:#9a3412;font-weight:600;">incerto</td>
+      </tr>`;
+    }).join('');
+    incertoBox = `
+      <div style="margin-top:12px;border:1px solid #fdba74;border-radius:var(--radius-lg);background:#fff7ed;overflow:auto;">
+        <div style="padding:8px 14px;font-size:12px;color:#9a3412;">
+          <strong ${nClick}>${semDono.length} canal(is) por confirmar</strong>
+          — não entram na soma de nenhum vendedor. Confirma o dono (código / vendedor).
+        </div>
+        <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:520px;">
+          <thead><tr>
+            <th style="text-align:left;">Canal</th>
+            <th style="text-align:left;">Código NPess</th>
+            <th style="text-align:left;">Vendedor proposto</th>
+            <th style="text-align:left;">Estado</th>
+          </tr></thead>
+          <tbody>${incRows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  return `
+    <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;margin-bottom:16px;">
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
+        Ranking de Accuracy ${ano}
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">
+          Soma Previsão e N dos canais do vendedor, depois % = 100 × (1 − |ΣN − ΣPrev| / ΣPrev), 0–100%.
+          Não é a média das % das linhas (canais pequenos não enviesam). Melhor = mais perto de 100%. Empate = mesmo lugar, nome a desempate.
+          Clica no vendedor ou no número para filtrar o detalhe.
+        </span>
+      </div>
+      <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:640px;" id="pv-acc-ranking-tbl">
+        <thead>
+          <tr>
+            <th style="text-align:center;width:56px;">Pos.</th>
+            <th style="text-align:left;">Vendedor</th>
+            <th style="text-align:left;">Canais somados</th>
+            <th style="text-align:center;">N.º</th>
+            <th style="text-align:right;">Previsão agregada</th>
+            <th style="text-align:right;">N agregado</th>
+            <th style="text-align:center;">Accuracy</th>
+          </tr>
+        </thead>
+        <tbody>${rankRows}</tbody>
+      </table>
+    </div>
+    ${incertoBox}`;
+}
+
 function pvRenderAccuracyHtml(edit, ano) {
   const list = pvLoadAnoMeses(ano);
   if (!list.length) {
     return `<p style="color:var(--muted);font-size:13px;padding:24px 0;">Ainda sem Previsão / N guardados em ${ano}. Preenche no mapa mensal e volta aqui.</p>`;
   }
+  const ranking = pvAccBuildRanking(list);
+  const filtroNome = _pvAccFiltro === '__incerto__'
+    ? 'Canais por confirmar'
+    : _pvAccFiltro;
+  const bannerFiltro = _pvAccFiltro
+    ? `<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:12px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:4px 10px;border-radius:16px;font-weight:600;">Filtro: ${filtroNome}</span>
+        <button type="button" onclick="pvAccLimparFiltro()" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">✕ Limpar filtro</button>
+      </div>`
+    : '';
   let rows = '';
+  let nVisiveis = 0;
   list.forEach(item => {
+    if (!pvAccItemNoFiltro(item)) return;
+    nVisiveis++;
     const isGrupo = item.tipo === 'grupo' || item.tipo === 'total';
     const bg = item.tipo === 'total' ? '#f1f5f9' : item.tipo === 'grupo' ? '#f8fafc' : 'transparent';
     const weight = isGrupo ? '700' : '400';
@@ -12465,19 +12764,32 @@ function pvRenderAccuracyHtml(edit, ano) {
     }
     const media = pvAccuracyMedia(item.meses);
     cells += `<td style="text-align:center;background:#f8fafc;">${pvFmtAccuracy(media)}</td>`;
-    rows += `<tr style="background:${bg};font-weight:${weight};">
-      <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;">${item.empresa}</td>
+    const vend = pvAccVendedorDeCanal(item.id);
+    const meta = pvAccMetaDeCanal(item.id);
+    const badge = (item.tipo === 'canal' && meta && meta.certainty === 'proposto')
+      ? ' <span style="font-size:10px;color:#9a3412;">· a confirmar</span>'
+      : (item.tipo === 'canal' && !vend)
+        ? ' <span style="font-size:10px;color:#9a3412;">· sem dono</span>'
+        : '';
+    const vendHint = vend ? ` <span style="font-weight:400;color:var(--muted);font-size:11px;">· ${vend}</span>` : '';
+    rows += `<tr style="background:${bg};font-weight:${weight};" data-pv-acc-canal="${item.id || ''}">
+      <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;">${item.empresa}${vendHint}${badge}</td>
       ${cells}
     </tr>`;
   });
+  if (!nVisiveis) {
+    rows = `<tr><td colspan="14" style="text-align:center;padding:20px;color:var(--muted);">Nenhuma linha neste filtro.</td></tr>`;
+  }
   const thMes = PV_MESES.map(m => `<th style="text-align:center;">${m}</th>`).join('');
   return `
+    ${pvRenderAccuracyRankingHtml(ranking, ano)}
+    ${bannerFiltro}
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Accuracy de fecho ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">% = 100 × (1 − |N − Previsão| / Previsão) · 0–100% · ≥85% verde · &lt;85% vermelho · Média = meses com valor</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">% = 100 × (1 − |N − Previsão| / Previsão) · 0–100% · ≥85% verde · &lt;85% vermelho · Média = meses com valor · detalhe por canal (mapa mensal não agrupa)</span>
       </div>
-      <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:980px;">
+      <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:980px;" id="pv-acc-detalhe-tbl">
         <thead>
           <tr>
             <th style="text-align:left;">Canal</th>
@@ -12545,10 +12857,40 @@ async function pvExportarExcel() {
     }
     if (_pvView === 'accuracy') {
       const list = pvLoadAnoMeses(ano);
+      const ranking = pvAccBuildRanking(list);
       const rows = [
         ['Accuracy = 100 × (1 − |N − Previsão| / Previsão), limitado a 0–100% (não é atingimento)'],
-        ['Canal', ...PV_MESES, 'Média'],
+        ['Ranking: soma Previsão e N dos canais do vendedor, depois accuracy no agregado (não média das %)'],
+        [],
+        ['Posição', 'Vendedor', 'Canais somados', 'N.º canais', 'Previsão agregada', 'N agregado', 'Accuracy %'],
       ];
+      (ranking.rows || []).forEach(r => {
+        rows.push([
+          r.pos == null ? '' : r.pos,
+          r.vendedor,
+          (r.canais || []).join(' · '),
+          r.nCanais || 0,
+          r.prev == null ? '' : r.prev,
+          r.n == null ? '' : r.n,
+          r.acc == null ? '' : Math.round(r.acc),
+        ]);
+      });
+      if (ranking.semDono && ranking.semDono.length) {
+        rows.push([]);
+        rows.push(['Canais por confirmar (não entram no ranking)']);
+        rows.push(['Canal', 'Código NPess', 'Vendedor proposto', 'Estado']);
+        ranking.semDono.forEach(c => {
+          rows.push([
+            c.label || c.empresa,
+            (c.codes && c.codes.length) ? c.codes.join(', ') : '',
+            c.vendedorProposto || '',
+            'incerto',
+          ]);
+        });
+      }
+      rows.push([]);
+      rows.push(['Detalhe por canal (mapa mensal não agrupa)']);
+      rows.push(['Canal', ...PV_MESES, 'Média']);
       list.forEach(item => {
         const line = [item.empresa];
         for (let m = 0; m < 12; m++) {
@@ -29880,7 +30222,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-09-22-pv-autosave: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-09-22-pv-acc-rank: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
