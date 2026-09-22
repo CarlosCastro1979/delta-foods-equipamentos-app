@@ -86,6 +86,8 @@ for (const name of [
   'pvPodeEditar',
   'pvStoreKey',
   'pvSaveData',
+  'pvPersistLocalSilent',
+  'pvFlushAutosave',
   'pvAutosave',
   'pvOnCampoInput',
   'pvParseNumInput',
@@ -263,6 +265,20 @@ check('pvAutosave de vendedor não agenda escrita', () => {
   context._pvData = sampleData({ prevFecho: 42 });
   context.pvAutosave();
   assert.deepEqual(previsaoKeys(), []);
+});
+
+check('vendedor não grava localStorage (persist silent / flush / load)', () => {
+  clearPrevisaoStore();
+  setUser('Filipe Neves');
+  const data = sampleData({ n: 810000 });
+  assert.equal(context.pvPersistLocalSilent(2026, 8, data), false);
+  context._pvData = data;
+  assert.equal(context.pvFlushAutosave(), false);
+  assert.deepEqual(previsaoKeys(), []);
+  assert.ok(extractFn(html, 'pvPersistLocalSilent').includes('pvPodeEditar'));
+  assert.ok(extractFn(html, 'pvScheduleCloudSync').includes('pvPodeEditar'));
+  assert.ok(extractFn(html, 'pvSyncMapsToCloud').includes('pvPodeEditar'));
+  assert.ok(extractFn(html, 'pvBindAutosaveLifecycle').includes('pvPodeEditar'));
 });
 
 if (process.exitCode) {
