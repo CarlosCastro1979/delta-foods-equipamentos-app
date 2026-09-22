@@ -90,7 +90,7 @@ const context = {
 };
 vm.createContext(context);
 
-for (const name of ['ADMINS', 'PREV_VENDAS_ACESSO', 'PREV_VENDAS_SO_CONSULTA', 'PV_ACC_RANKING_VENDEDORES', 'PV_ACC_CANAL_VENDEDOR', 'PV_SEED_AGOSTO_2026']) {
+for (const name of ['ADMINS', 'PREV_VENDAS_ACESSO', 'PREV_VENDAS_SO_CONSULTA', 'PV_ACC_RANKING_VENDEDORES', 'PV_ACC_CANAL_VENDEDOR', 'PV_SEED_JULHO_2026', 'PV_SEED_AGOSTO_2026', 'PV_SEED_SETEMBRO_2026', 'PV_SEED_OUTUBRO_2026', 'PV_SEED_NOVEMBRO_2026', 'PV_SEED_DEZEMBRO_2026']) {
   vm.runInContext(extractConst(html, name), context);
 }
 for (const name of [
@@ -137,6 +137,14 @@ const {
 const PV_ACC_RANKING_VENDEDORES = vm.runInContext('PV_ACC_RANKING_VENDEDORES', context);
 const PV_ACC_CANAL_VENDEDOR = vm.runInContext('PV_ACC_CANAL_VENDEDOR', context);
 const PV_SEED_AGOSTO_2026 = vm.runInContext('PV_SEED_AGOSTO_2026', context);
+const PV_SEEDS_INST = {
+  6: vm.runInContext('PV_SEED_JULHO_2026', context),
+  7: PV_SEED_AGOSTO_2026,
+  8: vm.runInContext('PV_SEED_SETEMBRO_2026', context),
+  9: vm.runInContext('PV_SEED_OUTUBRO_2026', context),
+  10: vm.runInContext('PV_SEED_NOVEMBRO_2026', context),
+  11: vm.runInContext('PV_SEED_DEZEMBRO_2026', context),
+};
 
 function canal(id, empresa, parent, meses) {
   const prevMeses = {};
@@ -514,13 +522,17 @@ check('mapa: pai INSTITUCIONAL é grupo e soma as 2 filhas; total sem double cou
   assert.equal(balcao.tipo, 'canal');
   assert.equal(balcao.parent, 'dfb_inst');
   assert.equal(horeca.parent, 'dfb_inst');
-  ['n1', 'budget', 'prevFecho', 'n', 'myr'].forEach(k => {
-    assert.equal(balcao[k], null, 'Balcão seed vazio: ' + k);
-    assert.equal(horeca[k], null, 'Horeca seed vazio: ' + k);
+  ['prevFecho', 'myr'].forEach(k => {
+    assert.equal(balcao[k], null, 'Balcão sem previsão/MYR do pai: ' + k);
+    assert.equal(horeca[k], null, 'Horeca sem previsão/MYR do pai: ' + k);
   });
-  assert.equal(pai.n1, 14437);
-  assert.equal(pai.budget, 28026);
+  assert.equal(pai.n1, null, 'pai não guarda N-1 próprio (evita double count)');
+  assert.equal(pai.budget, null, 'pai não guarda Budget próprio');
+  assert.equal(pai.n, null, 'Agosto: N do pai nasce vazio e passa a ser a soma');
   assert.equal(pai.prevFecho, 26000);
+  assert.equal(balcao.n1, 5275);
+  assert.equal(horeca.n1, 9161);
+  assert.equal(balcao.n + horeca.n, 21006);
   const filhosInst = pvFilhosDeGrupo(pai, linhas);
   assert.deepEqual(filhosInst.map(r => r.id).sort(), ['dfb_inst_balcao', 'dfb_inst_horeca']);
   const filhosDfb = pvFilhosDeGrupo(dfb, linhas);
@@ -529,8 +541,13 @@ check('mapa: pai INSTITUCIONAL é grupo e soma as 2 filhas; total sem double cou
   const filhosTotal = pvFilhosDeGrupo(total, linhas);
   assert.deepEqual(filhosTotal.map(r => r.id).sort(), ['dfb', 'qb']);
 
+  pvRecalcSomasOn(linhas, 'n1');
+  pvRecalcSomasOn(linhas, 'n');
+  assert.equal(linhas.find(r => r.id === 'dfb_inst').n1, 14436, 'soma das filhas (print 14.437, diff 1)');
+  assert.equal(linhas.find(r => r.id === 'dfb_inst').n, 21006);
+  assert.equal(linhas.find(r => r.id === 'dfb').n, null, 'DFB não herda só o N institucional');
   pvRecalcSomasOn(linhas, 'prevFecho');
-  assert.equal(linhas.find(r => r.id === 'dfb_inst').prevFecho, 26000, 'filhas vazias: pai mantém o total do seed');
+  assert.equal(linhas.find(r => r.id === 'dfb_inst').prevFecho, 26000, 'filhas sem previsão: pai mantém o total');
 
   balcao.prevFecho = 10000;
   horeca.prevFecho = 16000;
@@ -563,18 +580,175 @@ check('merge por id cria as 2 filhas sem copiar o total antigo', () => {
   assert.equal(byId.dfb_inst.tipo, 'grupo');
   assert.equal(byId.dfb_inst.parent, 'dfb');
   assert.equal(byId.dfb_inst.prevFecho, 26000);
-  assert.equal(byId.dfb_inst.n, 20000);
-  assert.equal(byId.dfb_inst.n1, 14437);
-  assert.equal(byId.dfb_inst_balcao.prevFecho, null);
-  assert.equal(byId.dfb_inst_balcao.n, null);
+  assert.equal(byId.dfb_inst.n, 20000, 'N local do pai mantém-se até ao recalc');
+  assert.equal(byId.dfb_inst.n1, 14437, 'N-1 local do pai não é apagado pelo seed vazio');
+  assert.equal(byId.dfb_inst_balcao.prevFecho, null, 'não copia a previsão do pai');
   assert.equal(byId.dfb_inst_horeca.prevFecho, null);
-  assert.equal(byId.dfb_inst_horeca.n, null);
-  assert.equal(byId.dfb_inst_horeca.n1, null);
+  assert.notEqual(byId.dfb_inst_balcao.n, 20000);
+  assert.notEqual(byId.dfb_inst_horeca.n, 20000);
+  assert.equal(byId.dfb_inst_balcao.n + byId.dfb_inst_horeca.n, 21006);
+  assert.equal(byId.dfb_inst_balcao.n1 + byId.dfb_inst_horeca.n1, 14436);
+  const linhasRecalc = merged.linhas.map(r => ({ ...r }));
+  pvRecalcSomasOn(linhasRecalc, 'n1');
+  pvRecalcSomasOn(linhasRecalc, 'n');
+  const paiRecalc = linhasRecalc.find(r => r.id === 'dfb_inst');
+  const dfbRecalc = linhasRecalc.find(r => r.id === 'dfb');
+  assert.equal(paiRecalc.n1, 14436, 'recalc substitui o total antigo pela soma, não soma por cima');
+  assert.equal(paiRecalc.n, 21006);
+  assert.notEqual(paiRecalc.n, 20000 + 21006);
+  assert.equal(dfbRecalc.n, null, 'sem N nos outros canais, a DFB não fica só com o Institucional');
   assert.equal(byId.dfb_lojas.n, 800000);
   const ids = merged.linhas.map(r => r.id);
   assert.ok(ids.indexOf('dfb_inst') < ids.indexOf('dfb_inst_balcao'));
   assert.ok(ids.indexOf('dfb_inst_balcao') < ids.indexOf('dfb_inst_horeca'));
   assert.ok(ids.indexOf('dfb_inst_horeca') < ids.indexOf('qb'));
+});
+
+check('P&L Institucional Jul–Dez: Balcão+Horeca = total do print; sem N fora de Ago/Set', () => {
+  const codigosBalcao = [99520011, 99520012, 99520005];
+  const codigosHoreca = [99520019, 99520015, 99520016, 99520017];
+  assert.deepEqual(PV_ACC_CANAL_VENDEDOR.dfb_inst_balcao.codes.slice().sort(), codigosBalcao.slice().sort());
+  assert.deepEqual(PV_ACC_CANAL_VENDEDOR.dfb_inst_horeca.codes.slice().sort(), codigosHoreca.slice().sort());
+  const extra = [99520011, 99520012, 99520005, 99520019, 99520015, 99520016, 99520017];
+  codigosBalcao.forEach(c => assert.ok(!codigosHoreca.includes(c), 'código do Marcio no Horeca: ' + c));
+  codigosHoreca.forEach(c => assert.ok(!codigosBalcao.includes(c), 'código do Filipe no Balcão: ' + c));
+
+  // Célula vazia do print = 0 na soma. Números como no P&L (ponto = milhar).
+  const detalhe = {
+    6: {
+      mes: 'Julho', print: { n1: 18634, budget: 14995, n: null },
+      linhas: {
+        99520011: { n1: 2838, budget: 1087 },
+        99520012: { n1: 1027, budget: 5706 },
+        99520005: {},
+        99520015: { n1: 4338, budget: 2236 },
+        99520016: { n1: 10430, budget: 3925 },
+        99520017: { budget: 2009 },
+        99520019: { budget: 33 },
+      },
+    },
+    7: {
+      mes: 'Agosto', print: { n1: 14437, budget: 28026, n: 21006 },
+      linhas: {
+        99520011: { n1: 1766, n: 7888, budget: 2031 },
+        99520012: { n1: 3509, n: 3847, budget: 10665 },
+        99520005: {},
+        99520016: { n1: 816, n: 4953, budget: 7335 },
+        99520017: { n1: 3102, n: 3965, budget: 3755 },
+        99520015: { n1: 5243, n: 353, budget: 4178 },
+        99520019: { budget: 62 },
+      },
+    },
+    8: {
+      mes: 'Setembro', print: { n1: 24902, budget: 22490, n: 18483 },
+      linhas: {
+        99520011: { n1: 3432, n: 11336, budget: 1630 },
+        99520012: { n1: 2677, budget: 8558 },
+        99520005: {},
+        99520017: { n1: 4235, n: 2483, budget: 3013 },
+        99520016: { n1: 9742, n: 1426, budget: 5886 },
+        99520015: { n1: 4816, n: 3239, budget: 3353 },
+        99520019: { budget: 50 },
+      },
+    },
+    9: {
+      mes: 'Outubro', print: { n1: 22412, budget: 23420, n: null },
+      linhas: {
+        99520011: { n1: 400, budget: 1697 },
+        99520012: { budget: 8912 },
+        99520005: {},
+        99520017: { n1: 1589, budget: 3138 },
+        99520016: { n1: 11647, budget: 6130 },
+        99520015: { n1: 8777, budget: 3492 },
+        99520019: { budget: 52 },
+      },
+    },
+    10: {
+      mes: 'Novembro', print: { n1: 25310, budget: 35728, n: null },
+      linhas: {
+        99520011: { n1: 1438, budget: 2589 },
+        99520012: { budget: 13596 },
+        99520005: {},
+        99520017: { n1: 13858, budget: 4787 },
+        99520016: { n1: 10014, budget: 9351 },
+        99520015: { budget: 5327 },
+        99520019: { budget: 79 },
+      },
+    },
+    11: {
+      mes: 'Dezembro', print: { n1: 1171, budget: 20961, n: null },
+      linhas: {
+        99520011: { n1: 1171, budget: 1519 },
+        99520012: { n1: 0, budget: 7977 },
+        99520005: {},
+        99520017: { n1: 0, budget: 2808 },
+        99520016: { budget: 5486 },
+        99520015: { budget: 3125 },
+        99520019: { budget: 46 },
+      },
+    },
+  };
+
+  function soma(linhas, codigos, campo) {
+    return codigos.reduce((s, c) => s + (Number(linhas[c] && linhas[c][campo]) || 0), 0);
+  }
+
+  Object.keys(detalhe).forEach(mesKey => {
+    const mes = Number(mesKey);
+    const d = detalhe[mes];
+    const seed = PV_SEEDS_INST[mes];
+    const linhas = seed.linhas.map(r => ({ ...r }));
+    const pai = linhas.find(r => r.id === 'dfb_inst');
+    const balcao = linhas.find(r => r.id === 'dfb_inst_balcao');
+    const horeca = linhas.find(r => r.id === 'dfb_inst_horeca');
+    const dfb = linhas.find(r => r.id === 'dfb');
+    assert.equal(seed.mes, mes, d.mes);
+    assert.deepEqual(Object.keys(d.linhas).map(Number).sort(), extra.slice().sort(), d.mes + ' só os 7 códigos');
+
+    const bN1 = soma(d.linhas, codigosBalcao, 'n1');
+    const hN1 = soma(d.linhas, codigosHoreca, 'n1');
+    const bBud = soma(d.linhas, codigosBalcao, 'budget');
+    const hBud = soma(d.linhas, codigosHoreca, 'budget');
+    assert.equal(balcao.n1, bN1, d.mes + ' Balcão N-1');
+    assert.equal(horeca.n1, hN1, d.mes + ' Horeca N-1');
+    assert.equal(balcao.budget, bBud, d.mes + ' Balcão Budget');
+    assert.equal(horeca.budget, hBud, d.mes + ' Horeca Budget');
+    assert.ok(Math.abs((bN1 + hN1) - d.print.n1) <= 1, d.mes + ' N-1 vs print');
+    assert.ok(Math.abs((bBud + hBud) - d.print.budget) <= 1, d.mes + ' Budget vs print');
+    assert.equal(balcao.prevFecho, null, d.mes + ' Balcão sem previsão');
+    assert.equal(horeca.prevFecho, null, d.mes + ' Horeca sem previsão');
+    assert.equal(balcao.myr, null);
+    assert.equal(horeca.myr, null);
+    assert.equal(pai.n1, null, d.mes + ' pai sem N-1 próprio');
+    assert.equal(pai.budget, null, d.mes + ' pai sem Budget próprio');
+
+    if (d.print.n == null) {
+      assert.equal(balcao.n, null, d.mes + ' sem fecho: Balcão N vazio');
+      assert.equal(horeca.n, null, d.mes + ' sem fecho: Horeca N vazio');
+    } else {
+      const bN = soma(d.linhas, codigosBalcao, 'n');
+      const hN = soma(d.linhas, codigosHoreca, 'n');
+      assert.equal(balcao.n, bN, d.mes + ' Balcão N');
+      assert.equal(horeca.n, hN, d.mes + ' Horeca N');
+      assert.ok(Math.abs((bN + hN) - d.print.n) <= 1, d.mes + ' N vs print');
+      const dfbNAntes = dfb.n;
+      pvRecalcSomasOn(linhas, 'n');
+      assert.equal(linhas.find(r => r.id === 'dfb_inst').n, bN + hN);
+      assert.equal(linhas.find(r => r.id === 'dfb').n, dfbNAntes, d.mes + ' DFB não fica só com o N institucional');
+    }
+    pvRecalcSomasOn(linhas, 'n1');
+    pvRecalcSomasOn(linhas, 'budget');
+    assert.equal(linhas.find(r => r.id === 'dfb_inst').n1, bN1 + hN1);
+    assert.equal(linhas.find(r => r.id === 'dfb_inst').budget, bBud + hBud);
+    assert.notEqual(linhas.find(r => r.id === 'dfb_inst').n1, (bN1 + hN1) * 2);
+  });
+
+  const jul = PV_SEEDS_INST[6].linhas.find(r => r.id === 'dfb_inst');
+  assert.equal(jul.n, 34073, 'Julho: fecho antigo do pai fica; o print não parte o N');
+  assert.equal(jul.prevFecho, 15000);
+  const ago = PV_SEEDS_INST[7].linhas.find(r => r.id === 'dfb_inst');
+  assert.equal(ago.prevFecho, 26000, 'previsão de Agosto não é partida');
+  assert.equal(ago.myr, 26136);
 });
 
 check('readonly dos vendedores não reabre edição', () => {
