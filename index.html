@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- dfb-build: previsao-autosave-prod merge-por-celula + so-consulta -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -3858,7 +3859,7 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Previsão de fecho · N (fecho real) · Accuracy · MYR.
+            Previsão de fecho · N (fecho real) · Accuracy · MYR — autosave local + cloud (só direcção).
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
@@ -3870,7 +3871,7 @@ var _unused_placeholder = 1;
             </select>
           </label>
           <label style="font-size:12px;color:var(--muted);" id="pv-mes-wrap">Mês
-            <select id="pv-mes" class="form-input" style="height:36px;min-width:110px;margin-left:6px;" onchange="pvEnsureCloudThenRender({reload:true})">
+            <select id="pv-mes" class="form-input" style="height:36px;min-width:150px;margin-left:6px;white-space:nowrap;" onchange="pvEnsureCloudThenRender({reload:true})">
               <option value="0">Janeiro</option>
               <option value="1">Fevereiro</option>
               <option value="2">Março</option>
@@ -3886,7 +3887,7 @@ var _unused_placeholder = 1;
             </select>
           </label>
           <button type="button" class="btn btn-secondary btn-sm" onclick="pvExportarExcel()" style="min-height:36px;">⬇ Excel</button>
-          <button type="button" class="btn btn-primary btn-sm" id="pv-btn-publicar" onclick="pvPublicarProducao()" style="min-height:36px;display:none;" title="Envia MYR / Previsão / N do teu browser para a produção">☁ Publicar produção</button>
+          <button type="button" class="btn btn-primary btn-sm" id="pv-btn-publicar" onclick="pvPublicarProducao()" style="min-height:36px;display:none;" title="Envia MYR / Previsão / N (merge por célula, não apaga meses em falta neste browser)">☁ Publicar produção</button>
         </div>
       </div>
 
@@ -11250,6 +11251,170 @@ const PV_CLOUD_PATH = 'previsao/mapas_v3.json';
 const PV_CLOUD_URL = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/public/contratos/' + PV_CLOUD_PATH;
 let _pvCloudCache = null;
 let _pvCloudFetchedAt = 0;
+let _pvCloudSyncTimer = null;
+let _pvNeedsCloudSync = false;
+let _pvLifecycleBound = false;
+
+function pvEditFieldNames() {
+  return ['n', 'prevFecho', 'myr', 'n1', 'budget'];
+}
+
+function pvYtdFieldNames() {
+  return ['nMes', 'acumN1', 'acumNYtd', 'budgetAcm'];
+}
+
+function pvHasValue(v) {
+  if (v == null || v === '') return false;
+  if (typeof v === 'number' && Number.isNaN(v)) return false;
+  return true;
+}
+
+function pvTsMs(iso) {
+  if (!iso) return 0;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** Last-write-wins por campo. Vazio NUNCA substitui um valor preenchido. Seed só preenche se local e cloud estiverem vazios. */
+function pvPickEditField(localVal, localTs, cloudVal, cloudTs, seedVal) {
+  const lOk = pvHasValue(localVal);
+  const cOk = pvHasValue(cloudVal);
+  const sOk = pvHasValue(seedVal);
+  const lMs = pvTsMs(localTs);
+  const cMs = pvTsMs(cloudTs);
+  if (lOk && cOk) {
+    if (cMs > lMs) return { value: cloudVal, ts: cloudTs || localTs || null };
+    return { value: localVal, ts: localTs || cloudTs || null };
+  }
+  if (lOk) return { value: localVal, ts: localTs || null };
+  if (cOk) return { value: cloudVal, ts: cloudTs || null };
+  if (sOk) return { value: seedVal, ts: null };
+  return { value: null, ts: localTs || cloudTs || null };
+}
+
+function pvIndexLinhasById(linhas) {
+  const byId = {};
+  (linhas || []).forEach(r => { if (r && r.id) byId[r.id] = r; });
+  return byId;
+}
+
+/**
+ * Merge célula-a-célula: local vs cloud vs seed.
+ * Não usa o timestamp do documento 18/08 para ganhar o mapa inteiro.
+ */
+function pvMergeLinhasLww(localLinhas, cloudLinhas, seedLinhas, localCellTs, cloudCellTs, localMonthTs, cloudMonthTs) {
+  const localArr = Array.isArray(localLinhas) ? localLinhas : [];
+  const cloudArr = Array.isArray(cloudLinhas) ? cloudLinhas : [];
+  const seedArr = Array.isArray(seedLinhas) ? seedLinhas : [];
+  const lTsMap = localCellTs && typeof localCellTs === 'object' ? localCellTs : {};
+  const cTsMap = cloudCellTs && typeof cloudCellTs === 'object' ? cloudCellTs : {};
+  const localById = pvIndexLinhasById(localArr);
+  const cloudById = pvIndexLinhasById(cloudArr);
+  const seedById = pvIndexLinhasById(seedArr);
+  const order = [];
+  const seen = {};
+  const pushId = (id) => {
+    if (!id || seen[id]) return;
+    seen[id] = true;
+    order.push(id);
+  };
+  seedArr.forEach(r => pushId(r && r.id));
+  localArr.forEach(r => pushId(r && r.id));
+  cloudArr.forEach(r => pushId(r && r.id));
+  const cellTs = {};
+  const linhas = order.map(id => {
+    const l = localById[id] || {};
+    const c = cloudById[id] || {};
+    const s = seedById[id] || {};
+    const out = { id };
+    out.empresa = s.empresa || l.empresa || c.empresa || id;
+    out.tipo = s.tipo || l.tipo || c.tipo || 'canal';
+    if (s.parent || l.parent || c.parent) out.parent = s.parent || l.parent || c.parent;
+    const lRowTs = lTsMap[id] || {};
+    const cRowTs = cTsMap[id] || {};
+    cellTs[id] = {};
+    pvEditFieldNames().forEach(k => {
+      const picked = pvPickEditField(
+        l[k], lRowTs[k] || localMonthTs,
+        c[k], cRowTs[k] || cloudMonthTs,
+        s[k]
+      );
+      out[k] = picked.value;
+      if (picked.ts) cellTs[id][k] = picked.ts;
+    });
+    pvYtdFieldNames().forEach(k => {
+      if (pvHasValue(s[k])) out[k] = s[k];
+      else if (pvHasValue(l[k])) out[k] = l[k];
+      else if (pvHasValue(c[k])) out[k] = c[k];
+      else out[k] = null;
+    });
+    return out;
+  });
+  return { linhas, cellTs };
+}
+
+function pvParseStoreKey(key) {
+  const m = String(key || '').match(/^dfb_previsao_mapa_v3_(\d+)_(\d+)$/);
+  if (!m) return null;
+  return { ano: Number(m[1]), mes: Number(m[2]) };
+}
+
+function pvMonthStamp(localDoc, cloudDoc) {
+  const localMs = pvTsMs(localDoc && localDoc.actualizadoEm);
+  const cloudMs = pvTsMs(cloudDoc && cloudDoc.actualizadoEm);
+  if (localMs >= cloudMs) {
+    return {
+      actualizadoEm: (localDoc && localDoc.actualizadoEm) || (cloudDoc && cloudDoc.actualizadoEm) || null,
+      actualizadoPor: (localDoc && localDoc.actualizadoPor) || (cloudDoc && cloudDoc.actualizadoPor) || '',
+    };
+  }
+  return {
+    actualizadoEm: (cloudDoc && cloudDoc.actualizadoEm) || (localDoc && localDoc.actualizadoEm) || null,
+    actualizadoPor: (cloudDoc && cloudDoc.actualizadoPor) || (localDoc && localDoc.actualizadoPor) || '',
+  };
+}
+
+function pvMergeMonthDocs(localDoc, cloudDoc, ano, mes) {
+  const y = Number(ano);
+  const m = Number(mes);
+  const seedLinhas = (typeof pvSeedLinhas === 'function') ? pvSeedLinhas(y, m) : [];
+  const merged = pvMergeLinhasLww(
+    localDoc && localDoc.linhas,
+    cloudDoc && cloudDoc.linhas,
+    seedLinhas,
+    localDoc && localDoc.cellTs,
+    cloudDoc && cloudDoc.cellTs,
+    localDoc && localDoc.actualizadoEm,
+    cloudDoc && cloudDoc.actualizadoEm
+  );
+  const stamp = pvMonthStamp(localDoc, cloudDoc);
+  return {
+    ano: y,
+    mes: m,
+    linhas: merged.linhas,
+    cellTs: merged.cellTs,
+    actualizadoEm: stamp.actualizadoEm,
+    actualizadoPor: stamp.actualizadoPor,
+  };
+}
+
+function pvMergeAllMaps(localMaps, cloudMaps) {
+  const out = {};
+  const keys = {};
+  Object.keys(localMaps || {}).forEach(k => { keys[k] = true; });
+  Object.keys(cloudMaps || {}).forEach(k => { keys[k] = true; });
+  Object.keys(keys).forEach(key => {
+    const parsed = pvParseStoreKey(key);
+    const localDoc = localMaps && localMaps[key];
+    const cloudDoc = cloudMaps && cloudMaps[key];
+    if (!parsed) {
+      out[key] = localDoc || cloudDoc;
+      return;
+    }
+    out[key] = pvMergeMonthDocs(localDoc, cloudDoc, parsed.ano, parsed.mes);
+  });
+  return out;
+}
 
 function pvCollectLocalMaps() {
   const maps = {};
@@ -11266,47 +11431,146 @@ function pvCollectLocalMaps() {
   return maps;
 }
 
-function pvApplyCloudLinhas(localLinhas, cloudLinhas) {
-  if (!Array.isArray(localLinhas) || !Array.isArray(cloudLinhas)) return localLinhas;
-  const byId = {};
-  cloudLinhas.forEach(r => { if (r && r.id) byId[r.id] = r; });
-  return localLinhas.map(row => {
-    const c = byId[row.id];
-    if (!c) return row;
-    const out = { ...row };
-    ['myr', 'prevFecho', 'n', 'n1', 'nMes', 'budget', 'acumN1', 'acumNYtd', 'budgetAcm'].forEach(k => {
-      if (c[k] != null && c[k] !== '') out[k] = c[k];
-    });
-    return out;
+/** Consola: pvDebugLocalMaps() — resume N/previsão ainda neste browser (recuperação). */
+function pvDebugLocalMaps() {
+  const maps = pvCollectLocalMaps();
+  const rows = Object.keys(maps).sort().map(k => {
+    const d = maps[k];
+    const linhas = d.linhas || [];
+    return {
+      key: k,
+      actualizadoEm: d.actualizadoEm || null,
+      nPreenchido: linhas.filter(r => r && r.n != null && r.n !== '').length,
+      prevPreenchida: linhas.filter(r => r && r.prevFecho != null && r.prevFecho !== '').length,
+    };
   });
+  if (typeof console !== 'undefined' && console.table) console.table(rows);
+  return maps;
+}
+
+function pvPersistLocalSilent(ano, mes, data) {
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  if (!data) return false;
+  try {
+    localStorage.setItem(pvStoreKey(ano, mes), JSON.stringify(data));
+    return true;
+  } catch (e) {
+    console.warn('pvPersistLocalSilent', e);
+    return false;
+  }
+}
+
+/** Compat: overlay cloud sem apagar N/previsão preenchidos no local. */
+function pvApplyCloudLinhas(localLinhas, cloudLinhas, localCellTs, cloudCellTs, localMonthTs, cloudMonthTs) {
+  const merged = pvMergeLinhasLww(localLinhas, cloudLinhas, [], localCellTs, cloudCellTs, localMonthTs, cloudMonthTs);
+  return merged.linhas;
 }
 
 async function pvFetchCloudMaps(force) {
   const now = Date.now();
-  if (!force && _pvCloudCache && (now - _pvCloudFetchedAt) < 30000) return _pvCloudCache;
+  if (!force && _pvCloudCache && !_pvCloudCache.fetchFailed && (now - _pvCloudFetchedAt) < 30000) return _pvCloudCache;
   try {
     const res = await fetch(PV_CLOUD_URL + '?t=' + now, { cache: 'no-store' });
     if (!res.ok) {
-      _pvCloudCache = { maps: {}, actualizadoEm: null };
-      _pvCloudFetchedAt = now;
-      return _pvCloudCache;
+      console.warn('pvFetchCloudMaps HTTP', res.status);
+      if (_pvCloudCache && _pvCloudCache.maps) {
+        _pvCloudCache.fetchFailed = true;
+        return _pvCloudCache;
+      }
+      return { maps: {}, actualizadoEm: null, fetchFailed: true };
     }
     const data = await res.json();
     _pvCloudCache = {
       maps: (data && data.maps) ? data.maps : (data || {}),
       actualizadoEm: data && data.actualizadoEm ? data.actualizadoEm : null,
       actualizadoPor: data && data.actualizadoPor ? data.actualizadoPor : null,
+      fetchFailed: false,
     };
     // compat: se o ficheiro for só o dict de keys
     if (!_pvCloudCache.maps || Array.isArray(_pvCloudCache.maps)) {
-      _pvCloudCache = { maps: data && !data.maps ? data : {}, actualizadoEm: null };
+      _pvCloudCache = { maps: data && !data.maps ? data : {}, actualizadoEm: null, fetchFailed: false };
     }
     _pvCloudFetchedAt = now;
     return _pvCloudCache;
   } catch (e) {
     console.warn('pvFetchCloudMaps', e);
-    return _pvCloudCache || { maps: {}, actualizadoEm: null };
+    if (_pvCloudCache && _pvCloudCache.maps) {
+      _pvCloudCache.fetchFailed = true;
+      return _pvCloudCache;
+    }
+    return { maps: {}, actualizadoEm: null, fetchFailed: true };
   }
+}
+
+async function pvUploadMapsPayload(payload, keepalive) {
+  const STORAGE_BASE_UP = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
+  const res = await fetch(STORAGE_BASE_UP + '/contratos/' + PV_CLOUD_PATH, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPA_KEY,
+      'Authorization': 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      'x-upsert': 'true',
+    },
+    body: JSON.stringify(payload),
+    keepalive: !!keepalive,
+  });
+  if (!res.ok) {
+    const errTxt = await res.text().catch(() => '');
+    throw new Error('Upload falhou (' + res.status + '): ' + errTxt.slice(0, 180));
+  }
+  return payload;
+}
+
+async function pvBuildMergedCloudPayload() {
+  const fetched = await pvFetchCloudMaps(true);
+  if (fetched && fetched.fetchFailed) {
+    throw new Error('Cloud indisponível — não publico para não apagar meses noutros browsers.');
+  }
+  const localMaps = pvCollectLocalMaps();
+  const cloudMaps = (_pvCloudCache && _pvCloudCache.maps) ? _pvCloudCache.maps : {};
+  const maps = pvMergeAllMaps(localMaps, cloudMaps);
+  const nKeys = Object.keys(maps).length;
+  const payload = {
+    version: 3,
+    actualizadoEm: new Date().toISOString(),
+    actualizadoPor: typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '',
+    maps,
+  };
+  return { payload, nKeys };
+}
+
+async function pvSyncMapsToCloud(opts) {
+  const silent = !!(opts && opts.silent);
+  const keepalive = !!(opts && opts.keepalive);
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  if (_pvData) pvSaveData();
+  try {
+    const built = await pvBuildMergedCloudPayload();
+    if (!built.nKeys) return false;
+    await pvUploadMapsPayload(built.payload, keepalive);
+    _pvCloudCache = {
+      maps: built.payload.maps,
+      actualizadoEm: built.payload.actualizadoEm,
+      actualizadoPor: built.payload.actualizadoPor,
+    };
+    _pvCloudFetchedAt = Date.now();
+    _pvNeedsCloudSync = false;
+    return true;
+  } catch (e) {
+    if (!silent) throw e;
+    console.warn('pvSyncMapsToCloud', e);
+    return false;
+  }
+}
+
+function pvScheduleCloudSync() {
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return;
+  _pvNeedsCloudSync = true;
+  clearTimeout(_pvCloudSyncTimer);
+  _pvCloudSyncTimer = setTimeout(() => {
+    pvSyncMapsToCloud({ silent: true }).catch(() => {});
+  }, 1200);
 }
 
 async function pvPublicarProducao() {
@@ -11317,38 +11581,22 @@ async function pvPublicarProducao() {
   const btn = document.getElementById('pv-btn-publicar');
   if (btn) { btn.disabled = true; btn.textContent = '☁ A publicar…'; }
   try {
-    // Garante o mês actual guardado
     if (_pvData) pvSaveData();
-    const maps = pvCollectLocalMaps();
-    const nKeys = Object.keys(maps).length;
-    if (!nKeys) {
+    const built = await pvBuildMergedCloudPayload();
+    if (!built.nKeys) {
       toast('Nada para publicar — preenche MYR/Previsão/N e tenta de novo.', 'warn');
       return;
     }
-    const payload = {
-      version: 3,
-      actualizadoEm: new Date().toISOString(),
-      actualizadoPor: typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '',
-      maps,
+    await pvUploadMapsPayload(built.payload, false);
+    _pvCloudCache = {
+      maps: built.payload.maps,
+      actualizadoEm: built.payload.actualizadoEm,
+      actualizadoPor: built.payload.actualizadoPor,
     };
-    const STORAGE_BASE_UP = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
-    const res = await fetch(STORAGE_BASE_UP + '/contratos/' + PV_CLOUD_PATH, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPA_KEY,
-        'Authorization': 'Bearer ' + SUPA_KEY,
-        'Content-Type': 'application/json',
-        'x-upsert': 'true',
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const errTxt = await res.text().catch(() => '');
-      throw new Error('Upload falhou (' + res.status + '): ' + errTxt.slice(0, 180));
-    }
-    _pvCloudCache = { maps, actualizadoEm: payload.actualizadoEm, actualizadoPor: payload.actualizadoPor };
     _pvCloudFetchedAt = Date.now();
-    toast('☁ Publicado em produção (' + nKeys + ' mês/meses).');
+    _pvNeedsCloudSync = false;
+    toast('☁ Publicado em produção (' + built.nKeys + ' mês/meses, merge por célula).');
+    pvRender({ reload: false });
   } catch (e) {
     console.error('pvPublicarProducao', e);
     toast('Erro ao publicar: ' + (e.message || e), 'error');
@@ -11500,24 +11748,26 @@ function pvMergeSeedIntoLinhas(linhas, ano, mes) {
   if (!seedLinhas.length || !Array.isArray(linhas)) return linhas;
   const byId = {};
   seedLinhas.forEach(s => { byId[s.id] = s; });
-  const STATIC = ['n1', 'nMes', 'budget', 'acumN1', 'acumNYtd', 'budgetAcm', 'empresa', 'tipo', 'parent'];
   const merged = linhas.map(row => {
     const s = byId[row.id];
     if (!s) return row;
     const out = { ...row };
-    STATIC.forEach(k => {
-      if ((out[k] == null || out[k] === '') && s[k] != null && s[k] !== '') out[k] = s[k];
+    if (s.empresa) out.empresa = s.empresa;
+    if (s.tipo) out.tipo = s.tipo;
+    if (s.parent) out.parent = s.parent;
+    pvYtdFieldNames().forEach(k => {
+      if (pvHasValue(s[k])) out[k] = s[k];
+      else if (!pvHasValue(out[k])) out[k] = null;
     });
-    // Sempre refrescar a partir do seed (valores de produção / publicados)
-    ['n1', 'nMes', 'budget', 'acumN1', 'acumNYtd', 'budgetAcm'].forEach(k => {
-      if (s[k] != null && s[k] !== '') out[k] = s[k];
+    ['n1', 'budget'].forEach(k => {
+      if (!pvHasValue(out[k]) && pvHasValue(s[k])) out[k] = s[k];
     });
-    if (s.n != null && s.n !== '') out.n = s.n;
-    if (s.prevFecho != null && s.prevFecho !== '') out.prevFecho = s.prevFecho;
-    if (s.myr != null && s.myr !== '') out.myr = s.myr;
+    // N / Previsão / MYR: seed só preenche vazio — nunca apaga um valor à mão
+    ['n', 'prevFecho', 'myr'].forEach(k => {
+      if (!pvHasValue(out[k]) && pvHasValue(s[k])) out[k] = s[k];
+    });
     return out;
   });
-  // garantir ordem/ids do seed
   const have = new Set(merged.map(r => r.id));
   seedLinhas.forEach(s => {
     if (!have.has(s.id)) merged.push({ ...s, myr: s.myr ?? null });
@@ -11527,23 +11777,19 @@ function pvMergeSeedIntoLinhas(linhas, ano, mes) {
   return merged;
 }
 
-function pvLoadData(ano, mes) {
-  const y = String(ano || document.getElementById('pv-ano')?.value || 2026);
-  const m = String(mes ?? document.getElementById('pv-mes')?.value ?? 7);
+function pvReadLocalMonthDoc(ano, mes) {
+  const y = String(ano);
+  const m = String(mes);
   try {
     const raw = localStorage.getItem(pvStoreKey(y, m));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && Array.isArray(parsed.linhas) && parsed.linhas.length) {
         parsed.linhas = pvNormalizeLinhas(parsed.linhas, false);
-        parsed.linhas = pvMergeSeedIntoLinhas(parsed.linhas, y, m);
-        _pvData = parsed;
-        pvOverlayCloudOnData(y, m);
-        return _pvData;
+        return parsed;
       }
     }
   } catch (_) {}
-  // migrar v2 (n → prevFecho)
   try {
     const raw2 = localStorage.getItem(pvStoreKeyV2(y, m));
     if (raw2) {
@@ -11552,30 +11798,44 @@ function pvLoadData(ano, mes) {
         parsed.linhas = pvNormalizeLinhas(parsed.linhas, true);
         parsed.ano = Number(y);
         parsed.mes = Number(m);
-        _pvData = parsed;
-        try { localStorage.setItem(pvStoreKey(y, m), JSON.stringify(_pvData)); } catch (_) {}
-        pvOverlayCloudOnData(y, m);
-        return _pvData;
+        if (typeof pvPodeEditar !== 'function' || pvPodeEditar()) {
+          try { localStorage.setItem(pvStoreKey(y, m), JSON.stringify(parsed)); } catch (_) {}
+        }
+        return parsed;
       }
     }
   } catch (_) {}
+  return null;
+}
+
+function pvLoadData(ano, mes) {
+  const y = String(ano || document.getElementById('pv-ano')?.value || 2026);
+  const m = String(mes ?? document.getElementById('pv-mes')?.value ?? 7);
+  const localDoc = pvReadLocalMonthDoc(y, m);
+  const key = pvStoreKey(y, m);
+  const cloudDoc = _pvCloudCache && _pvCloudCache.maps ? _pvCloudCache.maps[key] : null;
+  if (localDoc || (cloudDoc && Array.isArray(cloudDoc.linhas) && cloudDoc.linhas.length)) {
+    _pvData = pvMergeMonthDocs(localDoc, cloudDoc, y, m);
+    _pvData.linhas = pvNormalizeLinhas(_pvData.linhas, false);
+    pvPersistLocalSilent(y, m, _pvData);
+    return _pvData;
+  }
   _pvData = pvDefaultMapa(y, m);
   pvOverlayCloudOnData(y, m);
   return _pvData;
 }
 
-/** Aplica MYR/Previsão/N (e restantes) publicados na cloud sobre o mês actual. */
+/** Aplica cloud+seed sobre o mês actual sem apagar N/previsão preenchidos. */
 function pvOverlayCloudOnData(ano, mes) {
-  if (!_pvData || !_pvCloudCache || !_pvCloudCache.maps) return;
+  if (!_pvData) return;
   const key = pvStoreKey(ano, mes);
-  const cloud = _pvCloudCache.maps[key];
-  if (!cloud || !Array.isArray(cloud.linhas)) return;
-  _pvData.linhas = pvApplyCloudLinhas(_pvData.linhas, cloud.linhas);
-  _pvData.linhas = pvNormalizeLinhas(_pvData.linhas, false);
-  _pvData.linhas = pvMergeSeedIntoLinhas(_pvData.linhas, ano, mes);
-  // Reaplica campos editáveis da cloud (seed não deve apagar MYR/previsão publicados)
-  _pvData.linhas = pvApplyCloudLinhas(_pvData.linhas, cloud.linhas);
-  try { localStorage.setItem(pvStoreKey(ano, mes), JSON.stringify(_pvData)); } catch (_) {}
+  const cloud = _pvCloudCache && _pvCloudCache.maps ? _pvCloudCache.maps[key] : null;
+  const merged = pvMergeMonthDocs(_pvData, cloud, ano, mes);
+  _pvData.linhas = pvNormalizeLinhas(merged.linhas, false);
+  _pvData.cellTs = merged.cellTs;
+  if (!_pvData.actualizadoEm) _pvData.actualizadoEm = merged.actualizadoEm;
+  if (!_pvData.actualizadoPor) _pvData.actualizadoPor = merged.actualizadoPor;
+  pvPersistLocalSilent(ano, mes, _pvData);
 }
 
 function pvSaveData() {
@@ -11590,6 +11850,15 @@ function pvSaveData() {
     console.warn('pvSaveData', e);
     return false;
   }
+}
+
+function pvTouchCell(idx, campo) {
+  if (!_pvData || !_pvData.linhas || !_pvData.linhas[idx]) return;
+  const row = _pvData.linhas[idx];
+  if (!row.id) return;
+  _pvData.cellTs = _pvData.cellTs || {};
+  _pvData.cellTs[row.id] = _pvData.cellTs[row.id] || {};
+  _pvData.cellTs[row.id][campo] = new Date().toISOString();
 }
 
 function podeAcederPrevisaoVendas() {
@@ -11795,6 +12064,8 @@ function pvShowView(view) {
 }
 
 async function pvEnsureCloudThenRender(opts) {
+  pvBindAutosaveLifecycle();
+  if (opts && opts.reload) pvFlushAutosave();
   try { await pvFetchCloudMaps(false); } catch (_) {}
   pvRender(opts);
 }
@@ -11809,6 +12080,7 @@ function pvRender(opts) {
   const forceReload = !!(opts && opts.reload);
   if (_pvView === 'mapa') {
     if (forceReload || !_pvData || Number(_pvData.ano) !== y || Number(_pvData.mes) !== m) {
+      if (_pvData && (Number(_pvData.ano) !== y || Number(_pvData.mes) !== m)) pvFlushAutosave();
       pvLoadData(ano, mes);
     }
     if (_pvData) {
@@ -11845,16 +12117,19 @@ function pvRender(opts) {
         ${accHint}
         <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
     } else {
+      const localHint = _pvData && _pvData.actualizadoEm
+        ? ` · Local: ${new Date(_pvData.actualizadoEm).toLocaleString('pt-PT')}`
+        : '';
       const cloudHint = _pvCloudCache && _pvCloudCache.actualizadoEm
         ? ` · Cloud: ${_pvCloudCache.actualizadoPor || '—'} ${new Date(_pvCloudCache.actualizadoEm).toLocaleString('pt-PT')}`
         : '';
       const editHint = edit
-        ? `<strong>Previsão de fecho</strong> (autosave) · <strong>N</strong> = fecho real após fechar o mês ·`
+        ? `<strong>Previsão de fecho</strong> e <strong>N</strong> (autosave local+cloud, last-write por célula) · <strong>N</strong> = fecho real após fechar o mês ·`
         : `<strong>Previsão de fecho</strong> · <strong>N</strong> = fecho real após fechar o mês ·`;
       banner.innerHTML = `<strong>${mesNome} ${ano}</strong> — N-1 = histórico · Budget = objectivo ·
         ${editHint}
         <strong>N VS N-1 %</strong> = (N, senão Previsão) vs N-1 ·
-        <strong>Acum. N</strong> = (YTD sem o mês) + N (ou Previsão se N vazio) · <strong>MYR</strong>${cloudHint}.
+        <strong>Acum. N</strong> = (YTD sem o mês) + N (ou Previsão se N vazio) · <strong>MYR</strong>${localHint}${cloudHint}.
         <span id="pv-autosave-hint" style="margin-left:8px;color:#64748b;"></span>`;
     }
   }
@@ -11903,12 +12178,40 @@ function pvFlashAutosave(ok) {
   _pvAutosaveHintTimer = setTimeout(() => { hint.textContent = ''; }, 1200);
 }
 
+function pvFlushAutosave() {
+  try {
+    if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  } catch (_) {}
+  if (!_pvData) return false;
+  clearTimeout(_pvAutosaveTimer);
+  return pvSaveData();
+}
+
 function pvAutosave() {
   if (!pvPodeEditar() || !_pvData) return;
   clearTimeout(_pvAutosaveTimer);
   _pvAutosaveTimer = setTimeout(() => {
-    pvFlashAutosave(pvSaveData());
+    const ok = pvSaveData();
+    pvFlashAutosave(ok);
+    if (ok) pvScheduleCloudSync();
   }, 150);
+}
+
+function pvBindAutosaveLifecycle() {
+  if (_pvLifecycleBound) return;
+  _pvLifecycleBound = true;
+  const flushHidden = () => {
+    if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return;
+    const saved = pvFlushAutosave();
+    if (saved || _pvNeedsCloudSync) {
+      pvSyncMapsToCloud({ silent: true, keepalive: true }).catch(() => {});
+    }
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushHidden();
+  });
+  window.addEventListener('pagehide', flushHidden);
+  window.addEventListener('beforeunload', () => { pvFlushAutosave(); });
 }
 
 function pvRecalcSomas(campo) {
@@ -11963,9 +12266,9 @@ function pvEditCell(campo, idx, row, edit, bg) {
     budget: 'pvOnBudgetInput(this)" onblur="pvOnBudgetBlur(this)',
   };
   const titles = {
-    prevFecho: 'Previsão de fecho (autosave)',
-    n: 'Fecho real N (após fechar o mês)',
-    myr: 'MYR (autosave)',
+    prevFecho: 'Previsão de fecho (autosave local+cloud)',
+    n: 'Fecho real N (autosave local+cloud, igual à Previsão de fecho)',
+    myr: 'MYR (autosave local+cloud)',
     n1: 'N-1 histórico (autosave)',
     budget: 'Budget / objectivo (autosave)',
   };
@@ -12062,12 +12365,13 @@ function pvLoadAnoMeses(ano) {
   const y = Number(ano) || 2026;
   const byId = {};
   for (let m = 0; m < 12; m++) {
+    const localDoc = typeof pvReadLocalMonthDoc === 'function' ? pvReadLocalMonthDoc(y, m) : null;
+    const cloudDoc = _pvCloudCache && _pvCloudCache.maps ? _pvCloudCache.maps[pvStoreKey(y, m)] : null;
     let data = null;
-    try {
-      const raw = localStorage.getItem(pvStoreKey(y, m));
-      if (raw) data = JSON.parse(raw);
-    } catch (_) {}
-    if (!data || !Array.isArray(data.linhas) || !data.linhas.length) {
+    if (localDoc || (cloudDoc && Array.isArray(cloudDoc.linhas) && cloudDoc.linhas.length)) {
+      data = pvMergeMonthDocs(localDoc, cloudDoc, y, m);
+      data.linhas = pvNormalizeLinhas(data.linhas, false);
+    } else {
       try {
         const raw2 = localStorage.getItem(pvStoreKeyV2(y, m));
         if (raw2) {
@@ -12075,8 +12379,10 @@ function pvLoadAnoMeses(ano) {
           if (data && Array.isArray(data.linhas)) data.linhas = pvNormalizeLinhas(data.linhas, true);
         }
       } catch (_) {}
-    } else {
-      data.linhas = pvNormalizeLinhas(data.linhas, false);
+      if (!data || !Array.isArray(data.linhas) || !data.linhas.length) {
+        const seed = pvSeedLinhas(y, m);
+        if (seed && seed.length) data = { linhas: pvNormalizeLinhas(seed, false) };
+      }
     }
     if (!data || !Array.isArray(data.linhas)) continue;
     pvRecalcSomasOn(data.linhas, 'prevFecho');
@@ -12189,6 +12495,7 @@ function pvOnCampoInput(el, campo) {
   const idx = Number(el.getAttribute('data-idx'));
   if (!_pvData.linhas[idx] || _pvData.linhas[idx].tipo !== 'canal') return;
   _pvData.linhas[idx][campo] = pvParseNumInput(el.value);
+  pvTouchCell(idx, campo);
   pvRecalcSomas(campo);
   pvRefreshSomasDom(campo);
   if (campo === 'prevFecho' || campo === 'n' || campo === 'n1' || campo === 'budget' || campo === 'myr') {
@@ -12203,13 +12510,16 @@ function pvOnCampoBlur(el, campo) {
   if (!_pvData.linhas[idx]) return;
   const v = pvParseNumInput(el.value);
   _pvData.linhas[idx][campo] = v;
+  if (_pvData.linhas[idx].tipo === 'canal') pvTouchCell(idx, campo);
   el.value = pvFmtEdit(v);
   pvRecalcSomas(campo);
   pvRefreshSomasDom(campo);
   if (campo === 'prevFecho' || campo === 'n' || campo === 'n1' || campo === 'budget' || campo === 'myr') {
     (_pvData.linhas || []).forEach((_, i) => pvUpdateRowPercents(i));
   }
-  pvAutosave();
+  const ok = pvFlushAutosave();
+  pvFlashAutosave(ok);
+  if (ok) pvScheduleCloudSync();
 }
 
 function pvOnPrevInput(el) { pvOnCampoInput(el, 'prevFecho'); }
@@ -12225,6 +12535,7 @@ function pvOnBudgetBlur(el) { pvOnCampoBlur(el, 'budget'); }
 
 async function pvExportarExcel() {
   try {
+    if (typeof pvFlushAutosave === 'function') pvFlushAutosave();
     const ano = document.getElementById('pv-ano')?.value || '2026';
     const mes = document.getElementById('pv-mes')?.value ?? '7';
     if (typeof ensureXLSX === 'function') await ensureXLSX();
@@ -12298,6 +12609,7 @@ async function pvExportarExcel() {
 }
 
 function voltarHome() {
+  if (typeof pvFlushAutosave === 'function') pvFlushAutosave();
   _canalActivo = null;
   _canalPinOk = null;
   _canalPinPendente = null;
@@ -12332,6 +12644,7 @@ window.abrirDadosHome = abrirDadosHome;
 window.abrirAreaTecnicaHome = abrirAreaTecnicaHome;
 window.abrirAreaFinanceiraHome = abrirAreaFinanceiraHome;
 window.abrirPrevisaoVendasHome = abrirPrevisaoVendasHome;
+window.pvDebugLocalMaps = pvDebugLocalMaps;
 window.voltarHome = voltarHome;
 window.irHomeCanais = irHomeCanais;
 window.cancelarCanalPin = cancelarCanalPin;
@@ -29567,7 +29880,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-09-21-pv-ro: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-09-22-pv-autosave: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
