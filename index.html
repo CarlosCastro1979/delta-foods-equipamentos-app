@@ -11792,7 +11792,11 @@ function pvAccuracyMedia(meses) {
 
 /**
  * Ranking de incentivo — Accuracy de fecho agrupado por vendedor.
- * NÃO se aplica ao mapa mensal (continua linha a linha por empresa/canal).
+ * A empresa é ignorada: DFB + Q Brasil, mesma pessoa. Canais do mesmo
+ * vendedor nas duas empresas entram na mesma soma (ΣPrev e ΣN), e só
+ * depois se calcula o %. Uma linha por vendedor — nunca «Delta» e «Q Brasil»
+ * separadas. Não é a média das % (nem da coluna Média do detalhe).
+ * NÃO se aplica ao mapa mensal nem ao detalhe (continuam linha a linha por canal).
  * Lista = PREV_VENDAS_ACESSO. ADMINS (Carlos, Christian, Andrea, Daniela K.)
  * não entram. Eduardo Moreira (99520020) não é linha do ranking: o Dist. DFB
  * (Massimo + Eduardo) soma no Massimo («o Massimo é o chefe»).
@@ -11864,6 +11868,19 @@ function pvAccLabelDeCanal(item) {
   return String(item.empresa || '');
 }
 
+/**
+ * Empresa do canal, só para o texto do ranking. Não é chave de agregação:
+ * DFB e Q Brasil do mesmo vendedor somam-se juntos.
+ */
+function pvAccEmpresaDeItem(item) {
+  if (!item) return '';
+  const parent = String(item.parent || '');
+  const id = String(item.id || '');
+  if (parent === 'qb' || parent.startsWith('qb_') || id.startsWith('qb_')) return 'Q Brasil';
+  if (parent === 'dfb' || parent.startsWith('dfb_') || id.startsWith('dfb_')) return 'DFB';
+  return '';
+}
+
 function pvAccLinhaValidaParaSoma(prev, n) {
   if (prev == null || prev === '' || n == null || n === '') return false;
   const p = Number(prev);
@@ -11905,11 +11922,13 @@ function pvAccParesDeItem(item) {
  * Ranking: melhor = accuracy mais perto de 100%.
  * Empate: mesmo lugar (rank denso 1,2,2,3); desempate de apresentação = nome.
  * Linhas sem N e Previsão válidos são ignoradas.
+ * Chave do agregado = só o nome do vendedor. parent/empresa (DFB vs Q Brasil)
+ * não parte a soma: DFB + Q Brasil, mesma pessoa.
  */
 function pvAccBuildRanking(list) {
   const allowed = {};
   (PV_ACC_RANKING_VENDEDORES || []).forEach(nome => {
-    allowed[nome] = { vendedor: nome, canalIds: [], canais: [], certainties: [], pares: [] };
+    allowed[nome] = { vendedor: nome, canalIds: [], canais: [], certainties: [], pares: [], empresas: [] };
   });
   const semDono = [];
   const foraSoma = [];
@@ -11934,6 +11953,8 @@ function pvAccBuildRanking(list) {
     allowed[vend].canalIds.push(item.id);
     allowed[vend].canais.push(pvAccLabelDeCanal(item));
     allowed[vend].certainties.push(meta ? meta.certainty : 'ok');
+    const emp = pvAccEmpresaDeItem(item);
+    if (emp && !allowed[vend].empresas.includes(emp)) allowed[vend].empresas.push(emp);
     allowed[vend].pares = allowed[vend].pares.concat(pvAccParesDeItem(item));
   });
 
@@ -11944,6 +11965,7 @@ function pvAccBuildRanking(list) {
       vendedor: nome,
       canalIds: b.canalIds,
       canais: b.canais,
+      empresas: b.empresas.slice(),
       nCanais: b.canalIds.length,
       hasProposto: b.certainties.some(c => c === 'proposto'),
       hasOk: b.certainties.some(c => c === 'ok'),
@@ -12391,7 +12413,7 @@ function pvRender(opts) {
       const accHint = edit
         ? 'Preenche Previsão e N no mapa mensal.'
         : 'Valores definidos pela direcção no mapa mensal.';
-      banner.innerHTML = `<strong>Accuracy de fecho ${ano}</strong> — ranking por vendedor (soma dos canais) + detalhe por canal.
+      banner.innerHTML = `<strong>Accuracy de fecho ${ano}</strong> — ranking por vendedor (DFB + Q Brasil, mesma pessoa; soma dos canais) + detalhe por canal.
         % = 100 × (1 − |<strong>N (fecho real)</strong> − <strong>Previsão de fecho</strong>| / Previsão), limitado a 0–100%.
         100% só quando N = Previsão; fechar acima ou abaixo reduz o valor (não é atingimento).
         ${accHint}
@@ -12796,7 +12818,7 @@ function pvRenderAccuracyRankingHtml(ranking, ano) {
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Ranking de Accuracy ${ano}
         <span style="font-weight:400;color:var(--muted);margin-left:8px;">
-          Soma Previsão e N dos canais do vendedor, depois % = 100 × (1 − |ΣN − ΣPrev| / ΣPrev), 0–100%.
+          Soma Previsão e N dos canais do vendedor nas duas empresas (DFB + Q Brasil, mesma pessoa), depois % = 100 × (1 − |ΣN − ΣPrev| / ΣPrev), 0–100%.
           Não é a média das % das linhas (canais pequenos não enviesam). Melhor = mais perto de 100%. Empate = mesmo lugar, nome a desempate.
           Clica no vendedor ou no número para filtrar o detalhe.
         </span>
@@ -12945,7 +12967,7 @@ async function pvExportarExcel() {
       const ranking = pvAccBuildRanking(list);
       const rows = [
         ['Accuracy = 100 × (1 − |N − Previsão| / Previsão), limitado a 0–100% (não é atingimento)'],
-        ['Ranking: soma Previsão e N dos canais do vendedor, depois accuracy no agregado (não média das %)'],
+        ['Ranking: soma Previsão e N dos canais do vendedor nas duas empresas (DFB + Q Brasil, mesma pessoa), depois accuracy no agregado (não média das %)'],
         [],
         ['Posição', 'Vendedor', 'Canais somados', 'N.º canais', 'Previsão agregada', 'N agregado', 'Accuracy %'],
       ];
@@ -30307,7 +30329,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-09-22-pv-inst-split: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-09-22-pv-acc-emp: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
