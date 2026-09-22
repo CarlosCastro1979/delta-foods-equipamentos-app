@@ -98,6 +98,7 @@ for (const name of [
   'pvFmtAccuracy',
   'pvAccuracyMedia',
   'pvAccMetaDeCanal',
+  'pvAccCertaintyForaDaSoma',
   'pvAccVendedorDeCanal',
   'pvAccLabelDeCanal',
   'pvAccLinhaValidaParaSoma',
@@ -157,8 +158,13 @@ check('Diogo: 4 códigos documentados (ok) — 99520018/004/30001/30005', () => 
   assert.equal(pvAccVendedorDeCanal('qb_dist_ret'), 'Diogo Oliveira');
 });
 
-check('confirmados: todos os canais do mapa sem «a confirmar»', () => {
+check('confirmados: canais com dono ok; Institucional é misto e não soma', () => {
   Object.entries(PV_ACC_CANAL_VENDEDOR).forEach(([id, m]) => {
+    if (id === 'dfb_inst') {
+      assert.equal(m.certainty, 'misto', 'Institucional deve ser misto');
+      assert.equal(pvAccVendedorDeCanal(id), '');
+      return;
+    }
     assert.equal(m.certainty, 'ok', id + ' deveria estar confirmado');
     assert.ok(m.vendedor, id + ' precisa de vendedor');
     assert.ok(pvAccVendedorDeCanal(id), id + ' deve somar no ranking');
@@ -179,10 +185,19 @@ check('Lojas online DFB = só Marcio 99520001 (sem Diogo / 99520009)', () => {
   assert.deepEqual(PV_ACC_CANAL_VENDEDOR.dfb_site.codes, []);
 });
 
-check('Institucional DFB: 99520011 + 99520012 = Marcio; canal inteiro no Marcio', () => {
-  assert.equal(pvAccVendedorDeCanal('dfb_inst'), 'Marcio Gorga');
-  assert.deepEqual(PV_ACC_CANAL_VENDEDOR.dfb_inst.codes, [99520011, 99520012]);
+check('Institucional DFB: misto no P&L, fora da soma; códigos do print Carlos', () => {
+  assert.equal(pvAccVendedorDeCanal('dfb_inst'), '');
+  assert.equal(PV_ACC_CANAL_VENDEDOR.dfb_inst.certainty, 'misto');
+  assert.equal(PV_ACC_CANAL_VENDEDOR.dfb_inst.vendedor, '');
+  const codes = PV_ACC_CANAL_VENDEDOR.dfb_inst.codes.slice().sort();
+  assert.deepEqual(codes, [99520005, 99520011, 99520012, 99520015, 99520016, 99520017, 99520019]);
+  assert.deepEqual(PV_ACC_CANAL_VENDEDOR.dfb_inst.codesMarcio.slice().sort(), [99520005, 99520011, 99520012]);
+  assert.deepEqual(PV_ACC_CANAL_VENDEDOR.dfb_inst.codesFilipe.slice().sort(), [99520015, 99520016, 99520017, 99520019]);
+  assert.ok(context.pvAccCertaintyForaDaSoma('misto'));
   assert.ok(!html.includes('dfb_inst_balcao') && !html.includes('dfb_inst_office'));
+  assert.ok(!html.includes("id: 'dfb_inst_"));
+  const instLinhasMapa = html.match(/id: 'dfb_inst'/g) || [];
+  assert.equal(instLinhasMapa.length, 6, 'mapa: 1 linha INSTITUCIONAL por seed (6 meses), sem NPess');
 });
 
 check('Restauração DFB: equipa no Filipe (chefe)', () => {
@@ -262,7 +277,7 @@ check('vendedor com N canais (Diogo): soma 4 canais, ignora incompleto', () => {
 
 check('canais de meses distintos somam no agregado anual', () => {
   const list = [
-    canal('dfb_inst', 'INSTITUCIONAL', 'dfb', [
+    canal('dfb_lojas', 'LOJAS ONLINE', 'dfb', [
       { prev: 100, n: 100 },
       { prev: 100, n: 80 },
     ]),
@@ -292,19 +307,20 @@ check('canal sem dono no mapa e grupo/total não entram na soma', () => {
   });
 });
 
-check('Restauração QB soma no Marcio (já não fica de fora)', () => {
+check('Restauração QB soma no Marcio; Institucional não entra na soma', () => {
   const list = [
     canal('qb_rest', 'RESTAURAÇÃO', 'qb', [{ prev: 5000, n: 5000 }]),
     canal('dfb_inst', 'INSTITUCIONAL', 'dfb', [{ prev: 100, n: 80 }]),
     canal('dfb_lojas', 'LOJAS ONLINE', 'dfb', [{ prev: 200, n: 200 }]),
   ];
-  const { rows, semDono } = pvAccBuildRanking(list);
+  const { rows, semDono, foraSoma } = pvAccBuildRanking(list);
   const marcio = rows.find(r => r.vendedor === 'Marcio Gorga');
-  assert.equal(marcio.prev, 5300);
-  assert.equal(marcio.n, 5280);
-  assert.equal(marcio.nCanais, 3);
-  assert.ok(!semDono.some(c => c.id === 'qb_rest'));
-  assert.equal(marcio.acc, pvAccuracyPct({ prevFecho: 5300, n: 5280 }));
+  assert.equal(marcio.prev, 5200);
+  assert.equal(marcio.n, 5200);
+  assert.equal(marcio.nCanais, 2);
+  assert.ok(!semDono.some(c => c.id === 'qb_rest' || c.id === 'dfb_inst'));
+  assert.ok(foraSoma.some(c => c.id === 'dfb_inst'));
+  assert.equal(marcio.acc, pvAccuracyPct({ prevFecho: 5200, n: 5200 }));
 });
 
 check('Dist. DFB: volume de Eduardo entra no Massimo', () => {
@@ -323,7 +339,7 @@ check('Dist. DFB: volume de Eduardo entra no Massimo', () => {
 check('ranking: melhor mais perto de 100%; empate = mesmo lugar + nome', () => {
   const list = [
     canal('dfb_ret_mod', 'RETALHO MODERNO', 'dfb', [{ prev: 100, n: 90 }]),
-    canal('dfb_inst', 'INSTITUCIONAL', 'dfb', [{ prev: 100, n: 100 }]),
+    canal('dfb_lojas', 'LOJAS ONLINE', 'dfb', [{ prev: 100, n: 100 }]),
     canal('dfb_rest', 'RESTAURAÇÃO', 'dfb', [{ prev: 100, n: 90 }]),
   ];
   const { rows } = pvAccBuildRanking(list);
@@ -342,23 +358,32 @@ check('ranking: melhor mais perto de 100%; empate = mesmo lugar + nome', () => {
 
 check('filtro: só linhas do vendedor; grupo/total escondidos; 0/— não exigem clique', () => {
   const itemDiogo = canal('dfb_ret_mod', 'RETALHO MODERNO', 'dfb', [{ prev: 10, n: 10 }]);
-  const itemMarcio = canal('dfb_inst', 'INSTITUCIONAL', 'dfb', [{ prev: 10, n: 10 }]);
+  const itemMarcio = canal('dfb_lojas', 'LOJAS ONLINE', 'dfb', [{ prev: 10, n: 10 }]);
+  const itemInst = canal('dfb_inst', 'INSTITUCIONAL', 'dfb', [{ prev: 10, n: 10 }]);
   const grupo = { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo' };
   context._pvAccFiltro = '';
   assert.equal(pvAccItemNoFiltro(itemDiogo), true);
   assert.equal(pvAccItemNoFiltro(grupo), true);
+  assert.equal(pvAccItemNoFiltro(itemInst), true);
   context._pvAccFiltro = 'Diogo Oliveira';
   assert.equal(pvAccItemNoFiltro(itemDiogo), true);
   assert.equal(pvAccItemNoFiltro(itemMarcio), false);
+  assert.equal(pvAccItemNoFiltro(itemInst), false);
   assert.equal(pvAccItemNoFiltro(grupo), false);
   context._pvAccFiltro = '__incerto__';
   const semMapa = canal('canal_sem_mapa', 'CANAL DESCONHECIDO', 'dfb', [{ prev: 10, n: 10 }]);
   assert.equal(pvAccItemNoFiltro(semMapa), true);
   assert.equal(pvAccItemNoFiltro(itemDiogo), false);
+  assert.equal(pvAccItemNoFiltro(itemInst), false);
   const qbRest = canal('qb_rest', 'RESTAURAÇÃO', 'qb', [{ prev: 10, n: 10 }]);
   assert.equal(pvAccItemNoFiltro(qbRest), false);
   context._pvAccFiltro = 'Marcio Gorga';
   assert.equal(pvAccItemNoFiltro(qbRest), true);
+  assert.equal(pvAccItemNoFiltro(itemInst), false);
+  context._pvAccFiltro = '__misto__';
+  assert.equal(pvAccItemNoFiltro(itemInst), true);
+  assert.equal(pvAccItemNoFiltro(itemMarcio), false);
+  assert.equal(pvAccItemNoFiltro(grupo), false);
   context._pvAccFiltro = '';
 });
 
@@ -382,11 +407,16 @@ check('UI Accuracy: ranking acima do detalhe, drill-down e fórmula do agregado'
   assert.ok(html.includes('|ΣN − ΣPrev|'));
   assert.ok(html.includes('pv-acc-click'));
   assert.ok(html.includes('a confirmar'));
+  assert.ok(html.includes('id="pv-acc-misto-box"'));
+  assert.ok(html.includes('partido por código no P&L'));
+  assert.ok(html.includes('__misto__'));
+  assert.ok(html.includes('fora do ranking'));
   const accFn = extractFn(html, 'pvRenderAccuracyHtml');
   const rankFn = extractFn(html, 'pvRenderAccuracyRankingHtml');
   assert.ok(accFn.includes('pvRenderAccuracyRankingHtml'));
   assert.ok(accFn.indexOf('pvRenderAccuracyRankingHtml') < accFn.indexOf('pv-acc-detalhe-tbl'));
   assert.ok(rankFn.includes('pv-acc-ranking-tbl'));
+  assert.ok(rankFn.includes('pv-acc-misto-box'));
   assert.ok(!accFn.includes('mailto:'));
 });
 
@@ -412,6 +442,31 @@ check('HTML do ranking: canais confirmados sem caixa laranja; incerto só se sem
   const outInc = context.pvRenderAccuracyRankingHtml(pvAccBuildRanking(listInc), 2026);
   assert.ok(outInc.includes('por confirmar'));
   assert.ok(outInc.includes('CANAL DESCONHECIDO') || outInc.includes('Canal DESCONHECIDO') || outInc.includes('canal_sem_mapa') || outInc.includes('DESCONHECIDO'));
+});
+
+check('Institucional no ranking: caixa misto, não soma no Marcio, sem split inventado', () => {
+  const list = [
+    canal('dfb_lojas', 'LOJAS ONLINE', 'dfb', [{ prev: 200, n: 200 }]),
+    canal('dfb_inst', 'INSTITUCIONAL', 'dfb', [{ prev: 10000, n: 10000 }]),
+  ];
+  const ranking = pvAccBuildRanking(list);
+  const marcio = ranking.rows.find(r => r.vendedor === 'Marcio Gorga');
+  assert.equal(marcio.prev, 200);
+  assert.equal(marcio.n, 200);
+  assert.ok(!marcio.canais.some(c => /Institucional/i.test(c)));
+  assert.equal(ranking.foraSoma.length, 1);
+  assert.equal(ranking.foraSoma[0].id, 'dfb_inst');
+  assert.ok(!ranking.semDono.some(c => c.id === 'dfb_inst'));
+  const out = context.pvRenderAccuracyRankingHtml(ranking, 2026);
+  assert.ok(out.includes('id="pv-acc-misto-box"'));
+  assert.ok(out.includes('partido por código no P&L'));
+  assert.ok(out.includes('99520011'));
+  assert.ok(out.includes('99520019'));
+  assert.ok(out.includes('99520005'));
+  assert.ok(out.includes('Marcio Gorga'));
+  assert.ok(out.includes('Filipe Neves'));
+  assert.ok(!out.includes('por confirmar'));
+  assert.ok(out.includes('__misto__'));
 });
 
 check('readonly dos vendedores não reabre edição', () => {

@@ -1877,6 +1877,7 @@
   .pv-acc-click{cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
   .pv-acc-click:hover{color:var(--accent);}
   .pv-acc-rank-active{background:#fff7ed;}
+  .pv-acc-misto-active{background:#dbeafe;}
   .ct-review-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
   .ct-review-item strong{display:block;font-size:10px;text-transform:uppercase;color:var(--muted);margin-bottom:2px;}
   .ct-review-item div{padding:5px 8px;background:#f5f5f5;border-radius:4px;font-size:13px;}
@@ -11738,25 +11739,40 @@ const PV_ACC_RANKING_VENDEDORES = [
 
 /**
  * Canal do mapa de previsão → vendedor do ranking (códigos NPess do repo).
- * Confirmado por Carlos (2026-09-22). O mapa tem UMA linha por canal P&L:
- * o incentivo junta o canal inteiro no chefe (não parte por NPess).
+ * Confirmado por Carlos (2026-09-22), excepto Institucional (misto no P&L).
+ * O mapa tem UMA linha por canal P&L: o incentivo junta o canal inteiro no
+ * chefe quando o canal tem um dono. Institucional NÃO: o P&L parte por NPess
+ * e o mapa só tem o total (sem Prev/N por código) — não inventar split.
  * certainty:
  *   ok       — dono confirmado
  *   proposto — cruzamento comercial, a confirmar (não usar nos confirmados)
  *   incerto  — sem dono no ranking (não entra em nenhuma soma)
+ *   misto    — P&L parte por NPess; mapa só tem o total (não entra na soma)
  *
- * Institucional DFB: 99520011 Institucional Balcão + 99520012 Gorga Inst Marcio
- * = Marcio (VENDEDOR_MAP / VENDEDORES_DEFAULT / CANAIS_APP.ecommerce /
- * ECOMMERCE_VENDEDOR_CODS / PG_VENDEDORES GN52_03). 99520005 «OFFICE Marcio»
- * só existe em PG_VENDEDORES GN52_03 (não está no cadastro). Os outros GN52_03
- * (99520015/16/17/19) são Horeca Office, não a linha P&L INSTITUCIONAL.
+ * Institucional DFB (print P&L Carlos, 2026-09-22) — linhas por NPess:
+ *   Marcio Gorga — 99520011, 99520012, 99520005
+ *     (VENDEDOR_MAP / VENDEDORES_DEFAULT: 11 e 12; 99520005 só em
+ *     PG_VENDEDORES GN52_03 «OFFICE Marcio»)
+ *   Filipe Neves (chefe da equipa, como na Restauração) —
+ *     99520019 Filipe, 99520015 Hélcio Grégio, 99520016 Daniela Santos,
+ *     99520017 Paulo Fontes
+ * Sem Prev/N por 99520xxx no mapa: fora da soma de todos. Restauração DFB
+ * continua toda no Filipe; Dist no Massimo; Varejo no Diogo; Lojas/site/rest
+ * QB no Marcio.
  */
 const PV_ACC_CANAL_VENDEDOR = {
   dfb_ret_mod: { vendedor: 'Diogo Oliveira', codes: [99520018], certainty: 'ok', label: 'Retalho moderno DFB' },
   dfb_dist_ret: { vendedor: 'Diogo Oliveira', codes: [99520004], certainty: 'ok', label: 'Dist. retalho DFB' },
   qb_ret_mod: { vendedor: 'Diogo Oliveira', codes: [99530001], certainty: 'ok', label: 'Retalho moderno QB' },
   qb_dist_ret: { vendedor: 'Diogo Oliveira', codes: [99530005], certainty: 'ok', label: 'Dist. retalho QB' },
-  dfb_inst: { vendedor: 'Marcio Gorga', codes: [99520011, 99520012], certainty: 'ok', label: 'Institucional DFB' },
+  dfb_inst: {
+    vendedor: '',
+    codes: [99520011, 99520012, 99520005, 99520019, 99520015, 99520016, 99520017],
+    codesMarcio: [99520011, 99520012, 99520005],
+    codesFilipe: [99520019, 99520015, 99520016, 99520017],
+    certainty: 'misto',
+    label: 'Institucional DFB',
+  },
   dfb_site: { vendedor: 'Marcio Gorga', codes: [], certainty: 'ok', label: 'Site próprio DFB' },
   dfb_lojas: { vendedor: 'Marcio Gorga', codes: [99520001], certainty: 'ok', label: 'Lojas online DFB' },
   dfb_rest: { vendedor: 'Filipe Neves', codes: [99520002, 99520006, 99520007, 99520010, 99520019], certainty: 'ok', label: 'Restauração DFB' },
@@ -11770,10 +11786,15 @@ function pvAccMetaDeCanal(canalId) {
   return PV_ACC_CANAL_VENDEDOR[canalId] || null;
 }
 
-/** Vendedor do ranking para este canal; vazio se incerto / sem dono / admin. */
+/** certainty que não entra na soma de nenhum vendedor. */
+function pvAccCertaintyForaDaSoma(certainty) {
+  return certainty === 'incerto' || certainty === 'misto';
+}
+
+/** Vendedor do ranking para este canal; vazio se incerto / misto / sem dono / admin. */
 function pvAccVendedorDeCanal(canalId) {
   const meta = pvAccMetaDeCanal(canalId);
-  if (!meta || meta.certainty === 'incerto') return '';
+  if (!meta || pvAccCertaintyForaDaSoma(meta.certainty)) return '';
   const nome = String(meta.vendedor || '').trim();
   if (!nome) return '';
   if (!(PV_ACC_RANKING_VENDEDORES || []).includes(nome)) return '';
@@ -11836,20 +11857,25 @@ function pvAccBuildRanking(list) {
     allowed[nome] = { vendedor: nome, canalIds: [], canais: [], certainties: [], pares: [] };
   });
   const semDono = [];
+  const foraSoma = [];
   (list || []).forEach(item => {
     if (!item || item.tipo !== 'canal') return;
     const vend = pvAccVendedorDeCanal(item.id);
     const meta = pvAccMetaDeCanal(item.id);
     if (!vend || !allowed[vend]) {
-      semDono.push({
+      const entry = {
         id: item.id,
         empresa: item.empresa,
         parent: item.parent,
         codes: meta && meta.codes ? meta.codes.slice() : [],
+        codesMarcio: meta && meta.codesMarcio ? meta.codesMarcio.slice() : [],
+        codesFilipe: meta && meta.codesFilipe ? meta.codesFilipe.slice() : [],
         certainty: meta ? meta.certainty : 'incerto',
         vendedorProposto: meta && meta.vendedor ? meta.vendedor : '',
         label: pvAccLabelDeCanal(item),
-      });
+      };
+      if (meta && meta.certainty === 'misto') foraSoma.push(entry);
+      else semDono.push(entry);
       return;
     }
     allowed[vend].canalIds.push(item.id);
@@ -11892,14 +11918,21 @@ function pvAccBuildRanking(list) {
     else r.pos = (i > 0 && rows[i - 1].pos != null) ? rows[i - 1].pos + 1 : 1;
   });
 
-  return { rows, semDono };
+  return { rows, semDono, foraSoma };
 }
 
 function pvAccItemNoFiltro(item) {
   if (!_pvAccFiltro) return true;
   if (!item) return false;
   if (item.tipo === 'grupo' || item.tipo === 'total') return false;
-  if (_pvAccFiltro === '__incerto__') return !pvAccVendedorDeCanal(item.id);
+  if (_pvAccFiltro === '__incerto__') {
+    const meta = pvAccMetaDeCanal(item.id);
+    return !pvAccVendedorDeCanal(item.id) && (!meta || meta.certainty !== 'misto');
+  }
+  if (_pvAccFiltro === '__misto__') {
+    const meta = pvAccMetaDeCanal(item.id);
+    return !!(meta && meta.certainty === 'misto');
+  }
   return pvAccVendedorDeCanal(item.id) === _pvAccFiltro;
 }
 
@@ -12654,6 +12687,7 @@ function pvRecalcSomasOn(linhas, campo) {
 function pvRenderAccuracyRankingHtml(ranking, ano) {
   const rows = (ranking && ranking.rows) || [];
   const semDono = (ranking && ranking.semDono) || [];
+  const foraSoma = (ranking && ranking.foraSoma) || [];
   const rankRows = rows.map(r => {
     const isActive = _pvAccFiltro === r.vendedor;
     const canFilter = r.nCanais > 0;
@@ -12681,6 +12715,40 @@ function pvRenderAccuracyRankingHtml(ranking, ano) {
       <td style="text-align:center;" ${accClick}>${pvFmtAccuracy(r.acc)}</td>
     </tr>`;
   }).join('');
+
+  let mistoBox = '';
+  if (foraSoma.length) {
+    const mistoActive = _pvAccFiltro === '__misto__';
+    const nClick = `class="pv-acc-click" onclick="pvAccFiltrar('${encodeURIComponent('__misto__')}')" title="Mostrar só Institucional no detalhe"`;
+    const mistoRows = foraSoma.map(c => {
+      const codes = (c.codes && c.codes.length) ? c.codes.join(', ') : '—';
+      const marcio = (c.codesMarcio && c.codesMarcio.length) ? c.codesMarcio.join(', ') : '—';
+      const filipe = (c.codesFilipe && c.codesFilipe.length) ? c.codesFilipe.join(', ') : '—';
+      return `<tr>
+        <td style="text-align:left;">${c.label || c.empresa}</td>
+        <td style="text-align:left;font-variant-numeric:tabular-nums;">${codes}</td>
+        <td style="text-align:left;font-variant-numeric:tabular-nums;">${marcio}</td>
+        <td style="text-align:left;font-variant-numeric:tabular-nums;">${filipe}</td>
+      </tr>`;
+    }).join('');
+    mistoBox = `
+      <div id="pv-acc-misto-box" class="${mistoActive ? 'pv-acc-misto-active' : ''}" style="margin-top:12px;border:1px solid #93c5fd;border-radius:var(--radius-lg);background:#eff6ff;overflow:auto;">
+        <div style="padding:8px 14px;font-size:12px;color:#1e3a5f;">
+          <strong ${nClick}>Institucional — partido por código no P&L, sem Prev/N por NPess no mapa</strong>
+          — não entra na soma de ninguém. O mapa de previsão só tem o total INSTITUCIONAL;
+          para partir o incentivo faltam Previsão e N por 99520xxx.
+        </div>
+        <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:520px;">
+          <thead><tr>
+            <th style="text-align:left;">Canal</th>
+            <th style="text-align:left;">Códigos no P&amp;L</th>
+            <th style="text-align:left;">Marcio Gorga</th>
+            <th style="text-align:left;">Filipe Neves (equipa)</th>
+          </tr></thead>
+          <tbody>${mistoRows}</tbody>
+        </table>
+      </div>`;
+  }
 
   let incertoBox = '';
   if (semDono.length) {
@@ -12740,6 +12808,7 @@ function pvRenderAccuracyRankingHtml(ranking, ano) {
         <tbody>${rankRows}</tbody>
       </table>
     </div>
+    ${mistoBox}
     ${incertoBox}`;
 }
 
@@ -12751,7 +12820,9 @@ function pvRenderAccuracyHtml(edit, ano) {
   const ranking = pvAccBuildRanking(list);
   const filtroNome = _pvAccFiltro === '__incerto__'
     ? 'Canais por confirmar'
-    : _pvAccFiltro;
+    : _pvAccFiltro === '__misto__'
+      ? 'Institucional (fora da soma)'
+      : _pvAccFiltro;
   const bannerFiltro = _pvAccFiltro
     ? `<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <span style="font-size:12px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:4px 10px;border-radius:16px;font-weight:600;">Filtro: ${filtroNome}</span>
@@ -12777,9 +12848,11 @@ function pvRenderAccuracyHtml(edit, ano) {
     const meta = pvAccMetaDeCanal(item.id);
     const badge = (item.tipo === 'canal' && meta && meta.certainty === 'proposto')
       ? ' <span style="font-size:10px;color:#9a3412;">· a confirmar</span>'
-      : (item.tipo === 'canal' && !vend)
-        ? ' <span style="font-size:10px;color:#9a3412;">· sem dono</span>'
-        : '';
+      : (item.tipo === 'canal' && meta && meta.certainty === 'misto')
+        ? ' <span style="font-size:10px;color:#1e3a5f;">· fora do ranking</span>'
+        : (item.tipo === 'canal' && !vend)
+          ? ' <span style="font-size:10px;color:#9a3412;">· sem dono</span>'
+          : '';
     const vendHint = vend ? ` <span style="font-weight:400;color:var(--muted);font-size:11px;">· ${vend}</span>` : '';
     rows += `<tr style="background:${bg};font-weight:${weight};" data-pv-acc-canal="${item.id || ''}">
       <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;">${item.empresa}${vendHint}${badge}</td>
@@ -12884,6 +12957,20 @@ async function pvExportarExcel() {
           r.acc == null ? '' : Math.round(r.acc),
         ]);
       });
+      if (ranking.foraSoma && ranking.foraSoma.length) {
+        rows.push([]);
+        rows.push(['Institucional — partido por código no P&L, sem Prev/N por NPess no mapa (não entra no ranking)']);
+        rows.push(['Canal', 'Códigos NPess no P&L', 'Marcio Gorga', 'Filipe Neves (equipa)', 'Estado']);
+        ranking.foraSoma.forEach(c => {
+          rows.push([
+            c.label || c.empresa,
+            (c.codes && c.codes.length) ? c.codes.join(', ') : '',
+            (c.codesMarcio && c.codesMarcio.length) ? c.codesMarcio.join(', ') : '',
+            (c.codesFilipe && c.codesFilipe.length) ? c.codesFilipe.join(', ') : '',
+            'misto',
+          ]);
+        });
+      }
       if (ranking.semDono && ranking.semDono.length) {
         rows.push([]);
         rows.push(['Canais por confirmar (não entram no ranking)']);
@@ -30231,7 +30318,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-09-22-pv-acc-rank2: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-09-22-pv-acc-inst: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
