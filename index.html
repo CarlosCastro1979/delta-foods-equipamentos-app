@@ -11726,7 +11726,8 @@ function pvAccuracyMedia(meses) {
  * Ranking de incentivo — Accuracy de fecho agrupado por vendedor.
  * NÃO se aplica ao mapa mensal (continua linha a linha por empresa/canal).
  * Lista = PREV_VENDAS_ACESSO. ADMINS (Carlos, Christian, Andrea, Daniela K.)
- * não entram. Eduardo Moreira tem NPess Dist (99520020) mas não está no mapa.
+ * não entram. Eduardo Moreira (99520020) não é linha do ranking: o Dist. DFB
+ * (Massimo + Eduardo) soma no Massimo («o Massimo é o chefe»).
  */
 const PV_ACC_RANKING_VENDEDORES = [
   'Filipe Neves',
@@ -11737,10 +11738,18 @@ const PV_ACC_RANKING_VENDEDORES = [
 
 /**
  * Canal do mapa de previsão → vendedor do ranking (códigos NPess do repo).
+ * Confirmado por Carlos (2026-09-22). O mapa tem UMA linha por canal P&L:
+ * o incentivo junta o canal inteiro no chefe (não parte por NPess).
  * certainty:
- *   ok       — código + dono inequívocos (CANAIS_APP + VENDEDORES_DEFAULT + PG_VENDEDORES)
- *   proposto — cruzamento comercial documentado, a confirmar com Carlos
+ *   ok       — dono confirmado
+ *   proposto — cruzamento comercial, a confirmar (não usar nos confirmados)
  *   incerto  — sem dono no ranking (não entra em nenhuma soma)
+ *
+ * Institucional DFB: 99520011 Institucional Balcão + 99520012 Gorga Inst Marcio
+ * = Marcio (VENDEDOR_MAP / VENDEDORES_DEFAULT / CANAIS_APP.ecommerce /
+ * ECOMMERCE_VENDEDOR_CODS / PG_VENDEDORES GN52_03). 99520005 «OFFICE Marcio»
+ * só existe em PG_VENDEDORES GN52_03 (não está no cadastro). Os outros GN52_03
+ * (99520015/16/17/19) são Horeca Office, não a linha P&L INSTITUCIONAL.
  */
 const PV_ACC_CANAL_VENDEDOR = {
   dfb_ret_mod: { vendedor: 'Diogo Oliveira', codes: [99520018], certainty: 'ok', label: 'Retalho moderno DFB' },
@@ -11748,12 +11757,12 @@ const PV_ACC_CANAL_VENDEDOR = {
   qb_ret_mod: { vendedor: 'Diogo Oliveira', codes: [99530001], certainty: 'ok', label: 'Retalho moderno QB' },
   qb_dist_ret: { vendedor: 'Diogo Oliveira', codes: [99530005], certainty: 'ok', label: 'Dist. retalho QB' },
   dfb_inst: { vendedor: 'Marcio Gorga', codes: [99520011, 99520012], certainty: 'ok', label: 'Institucional DFB' },
-  dfb_site: { vendedor: 'Marcio Gorga', codes: [], certainty: 'proposto', label: 'Site próprio DFB' },
-  dfb_lojas: { vendedor: 'Marcio Gorga', codes: [99520001], certainty: 'proposto', label: 'Lojas online DFB' },
-  dfb_rest: { vendedor: 'Filipe Neves', codes: [99520010, 99520019], certainty: 'proposto', label: 'Restauração DFB' },
-  dfb_dist_reg: { vendedor: 'Massimo Bottello', codes: [99520003], certainty: 'proposto', label: 'Dist. regionais DFB' },
-  qb_dist_reg: { vendedor: 'Massimo Bottello', codes: [99530002], certainty: 'proposto', label: 'Dist. regionais QB' },
-  qb_rest: { vendedor: '', codes: [99530003], certainty: 'incerto', label: 'Restauração QB' },
+  dfb_site: { vendedor: 'Marcio Gorga', codes: [], certainty: 'ok', label: 'Site próprio DFB' },
+  dfb_lojas: { vendedor: 'Marcio Gorga', codes: [99520001], certainty: 'ok', label: 'Lojas online DFB' },
+  dfb_rest: { vendedor: 'Filipe Neves', codes: [99520002, 99520006, 99520007, 99520010, 99520019], certainty: 'ok', label: 'Restauração DFB' },
+  dfb_dist_reg: { vendedor: 'Massimo Bottello', codes: [99520003, 99520020], certainty: 'ok', label: 'Dist. regionais DFB' },
+  qb_dist_reg: { vendedor: 'Massimo Bottello', codes: [99530002], certainty: 'ok', label: 'Dist. regionais QB' },
+  qb_rest: { vendedor: 'Marcio Gorga', codes: [99530003], certainty: 'ok', label: 'Restauração QB' },
 };
 
 function pvAccMetaDeCanal(canalId) {
@@ -30222,7 +30231,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-09-22-pv-acc-rank: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-09-22-pv-acc-rank2: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

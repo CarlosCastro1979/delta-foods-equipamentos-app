@@ -1,4 +1,4 @@
-// Service Worker v2026-09-22-pv-acc-rank — limpa cache e auto-destrói
+// Service Worker v2026-09-22-pv-acc-rank2 — limpa cache e auto-destrói
 // (a app não deve servir index.html antigo após merge no GitHub Pages)
 self.addEventListener('install', e => {
   self.skipWaiting();
