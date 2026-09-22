@@ -604,6 +604,69 @@ check('merge por id cria as 2 filhas sem copiar o total antigo', () => {
   assert.ok(ids.indexOf('dfb_inst_horeca') < ids.indexOf('qb'));
 });
 
+check('cloud com filhas vazias não apaga N-1/Budget/N do seed', () => {
+  // Forma da cloud de produção: pai com o total antigo, filhas presentes mas
+  // a null, e cellTs em campos vazios. Vazio não pode tapar o seed.
+  const TS = '2026-09-22T20:44:05.011Z';
+  const campos = ['n1', 'budget', 'n', 'prevFecho', 'myr'];
+  Object.keys(PV_SEEDS_INST).forEach(mesKey => {
+    const mes = Number(mesKey);
+    const seed = PV_SEEDS_INST[mes].linhas.map(r => ({ ...r }));
+    const cloud = seed.map(r => ({ ...r }));
+    const pai = cloud.find(r => r.id === 'dfb_inst');
+    pai.n1 = 18634;
+    pai.budget = 14995;
+    if (mes !== 6) pai.n = 20000;
+    ['dfb_inst_balcao', 'dfb_inst_horeca'].forEach(id => {
+      const row = cloud.find(r => r.id === id);
+      campos.forEach(k => { row[k] = null; });
+    });
+    const lojas = cloud.find(r => r.id === 'dfb_lojas');
+    const lojasN = lojas.n;
+    const lojasPrev = lojas.prevFecho;
+    lojas.n = 810000;
+    lojas.prevFecho = 900000;
+    const cellTs = {};
+    ['dfb_inst', 'dfb_inst_balcao', 'dfb_inst_horeca', 'dfb_lojas'].forEach(id => {
+      cellTs[id] = { n: TS, prevFecho: TS, myr: TS, n1: TS, budget: TS };
+    });
+    const merged = pvMergeLinhasLww(cloud, cloud, seed, cellTs, cellTs, TS, TS);
+    const byId = {};
+    merged.linhas.forEach(r => { byId[r.id] = r; });
+    const seedBalcao = seed.find(r => r.id === 'dfb_inst_balcao');
+    const seedHoreca = seed.find(r => r.id === 'dfb_inst_horeca');
+    ['n1', 'budget', 'n'].forEach(k => {
+      assert.equal(byId.dfb_inst_balcao[k], seedBalcao[k], mes + ' Balcão ' + k);
+      assert.equal(byId.dfb_inst_horeca[k], seedHoreca[k], mes + ' Horeca ' + k);
+    });
+    assert.equal(byId.dfb_inst_balcao.prevFecho, null, mes + ' Balcão sem previsão do pai');
+    assert.equal(byId.dfb_inst_horeca.prevFecho, null, mes + ' Horeca sem previsão do pai');
+    assert.equal(byId.dfb_inst_balcao.myr, null);
+    assert.equal(byId.dfb_inst_horeca.myr, null);
+    assert.equal(byId.dfb_lojas.n, 810000, mes + ' N de outro canal intacto');
+    assert.equal(byId.dfb_lojas.prevFecho, 900000, mes + ' previsão de outro canal intacta');
+    assert.notEqual(lojasN, undefined);
+    assert.notEqual(lojasPrev, undefined);
+    const linhas = merged.linhas.map(r => ({ ...r }));
+    pvRecalcSomasOn(linhas, 'n1');
+    pvRecalcSomasOn(linhas, 'n');
+    const paiRecalc = linhas.find(r => r.id === 'dfb_inst');
+    const b = linhas.find(r => r.id === 'dfb_inst_balcao');
+    const h = linhas.find(r => r.id === 'dfb_inst_horeca');
+    assert.equal(paiRecalc.n1, b.n1 + h.n1, mes + ' pai soma N-1, não acumula o total da cloud');
+    if (b.n == null && h.n == null) {
+      assert.equal(b.n, null);
+      assert.equal(h.n, null);
+      if (mes === 6) assert.equal(paiRecalc.n, 34073, 'Julho: fecho fica no pai');
+      else assert.equal(paiRecalc.n, 20000, mes + ' sem N nas filhas, o N do pai não é apagado');
+    } else {
+      assert.equal(paiRecalc.n, b.n + h.n, mes + ' pai soma o N das filhas');
+      assert.notEqual(paiRecalc.n, 20000 + b.n + h.n);
+    }
+    assert.equal(linhas.find(r => r.id === 'dfb_lojas').n, 810000);
+  });
+});
+
 check('P&L Institucional Jul–Dez: Balcão+Horeca = total do print; sem N fora de Ago/Set', () => {
   const codigosBalcao = [99520011, 99520012, 99520005];
   const codigosHoreca = [99520019, 99520015, 99520016, 99520017];
