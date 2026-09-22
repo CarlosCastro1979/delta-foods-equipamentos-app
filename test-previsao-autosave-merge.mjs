@@ -314,6 +314,30 @@ check('código: N entra no autosave e flush em blur/visibility/beforeunload', ()
   assert.ok(!seedMerge.includes('if (s.prevFecho != null && s.prevFecho !== \'\') out.prevFecho = s.prevFecho'));
 });
 
+check('merge por id: filhas Institucional entram sem copiar o total do pai', () => {
+  const local = [
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb', prevFecho: 26000, n: 20000, n1: 14437, budget: 28026, myr: 26136 },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb', prevFecho: 858000, n: 800000, myr: 853855 },
+  ];
+  const seed = [
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'grupo', parent: 'dfb', prevFecho: 26000, n: null, n1: 14437, budget: 28026, myr: 26136 },
+    { id: 'dfb_inst_balcao', empresa: 'Institucional Balcão', tipo: 'canal', parent: 'dfb_inst', prevFecho: null, n: null, n1: null, budget: null, myr: null },
+    { id: 'dfb_inst_horeca', empresa: 'Institucional Horeca', tipo: 'canal', parent: 'dfb_inst', prevFecho: null, n: null, n1: null, budget: null, myr: null },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb', prevFecho: 858000, n: null, myr: 853855 },
+  ];
+  const merged = pvMergeLinhasLww(local, [], seed, {}, {}, YESTERDAY, null);
+  const byId = {};
+  merged.linhas.forEach(r => { byId[r.id] = r; });
+  assert.equal(byId.dfb_inst.tipo, 'grupo');
+  assert.equal(byId.dfb_inst.n, 20000);
+  assert.equal(byId.dfb_inst.prevFecho, 26000);
+  assert.equal(byId.dfb_inst_balcao.n, null);
+  assert.equal(byId.dfb_inst_horeca.prevFecho, null);
+  assert.equal(byId.dfb_lojas.n, 800000);
+  assert.ok(merged.linhas.some(r => r.id === 'dfb_inst_balcao'));
+  assert.ok(merged.linhas.some(r => r.id === 'dfb_inst_horeca'));
+});
+
 check('mês: Agosto=7 Setembro=8 no selector e seeds', () => {
   assert.ok(html.includes('value="7" selected>Agosto'));
   assert.ok(html.includes('value="8">Setembro'));

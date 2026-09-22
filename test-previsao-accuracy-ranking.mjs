@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Ranking Accuracy de fecho por vendedor: soma canais, accuracy no agregado,
- * rank, 1 canal vs N canais. Não altera o mapa mensal.
+ * rank, 1 canal vs N canais. Institucional = Balcão (Marcio) + Horeca (Filipe).
  */
 import fs from 'fs';
 import vm from 'vm';
@@ -90,7 +90,7 @@ const context = {
 };
 vm.createContext(context);
 
-for (const name of ['ADMINS', 'PREV_VENDAS_ACESSO', 'PREV_VENDAS_SO_CONSULTA', 'PV_ACC_RANKING_VENDEDORES', 'PV_ACC_CANAL_VENDEDOR']) {
+for (const name of ['ADMINS', 'PREV_VENDAS_ACESSO', 'PREV_VENDAS_SO_CONSULTA', 'PV_ACC_RANKING_VENDEDORES', 'PV_ACC_CANAL_VENDEDOR', 'PV_SEED_AGOSTO_2026']) {
   vm.runInContext(extractConst(html, name), context);
 }
 for (const name of [
@@ -108,6 +108,16 @@ for (const name of [
   'pvAccItemNoFiltro',
   'pvFmtNum',
   'pvRenderAccuracyRankingHtml',
+  'pvFilhosDeGrupo',
+  'pvMapaPadLeft',
+  'pvRecalcSomasOn',
+  'pvEditFieldNames',
+  'pvYtdFieldNames',
+  'pvHasValue',
+  'pvTsMs',
+  'pvPickEditField',
+  'pvIndexLinhasById',
+  'pvMergeLinhasLww',
 ]) {
   vm.runInContext(extractFn(html, name), context);
 }
@@ -119,9 +129,14 @@ const {
   pvAccBuildRanking,
   pvAccVendedorDeCanal,
   pvAccItemNoFiltro,
+  pvFilhosDeGrupo,
+  pvMapaPadLeft,
+  pvRecalcSomasOn,
+  pvMergeLinhasLww,
 } = context;
 const PV_ACC_RANKING_VENDEDORES = vm.runInContext('PV_ACC_RANKING_VENDEDORES', context);
 const PV_ACC_CANAL_VENDEDOR = vm.runInContext('PV_ACC_CANAL_VENDEDOR', context);
+const PV_SEED_AGOSTO_2026 = vm.runInContext('PV_SEED_AGOSTO_2026', context);
 
 function canal(id, empresa, parent, meses) {
   const prevMeses = {};
@@ -158,13 +173,9 @@ check('Diogo: 4 códigos documentados (ok) — 99520018/004/30001/30005', () => 
   assert.equal(pvAccVendedorDeCanal('qb_dist_ret'), 'Diogo Oliveira');
 });
 
-check('confirmados: canais com dono ok; Institucional é misto e não soma', () => {
+check('confirmados: canais com dono ok; pai Institucional não é canal do mapa', () => {
+  assert.ok(!PV_ACC_CANAL_VENDEDOR.dfb_inst, 'pai dfb_inst não entra no mapa do ranking');
   Object.entries(PV_ACC_CANAL_VENDEDOR).forEach(([id, m]) => {
-    if (id === 'dfb_inst') {
-      assert.equal(m.certainty, 'misto', 'Institucional deve ser misto');
-      assert.equal(pvAccVendedorDeCanal(id), '');
-      return;
-    }
     assert.equal(m.certainty, 'ok', id + ' deveria estar confirmado');
     assert.ok(m.vendedor, id + ' precisa de vendedor');
     assert.ok(pvAccVendedorDeCanal(id), id + ' deve somar no ranking');
@@ -185,19 +196,21 @@ check('Lojas online DFB = só Marcio 99520001 (sem Diogo / 99520009)', () => {
   assert.deepEqual(PV_ACC_CANAL_VENDEDOR.dfb_site.codes, []);
 });
 
-check('Institucional DFB: misto no P&L, fora da soma; códigos do print Carlos', () => {
+check('Institucional DFB: Balcão → Marcio, Horeca → Filipe; códigos do print Carlos', () => {
   assert.equal(pvAccVendedorDeCanal('dfb_inst'), '');
-  assert.equal(PV_ACC_CANAL_VENDEDOR.dfb_inst.certainty, 'misto');
-  assert.equal(PV_ACC_CANAL_VENDEDOR.dfb_inst.vendedor, '');
-  const codes = PV_ACC_CANAL_VENDEDOR.dfb_inst.codes.slice().sort();
-  assert.deepEqual(codes, [99520005, 99520011, 99520012, 99520015, 99520016, 99520017, 99520019]);
-  assert.deepEqual(PV_ACC_CANAL_VENDEDOR.dfb_inst.codesMarcio.slice().sort(), [99520005, 99520011, 99520012]);
-  assert.deepEqual(PV_ACC_CANAL_VENDEDOR.dfb_inst.codesFilipe.slice().sort(), [99520015, 99520016, 99520017, 99520019]);
-  assert.ok(context.pvAccCertaintyForaDaSoma('misto'));
-  assert.ok(!html.includes('dfb_inst_balcao') && !html.includes('dfb_inst_office'));
-  assert.ok(!html.includes("id: 'dfb_inst_"));
-  const instLinhasMapa = html.match(/id: 'dfb_inst'/g) || [];
-  assert.equal(instLinhasMapa.length, 6, 'mapa: 1 linha INSTITUCIONAL por seed (6 meses), sem NPess');
+  assert.equal(pvAccVendedorDeCanal('dfb_inst_balcao'), 'Marcio Gorga');
+  assert.equal(pvAccVendedorDeCanal('dfb_inst_horeca'), 'Filipe Neves');
+  assert.deepEqual(PV_ACC_CANAL_VENDEDOR.dfb_inst_balcao.codes.slice().sort(), [99520005, 99520011, 99520012]);
+  assert.deepEqual(PV_ACC_CANAL_VENDEDOR.dfb_inst_horeca.codes.slice().sort(), [99520015, 99520016, 99520017, 99520019]);
+  const instPai = (html.match(/id: 'dfb_inst'(?!_)/g) || []).length;
+  const instBalcao = (html.match(/id: 'dfb_inst_balcao'/g) || []).length;
+  const instHoreca = (html.match(/id: 'dfb_inst_horeca'/g) || []).length;
+  assert.equal(instPai, 6, 'mapa: 1 linha pai INSTITUCIONAL por seed (6 meses)');
+  assert.equal(instBalcao, 6, 'mapa: 1 Balcão por seed');
+  assert.equal(instHoreca, 6, 'mapa: 1 Horeca por seed');
+  assert.ok(!html.includes('qb_inst'));
+  assert.ok(!html.includes('id="pv-acc-misto-box"'));
+  assert.ok(!html.includes('partido por código no P&L'));
 });
 
 check('Restauração DFB: equipa no Filipe (chefe)', () => {
@@ -307,20 +320,29 @@ check('canal sem dono no mapa e grupo/total não entram na soma', () => {
   });
 });
 
-check('Restauração QB soma no Marcio; Institucional não entra na soma', () => {
+check('Restauração QB + Balcão no Marcio; Horeca no Filipe; pai não soma', () => {
   const list = [
     canal('qb_rest', 'RESTAURAÇÃO', 'qb', [{ prev: 5000, n: 5000 }]),
-    canal('dfb_inst', 'INSTITUCIONAL', 'dfb', [{ prev: 100, n: 80 }]),
+    canal('dfb_inst_balcao', 'Institucional Balcão', 'dfb_inst', [{ prev: 100, n: 80 }]),
+    canal('dfb_inst_horeca', 'Institucional Horeca', 'dfb_inst', [{ prev: 40, n: 40 }]),
     canal('dfb_lojas', 'LOJAS ONLINE', 'dfb', [{ prev: 200, n: 200 }]),
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'grupo', parent: 'dfb', prevMeses: { 0: 140 }, nMeses: { 0: 120 } },
   ];
   const { rows, semDono, foraSoma } = pvAccBuildRanking(list);
   const marcio = rows.find(r => r.vendedor === 'Marcio Gorga');
-  assert.equal(marcio.prev, 5200);
-  assert.equal(marcio.n, 5200);
-  assert.equal(marcio.nCanais, 2);
-  assert.ok(!semDono.some(c => c.id === 'qb_rest' || c.id === 'dfb_inst'));
-  assert.ok(foraSoma.some(c => c.id === 'dfb_inst'));
-  assert.equal(marcio.acc, pvAccuracyPct({ prevFecho: 5200, n: 5200 }));
+  const filipe = rows.find(r => r.vendedor === 'Filipe Neves');
+  assert.equal(marcio.prev, 5300);
+  assert.equal(marcio.n, 5280);
+  assert.equal(marcio.nCanais, 3);
+  assert.ok(marcio.canais.includes('Institucional Balcão'));
+  assert.ok(!marcio.canais.includes('Institucional Horeca'));
+  assert.equal(filipe.prev, 40);
+  assert.equal(filipe.n, 40);
+  assert.equal(filipe.nCanais, 1);
+  assert.ok(filipe.canais.includes('Institucional Horeca'));
+  assert.ok(!semDono.some(c => c.id === 'qb_rest' || c.id === 'dfb_inst' || c.id === 'dfb_inst_balcao' || c.id === 'dfb_inst_horeca'));
+  assert.ok(!(foraSoma || []).some(c => c.id === 'dfb_inst'));
+  assert.equal(marcio.acc, pvAccuracyPct({ prevFecho: 5300, n: 5280 }));
 });
 
 check('Dist. DFB: volume de Eduardo entra no Massimo', () => {
@@ -359,31 +381,36 @@ check('ranking: melhor mais perto de 100%; empate = mesmo lugar + nome', () => {
 check('filtro: só linhas do vendedor; grupo/total escondidos; 0/— não exigem clique', () => {
   const itemDiogo = canal('dfb_ret_mod', 'RETALHO MODERNO', 'dfb', [{ prev: 10, n: 10 }]);
   const itemMarcio = canal('dfb_lojas', 'LOJAS ONLINE', 'dfb', [{ prev: 10, n: 10 }]);
-  const itemInst = canal('dfb_inst', 'INSTITUCIONAL', 'dfb', [{ prev: 10, n: 10 }]);
+  const itemBalcao = canal('dfb_inst_balcao', 'Institucional Balcão', 'dfb_inst', [{ prev: 10, n: 10 }]);
+  const itemHoreca = canal('dfb_inst_horeca', 'Institucional Horeca', 'dfb_inst', [{ prev: 10, n: 10 }]);
   const grupo = { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo' };
+  const grupoInst = { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'grupo', parent: 'dfb' };
   context._pvAccFiltro = '';
   assert.equal(pvAccItemNoFiltro(itemDiogo), true);
   assert.equal(pvAccItemNoFiltro(grupo), true);
-  assert.equal(pvAccItemNoFiltro(itemInst), true);
+  assert.equal(pvAccItemNoFiltro(itemBalcao), true);
+  assert.equal(pvAccItemNoFiltro(itemHoreca), true);
   context._pvAccFiltro = 'Diogo Oliveira';
   assert.equal(pvAccItemNoFiltro(itemDiogo), true);
   assert.equal(pvAccItemNoFiltro(itemMarcio), false);
-  assert.equal(pvAccItemNoFiltro(itemInst), false);
+  assert.equal(pvAccItemNoFiltro(itemBalcao), false);
   assert.equal(pvAccItemNoFiltro(grupo), false);
+  assert.equal(pvAccItemNoFiltro(grupoInst), false);
   context._pvAccFiltro = '__incerto__';
   const semMapa = canal('canal_sem_mapa', 'CANAL DESCONHECIDO', 'dfb', [{ prev: 10, n: 10 }]);
   assert.equal(pvAccItemNoFiltro(semMapa), true);
   assert.equal(pvAccItemNoFiltro(itemDiogo), false);
-  assert.equal(pvAccItemNoFiltro(itemInst), false);
+  assert.equal(pvAccItemNoFiltro(itemBalcao), false);
   const qbRest = canal('qb_rest', 'RESTAURAÇÃO', 'qb', [{ prev: 10, n: 10 }]);
   assert.equal(pvAccItemNoFiltro(qbRest), false);
   context._pvAccFiltro = 'Marcio Gorga';
   assert.equal(pvAccItemNoFiltro(qbRest), true);
-  assert.equal(pvAccItemNoFiltro(itemInst), false);
-  context._pvAccFiltro = '__misto__';
-  assert.equal(pvAccItemNoFiltro(itemInst), true);
-  assert.equal(pvAccItemNoFiltro(itemMarcio), false);
-  assert.equal(pvAccItemNoFiltro(grupo), false);
+  assert.equal(pvAccItemNoFiltro(itemBalcao), true);
+  assert.equal(pvAccItemNoFiltro(itemHoreca), false);
+  context._pvAccFiltro = 'Filipe Neves';
+  assert.equal(pvAccItemNoFiltro(itemHoreca), true);
+  assert.equal(pvAccItemNoFiltro(itemBalcao), false);
+  assert.equal(pvAccItemNoFiltro(grupoInst), false);
   context._pvAccFiltro = '';
 });
 
@@ -407,16 +434,15 @@ check('UI Accuracy: ranking acima do detalhe, drill-down e fórmula do agregado'
   assert.ok(html.includes('|ΣN − ΣPrev|'));
   assert.ok(html.includes('pv-acc-click'));
   assert.ok(html.includes('a confirmar'));
-  assert.ok(html.includes('id="pv-acc-misto-box"'));
-  assert.ok(html.includes('partido por código no P&L'));
-  assert.ok(html.includes('__misto__'));
-  assert.ok(html.includes('fora do ranking'));
+  assert.ok(!html.includes('id="pv-acc-misto-box"'));
+  assert.ok(!html.includes('__misto__'));
+  assert.ok(!html.includes('fora do ranking'));
   const accFn = extractFn(html, 'pvRenderAccuracyHtml');
   const rankFn = extractFn(html, 'pvRenderAccuracyRankingHtml');
   assert.ok(accFn.includes('pvRenderAccuracyRankingHtml'));
   assert.ok(accFn.indexOf('pvRenderAccuracyRankingHtml') < accFn.indexOf('pv-acc-detalhe-tbl'));
   assert.ok(rankFn.includes('pv-acc-ranking-tbl'));
-  assert.ok(rankFn.includes('pv-acc-misto-box'));
+  assert.ok(!rankFn.includes('pv-acc-misto-box'));
   assert.ok(!accFn.includes('mailto:'));
 });
 
@@ -444,29 +470,111 @@ check('HTML do ranking: canais confirmados sem caixa laranja; incerto só se sem
   assert.ok(outInc.includes('CANAL DESCONHECIDO') || outInc.includes('Canal DESCONHECIDO') || outInc.includes('canal_sem_mapa') || outInc.includes('DESCONHECIDO'));
 });
 
-check('Institucional no ranking: caixa misto, não soma no Marcio, sem split inventado', () => {
+check('Institucional no ranking: Balcão no Marcio, Horeca no Filipe, sem caixa misto', () => {
   const list = [
     canal('dfb_lojas', 'LOJAS ONLINE', 'dfb', [{ prev: 200, n: 200 }]),
-    canal('dfb_inst', 'INSTITUCIONAL', 'dfb', [{ prev: 10000, n: 10000 }]),
+    canal('dfb_rest', 'RESTAURAÇÃO', 'dfb', [{ prev: 400, n: 400 }]),
+    canal('dfb_inst_balcao', 'Institucional Balcão', 'dfb_inst', [{ prev: 30, n: 30 }]),
+    canal('dfb_inst_horeca', 'Institucional Horeca', 'dfb_inst', [{ prev: 70, n: 70 }]),
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'grupo', parent: 'dfb', prevMeses: { 0: 100 }, nMeses: { 0: 100 } },
   ];
   const ranking = pvAccBuildRanking(list);
   const marcio = ranking.rows.find(r => r.vendedor === 'Marcio Gorga');
-  assert.equal(marcio.prev, 200);
-  assert.equal(marcio.n, 200);
-  assert.ok(!marcio.canais.some(c => /Institucional/i.test(c)));
-  assert.equal(ranking.foraSoma.length, 1);
-  assert.equal(ranking.foraSoma[0].id, 'dfb_inst');
-  assert.ok(!ranking.semDono.some(c => c.id === 'dfb_inst'));
+  const filipe = ranking.rows.find(r => r.vendedor === 'Filipe Neves');
+  assert.equal(marcio.prev, 230);
+  assert.equal(marcio.n, 230);
+  assert.ok(marcio.canais.includes('Institucional Balcão'));
+  assert.ok(!marcio.canais.includes('Institucional Horeca'));
+  assert.equal(filipe.prev, 470);
+  assert.equal(filipe.n, 470);
+  assert.ok(filipe.canais.includes('Institucional Horeca'));
+  assert.ok(!filipe.canais.includes('Institucional Balcão'));
+  assert.ok(!(ranking.foraSoma || []).length);
+  assert.ok(!ranking.semDono.some(c => /inst/i.test(c.id)));
   const out = context.pvRenderAccuracyRankingHtml(ranking, 2026);
-  assert.ok(out.includes('id="pv-acc-misto-box"'));
-  assert.ok(out.includes('partido por código no P&L'));
-  assert.ok(out.includes('99520011'));
-  assert.ok(out.includes('99520019'));
-  assert.ok(out.includes('99520005'));
+  assert.ok(!out.includes('id="pv-acc-misto-box"'));
+  assert.ok(!out.includes('partido por código no P&L'));
+  assert.ok(out.includes('Institucional Balcão'));
+  assert.ok(out.includes('Institucional Horeca'));
   assert.ok(out.includes('Marcio Gorga'));
   assert.ok(out.includes('Filipe Neves'));
   assert.ok(!out.includes('por confirmar'));
-  assert.ok(out.includes('__misto__'));
+  assert.ok(!out.includes('__misto__'));
+});
+
+check('mapa: pai INSTITUCIONAL é grupo e soma as 2 filhas; total sem double count', () => {
+  const linhas = PV_SEED_AGOSTO_2026.linhas.map(r => ({ ...r }));
+  const pai = linhas.find(r => r.id === 'dfb_inst');
+  const balcao = linhas.find(r => r.id === 'dfb_inst_balcao');
+  const horeca = linhas.find(r => r.id === 'dfb_inst_horeca');
+  const dfb = linhas.find(r => r.id === 'dfb');
+  const total = linhas.find(r => r.id === 'total');
+  assert.equal(pai.tipo, 'grupo');
+  assert.equal(pai.parent, 'dfb');
+  assert.equal(balcao.tipo, 'canal');
+  assert.equal(balcao.parent, 'dfb_inst');
+  assert.equal(horeca.parent, 'dfb_inst');
+  ['n1', 'budget', 'prevFecho', 'n', 'myr'].forEach(k => {
+    assert.equal(balcao[k], null, 'Balcão seed vazio: ' + k);
+    assert.equal(horeca[k], null, 'Horeca seed vazio: ' + k);
+  });
+  assert.equal(pai.n1, 14437);
+  assert.equal(pai.budget, 28026);
+  assert.equal(pai.prevFecho, 26000);
+  const filhosInst = pvFilhosDeGrupo(pai, linhas);
+  assert.deepEqual(filhosInst.map(r => r.id).sort(), ['dfb_inst_balcao', 'dfb_inst_horeca']);
+  const filhosDfb = pvFilhosDeGrupo(dfb, linhas);
+  assert.ok(filhosDfb.some(r => r.id === 'dfb_inst'));
+  assert.ok(!filhosDfb.some(r => r.id === 'dfb_inst_balcao'));
+  const filhosTotal = pvFilhosDeGrupo(total, linhas);
+  assert.deepEqual(filhosTotal.map(r => r.id).sort(), ['dfb', 'qb']);
+
+  pvRecalcSomasOn(linhas, 'prevFecho');
+  assert.equal(linhas.find(r => r.id === 'dfb_inst').prevFecho, 26000, 'filhas vazias: pai mantém o total do seed');
+
+  balcao.prevFecho = 10000;
+  horeca.prevFecho = 16000;
+  pvRecalcSomasOn(linhas, 'prevFecho');
+  assert.equal(linhas.find(r => r.id === 'dfb_inst').prevFecho, 26000);
+  const dfbApos = linhas.find(r => r.id === 'dfb').prevFecho;
+  const qbPrev = linhas.find(r => r.id === 'qb').prevFecho;
+  const totalApos = linhas.find(r => r.id === 'total').prevFecho;
+  assert.equal(totalApos, dfbApos + qbPrev);
+  assert.ok(totalApos !== dfbApos + qbPrev + 26000);
+
+  assert.equal(pvMapaPadLeft(dfb, linhas), '8px');
+  assert.equal(pvMapaPadLeft(pai, linhas), '18px');
+  assert.equal(pvMapaPadLeft(balcao, linhas), '32px');
+  assert.equal(pvMapaPadLeft(linhas.find(r => r.id === 'dfb_lojas'), linhas), '18px');
+});
+
+check('merge por id cria as 2 filhas sem copiar o total antigo', () => {
+  const seed = PV_SEED_AGOSTO_2026.linhas;
+  const local = [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo', prevFecho: 2521200, n: null, myr: 2770900 },
+    { id: 'dfb_lojas', empresa: 'LOJAS ONLINE', tipo: 'canal', parent: 'dfb', prevFecho: 858000, n: 800000, myr: 853855 },
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'canal', parent: 'dfb', prevFecho: 26000, n: 20000, n1: 14437, budget: 28026, myr: 26136 },
+  ];
+  const merged = pvMergeLinhasLww(local, [], seed, {}, {}, '2026-09-21T10:00:00.000Z', null);
+  const byId = {};
+  merged.linhas.forEach(r => { byId[r.id] = r; });
+  assert.ok(byId.dfb_inst_balcao, 'filha Balcão criada a partir do seed');
+  assert.ok(byId.dfb_inst_horeca, 'filha Horeca criada a partir do seed');
+  assert.equal(byId.dfb_inst.tipo, 'grupo');
+  assert.equal(byId.dfb_inst.parent, 'dfb');
+  assert.equal(byId.dfb_inst.prevFecho, 26000);
+  assert.equal(byId.dfb_inst.n, 20000);
+  assert.equal(byId.dfb_inst.n1, 14437);
+  assert.equal(byId.dfb_inst_balcao.prevFecho, null);
+  assert.equal(byId.dfb_inst_balcao.n, null);
+  assert.equal(byId.dfb_inst_horeca.prevFecho, null);
+  assert.equal(byId.dfb_inst_horeca.n, null);
+  assert.equal(byId.dfb_inst_horeca.n1, null);
+  assert.equal(byId.dfb_lojas.n, 800000);
+  const ids = merged.linhas.map(r => r.id);
+  assert.ok(ids.indexOf('dfb_inst') < ids.indexOf('dfb_inst_balcao'));
+  assert.ok(ids.indexOf('dfb_inst_balcao') < ids.indexOf('dfb_inst_horeca'));
+  assert.ok(ids.indexOf('dfb_inst_horeca') < ids.indexOf('qb'));
 });
 
 check('readonly dos vendedores não reabre edição', () => {
