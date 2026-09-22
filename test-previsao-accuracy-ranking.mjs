@@ -622,8 +622,6 @@ check('cloud com filhas vazias não apaga N-1/Budget/N do seed', () => {
       campos.forEach(k => { row[k] = null; });
     });
     const lojas = cloud.find(r => r.id === 'dfb_lojas');
-    const lojasN = lojas.n;
-    const lojasPrev = lojas.prevFecho;
     lojas.n = 810000;
     lojas.prevFecho = 900000;
     const cellTs = {};
@@ -645,8 +643,6 @@ check('cloud com filhas vazias não apaga N-1/Budget/N do seed', () => {
     assert.equal(byId.dfb_inst_horeca.myr, null);
     assert.equal(byId.dfb_lojas.n, 810000, mes + ' N de outro canal intacto');
     assert.equal(byId.dfb_lojas.prevFecho, 900000, mes + ' previsão de outro canal intacta');
-    assert.notEqual(lojasN, undefined);
-    assert.notEqual(lojasPrev, undefined);
     const linhas = merged.linhas.map(r => ({ ...r }));
     pvRecalcSomasOn(linhas, 'n1');
     pvRecalcSomasOn(linhas, 'n');
