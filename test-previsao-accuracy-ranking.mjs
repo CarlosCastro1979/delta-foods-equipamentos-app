@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * Ranking Accuracy de fecho por vendedor: soma canais, accuracy no agregado,
- * rank, 1 canal vs N canais. Institucional = Balcão (Marcio) + Horeca (Filipe).
+ * Ranking Accuracy de fecho por vendedor: soma canais das duas empresas
+ * (DFB + Q Brasil, mesma pessoa), accuracy no agregado, rank.
+ * Detalhe Accuracy: agrupado por vendedor (sem blocos DELTA / Q BRASIL).
+ * Institucional = Balcão (Marcio) + Horeca (Filipe).
  */
 import fs from 'fs';
 import vm from 'vm';
@@ -101,10 +103,13 @@ for (const name of [
   'pvAccCertaintyForaDaSoma',
   'pvAccVendedorDeCanal',
   'pvAccLabelDeCanal',
+  'pvAccEmpresaDeItem',
   'pvAccLinhaValidaParaSoma',
   'pvAccAgregarPares',
   'pvAccParesDeItem',
   'pvAccBuildRanking',
+  'pvAccMesesAgregados',
+  'pvAccBuildDetalhePorVendedor',
   'pvAccItemNoFiltro',
   'pvFmtNum',
   'pvRenderAccuracyRankingHtml',
@@ -127,6 +132,8 @@ const {
   pvAccuracyPct,
   pvAccAgregarPares,
   pvAccBuildRanking,
+  pvAccBuildDetalhePorVendedor,
+  pvAccMesesAgregados,
   pvAccVendedorDeCanal,
   pvAccItemNoFiltro,
   pvFilhosDeGrupo,
@@ -353,6 +360,140 @@ check('Restauração QB + Balcão no Marcio; Horeca no Filipe; pai não soma', (
   assert.equal(marcio.acc, pvAccuracyPct({ prevFecho: 5300, n: 5280 }));
 });
 
+check('DFB + Q Brasil, mesma pessoa: um agregado, não dois rankings nem média das %', () => {
+  // Massimo: canal grande DFB a 100% + canal pequeno QB a 0%.
+  // Média das % = 50. Soma das duas empresas = 99. Só DFB = 100.
+  const list = [
+    canal('dfb_dist_reg', 'DISTRIBUIDORES REGIONAIS', 'dfb', [{ prev: 1000, n: 1000 }]),
+    canal('qb_dist_reg', 'DISTRIBUIDORES REGIONAIS', 'qb', [{ prev: 10, n: 0 }]),
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo', prevMeses: { 0: 1000 }, nMeses: { 0: 1000 }, meses: { 0: 100 } },
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo', prevMeses: { 0: 10 }, nMeses: { 0: 0 }, meses: { 0: 0 } },
+  ];
+  const { rows } = pvAccBuildRanking(list);
+  const massimos = rows.filter(r => r.vendedor === 'Massimo Bottello');
+  assert.equal(massimos.length, 1, 'uma linha de ranking por vendedor');
+  const mass = massimos[0];
+  assert.deepEqual(mass.canalIds.slice().sort(), ['dfb_dist_reg', 'qb_dist_reg']);
+  assert.ok(mass.empresas.includes('DFB'));
+  assert.ok(mass.empresas.includes('Q Brasil'));
+  assert.equal(mass.nCanais, 2);
+  assert.equal(mass.prev, 1010);
+  assert.equal(mass.n, 1000);
+  assert.equal(mass.acc, 99);
+  const mediaPct = (100 + 0) / 2;
+  assert.notEqual(mass.acc, mediaPct);
+  assert.notEqual(mass.acc, 100, 'o agregado não pode ficar só na DFB');
+  assert.notEqual(mass.prev, 10, 'o agregado não pode ficar só na Q Brasil');
+  rows.forEach(r => {
+    assert.ok(!/delta|q brasil|empresa/i.test(r.vendedor), 'ranking não parte por empresa: ' + r.vendedor);
+  });
+  assert.equal(rows.filter(r => /brasil/i.test(r.vendedor)).length, 0);
+
+  // Diogo: 4 linhas varejo DFB+QB. Média das 4 % ≠ accuracy do Σ.
+  const diogoList = [
+    canal('dfb_ret_mod', 'RETALHO MODERNO', 'dfb', [{ prev: 200, n: 100 }]),
+    canal('dfb_dist_ret', 'DISTRIBUIDORES DE RETALHO', 'dfb', [{ prev: 100, n: 80 }]),
+    canal('qb_ret_mod', 'RETALHO MODERNO', 'qb', [{ prev: 400, n: 400 }]),
+    canal('qb_dist_ret', 'DISTRIBUIDORES DE RETALHO', 'qb', [{ prev: 300, n: 150 }]),
+  ];
+  const diogoRows = pvAccBuildRanking(diogoList).rows;
+  const diogos = diogoRows.filter(r => r.vendedor === 'Diogo Oliveira');
+  assert.equal(diogos.length, 1);
+  const diogo = diogos[0];
+  assert.equal(diogo.nCanais, 4);
+  assert.equal(diogo.prev, 1000);
+  assert.equal(diogo.n, 730);
+  assert.equal(diogo.acc, pvAccuracyPct({ prevFecho: 1000, n: 730 }));
+  assert.equal(diogo.acc, 73);
+  const mediaDiogo = (50 + 80 + 100 + 50) / 4;
+  assert.equal(mediaDiogo, 70);
+  assert.notEqual(diogo.acc, mediaDiogo);
+  assert.ok(diogo.empresas.includes('DFB') && diogo.empresas.includes('Q Brasil'));
+  const soDfb = pvAccAgregarPares([
+    { prevFecho: 200, n: 100 },
+    { prevFecho: 100, n: 80 },
+  ]);
+  assert.equal(soDfb.acc, 60);
+  assert.notEqual(diogo.acc, soDfb.acc);
+});
+
+check('ranking não usa a coluna Média (média das % por canal/empresa)', () => {
+  const build = extractFn(html, 'pvAccBuildRanking');
+  assert.ok(!build.includes('pvAccuracyMedia'));
+  assert.ok(build.includes('pvAccAgregarPares'));
+  assert.ok(build.includes('pvAccEmpresaDeItem'));
+  assert.ok(html.includes('DFB + Q Brasil, mesma pessoa'));
+  const rankFn = extractFn(html, 'pvRenderAccuracyRankingHtml');
+  assert.ok(rankFn.includes('DFB + Q Brasil, mesma pessoa'));
+  assert.ok(rankFn.includes('Não é a média das % das linhas'));
+});
+
+check('detalhe Accuracy: DFB + QB do mesmo vendedor na mesma secção; sem grupos empresa', () => {
+  const list = [
+    { id: 'dfb', empresa: 'DELTA FOODS BRASIL', tipo: 'grupo', meses: { 0: 90 } },
+    canal('dfb_dist_reg', 'DISTRIBUIDORES REGIONAIS', 'dfb', [{ prev: 1000, n: 1000 }]),
+    canal('dfb_lojas', 'LOJAS ONLINE', 'dfb', [{ prev: 200, n: 200 }]),
+    canal('dfb_rest', 'RESTAURAÇÃO', 'dfb', [{ prev: 400, n: 400 }]),
+    { id: 'dfb_inst', empresa: 'INSTITUCIONAL', tipo: 'grupo', parent: 'dfb', meses: { 0: 80 } },
+    canal('dfb_inst_balcao', 'Institucional Balcão', 'dfb_inst', [{ prev: 30, n: 30 }]),
+    canal('dfb_inst_horeca', 'Institucional Horeca', 'dfb_inst', [{ prev: 70, n: 70 }]),
+    { id: 'qb', empresa: 'Q BRASIL', tipo: 'grupo', meses: { 0: 50 } },
+    canal('qb_dist_reg', 'DISTRIBUIDORES REGIONAIS', 'qb', [{ prev: 10, n: 0 }]),
+    canal('qb_rest', 'RESTAURAÇÃO', 'qb', [{ prev: 100, n: 100 }]),
+    canal('qb_ret_mod', 'RETALHO MODERNO', 'qb', [{ prev: 50, n: 50 }]),
+    { id: 'total', empresa: 'Total', tipo: 'total', meses: { 0: 86 } },
+  ];
+  const ranking = pvAccBuildRanking(list);
+  const detalhe = pvAccBuildDetalhePorVendedor(list, ranking);
+
+  assert.ok(detalhe.sections.length >= 3);
+  detalhe.sections.forEach(sec => {
+    assert.ok(sec.vendedor);
+    assert.ok(!/DELTA FOODS|Q BRASIL/i.test(sec.vendedor));
+  });
+
+  const mass = detalhe.sections.find(s => s.vendedor === 'Massimo Bottello');
+  assert.ok(mass, 'secção Massimo');
+  assert.deepEqual(mass.canais.map(c => c.id).sort(), ['dfb_dist_reg', 'qb_dist_reg']);
+  assert.equal(mass.total.meses[0], 99, 'Total Massimo = Σ DFB+QB (não média)');
+  assert.equal(mass.total.meses[0], ranking.rows.find(r => r.vendedor === 'Massimo Bottello').acc);
+
+  const marcio = detalhe.sections.find(s => s.vendedor === 'Marcio Gorga');
+  assert.ok(marcio);
+  const marcioIds = marcio.canais.map(c => c.id).sort();
+  assert.ok(marcioIds.includes('dfb_lojas'));
+  assert.ok(marcioIds.includes('qb_rest'));
+  assert.ok(marcioIds.includes('dfb_inst_balcao'));
+  assert.ok(!marcioIds.includes('dfb_inst_horeca'));
+
+  const filipe = detalhe.sections.find(s => s.vendedor === 'Filipe Neves');
+  assert.ok(filipe.canais.some(c => c.id === 'dfb_inst_horeca'));
+  assert.ok(filipe.canais.some(c => c.id === 'dfb_rest'));
+
+  // Ordem das secções = ordem do ranking (melhor accuracy primeiro)
+  assert.deepEqual(
+    detalhe.sections.map(s => s.vendedor),
+    ranking.rows.filter(r => r.nCanais > 0).map(r => r.vendedor)
+  );
+
+  // Labels DFB/QB preservados nos canais
+  assert.ok(mass.canais.some(c => /DFB/i.test(context.pvAccLabelDeCanal(c))));
+  assert.ok(mass.canais.some(c => /QB/i.test(context.pvAccLabelDeCanal(c))));
+
+  // Total geral agrega todos os canais uma vez (sem double-count de grupos empresa)
+  assert.ok(detalhe.totalGeral);
+  const allCanais = detalhe.sections.flatMap(s => s.canais);
+  assert.equal(detalhe.totalGeral.meses[0], pvAccMesesAgregados(allCanais)[0]);
+
+  // HTML do detalhe não emite cabeçalhos de empresa a partir o mesmo vendedor
+  const accFn = extractFn(html, 'pvRenderAccuracyHtml');
+  assert.ok(accFn.includes('pvAccBuildDetalhePorVendedor'));
+  assert.ok(accFn.includes('Total '));
+  assert.ok(accFn.includes('agrupado por vendedor'));
+  assert.ok(!accFn.includes('pvMapaPadLeft'));
+  assert.ok(html.includes('DFB + Q Brasil juntos'));
+});
+
 check('Dist. DFB: volume de Eduardo entra no Massimo', () => {
   const list = [
     canal('dfb_dist_reg', 'DISTRIBUIDORES REGIONAIS', 'dfb', [{ prev: 400, n: 360 }]),
@@ -439,17 +580,21 @@ check('UI Accuracy: ranking acima do detalhe, drill-down e fórmula do agregado'
   assert.ok(html.includes('Filtro:'));
   assert.ok(html.includes('✕ Limpar filtro'));
   assert.ok(html.includes('Não é a média das % das linhas'));
+  assert.ok(html.includes('DFB + Q Brasil, mesma pessoa'));
   assert.ok(html.includes('|ΣN − ΣPrev|'));
   assert.ok(html.includes('pv-acc-click'));
   assert.ok(html.includes('a confirmar'));
+  assert.ok(html.includes('function pvAccBuildDetalhePorVendedor('));
   assert.ok(!html.includes('id="pv-acc-misto-box"'));
   assert.ok(!html.includes('__misto__'));
   assert.ok(!html.includes('fora do ranking'));
   const accFn = extractFn(html, 'pvRenderAccuracyHtml');
   const rankFn = extractFn(html, 'pvRenderAccuracyRankingHtml');
   assert.ok(accFn.includes('pvRenderAccuracyRankingHtml'));
+  assert.ok(accFn.includes('pvAccBuildDetalhePorVendedor'));
   assert.ok(accFn.indexOf('pvRenderAccuracyRankingHtml') < accFn.indexOf('pv-acc-detalhe-tbl'));
   assert.ok(rankFn.includes('pv-acc-ranking-tbl'));
+  assert.ok(rankFn.includes('DFB + Q Brasil, mesma pessoa'));
   assert.ok(!rankFn.includes('pv-acc-misto-box'));
   assert.ok(!accFn.includes('mailto:'));
 });
@@ -466,6 +611,7 @@ check('HTML do ranking: canais confirmados sem caixa laranja; incerto só se sem
   assert.ok(outOk.includes('Restauração QB'));
   assert.ok(outOk.includes('pvAccFiltrar'));
   assert.ok(outOk.includes('|ΣN − ΣPrev|'));
+  assert.ok(outOk.includes('DFB + Q Brasil, mesma pessoa'));
   assert.ok(!outOk.includes('por confirmar'));
   assert.ok(!outOk.includes('a confirmar'));
   assert.ok(!outOk.includes('mailto:'));
