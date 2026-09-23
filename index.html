@@ -11796,7 +11796,12 @@ function pvAccuracyMedia(meses) {
 
 /**
  * Ranking de incentivo — Accuracy de fecho agrupado por vendedor.
- * NÃO se aplica ao mapa mensal (continua linha a linha por empresa/canal).
+ * A empresa é ignorada: DFB + Q Brasil, mesma pessoa. Canais do mesmo
+ * vendedor nas duas empresas entram na mesma soma (ΣPrev e ΣN), e só
+ * depois se calcula o %. Uma linha por vendedor — nunca «Delta» e «Q Brasil»
+ * separadas. Não é a média das % (nem da coluna Média do detalhe).
+ * O detalhe (abaixo) também agrupa por vendedor; o mapa mensal continua
+ * linha a linha por empresa/canal.
  * Lista = PREV_VENDAS_ACESSO. ADMINS (Carlos, Christian, Andrea, Daniela K.)
  * não entram. Eduardo Moreira (99520020) não é linha do ranking: o Dist. DFB
  * (Massimo + Eduardo) soma no Massimo («o Massimo é o chefe»).
@@ -11868,6 +11873,19 @@ function pvAccLabelDeCanal(item) {
   return String(item.empresa || '');
 }
 
+/**
+ * Empresa do canal, só para o texto do ranking. Não é chave de agregação:
+ * DFB e Q Brasil do mesmo vendedor somam-se juntos.
+ */
+function pvAccEmpresaDeItem(item) {
+  if (!item) return '';
+  const parent = String(item.parent || '');
+  const id = String(item.id || '');
+  if (parent === 'qb' || parent.startsWith('qb_') || id.startsWith('qb_')) return 'Q Brasil';
+  if (parent === 'dfb' || parent.startsWith('dfb_') || id.startsWith('dfb_')) return 'DFB';
+  return '';
+}
+
 function pvAccLinhaValidaParaSoma(prev, n) {
   if (prev == null || prev === '' || n == null || n === '') return false;
   const p = Number(prev);
@@ -11909,11 +11927,13 @@ function pvAccParesDeItem(item) {
  * Ranking: melhor = accuracy mais perto de 100%.
  * Empate: mesmo lugar (rank denso 1,2,2,3); desempate de apresentação = nome.
  * Linhas sem N e Previsão válidos são ignoradas.
+ * Chave do agregado = só o nome do vendedor. parent/empresa (DFB vs Q Brasil)
+ * não parte a soma: DFB + Q Brasil, mesma pessoa.
  */
 function pvAccBuildRanking(list) {
   const allowed = {};
   (PV_ACC_RANKING_VENDEDORES || []).forEach(nome => {
-    allowed[nome] = { vendedor: nome, canalIds: [], canais: [], certainties: [], pares: [] };
+    allowed[nome] = { vendedor: nome, canalIds: [], canais: [], certainties: [], pares: [], empresas: [] };
   });
   const semDono = [];
   const foraSoma = [];
@@ -11938,6 +11958,8 @@ function pvAccBuildRanking(list) {
     allowed[vend].canalIds.push(item.id);
     allowed[vend].canais.push(pvAccLabelDeCanal(item));
     allowed[vend].certainties.push(meta ? meta.certainty : 'ok');
+    const emp = pvAccEmpresaDeItem(item);
+    if (emp && !allowed[vend].empresas.includes(emp)) allowed[vend].empresas.push(emp);
     allowed[vend].pares = allowed[vend].pares.concat(pvAccParesDeItem(item));
   });
 
@@ -11948,6 +11970,7 @@ function pvAccBuildRanking(list) {
       vendedor: nome,
       canalIds: b.canalIds,
       canais: b.canais,
+      empresas: b.empresas.slice(),
       nCanais: b.canalIds.length,
       hasProposto: b.certainties.some(c => c === 'proposto'),
       hasOk: b.certainties.some(c => c === 'ok'),
@@ -11976,6 +11999,87 @@ function pvAccBuildRanking(list) {
   });
 
   return { rows, semDono, foraSoma };
+}
+
+/**
+ * Accuracy mensal agregada (ΣPrev + ΣN → %) das linhas-canal — mesma fórmula
+ * do ranking / Total por vendedor. Não é média das %.
+ */
+function pvAccMesesAgregados(canais) {
+  const meses = {};
+  for (let m = 0; m < 12; m++) {
+    const pares = (canais || []).map(c => ({
+      prevFecho: c && c.prevMeses ? c.prevMeses[m] : undefined,
+      n: c && c.nMeses ? c.nMeses[m] : undefined,
+    }));
+    meses[m] = pvAccAgregarPares(pares).acc;
+  }
+  return meses;
+}
+
+/**
+ * Detalhe Accuracy: secções por vendedor (DFB + QB juntos), sem grupos
+ * «DELTA FOODS BRASIL» / «Q BRASIL». Ordem = ranking (melhor accuracy primeiro).
+ * Cada secção: cabeçalho + canais + Total do vendedor (ΣPrev/ΣN → %).
+ */
+function pvAccBuildDetalhePorVendedor(list, ranking) {
+  const byId = {};
+  (list || []).forEach(item => {
+    if (item && item.id) byId[item.id] = item;
+  });
+  const used = new Set();
+  const sections = [];
+  const vendOrder = (ranking && ranking.rows && ranking.rows.length)
+    ? ranking.rows.map(r => r.vendedor)
+    : (PV_ACC_RANKING_VENDEDORES || []).slice();
+
+  vendOrder.forEach(nome => {
+    const rankRow = ((ranking && ranking.rows) || []).find(r => r.vendedor === nome);
+    const canalIds = rankRow && rankRow.canalIds && rankRow.canalIds.length
+      ? rankRow.canalIds
+      : (list || [])
+        .filter(item => item && item.tipo === 'canal' && pvAccVendedorDeCanal(item.id) === nome)
+        .map(item => item.id);
+    const canais = [];
+    canalIds.forEach(id => {
+      const item = byId[id];
+      if (!item || item.tipo !== 'canal') return;
+      canais.push(item);
+      used.add(id);
+    });
+    if (!canais.length) return;
+    sections.push({
+      tipo: 'vendedor',
+      vendedor: nome,
+      canais,
+      total: {
+        tipo: 'total-vendedor',
+        vendedor: nome,
+        empresa: 'Total ' + nome,
+        meses: pvAccMesesAgregados(canais),
+        prevMeses: {},
+        nMeses: {},
+      },
+    });
+  });
+
+  const semDono = (list || []).filter(item =>
+    item && item.tipo === 'canal' && !used.has(item.id) && !pvAccVendedorDeCanal(item.id)
+  );
+
+  const allRanked = [];
+  sections.forEach(sec => {
+    (sec.canais || []).forEach(c => allRanked.push(c));
+  });
+  const totalGeral = allRanked.length
+    ? {
+        tipo: 'total-geral',
+        empresa: 'Total geral',
+        meses: pvAccMesesAgregados(allRanked),
+      }
+    : null;
+
+  return { sections, semDono, totalGeral };
 }
 
 function pvAccItemNoFiltro(item) {
@@ -12395,7 +12499,7 @@ function pvRender(opts) {
       const accHint = edit
         ? 'Preenche Previsão e N no mapa mensal.'
         : 'Valores definidos pela direcção no mapa mensal.';
-      banner.innerHTML = `<strong>Accuracy de fecho ${ano}</strong> — ranking por vendedor (soma dos canais) + detalhe por canal.
+      banner.innerHTML = `<strong>Accuracy de fecho ${ano}</strong> — ranking por vendedor (DFB + Q Brasil, mesma pessoa; soma dos canais) + detalhe por vendedor (canais DFB/QB juntos).
         % = 100 × (1 − |<strong>N (fecho real)</strong> − <strong>Previsão de fecho</strong>| / Previsão), limitado a 0–100%.
         100% só quando N = Previsão; fechar acima ou abaixo reduz o valor (não é atingimento).
         ${accHint}
@@ -12803,7 +12907,7 @@ function pvRenderAccuracyRankingHtml(ranking, ano) {
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Ranking de Accuracy ${ano}
         <span style="font-weight:400;color:var(--muted);margin-left:8px;">
-          Soma Previsão e N dos canais do vendedor, depois % = 100 × (1 − |ΣN − ΣPrev| / ΣPrev), 0–100%.
+          Soma Previsão e N dos canais do vendedor nas duas empresas (DFB + Q Brasil, mesma pessoa), depois % = 100 × (1 − |ΣN − ΣPrev| / ΣPrev), 0–100%.
           Não é a média das % das linhas (canais pequenos não enviesam). Melhor = mais perto de 100%. Empate = mesmo lugar, nome a desempate.
           Clica no vendedor ou no número para filtrar o detalhe.
         </span>
@@ -12832,6 +12936,7 @@ function pvRenderAccuracyHtml(edit, ano) {
     return `<p style="color:var(--muted);font-size:13px;padding:24px 0;">Ainda sem Previsão / N guardados em ${ano}. Preenche no mapa mensal e volta aqui.</p>`;
   }
   const ranking = pvAccBuildRanking(list);
+  const detalhe = pvAccBuildDetalhePorVendedor(list, ranking);
   const filtroNome = _pvAccFiltro === '__incerto__'
     ? 'Canais por confirmar'
     : _pvAccFiltro;
@@ -12841,34 +12946,92 @@ function pvRenderAccuracyHtml(edit, ano) {
         <button type="button" onclick="pvAccLimparFiltro()" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">✕ Limpar filtro</button>
       </div>`
     : '';
-  let rows = '';
-  let nVisiveis = 0;
-  list.forEach(item => {
-    if (!pvAccItemNoFiltro(item)) return;
-    nVisiveis++;
-    const isGrupo = item.tipo === 'grupo' || item.tipo === 'total';
-    const bg = item.tipo === 'total' ? '#f1f5f9' : item.tipo === 'grupo' ? '#f8fafc' : 'transparent';
-    const weight = isGrupo ? '700' : '400';
-    const padLeft = pvMapaPadLeft(item, list);
+
+  function renderCanalRow(item) {
     let cells = '';
     for (let m = 0; m < 12; m++) {
       cells += `<td style="text-align:center;">${pvFmtAccuracy(item.meses[m])}</td>`;
     }
     const media = pvAccuracyMedia(item.meses);
     cells += `<td style="text-align:center;background:#f8fafc;">${pvFmtAccuracy(media)}</td>`;
-    const vend = pvAccVendedorDeCanal(item.id);
     const meta = pvAccMetaDeCanal(item.id);
-    const badge = (item.tipo === 'canal' && meta && meta.certainty === 'proposto')
+    const badge = (meta && meta.certainty === 'proposto')
       ? ' <span style="font-size:10px;color:#9a3412;">· a confirmar</span>'
-      : (item.tipo === 'canal' && !vend)
+      : (!pvAccVendedorDeCanal(item.id))
         ? ' <span style="font-size:10px;color:#9a3412;">· sem dono</span>'
         : '';
-    const vendHint = vend ? ` <span style="font-weight:400;color:var(--muted);font-size:11px;">· ${vend}</span>` : '';
-    rows += `<tr style="background:${bg};font-weight:${weight};" data-pv-acc-canal="${item.id || ''}">
-      <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;">${item.empresa}${vendHint}${badge}</td>
+    const label = pvAccLabelDeCanal(item) || item.empresa || item.id;
+    return `<tr style="background:transparent;font-weight:400;" data-pv-acc-canal="${item.id || ''}">
+      <td style="text-align:left;padding-left:18px;white-space:nowrap;">${label}${badge}</td>
       ${cells}
     </tr>`;
+  }
+
+  function renderAggRow(label, meses, opts) {
+    const bg = (opts && opts.bg) || '#f1f5f9';
+    const weight = (opts && opts.weight) || '700';
+    const pad = (opts && opts.pad) || '8px';
+    let cells = '';
+    for (let m = 0; m < 12; m++) {
+      cells += `<td style="text-align:center;">${pvFmtAccuracy(meses[m])}</td>`;
+    }
+    const media = pvAccuracyMedia(meses);
+    cells += `<td style="text-align:center;background:#f8fafc;">${pvFmtAccuracy(media)}</td>`;
+    return `<tr style="background:${bg};font-weight:${weight};">
+      <td style="text-align:left;padding-left:${pad};white-space:nowrap;">${label}</td>
+      ${cells}
+    </tr>`;
+  }
+
+  let rows = '';
+  let nVisiveis = 0;
+  const showAllVendors = !_pvAccFiltro;
+  const showIncerto = _pvAccFiltro === '__incerto__';
+
+  (detalhe.sections || []).forEach(sec => {
+    if (showIncerto) return;
+    if (_pvAccFiltro && _pvAccFiltro !== sec.vendedor) return;
+    const canais = (sec.canais || []).filter(c => pvAccItemNoFiltro(c));
+    if (!canais.length && _pvAccFiltro) return;
+    nVisiveis++;
+    rows += `<tr style="background:#f8fafc;font-weight:700;" data-pv-acc-vendedor="${sec.vendedor}">
+      <td colspan="14" style="text-align:left;padding-left:8px;white-space:nowrap;">${sec.vendedor}</td>
+    </tr>`;
+    canais.forEach(c => {
+      nVisiveis++;
+      rows += renderCanalRow(c);
+    });
+    if (sec.total && canais.length) {
+      // Total do vendedor: sempre Σ de TODOS os canais da secção (não só os filtrados —
+      // quando há filtro já só há uma secção).
+      const totCanais = showAllVendors || _pvAccFiltro === sec.vendedor ? sec.canais : canais;
+      const mesesTot = totCanais === sec.canais
+        ? sec.total.meses
+        : pvAccMesesAgregados(totCanais);
+      nVisiveis++;
+      rows += renderAggRow('Total ' + sec.vendedor, mesesTot, { bg: '#f1f5f9', pad: '8px' });
+    }
   });
+
+  if (showIncerto || (showAllVendors && detalhe.semDono && detalhe.semDono.length)) {
+    const incerto = (detalhe.semDono || []).filter(c => pvAccItemNoFiltro(c));
+    if (incerto.length) {
+      nVisiveis++;
+      rows += `<tr style="background:#fff7ed;font-weight:700;">
+        <td colspan="14" style="text-align:left;padding-left:8px;color:#9a3412;">Canais por confirmar</td>
+      </tr>`;
+      incerto.forEach(c => {
+        nVisiveis++;
+        rows += renderCanalRow(c);
+      });
+    }
+  }
+
+  if (showAllVendors && detalhe.totalGeral) {
+    nVisiveis++;
+    rows += renderAggRow('Total geral', detalhe.totalGeral.meses, { bg: '#e2e8f0', pad: '8px' });
+  }
+
   if (!nVisiveis) {
     rows = `<tr><td colspan="14" style="text-align:center;padding:20px;color:var(--muted);">Nenhuma linha neste filtro.</td></tr>`;
   }
@@ -12879,7 +13042,7 @@ function pvRenderAccuracyHtml(edit, ano) {
     <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Accuracy de fecho ${ano}
-        <span style="font-weight:400;color:var(--muted);margin-left:8px;">% = 100 × (1 − |N − Previsão| / Previsão) · 0–100% · ≥85% verde · &lt;85% vermelho · Média = meses com valor · detalhe por canal (mapa mensal não agrupa)</span>
+        <span style="font-weight:400;color:var(--muted);margin-left:8px;">% = 100 × (1 − |N − Previsão| / Previsão) · 0–100% · ≥85% verde · &lt;85% vermelho · agrupado por vendedor (DFB + Q Brasil juntos) · Total = ΣPrev/ΣN · Média = meses com valor · mapa mensal não agrupa</span>
       </div>
       <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:980px;" id="pv-acc-detalhe-tbl">
         <thead>
@@ -12950,9 +13113,11 @@ async function pvExportarExcel() {
     if (_pvView === 'accuracy') {
       const list = pvLoadAnoMeses(ano);
       const ranking = pvAccBuildRanking(list);
+      const detalhe = pvAccBuildDetalhePorVendedor(list, ranking);
       const rows = [
         ['Accuracy = 100 × (1 − |N − Previsão| / Previsão), limitado a 0–100% (não é atingimento)'],
-        ['Ranking: soma Previsão e N dos canais do vendedor, depois accuracy no agregado (não média das %)'],
+        ['Ranking: soma Previsão e N dos canais do vendedor nas duas empresas (DFB + Q Brasil, mesma pessoa), depois accuracy no agregado (não média das %)'],
+        ['Detalhe: agrupado por vendedor (DFB + Q Brasil juntos); Total = ΣPrev/ΣN do vendedor'],
         [],
         ['Posição', 'Vendedor', 'Canais somados', 'N.º canais', 'Previsão agregada', 'N agregado', 'Accuracy %'],
       ];
@@ -12981,18 +13146,32 @@ async function pvExportarExcel() {
         });
       }
       rows.push([]);
-      rows.push(['Detalhe por canal (mapa mensal não agrupa)']);
+      rows.push(['Detalhe por vendedor (mapa mensal não agrupa; sem blocos DFB / Q Brasil)']);
       rows.push(['Canal', ...PV_MESES, 'Média']);
-      list.forEach(item => {
-        const line = [item.empresa];
+      function pushMesesRow(label, meses) {
+        const line = [label];
         for (let m = 0; m < 12; m++) {
-          const v = item.meses[m];
+          const v = meses ? meses[m] : null;
           line.push(v == null ? '' : Math.round(v));
         }
-        const media = pvAccuracyMedia(item.meses);
+        const media = pvAccuracyMedia(meses);
         line.push(media == null ? '' : Math.round(media));
         rows.push(line);
+      }
+      (detalhe.sections || []).forEach(sec => {
+        rows.push([sec.vendedor]);
+        (sec.canais || []).forEach(item => {
+          pushMesesRow(pvAccLabelDeCanal(item) || item.empresa, item.meses);
+        });
+        if (sec.total) pushMesesRow('Total ' + sec.vendedor, sec.total.meses);
       });
+      if (detalhe.semDono && detalhe.semDono.length) {
+        rows.push(['Canais por confirmar']);
+        detalhe.semDono.forEach(item => {
+          pushMesesRow(pvAccLabelDeCanal(item) || item.empresa, item.meses);
+        });
+      }
+      if (detalhe.totalGeral) pushMesesRow('Total geral', detalhe.totalGeral.meses);
       writeXlsxDownload(rows, 'Accuracy', `Accuracy_Fecho_${ano}.xlsx`,
         [{ wch: 28 }, ...PV_MESES.map(() => ({ wch: 8 })), { wch: 8 }]);
       toast('⬇ Excel Accuracy exportado.');
@@ -30314,7 +30493,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-09-22-pv-inst-dados: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-09-23-pv-acc-vend: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
