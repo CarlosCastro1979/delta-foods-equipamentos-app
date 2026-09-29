@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: previsao-autosave-prod merge-por-celula + so-consulta -->
+<!-- dfb-build: app-menos-travar lista SAP em cache + tabelas em fatias -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2199,8 +2199,8 @@ var _unused_placeholder = 1;
       <select id="filtro-vendedor-lista" class="form-input" style="flex:1;min-width:140px;max-width:200px;padding:7px 10px;font-size:13px" onchange="renderTable()">
         <option value="">Todos os vendedores</option>
       </select>
-      <input type="text" id="filtro-cod" placeholder="🔍 Código cliente" oninput="renderTable()" style="flex:1;min-width:120px;max-width:160px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface)">
-      <input type="text" id="filtro-nome" placeholder="🔍 Nome cliente" oninput="renderTable()" style="flex:1;min-width:160px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface)">
+      <input type="text" id="filtro-cod" placeholder="🔍 Código cliente" oninput="agendarRenderTabela()" style="flex:1;min-width:120px;max-width:160px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface)">
+      <input type="text" id="filtro-nome" placeholder="🔍 Nome cliente" oninput="agendarRenderTabela()" style="flex:1;min-width:160px;padding:7px 10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--surface)">
       <button class="btn btn-secondary btn-sm" onclick="loadData(true)">↻ Atualizar</button>
       <button class="btn btn-secondary btn-sm" onclick="exportExcel()">⬇ Excel</button>
       <button id="invalidos-badge" class="badge-invalid" style="display:none"></button>
@@ -2230,7 +2230,7 @@ var _unused_placeholder = 1;
     <div id="sub-panel-pendentes" style="display:none;">
 <div id="panel-pendentes">
     <div class="pending-toolbar">
-      <input type="text" id="pending-search" placeholder="🔍 Pesquisar cliente, código ou vendedor…" oninput="renderPendentes()">
+      <input type="text" id="pending-search" placeholder="🔍 Pesquisar cliente, código ou vendedor…" oninput="agendarRenderPendentes()">
       <select id="pending-filter-vendedor" onchange="renderPendentes()">
         <option value="">Todos os vendedores</option>
       </select>
@@ -2269,7 +2269,7 @@ var _unused_placeholder = 1;
     <div id="sub-panel-contratos-falta" style="display:none;">
 <div id="panel-contratos-falta">
     <div class="pending-toolbar">
-      <input type="text" id="dist-falta-search" placeholder="🔍 Pesquisar cliente, código ou vendedor…" oninput="renderDistContratosFalta()">
+      <input type="text" id="dist-falta-search" placeholder="🔍 Pesquisar cliente, código ou vendedor…" oninput="agendarRenderDistFalta()">
       <select id="dist-falta-filter-vendedor" onchange="renderDistContratosFalta()">
         <option value="">Todos os vendedores</option>
       </select>
@@ -2703,9 +2703,9 @@ var _unused_placeholder = 1;
         <select id="contratos-vendedor" class="form-input" style="width:160px;height:32px;font-size:12px;padding:0 8px;" onchange="filtrarContratosVendedor()">
           <option value="">Todos os vendedores</option>
         </select>
-        <input type="text" id="contratos-search-cod" class="form-input" placeholder="Código" style="width:80px;height:32px;font-size:12px;padding:0 8px;" oninput="filtrarContratosVendedor()">
-        <input type="text" id="contratos-search-nome" class="form-input" placeholder="Nome cliente" style="width:200px;height:32px;font-size:12px;padding:0 8px;" oninput="filtrarContratosVendedor()">
-        <input type="text" id="contratos-search-num" class="form-input" placeholder="Nº Contrato" style="width:110px;height:32px;font-size:12px;padding:0 8px;" oninput="filtrarContratosVendedor()">
+        <input type="text" id="contratos-search-cod" class="form-input" placeholder="Código" style="width:80px;height:32px;font-size:12px;padding:0 8px;" oninput="agendarFiltroContratos()">
+        <input type="text" id="contratos-search-nome" class="form-input" placeholder="Nome cliente" style="width:200px;height:32px;font-size:12px;padding:0 8px;" oninput="agendarFiltroContratos()">
+        <input type="text" id="contratos-search-num" class="form-input" placeholder="Nº Contrato" style="width:110px;height:32px;font-size:12px;padding:0 8px;" oninput="agendarFiltroContratos()">
         <span id="contratos-count" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
         <button class="btn btn-secondary btn-sm" onclick="exportContratosExcel()" style="margin-left:auto;">⬇ Excel</button>
       </div>
@@ -4914,6 +4914,7 @@ async function salvarListaClientesLocal(lista, ts) {
   const stamp = ts || Date.now();
   _listaClientesMem = arr;
   _listaClientesTs = stamp;
+  if (typeof invalidarCacheListaSap === 'function') invalidarCacheListaSap();
   let lsOk = false;
   try {
     localStorage.setItem(CLIENTES_LS_KEY, JSON.stringify(arr));
@@ -5232,7 +5233,26 @@ const VENDEDORES_DEFAULT = [
 const ECOMMERCE_VENDEDOR_CODS = new Set([99520001, 99520009, 99520008, 99520011, 99520012]);
 const ECOMMERCE_VENDEDOR_NOME = 'MARCIO GORGA';
 
+// Lista SAP ~29k: não voltar a ler o cadastro nem a remapear em cada ecrã/tecla.
+let _vendedoresCadastroCache = null;
+let _vendedoresMapCache = null;
+let _listaNormCache = null;
+let _listaNormSrc = null;
+let _listaActivaCache = null;
+let _listaActivaSrc = null;
+let _listaActivaKey = '';
+
+function invalidarCacheListaSap() {
+  _vendedoresMapCache = null;
+  _listaNormCache = null;
+  _listaNormSrc = null;
+  _listaActivaCache = null;
+  _listaActivaSrc = null;
+  _listaActivaKey = '';
+}
+
 function getVendedoresCadastro() {
+  if (_vendedoresCadastroCache) return _vendedoresCadastroCache;
   try {
     const s = localStorage.getItem(VEND_STORE_KEY);
     let list = s ? JSON.parse(s) : null;
@@ -5265,16 +5285,23 @@ function getVendedoresCadastro() {
     if (changed) {
       try { localStorage.setItem(VEND_STORE_KEY, JSON.stringify(list)); } catch (_) {}
     }
+    _vendedoresCadastroCache = list;
     return list;
-  } catch(e) { return VENDEDORES_DEFAULT.slice(); }
+  } catch(e) {
+    _vendedoresCadastroCache = VENDEDORES_DEFAULT.slice();
+    return _vendedoresCadastroCache;
+  }
 }
 
 function saveVendedoresCadastro(list) {
   localStorage.setItem(VEND_STORE_KEY, JSON.stringify(list));
+  _vendedoresCadastroCache = list;
+  invalidarCacheListaSap();
 }
 
 // Devolve mapa { codigoSAP: nomeVendedor } apenas para activos (não 999)
 function getVendedoresMap() {
+  if (_vendedoresMapCache) return _vendedoresMapCache;
   const list = getVendedoresCadastro();
   const map = {};
   list.forEach(v => {
@@ -5303,6 +5330,7 @@ function getVendedoresMap() {
   });
   // Ecommerce / sellers — sempre Marcio Gorga (override de nomes antigos)
   ECOMMERCE_VENDEDOR_CODS.forEach(cod => { map[cod] = ECOMMERCE_VENDEDOR_NOME; });
+  _vendedoresMapCache = map;
   return map;
 }
 
@@ -5547,11 +5575,28 @@ async function loadSCEncerramentosPendentes(forceRefresh = false) {
   });
 }
 
+let _encPendIdx = null;
+let _encPendIdxSrc = null;
+let _encPendIdxGen = 0;
+let _encPendIdxBuilt = -1;
+
 function clienteTemEncerramentoPendente(cod) {
   const k = normCod(cod);
   if (scEncerramentosPendentes.has(k)) return true;
-  const reg = (allData || []).find(r => normCod(r.cod) === k);
-  return reg?.encerramento_pendente === true;
+  if (_encPendIdxSrc !== allData || _encPendIdxBuilt !== _encPendIdxGen) {
+    const set = new Set();
+    const seen = new Set();
+    for (const r of (allData || [])) {
+      const ck = normCod(r && r.cod);
+      if (!ck || seen.has(ck)) continue;
+      seen.add(ck);
+      if (r.encerramento_pendente === true) set.add(ck);
+    }
+    _encPendIdx = set;
+    _encPendIdxSrc = allData;
+    _encPendIdxBuilt = _encPendIdxGen;
+  }
+  return !!(_encPendIdx && _encPendIdx.has(k));
 }
 
 function getSCEncerramentosPendentesLista(vendFilt) {
@@ -5637,6 +5682,7 @@ async function cancelarPedidoEncerramento(cod, id) {
       if (idx >= 0) {
         allData[idx].encerramento_pendente = false;
         allData[idx].encerramento_motivo = null;
+        _encPendIdxGen++;
       }
     }
     scEncerramentosPendentes.delete(k);
@@ -5698,6 +5744,53 @@ function getCodsListaAtiva() {
     const lista = getListaClientesActiva();
     return new Set(lista.map(c => String(c.cod).trim()));
   } catch(e) { return new Set(); }
+}
+
+function agendarUi(id, fn, ms) {
+  const host = window;
+  if (!host._uiAgendar) host._uiAgendar = {};
+  clearTimeout(host._uiAgendar[id]);
+  host._uiAgendar[id] = setTimeout(() => {
+    host._uiAgendar[id] = null;
+    try { fn(); } catch (e) { console.warn(id, e); }
+  }, ms == null ? 140 : ms);
+}
+function agendarRenderTabela() { agendarUi('renderTable', renderTable, 140); }
+function agendarRenderPendentes() { agendarUi('renderPendentes', renderPendentes, 140); }
+function agendarRenderDistFalta() { agendarUi('renderDistFalta', renderDistContratosFalta, 140); }
+function agendarFiltroContratos() { agendarUi('filtrarContratos', filtrarContratosVendedor, 140); }
+
+/** Primeiras linhas já; o resto em frames para a pesquisa não congelar o ecrã. */
+function pintarTbodyEmFatias(tbody, rows, renderRow, vazioHtml) {
+  if (!tbody) return;
+  const token = (tbody._paintTok = (tbody._paintTok || 0) + 1);
+  const list = rows || [];
+  if (!list.length) {
+    tbody.innerHTML = vazioHtml || '';
+    return;
+  }
+  const pintarTudo = () => {
+    let html = '';
+    for (let i = 0; i < list.length; i++) html += renderRow(list[i], i);
+    tbody.innerHTML = html;
+  };
+  if (list.length <= 120 || typeof requestAnimationFrame !== 'function') {
+    pintarTudo();
+    return;
+  }
+  const CHUNK = 80;
+  tbody.innerHTML = '';
+  let i = 0;
+  const step = () => {
+    if (tbody._paintTok !== token) return;
+    const end = Math.min(i + CHUNK, list.length);
+    let html = '';
+    for (let k = i; k < end; k++) html += renderRow(list[k], k);
+    tbody.insertAdjacentHTML('beforeend', html);
+    i = end;
+    if (i < list.length) requestAnimationFrame(step);
+  };
+  step();
 }
 
 function renderTable() {
@@ -5786,14 +5879,19 @@ function renderTable() {
   if (!filtered.length) {
     if (tabelaBody) {
       const isVarejoLista = typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo();
-      tabelaBody.innerHTML = isVarejoLista
-        ? '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente encontrado.</td></tr>'
-        : '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum registo encontrado.</td></tr>';
+      pintarTbodyEmFatias(
+        tabelaBody,
+        [],
+        () => '',
+        isVarejoLista
+          ? '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente encontrado.</td></tr>'
+          : '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum registo encontrado.</td></tr>'
+      );
     }
     return;
   }
 
-  if (tabelaBody) tabelaBody.innerHTML = filtered.map(r => {
+  if (tabelaBody) pintarTbodyEmFatias(tabelaBody, filtered, (r) => {
     const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
     const distInfo = (typeof distNormalizeRegisto === 'function') ? distNormalizeRegisto(r) : null;
     let equipHtml = equips.map(e =>
@@ -5823,7 +5921,7 @@ function renderTable() {
       <td class="col-vend"><span class="vendedor-badge">${r.vendedor || '—'}</span></td>
       <td class="col-action">${podeEditarRegisto(r.vendedor) ? `<button class="btn-edit" onclick="openEditRegistoOuSap('${r.id ? String(r.id).replace(/'/g, '') : ''}','${String(r.cod || '').replace(/'/g, '')}')">Editar</button>` : '<span style="color:#ccc;font-size:11px;">—</span>'}</td>
     </tr>`;
-  }).join('');
+  });
 }
 
 function _applyRegistosToListaUI(rows) {
@@ -6520,19 +6618,45 @@ async function removeCodRelacionado(id) {
   } catch(e) { toast('Erro ao remover: ' + e.message, 'error'); }
 }
 
+// Índice pai/filho: Sem Compras chama getCodsFamilia uma vez por cliente do canal.
+let _familiaIdx = null;
+let _familiaIdxSrc = null;
+function familiaIdx() {
+  if (_familiaIdx && _familiaIdxSrc === codRelacionados) return _familiaIdx;
+  const idx = new Map();
+  const add = (key, members) => {
+    const k = String(key || '').trim();
+    if (!k) return;
+    let set = idx.get(k);
+    if (!set) { set = new Set(); idx.set(k, set); }
+    for (let i = 0; i < members.length; i++) {
+      if (members[i]) set.add(members[i]);
+    }
+  };
+  for (const r of codRelacionados) {
+    const p = String(r.cod_pai).trim();
+    const f = String(r.cod_filho).trim();
+    const members = [p, f, normalizaCodSC(p), normalizaCodSC(f)];
+    add(p, members);
+    add(f, members);
+    add(normalizaCodSC(p), members);
+    add(normalizaCodSC(f), members);
+  }
+  _familiaIdx = idx;
+  _familiaIdxSrc = codRelacionados;
+  return idx;
+}
+
 // Dado um cod, devolve o conjunto de cods a considerar (pai + filho ou só ele mesmo)
 function getCodsFamilia(cod) {
   const c = String(cod).trim();
   const codsNorm = String(normalizaCodSC(c));
   const conjunto = new Set([c, codsNorm]);
-  for (const r of codRelacionados) {
-    const p = String(r.cod_pai).trim();
-    const f = String(r.cod_filho).trim();
-    if (p === c || p === codsNorm || f === c || f === codsNorm) {
-      conjunto.add(p); conjunto.add(f);
-      conjunto.add(normalizaCodSC(p)); conjunto.add(normalizaCodSC(f));
-    }
-  }
+  const idx = familiaIdx();
+  const a = idx.get(c);
+  const b = c !== codsNorm ? idx.get(codsNorm) : null;
+  if (a) a.forEach(x => conjunto.add(x));
+  if (b) b.forEach(x => conjunto.add(x));
   return conjunto;
 }
 
@@ -7453,7 +7577,7 @@ function renderSemCompras() {
           </tr></thead>
           <tbody>
             ${grupo.clientes.map((c, i) => {
-              const registo = (allData||[]).find(r => normalizaCodSC(r.cod) === normalizaCodSC(c.cod));
+              const registo = regPorCodSC.get(normalizaCodSC(c.cod));
               const pendente = registo?.encerramento_pendente;
               const nomeEsc = (c.nome||'').replace(/'/g,"\'").replace(/"/g,'&quot;');
               const btnEnc = pendente
@@ -7477,6 +7601,12 @@ function renderSemCompras() {
         </table>
       </div>
     </div>`;
+  }
+
+  const regPorCodSC = new Map();
+  for (const r of (allData || [])) {
+    const k = normalizaCodSC(r && r.cod);
+    if (k && !regPorCodSC.has(k)) regPorCodSC.set(k, r);
   }
 
   let html = '';
@@ -8940,9 +9070,12 @@ function renderPendentes() {
       </tr>`;
       })();
 
-  pendingBody.innerHTML = filtered.length
-    ? filtered.map(renderRow).join('')
-    : '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente por registar!</td></tr>';
+  pintarTbodyEmFatias(
+    pendingBody,
+    filtered,
+    renderRow,
+    '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente por registar!</td></tr>'
+  );
 
   // Event delegation for Registar buttons
   if (!pendingBody._hasRegistarListener) {
@@ -9619,9 +9752,15 @@ function getListaClientesCompleta() {
       }
     }
     if (!Array.isArray(list)) return CLIENTES_SISTEMA;
-    return typeof normalizeVendedorCliente === 'function'
+    if (_listaNormCache && _listaNormSrc === list) return _listaNormCache;
+    const norm = typeof normalizeVendedorCliente === 'function'
       ? list.map(normalizeVendedorCliente)
       : list;
+    _listaNormCache = norm;
+    _listaNormSrc = list;
+    _listaActivaCache = null;
+    _listaActivaSrc = null;
+    return norm;
   } catch(e) { return CLIENTES_SISTEMA; }
 }
 
@@ -9635,13 +9774,25 @@ function getListaClientesActiva() {
   const canalId = (typeof resolveCanalActivoId === 'function')
     ? resolveCanalActivoId()
     : (typeof _canalActivo !== 'undefined' ? _canalActivo : null);
+  let userKey = '';
+  try {
+    userKey = String(typeof getUtilizadorAtual === 'function' ? (getUtilizadorAtual() || '') : '');
+  } catch (_) {}
+  const key = String(canalId || '') + '\0' + userKey;
+  if (_listaActivaCache && _listaActivaSrc === full && _listaActivaKey === key) {
+    return _listaActivaCache;
+  }
   let rows = full;
   if (canalId && CANAIS_APP[canalId]) {
     rows = full.filter(c => clientePertenceAoCanal(c, canalId));
   }
-  return typeof filterByUtilizadorActivo === 'function'
+  const out = typeof filterByUtilizadorActivo === 'function'
     ? filterByUtilizadorActivo(rows)
     : rows;
+  _listaActivaCache = out;
+  _listaActivaSrc = full;
+  _listaActivaKey = key;
+  return out;
 }
 
 /** URL da tabela lista_clientes no Supabase. */
@@ -10363,13 +10514,20 @@ function getClienteCanalAppOverride(cliOrCod) {
 }
 
 /** Canal app dono deste NPess (exclusivo — um código só num canal). */
+let _canalPorNpess = null;
 function getCanalIdPorVendedorCod(npess) {
   const n = parseInt(npess, 10);
   if (isNaN(n) || !n) return null;
-  for (const [id, canal] of Object.entries(CANAIS_APP || {})) {
-    if ((canal.vendedorCods || []).some(c => parseInt(c, 10) === n)) return id;
+  if (!_canalPorNpess) {
+    _canalPorNpess = new Map();
+    for (const [id, canal] of Object.entries(CANAIS_APP || {})) {
+      for (const c of (canal.vendedorCods || [])) {
+        const cn = parseInt(c, 10);
+        if (!isNaN(cn) && !_canalPorNpess.has(cn)) _canalPorNpess.set(cn, id);
+      }
+    }
   }
-  return null;
+  return _canalPorNpess.get(n) || null;
 }
 
 /** Canal app pelo nome de vendedor (CANAIS_APP.vendedores). */
@@ -18775,10 +18933,10 @@ function filtrarContratosVendedor() {
   try {
     contratosEnsureFreezeResize();
     const contEl = document.getElementById('contratos-content');
-    contratosSyncFreezeOffsets(contEl);
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => contratosSyncFreezeOffsets(contEl));
-    }
+    const syncFreeze = () => { try { contratosSyncFreezeOffsets(contEl); } catch (_) {} };
+    // Medir colunas no mesmo frame do innerHTML força layout e trava a digitação.
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(syncFreeze);
+    else syncFreeze();
   } catch (_) {}
 }
 
@@ -21525,7 +21683,11 @@ ${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`;
         body: JSON.stringify({ encerramento_pendente: true, encerramento_motivo: motivoFinal })
       });
       const idx = allData.findIndex(x => x.id === r.id);
-      if (idx >= 0) { allData[idx].encerramento_pendente = true; allData[idx].encerramento_motivo = motivoFinal; }
+      if (idx >= 0) {
+        allData[idx].encerramento_pendente = true;
+        allData[idx].encerramento_motivo = motivoFinal;
+        _encPendIdxGen++;
+      }
     }
     // Guardar na tabela de encerrados
     await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/clientes_encerrados', {
@@ -30493,7 +30655,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-09-23-pv-acc-vend: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-09-29-menos-travar: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
