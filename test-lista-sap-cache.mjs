@@ -50,9 +50,9 @@ check('pesquisa de texto não redesenha a tabela em cada tecla', () => {
 });
 
 check('service worker sobe de versão com o index', () => {
-  assert.ok(sw.includes('v2026-09-29-menos-travar'));
-  assert.ok(html.includes('v2026-09-29-menos-travar'));
-  assert.ok(!sw.includes('v2026-09-23-pv-acc-vend'));
+  assert.ok(sw.includes('v2026-09-30-vendas-fechado'));
+  assert.ok(html.includes('v2026-09-30-vendas-fechado'));
+  assert.ok(!sw.includes('v2026-09-29-menos-travar'));
 });
 
 check('mapa de vendedores e lista normalizada ficam em memória', () => {
