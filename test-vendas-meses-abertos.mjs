@@ -1,0 +1,332 @@
+#!/usr/bin/env node
+/**
+ * Carga de vendas: meses fechados não se relêem nem se alteram.
+ * Regra reutilizada: statusVendasCoberturaMes === 'ok'
+ * (até Jun/2026 com dados = fechado; Jul/2026+ fecha com venda no último dia útil).
+ */
+import fs from 'fs';
+import vm from 'vm';
+import assert from 'assert';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+
+function extractFn(src, name) {
+  let start = src.indexOf(`function ${name}(`);
+  if (start < 0) throw new Error('Função em falta: ' + name);
+  if (src.slice(Math.max(0, start - 6), start) === 'async ') start -= 6;
+  const paren = src.indexOf('(', start);
+  let depth = 0;
+  let bodyBrace = -1;
+  for (let i = paren; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      depth--;
+      if (depth === 0) {
+        bodyBrace = src.indexOf('{', i);
+        break;
+      }
+    }
+  }
+  if (bodyBrace < 0) throw new Error('Corpo em falta: ' + name);
+  depth = 0;
+  for (let i = bodyBrace; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return src.slice(start, i + 1);
+    }
+  }
+  throw new Error('Chaveta não fechou: ' + name);
+}
+
+function check(title, fn) {
+  try {
+    fn();
+    console.log('OK  ' + title);
+  } catch (e) {
+    console.error('FAIL ' + title);
+    console.error(e && e.stack ? e.stack : e);
+    process.exitCode = 1;
+  }
+}
+
+const HOJE = '2026-09-30'; // último dia útil de Set/2026 (quarta)
+
+const ctx = {
+  console,
+  Date,
+  Math,
+  Number,
+  String,
+  Object,
+  Array,
+  Set,
+  Map,
+  parseInt,
+  isNaN,
+  window: {},
+  HEADERS: { apikey: 'test' },
+  SUPA_VENDAS: 'https://example.test/vendas',
+  fetchUrls: [],
+  fetch: async (url) => {
+    ctx.fetchUrls.push(String(url));
+    return { ok: true, status: 200, json: async () => [] };
+  },
+};
+ctx.VENDAS_COBERTURA_REGRA_DESDE = '2026-07';
+vm.createContext(ctx);
+
+const fns = [
+  'isVendasMesRegraNova',
+  'vendasHojeISO',
+  'vendasISODateOnly',
+  'ultimoDiaUtilMes',
+  'statusVendasCoberturaMes',
+  'isVendasMesFechado',
+  'vendasYmFromISO',
+  'vendaDataCaiEmMesFechado',
+  'mesesFechadosFromCobertura',
+  'filtrarLinhasVendasMesesAbertos',
+  'vendasCoberturaObjToMap',
+  'aggregateVendasPorMes',
+  'mergeCoberturaVendasMesesAbertos',
+  'formatDateISOLocal',
+  'parseDateSC',
+  'normalizeVendaCod',
+  'vendaDedupKey',
+  'getVendasDedupKeySet',
+];
+for (const name of fns) {
+  vm.runInContext(extractFn(html, name), ctx);
+}
+
+function linha(data, cod, tipo = 'OUTRO') {
+  return { cod, data, tipo, qty: 1, peso: 1 };
+}
+
+function coberturaInicial() {
+  return new Map([
+    ['2020-01', { linhas: 6400, clientes: 678, ultima_data: '2020-01-31' }],
+    ['2026-06', { linhas: 2100, clientes: 140, ultima_data: '2026-06-30' }],
+    ['2026-07', { linhas: 1700, clientes: 120, ultima_data: '2026-07-31' }],
+    ['2026-08', { linhas: 501, clientes: 80, ultima_data: '2026-08-31' }],
+    ['2026-09', { linhas: 458, clientes: 70, ultima_data: '2026-09-29' }],
+  ]);
+}
+
+function snap(map, ym) {
+  const info = map.get(ym);
+  return { linhas: info.linhas, clientes: info.clientes, ultima_data: info.ultima_data };
+}
+
+check('regra antiga: Jun/2026 com dados está fechado; sem linhas está em falta', () => {
+  assert.equal(ctx.statusVendasCoberturaMes('2026-06', { linhas: 2100, ultima_data: '2026-06-15' }), 'ok');
+  assert.equal(ctx.statusVendasCoberturaMes('2019-09', { linhas: 746, clientes: 100 }), 'ok');
+  assert.equal(ctx.statusVendasCoberturaMes('2026-06', { linhas: 0 }), 'falta');
+  assert.equal(ctx.isVendasMesFechado('2026-06', { linhas: 2100 }, HOJE), true);
+  assert.equal(ctx.isVendasMesFechado('2026-06', { linhas: 0 }, HOJE), false);
+});
+
+check('Jul/2026+ fecha só com venda no último dia útil', () => {
+  assert.equal(ctx.ultimoDiaUtilMes('2026-07'), '2026-07-31');
+  assert.equal(ctx.ultimoDiaUtilMes('2026-08'), '2026-08-31');
+  assert.equal(ctx.ultimoDiaUtilMes('2026-09'), '2026-09-30');
+  assert.equal(ctx.isVendasMesFechado('2026-07', { linhas: 1700, ultima_data: '2026-07-31' }, HOJE), true);
+  assert.equal(ctx.isVendasMesFechado('2026-08', { linhas: 501, ultima_data: '2026-08-31' }, HOJE), true);
+  assert.equal(ctx.isVendasMesFechado('2026-07', { linhas: 100, ultima_data: '2026-07-20' }, HOJE), false);
+  assert.equal(ctx.statusVendasCoberturaMes('2026-09', { linhas: 458, ultima_data: '2026-09-29' }, HOJE), 'pendente');
+  assert.equal(ctx.isVendasMesFechado('2026-09', { linhas: 458, ultima_data: '2026-09-29' }, HOJE), false);
+  assert.equal(ctx.statusVendasCoberturaMes('2026-09', { linhas: 100, ultima_data: '2026-09-10' }, '2026-09-15'), 'pendente');
+  assert.equal(ctx.isVendasMesFechado('2026-09', { linhas: 500, ultima_data: '2026-09-30' }, HOJE), true);
+});
+
+check('ficheiro com fechados + aberto: fechados iguais, aberto muda, contagem lidas/ignoradas', () => {
+  const antes = coberturaInicial();
+  const fechadosAntes = {
+    jan: snap(antes, '2020-01'),
+    jun: snap(antes, '2026-06'),
+    jul: snap(antes, '2026-07'),
+    ago: snap(antes, '2026-08'),
+  };
+  const ficheiro = [
+    linha('2026-06-15', '100'),
+    linha('2026-06-16', '101'),
+    linha('2026-06-30', '102'),
+    linha('2026-07-31', '200'),
+    linha('2026-07-10', '201'),
+    linha('2026-08-31', '300'),
+    linha('2020-01-15', '400'),
+    linha('2020-01-16', '401'),
+    linha('2026-09-30', '500'),
+    linha('2026-09-30', '501'),
+    linha('2026-09-29', '500'),
+    linha('2020-03-02', '600'),
+    linha('2020-03-03', '601'),
+  ];
+  const fechados = ctx.mesesFechadosFromCobertura(antes, HOJE);
+  assert.ok(fechados.has('2026-06') && fechados.has('2026-07') && fechados.has('2026-08') && fechados.has('2020-01'));
+  assert.ok(!fechados.has('2026-09'));
+  assert.ok(!fechados.has('2020-03'));
+
+  const filtrado = ctx.filtrarLinhasVendasMesesAbertos(ficheiro, fechados);
+  assert.equal(filtrado.ignoradas, 8);
+  assert.equal(filtrado.lidas, 5);
+  assert.deepEqual(filtrado.mesesIgnorados, ['2020-01', '2026-06', '2026-07', '2026-08']);
+  assert.deepEqual(filtrado.mesesAbertos, ['2020-03', '2026-09']);
+  assert.ok(filtrado.aceites.every(r => r.data.startsWith('2026-09') || r.data.startsWith('2020-03')));
+
+  const existentes = new Set(['500|2026-09-29|OUTRO']);
+  const novas = [];
+  let jaExistentes = 0;
+  for (const row of filtrado.aceites) {
+    const key = ctx.vendaDedupKey(row.cod, row.data, row.tipo);
+    if (existentes.has(key)) { jaExistentes++; continue; }
+    novas.push(row);
+  }
+  assert.equal(jaExistentes, 1);
+  assert.equal(novas.length, 4);
+
+  const depois = ctx.mergeCoberturaVendasMesesAbertos(antes, ctx.aggregateVendasPorMes(novas), HOJE);
+  assert.deepEqual(snap(depois, '2020-01'), fechadosAntes.jan);
+  assert.deepEqual(snap(depois, '2026-06'), fechadosAntes.jun);
+  assert.deepEqual(snap(depois, '2026-07'), fechadosAntes.jul);
+  assert.deepEqual(snap(depois, '2026-08'), fechadosAntes.ago);
+  assert.equal(depois.get('2026-09').linhas, 458 + 2);
+  assert.equal(depois.get('2026-09').ultima_data, '2026-09-30');
+  assert.equal(depois.get('2026-09').clientes, 70);
+  assert.equal(depois.get('2020-03').linhas, 2);
+  assert.equal(depois.get('2020-03').clientes, 2);
+  assert.equal(depois.get('2020-03').ultima_data, '2020-03-03');
+  assert.deepEqual(snap(antes, '2026-06'), fechadosAntes.jun);
+});
+
+check('agregado de mês fechado não substitui o resumo guardado', () => {
+  const antes = coberturaInicial();
+  const ataque = ctx.aggregateVendasPorMes([
+    linha('2026-06-01', '1'),
+    linha('2026-06-02', '2'),
+    linha('2026-08-31', '3'),
+  ]);
+  const depois = ctx.mergeCoberturaVendasMesesAbertos(antes, ataque, HOJE);
+  assert.equal(depois.get('2026-06').linhas, 2100);
+  assert.equal(depois.get('2026-08').linhas, 501);
+  assert.equal(depois.get('2026-09').linhas, 458);
+});
+
+check('sem resumo nenhum mês está fechado (primeira carga)', () => {
+  const set = ctx.mesesFechadosFromCobertura(null, HOJE);
+  assert.equal(set.size, 0);
+  const filtrado = ctx.filtrarLinhasVendasMesesAbertos([
+    linha('2020-01-01', '1'),
+    linha('2026-09-30', '2'),
+  ], set);
+  assert.equal(filtrado.lidas, 2);
+  assert.equal(filtrado.ignoradas, 0);
+});
+
+check('mês em falta anterior a Jul/2026 entra; com dados não entra', () => {
+  const map = new Map([
+    ['2024-05', { linhas: 0, clientes: 0, ultima_data: null }],
+    ['2024-06', { linhas: 3800, clientes: 400, ultima_data: '2024-06-28' }],
+  ]);
+  const fechados = ctx.mesesFechadosFromCobertura(map, HOJE);
+  assert.ok(!fechados.has('2024-05'));
+  assert.ok(fechados.has('2024-06'));
+  const filtrado = ctx.filtrarLinhasVendasMesesAbertos([
+    linha('2024-05-02', '9'),
+    linha('2024-06-02', '8'),
+  ], fechados);
+  assert.equal(filtrado.lidas, 1);
+  assert.equal(filtrado.ignoradas, 1);
+  assert.equal(filtrado.aceites[0].data, '2024-05-02');
+});
+
+check('processVendasFile não relê a base, não apaga fechados, não recalcula 500k', () => {
+  const proc = extractFn(html, 'processVendasFile');
+  const skipAt = proc.indexOf('vendaDataCaiEmMesFechado');
+  const pushAt = proc.indexOf('candidatos.push');
+  const pesoAt = proc.indexOf('row[iPeso]');
+  assert.ok(skipAt > 0 && pushAt > skipAt, 'salto do mês fechado antes de gravar o modelo');
+  assert.ok(pesoAt > skipAt, 'peso/tipo só depois de saltar o mês fechado');
+  assert.ok(proc.includes('mesesFechadosFromCobertura'));
+  assert.ok(proc.includes('mergeCoberturaVendasMesesAbertos'));
+  assert.ok(proc.includes('meses: mesesAbertosArr'));
+  assert.ok(!proc.includes('scSyncHistoricoFromVendas'));
+  assert.ok(!proc.includes('loadVendasCobertura(true)'));
+  assert.ok(!proc.includes('getVendas('));
+  assert.ok(!proc.includes('fetchVendasCoberturaRows'));
+  assert.ok(!proc.includes('invalidateVendasCoberturaCache'));
+  assert.ok(!proc.includes("method: 'DELETE'"));
+  assert.ok(!proc.includes('clearVendas('));
+  const clears = proc.split('clearContratosCache()').length - 1;
+  assert.equal(clears, 1);
+  const dedup = extractFn(html, 'getVendasDedupKeySet');
+  assert.ok(dedup.indexOf('data=lt.') > 0);
+  assert.ok(dedup.indexOf('if (mesesSet)') < dedup.indexOf('data=lte.'));
+});
+
+check('texto da cobertura alinha o carregamento com meses fechados intactos', () => {
+  assert.ok(html.includes('Ao carregar vendas, só meses abertos são lidos; meses fechados ficam intactos.'));
+  assert.ok(html.includes('Ao carregar, só se lêem meses <strong>abertos</strong>'));
+  assert.ok(html.includes('v2026-09-30-vendas-fechado'));
+  assert.ok(html.includes('Até Jun/2026 = fechado. De Jul/2026 em diante'));
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.ok(sw.includes('v2026-09-30-vendas-fechado'));
+});
+
+const pending = [];
+function checkAsync(title, fn) {
+  pending.push(Promise.resolve().then(fn).then(
+    () => console.log('OK  ' + title),
+    (e) => {
+      console.error('FAIL ' + title);
+      console.error(e && e.stack ? e.stack : e);
+      process.exitCode = 1;
+    }
+  ));
+}
+
+checkAsync('dedup no servidor só pede meses abertos', async () => {
+  ctx.fetchUrls = [];
+  ctx.window._vendasMemCache = null;
+  ctx.fetch = async (url) => {
+    ctx.fetchUrls.push(String(url));
+    const u = String(url);
+    if (u.includes('data=gte.2026-09-01')) {
+      return { ok: true, status: 200, json: async () => [{ cod: '500', data: '2026-09-29', tipo: 'OUTRO' }] };
+    }
+    return { ok: true, status: 200, json: async () => [] };
+  };
+  const out = await ctx.getVendasDedupKeySet({ meses: ['2026-09', '2020-03'] });
+  assert.equal(ctx.fetchUrls.length, 2);
+  assert.ok(ctx.fetchUrls.some(u => u.includes('data=gte.2026-09-01') && u.includes('data=lt.2026-10-01')));
+  assert.ok(ctx.fetchUrls.some(u => u.includes('data=gte.2020-03-01') && u.includes('data=lt.2020-04-01')));
+  assert.ok(ctx.fetchUrls.every(u => !u.includes('2026-06') && !u.includes('2019-09') && !u.includes('2026-08')));
+  assert.equal(out.count, 1);
+  assert.ok(out.keys.has('500|2026-09-29|OUTRO'));
+
+  ctx.window._vendasMemCache = [
+    { cod: '1', data: '2026-06-30', tipo: 'OUTRO' },
+    { cod: '2', data: '2026-08-31', tipo: 'GRÃO' },
+    { cod: '3', data: '2026-09-29', tipo: 'OUTRO' },
+  ];
+  ctx.fetchUrls = [];
+  const mem = await ctx.getVendasDedupKeySet({ meses: ['2026-09'] });
+  assert.equal(ctx.fetchUrls.length, 0);
+  assert.equal(mem.count, 1);
+  assert.ok(mem.keys.has('3|2026-09-29|OUTRO'));
+  ctx.window._vendasMemCache = null;
+});
+
+await Promise.all(pending);
+
+if (process.exitCode) {
+  console.error('\nFalhou pelo menos um teste de meses abertos nas vendas.');
+  process.exit(process.exitCode);
+}
+console.log('\nTodos os testes de vendas (só meses abertos) passaram.');
