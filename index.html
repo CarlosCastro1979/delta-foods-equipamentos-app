@@ -12996,19 +12996,40 @@ function nfeBucket(n) {
 
 function nfeResumoRows(notas) {
   const counts = {};
+  const cents = {};
+  const tem = {};
   (notas || []).forEach(n => {
     const b = nfeBucket(n);
     counts[b] = (counts[b] || 0) + 1;
+    const v = Number(n && n.valor);
+    if (Number.isFinite(v)) {
+      cents[b] = (cents[b] || 0) + Math.round(v * 100);
+      tem[b] = true;
+    }
   });
-  const rows = [{ key: 'total', label: 'Total', n: (notas || []).length }];
+  const linha = (key, label, n) => ({
+    key,
+    label,
+    n: n || 0,
+    valor: tem[key] ? (cents[key] || 0) / 100 : null,
+    temValor: !!tem[key],
+  });
+  const rows = [linha('total', 'Total', (notas || []).length)];
+  if ((notas || []).length) {
+    let all = 0;
+    let algum = false;
+    Object.keys(cents).forEach(k => { all += cents[k]; algum = true; });
+    rows[0].valor = algum ? all / 100 : null;
+    rows[0].temValor = algum;
+  }
   if (typeof CANAIS_APP !== 'undefined') {
     Object.values(CANAIS_APP).forEach(c => {
-      rows.push({ key: 'canal:' + c.id, label: c.nome, n: counts['canal:' + c.id] || 0 });
+      rows.push(linha('canal:' + c.id, c.nome, counts['canal:' + c.id] || 0));
     });
   }
-  if (counts.sem_canal) rows.push({ key: 'sem_canal', label: 'Cliente sem canal', n: counts.sem_canal });
-  rows.push({ key: 'sem_cliente', label: 'Sem cliente na lista', n: counts.sem_cliente || 0 });
-  rows.push({ key: 'cnpj_multiplos', label: 'CNPJ em mais do que um código', n: counts.cnpj_multiplos || 0 });
+  if (counts.sem_canal) rows.push(linha('sem_canal', 'Cliente sem canal', counts.sem_canal));
+  rows.push(linha('sem_cliente', 'Sem cliente na lista', counts.sem_cliente || 0));
+  rows.push(linha('cnpj_multiplos', 'CNPJ em mais do que um código', counts.cnpj_multiplos || 0));
   return rows;
 }
 
@@ -13022,20 +13043,174 @@ function nfeCountHtml(n, key, fnName) {
   return `<button type="button" class="nfe-click" onclick="${fn}('${safe}')">${num}</button>`;
 }
 
+function nfeValorHtml(r, fnName, clicavel) {
+  if (!r || !r.temValor || r.valor == null || !Number.isFinite(Number(r.valor))) return '—';
+  const txt = nfeFmtValor(r.valor);
+  if (!clicavel) return txt;
+  const fn = fnName === 'nfeFiltrarCanal' ? 'nfeFiltrarCanal' : 'nfeFiltrar';
+  const safe = encodeURIComponent(String(r.key || '')).replace(/'/g, '%27');
+  return `<button type="button" class="nfe-click" onclick="${fn}('${safe}')">${txt}</button>`;
+}
+
 function nfeChaveFiltro(key) {
   try { return decodeURIComponent(String(key || '')); } catch (_) { return String(key || ''); }
 }
 
+const NFE_FILTROS_LS = 'delta_nfe_filtros';
+const NFE_FILTROS_MS = 1000;
+let _nfeFiltrosTimer = null;
+let _nfeUi = null;
+
+function nfeUiBlank() {
+  return { vendedor: '', dia: '', numero: '', canal: '' };
+}
+
+function nfeUiSan(o) {
+  const s = nfeUiBlank();
+  if (!o || typeof o !== 'object') return s;
+  s.vendedor = String(o.vendedor || '').slice(0, 80);
+  s.dia = /^\d{4}-\d{2}-\d{2}$/.test(String(o.dia || '')) ? String(o.dia) : '';
+  s.numero = String(o.numero || '').slice(0, 20);
+  s.canal = String(o.canal || '').slice(0, 80);
+  return s;
+}
+
+function nfeUiState() {
+  if (_nfeUi) return _nfeUi;
+  _nfeUi = { geral: nfeUiBlank(), porCanal: {} };
+  let raw = null;
+  try { raw = localStorage.getItem(NFE_FILTROS_LS); } catch (_) { raw = null; }
+  if (!raw) return _nfeUi;
+  try {
+    const p = JSON.parse(raw);
+    if (!p || typeof p !== 'object') return _nfeUi;
+    _nfeUi.geral = nfeUiSan(p.geral);
+    const por = p.porCanal && typeof p.porCanal === 'object' ? p.porCanal : {};
+    Object.keys(por).forEach(id => {
+      const s = nfeUiSan(por[id]);
+      s.canal = '';
+      _nfeUi.porCanal[id] = s;
+    });
+  } catch (_) {}
+  return _nfeUi;
+}
+
+function nfeFiltrosGeral() {
+  const f = nfeUiState().geral;
+  _nfeFiltro = f.canal || '';
+  return f;
+}
+
+function nfeFiltrosDoCanal(canalId) {
+  const st = nfeUiState();
+  const id = String(canalId || '');
+  if (!st.porCanal[id]) st.porCanal[id] = nfeUiBlank();
+  st.porCanal[id].canal = '';
+  return st.porCanal[id];
+}
+
+function nfeFiltrosCanalActivos() {
+  const canalId = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : '') || '';
+  return nfeFiltrosDoCanal(canalId);
+}
+
+function nfeGravarFiltros() {
+  const st = nfeUiState();
+  try {
+    localStorage.setItem(NFE_FILTROS_LS, JSON.stringify({ geral: st.geral, porCanal: st.porCanal }));
+  } catch (_) {}
+}
+
+function nfeAgendarFiltros() {
+  try { clearTimeout(_nfeFiltrosTimer); } catch (_) {}
+  _nfeFiltrosTimer = setTimeout(nfeGravarFiltros, NFE_FILTROS_MS);
+  try { if (_nfeFiltrosTimer && typeof _nfeFiltrosTimer.unref === 'function') _nfeFiltrosTimer.unref(); } catch (_) {}
+}
+
+function nfeBindFiltrosAutosave() {
+  if (nfeBindFiltrosAutosave.feito) return;
+  nfeBindFiltrosAutosave.feito = true;
+  try {
+    if (typeof window === 'undefined' || !window.addEventListener) return;
+    window.addEventListener('pagehide', function () { nfeGravarFiltros(); });
+  } catch (_) {}
+}
+
+function nfeFocarCampo(prefix, campo) {
+  if (campo !== 'numero') return;
+  let el = null;
+  try { el = document.getElementById(prefix + '-numero'); } catch (_) { el = null; }
+  if (!el || typeof el.focus !== 'function') return;
+  try {
+    el.focus();
+    if (typeof el.setSelectionRange === 'function') {
+      const n = String(el.value || '').length;
+      el.setSelectionRange(n, n);
+    }
+  } catch (_) {}
+}
+
+function nfeSetFiltro(scope, campo, valor) {
+  const geral = scope === 'geral';
+  const f = geral ? nfeFiltrosGeral() : nfeFiltrosCanalActivos();
+  const v = valor == null ? '' : String(valor);
+  if (campo === 'dia') f.dia = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
+  else if (campo === 'numero') f.numero = v.slice(0, 20);
+  else if (campo === 'vendedor') f.vendedor = v;
+  else if (campo === 'canal' && geral) f.canal = v;
+  if (geral) _nfeFiltro = f.canal || '';
+  else _nfeFiltroCanal = f.vendedor || '';
+  nfeAgendarFiltros();
+  if (geral) nfePaint();
+  else nfePaintCanal();
+  nfeFocarCampo(geral ? 'nfe-geral' : 'nfe-canal', campo);
+}
+
 function nfeFiltrar(key) {
   const k = nfeChaveFiltro(key);
-  if (!k || k === 'total') _nfeFiltro = '';
-  else _nfeFiltro = (_nfeFiltro === k) ? '' : k;
+  const f = nfeFiltrosGeral();
+  if (!k || k === 'total') f.canal = '';
+  else f.canal = (f.canal === k) ? '' : k;
+  _nfeFiltro = f.canal || '';
+  nfeAgendarFiltros();
   nfePaint();
 }
 
 function nfeLimparFiltro() {
+  const f = nfeFiltrosGeral();
+  f.vendedor = '';
+  f.dia = '';
+  f.numero = '';
+  f.canal = '';
   _nfeFiltro = '';
+  try { clearTimeout(_nfeFiltrosTimer); } catch (_) {}
+  nfeGravarFiltros();
   nfePaint();
+}
+
+function nfeDiaIso(nota) {
+  const m = String((nota && nota.data) || '').match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : '';
+}
+
+function nfeNumeroCasa(nota, filtro) {
+  const q = String(filtro || '').replace(/\D/g, '');
+  if (!q) return true;
+  const num = String((nota && nota.numero) || '').replace(/\D/g, '');
+  return num.indexOf(q) >= 0;
+}
+
+function nfeSomaValor(notas) {
+  let cents = 0;
+  let algum = false;
+  (notas || []).forEach(n => {
+    const v = Number(n && n.valor);
+    if (!Number.isFinite(v)) return;
+    cents += Math.round(v * 100);
+    algum = true;
+  });
+  if (!algum) return null;
+  return cents / 100;
 }
 
 function nfeFmtData(iso) {
@@ -13050,9 +13225,22 @@ function nfeFmtValor(v) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function nfeCasaCampo(n, f, usarVend) {
+  if (usarVend && f.vendedor && nfeBucketVend(n) !== f.vendedor) return false;
+  if (f.dia && nfeDiaIso(n) !== f.dia) return false;
+  if (!nfeNumeroCasa(n, f.numero)) return false;
+  return true;
+}
+
 function nfePassaFiltro(n) {
-  if (!_nfeFiltro) return true;
-  return nfeBucket(n) === _nfeFiltro;
+  const f = nfeFiltrosGeral();
+  if (f.canal && nfeBucket(n) !== f.canal) return false;
+  return nfeCasaCampo(n, f, true);
+}
+
+function nfeNotasParaResumoGeral(notas) {
+  const f = nfeFiltrosGeral();
+  return (notas || []).filter(n => nfeCasaCampo(n, f, true));
 }
 
 function nfeCmpNota(a, b) {
@@ -13077,13 +13265,98 @@ function nfeOrdemCanal(nome) {
   return i < 0 ? 99 : i;
 }
 
-function nfeBannerHtml() {
-  if (!_nfeFiltro) return '';
-  const hit = nfeResumoRows(_nfeNotas).find(r => r.key === _nfeFiltro);
-  const label = hit ? hit.label : _nfeFiltro;
+function nfeTemFiltro(f, modo) {
+  if (!f) return false;
+  if (f.vendedor || f.dia || String(f.numero || '').trim()) return true;
+  if (modo === 'geral' && f.canal) return true;
+  return false;
+}
+
+function nfeRotuloFiltro(modo, f, notas) {
+  const parts = [];
+  if (modo === 'geral' && f.canal) {
+    const hit = nfeResumoRows(notas).find(r => r.key === f.canal);
+    parts.push(hit ? hit.label : f.canal);
+  }
+  if (f.vendedor) {
+    const hit = nfeResumoCanalRows(notas).find(r => r.key === f.vendedor);
+    parts.push(hit ? hit.label : String(f.vendedor).replace(/^vend:/, ''));
+  }
+  if (f.dia) parts.push(nfeFmtData(f.dia));
+  const num = String(f.numero || '').trim();
+  if (num) parts.push('NF ' + num);
+  return parts.join(' · ') || 'activo';
+}
+
+function nfeBannerDe(modo, notas) {
+  const f = modo === 'geral' ? nfeFiltrosGeral() : nfeFiltrosCanalActivos();
+  if (!nfeTemFiltro(f, modo)) return '';
+  const limpar = modo === 'geral' ? 'nfeLimparFiltro()' : 'nfeLimparFiltroCanal()';
   return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px;padding:8px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:13px;">
-    <span>Filtro: <strong>${escHtml(label)}</strong></span>
-    <button type="button" class="btn btn-secondary btn-sm" onclick="nfeLimparFiltro()">Limpar</button>
+    <span>Filtro: <strong>${escHtml(nfeRotuloFiltro(modo, f, notas))}</strong></span>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="${limpar}">Limpar</button>
+  </div>`;
+}
+
+function nfeBannerHtml() {
+  return nfeBannerDe('geral', _nfeNotas || []);
+}
+
+function nfeOpcoesVendedor(notas, actual) {
+  const by = new Map();
+  (notas || []).forEach(n => {
+    const key = nfeBucketVend(n);
+    if (!key || key === 'sem_vendedor') return;
+    if (!by.has(key)) by.set(key, String((n && n.vendedor) || '').trim() || key);
+  });
+  if (actual && actual !== 'sem_vendedor' && !by.has(actual)) by.set(actual, actual.replace(/^vend:/, ''));
+  const list = [...by.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt'));
+  let html = `<option value=""${actual ? '' : ' selected'}>Todos</option>`;
+  if ((notas || []).some(n => nfeBucketVend(n) === 'sem_vendedor') || actual === 'sem_vendedor') {
+    html += `<option value="sem_vendedor"${actual === 'sem_vendedor' ? ' selected' : ''}>Sem vendedor</option>`;
+  }
+  list.forEach(([key, label]) => {
+    html += `<option value="${escHtml(key)}"${key === actual ? ' selected' : ''}>${escHtml(label)}</option>`;
+  });
+  return html;
+}
+
+function nfeOpcoesCanal(notas, actual) {
+  const opts = [{ value: '', label: 'Todos' }];
+  if (typeof CANAIS_APP !== 'undefined') {
+    Object.values(CANAIS_APP).forEach(c => opts.push({ value: 'canal:' + c.id, label: c.nome }));
+  }
+  [
+    { value: 'sem_canal', label: 'Cliente sem canal' },
+    { value: 'sem_cliente', label: 'Sem cliente na lista' },
+    { value: 'cnpj_multiplos', label: 'CNPJ em mais do que um código' },
+  ].forEach(e => {
+    if (actual === e.value || (notas || []).some(n => nfeBucket(n) === e.value)) opts.push(e);
+  });
+  if (actual && !opts.some(o => o.value === actual)) opts.push({ value: actual, label: actual });
+  return opts.map(o => `<option value="${escHtml(o.value)}"${o.value === (actual || '') ? ' selected' : ''}>${escHtml(o.label)}</option>`).join('');
+}
+
+function nfeFiltrosHtml(scope, notas) {
+  const geral = scope === 'geral';
+  const f = geral ? nfeFiltrosGeral() : nfeFiltrosCanalActivos();
+  const pre = geral ? 'nfe-geral' : 'nfe-canal';
+  const canal = geral
+    ? `<label style="font-size:12px;color:var(--muted);">Canal
+        <select id="${pre}-canal" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;min-width:160px;" onchange="nfeSetFiltro('geral','canal',this.value)">${nfeOpcoesCanal(notas, f.canal)}</select>
+      </label>`
+    : '';
+  return `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:0 0 12px;">
+    ${canal}
+    <label style="font-size:12px;color:var(--muted);">Vendedor
+      <select id="${pre}-vendedor" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;min-width:180px;" onchange="nfeSetFiltro('${scope}','vendedor',this.value)">${nfeOpcoesVendedor(notas, f.vendedor)}</select>
+    </label>
+    <label style="font-size:12px;color:var(--muted);">Dia
+      <input type="date" id="${pre}-dia" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" value="${escHtml(f.dia)}" onchange="nfeSetFiltro('${scope}','dia',this.value)">
+    </label>
+    <label style="font-size:12px;color:var(--muted);">Número NF
+      <input type="text" id="${pre}-numero" class="form-input" inputmode="numeric" autocomplete="off" style="margin-left:4px;padding:6px 8px;font-size:13px;width:130px;" value="${escHtml(f.numero)}" placeholder="Número" oninput="nfeSetFiltro('${scope}','numero',this.value)">
+    </label>
   </div>`;
 }
 
@@ -13116,10 +13389,15 @@ function nfeListaHtml(notas, passa) {
     if (d) return d;
     return String(a.vend).localeCompare(String(b.vend), 'pt');
   });
-  return grupos.map(g => {
+  const nNotas = vis.length;
+  const rotulo = nNotas === 1 ? '1 nota' : (nNotas + ' notas');
+  const totalHtml = `<div style="font-size:13px;font-weight:700;margin:0 0 10px;">Total da lista: ${rotulo} · ${nfeFmtValor(nfeSomaValor(vis))}</div>`;
+  const corpo = grupos.map(g => {
+    const somaTxt = nfeFmtValor(nfeSomaValor(g.notas));
+    const meta = `${g.notas.length} · ${somaTxt}`;
     const vend = g.vend
-      ? `<div style="font-size:13px;font-weight:600;margin:8px 0 6px;">${escHtml(g.vend)} <span style="color:var(--muted);font-weight:500;">· ${g.notas.length}</span></div>`
-      : '';
+      ? `<div style="font-size:13px;font-weight:600;margin:8px 0 6px;">${escHtml(g.vend)} <span style="color:var(--muted);font-weight:500;">· ${meta}</span></div>`
+      : `<div style="font-size:13px;font-weight:600;margin:8px 0 6px;color:var(--muted);">${meta}</div>`;
     const linhas = g.notas.map(n => `<tr>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;">${escHtml(n.numero || '—')}${n.serie ? ` <span style="color:var(--muted);">sér. ${escHtml(n.serie)}</span>` : ''}</td>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border);">${escHtml(n.cliente || '—')}</td>
@@ -13142,35 +13420,41 @@ function nfeListaHtml(notas, passa) {
       </div>
     </section>`;
   }).join('');
+  return totalHtml + corpo;
 }
 
 function nfeHtml() {
   const notas = _nfeNotas || [];
-  const rows = nfeResumoRows(notas);
+  const rows = nfeResumoRows(nfeNotasParaResumoGeral(notas));
   const resumo = nfeTabelaResumo(rows, 'nfeFiltrar');
   const estado = escHtml(_nfeStatusMsg || (notas.length ? (notas.length + ' notas guardadas.') : 'Ainda sem carga. O ZIP de XML da TTI carrega-se em Dados.'));
   return `<p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;">
       Consulta das NF já carregadas. O ZIP de XML da TTI carrega-se em <strong>Dados</strong>. CPF sem vendedor fica no Marcio Gorga (Ecommerce). A mesma chave não duplica.
     </p>
     <div style="font-size:12px;color:var(--muted);margin:0 0 12px;">${estado}</div>
+    ${nfeFiltrosHtml('geral', notas)}
     ${resumo}
     ${nfeBannerHtml()}
     ${nfeListaHtml(notas)}`;
 }
 
 function nfeTabelaResumo(rows, fnName) {
-  return `<table style="border-collapse:collapse;font-size:13px;margin:0 0 8px;min-width:320px;">
+  return `<table style="border-collapse:collapse;font-size:13px;margin:0 0 8px;min-width:420px;">
     <thead><tr>
       <th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);"></th>
       <th style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);">Notas</th>
+      <th style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);">Valor</th>
     </tr></thead>
     <tbody>${(rows || []).map(r => {
       const rotulo = r.label === '—' ? '—' : escHtml(r.label);
       const clicavel = r.label !== '—' && r.label !== '-';
       const conta = clicavel ? nfeCountHtml(r.n, r.key, fnName) : (Number(r.n) ? String(r.n) : '0');
+      const valor = nfeValorHtml(r, fnName, clicavel && Number(r.n) > 0);
+      const peso = r.n ? 'font-weight:600;' : 'color:var(--muted);';
       return `<tr>
       <td style="padding:6px 10px;border-bottom:1px solid var(--border);">${rotulo}</td>
-      <td style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);${r.n ? 'font-weight:600;' : 'color:var(--muted);'}">${conta}</td>
+      <td style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);${peso}">${conta}</td>
+      <td style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);white-space:nowrap;${peso}">${valor}</td>
     </tr>`;
     }).join('')}</tbody>
   </table>
@@ -13178,6 +13462,7 @@ function nfeTabelaResumo(rows, fnName) {
 }
 
 function nfePaint() {
+  nfeBindFiltrosAutosave();
   const host = document.getElementById('pv-canal-panels');
   if (!host || _pvView !== 'nfe') return;
   host.innerHTML = nfeHtml();
@@ -13227,63 +13512,97 @@ function nfeResumoCanalRows(notas) {
     const key = nfeBucketVend(n);
     const raw = String((n && n.vendedor) || '').trim();
     if (!by.has(key)) {
-      by.set(key, { key, label: key === 'sem_vendedor' ? 'Sem vendedor' : (raw || 'Sem vendedor'), n: 0 });
+      by.set(key, {
+        key,
+        label: key === 'sem_vendedor' ? 'Sem vendedor' : (raw || 'Sem vendedor'),
+        n: 0,
+        valor: null,
+        temValor: false,
+        _cents: 0,
+      });
     }
-    by.get(key).n++;
+    const row = by.get(key);
+    row.n++;
+    const v = Number(n && n.valor);
+    if (Number.isFinite(v)) {
+      row._cents += Math.round(v * 100);
+      row.temValor = true;
+      row.valor = row._cents / 100;
+    }
   });
   const rest = [...by.values()].sort((a, b) => {
     if (a.key === 'sem_vendedor') return 1;
     if (b.key === 'sem_vendedor') return -1;
     return String(a.label).localeCompare(String(b.label), 'pt');
   });
-  return [{ key: 'total', label: 'Total', n: (notas || []).length }].concat(rest);
+  let cents = 0;
+  let algum = false;
+  rest.forEach(r => {
+    if (r.temValor) { cents += r._cents; algum = true; }
+  });
+  return [{
+    key: 'total',
+    label: 'Total',
+    n: (notas || []).length,
+    valor: algum ? cents / 100 : null,
+    temValor: algum,
+  }].concat(rest);
 }
 
 function nfePassaFiltroCanal(n) {
-  if (!_nfeFiltroCanal || _nfeFiltroCanal === 'total') return true;
-  return nfeBucketVend(n) === _nfeFiltroCanal;
+  return nfeCasaCampo(n, nfeFiltrosCanalActivos(), true);
+}
+
+function nfeNotasParaResumoCanal(notas) {
+  const f = nfeFiltrosCanalActivos();
+  return (notas || []).filter(n => nfeCasaCampo(n, f, false));
 }
 
 function nfeFiltrarCanal(key) {
   const k = nfeChaveFiltro(key);
+  const f = nfeFiltrosCanalActivos();
   const canalId = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : '') || '';
-  if (_nfeFiltroCanalId !== canalId) _nfeFiltroCanal = '';
-  if (!k || k === 'total') _nfeFiltroCanal = '';
-  else _nfeFiltroCanal = (_nfeFiltroCanal === k) ? '' : k;
+  if (!k || k === 'total') f.vendedor = '';
+  else f.vendedor = (f.vendedor === k) ? '' : k;
+  f.canal = '';
+  _nfeFiltroCanal = f.vendedor || '';
   _nfeFiltroCanalId = canalId;
+  nfeAgendarFiltros();
   nfePaintCanal();
 }
 
 function nfeLimparFiltroCanal() {
+  const f = nfeFiltrosCanalActivos();
+  f.vendedor = '';
+  f.dia = '';
+  f.numero = '';
+  f.canal = '';
   _nfeFiltroCanal = '';
+  try { clearTimeout(_nfeFiltrosTimer); } catch (_) {}
+  nfeGravarFiltros();
   nfePaintCanal();
 }
 
 function nfeBannerCanalHtml(notas) {
-  if (!_nfeFiltroCanal) return '';
-  const hit = nfeResumoCanalRows(notas).find(r => r.key === _nfeFiltroCanal);
-  const label = hit ? hit.label : _nfeFiltroCanal;
-  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px;padding:8px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:13px;">
-    <span>Filtro: <strong>${escHtml(label)}</strong></span>
-    <button type="button" class="btn btn-secondary btn-sm" onclick="nfeLimparFiltroCanal()">Limpar</button>
-  </div>`;
+  return nfeBannerDe('canal', notas);
 }
 
 function nfeHtmlCanal(notas) {
-  return `${nfeTabelaResumo(nfeResumoCanalRows(notas), 'nfeFiltrarCanal')}
+  return `${nfeFiltrosHtml('canal', notas)}
+    ${nfeTabelaResumo(nfeResumoCanalRows(nfeNotasParaResumoCanal(notas)), 'nfeFiltrarCanal')}
     ${nfeBannerCanalHtml(notas)}
     ${nfeListaHtml(notas, nfePassaFiltroCanal)}`;
 }
 
 function nfePaintCanal() {
+  nfeBindFiltrosAutosave();
   const host = document.getElementById('canal-nfe-host');
   const titulo = document.getElementById('canal-nfe-titulo');
   if (!host) return;
   const canalId = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : '') || '';
-  if (_nfeFiltroCanalId !== canalId) {
-    _nfeFiltroCanal = '';
-    _nfeFiltroCanalId = canalId;
-  }
+  const f = nfeFiltrosDoCanal(canalId);
+  _nfeFiltroCanal = f.vendedor || '';
+  _nfeFiltroCanalId = canalId;
   const canal = (typeof CANAIS_APP !== 'undefined' && canalId && CANAIS_APP[canalId]) ? CANAIS_APP[canalId] : null;
   if (titulo) titulo.textContent = canal ? ('Notas fiscais · ' + canal.nome) : 'Notas fiscais';
   host.innerHTML = nfeHtmlCanal(nfeNotasMenuCanal());
@@ -34719,7 +35038,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-nfe-dados-canal: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-nfe-filtros: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
