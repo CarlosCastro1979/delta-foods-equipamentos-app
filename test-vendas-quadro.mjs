@@ -700,10 +700,12 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(html.includes('Por classificar'));
   assert.ok(html.includes('O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-ordem'));
+  assert.ok(sw.includes('v2026-10-01-mapa-n'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-ordem'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-01-vendas-ordem'));
+  assert.ok(html.includes('v2026-10-01-mapa-n'));
+  assert.ok(!html.includes('v2026-10-01-vendas-ordem'));
   assert.ok(!html.includes('v2026-10-01-vendas-rs'));
   assert.ok(!html.includes('v2026-10-01-vendas-prev'));
 });

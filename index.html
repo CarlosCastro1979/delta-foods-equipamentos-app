@@ -3928,7 +3928,7 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Previsão de fecho · N (fecho real) · Accuracy · MYR — autosave local + cloud (só direcção).
+            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR — autosave local + cloud (só direcção).
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
@@ -11525,11 +11525,8 @@ function pvSeedLinhas(ano, mes) {
       myr: r.myr ?? null,
     }));
   }
-  // Sem seed: estrutura vazia (não apaga seeds Out/Nov/Dez já registados em PV_SEEDS)
-  if (Number(ano) === 2026 && Number(mes) >= 9 && Number(mes) <= 11) {
-    return pvLinhasEstruturaVazia().map(r => ({ ...r, prevFecho: null, n: null, myr: null }));
-  }
-  return [];
+  // Sem imagem deste mês: a mesma grelha, para o objectivo e o N do quadro poderem entrar.
+  return pvLinhasEstruturaVazia().map(r => ({ ...r, prevFecho: null, n: null, myr: null }));
 }
 
 let _pvData = null;
@@ -12705,6 +12702,7 @@ async function pvEnsureCloudThenRender(opts) {
   if (opts && opts.reload) pvFlushAutosave();
   if (_pvView !== 'vendas') {
     try { await pvFetchCloudMaps(false); } catch (_) {}
+    try { if (typeof lerVendasQuadroPersistida === 'function') await lerVendasQuadroPersistida(); } catch (_) {}
   }
   pvRender(opts);
 }
@@ -12783,8 +12781,8 @@ function pvRender(opts) {
         ? ` · Cloud: ${_pvCloudCache.actualizadoPor || '—'} ${new Date(_pvCloudCache.actualizadoEm).toLocaleString('pt-PT')}`
         : '';
       const editHint = edit
-        ? `<strong>Previsão de fecho</strong> e <strong>N</strong> (autosave local+cloud, last-write por célula) · <strong>N</strong> = fecho real após fechar o mês ·`
-        : `<strong>Previsão de fecho</strong> · <strong>N</strong> = fecho real após fechar o mês ·`;
+        ? `<strong>Previsão de fecho</strong> (autosave; o lançamento manual mantém-se) · <strong>N</strong> = vendas líquidas do mês no quadro de vendas ·`
+        : `<strong>Previsão de fecho</strong> · <strong>N</strong> = vendas líquidas do mês no quadro de vendas ·`;
       banner.innerHTML = `<strong>${mesNome} ${ano}</strong> — N-1 = histórico · Budget = objectivo ·
         ${editHint}
         <strong>N VS N-1 %</strong> = (N, senão Previsão) vs N-1 ·
@@ -12916,6 +12914,8 @@ function pvEditCell(campo, idx, row, edit, bg) {
     return `<span class="pv-${campo}-soma" data-idx="${idx}">${row[campo] == null ? '—' : pvFmtEdit(row[campo])}</span>`;
   }
   const canEdit = !!(edit && (typeof pvPodeEditar !== 'function' || pvPodeEditar()));
+  // N ligado às vendas líquidas: mostra o número e não deixa um lançamento manual substituí-lo.
+  if (campo === 'n' && row.nLigado) return pvFmtNum(row[campo]);
   if (!canEdit) return pvFmtNum(row[campo]);
   const handlers = {
     prevFecho: 'pvOnPrevInput(this)" onblur="pvOnPrevBlur(this)',
@@ -12937,12 +12937,301 @@ function pvEditCell(campo, idx, row, edit, bg) {
       oninput="${handlers[campo]}" title="${titles[campo]}">`;
 }
 
+/** Mês do mapa (0–11) → YYYY-MM do quadro de vendas e dos objectivos. */
+function pvYmDoMapa(ano, mes) {
+  const y = parseInt(ano, 10);
+  const m = parseInt(mes, 10);
+  if (!y || !Number.isFinite(m) || m < 0 || m > 11) return '';
+  return y + '-' + String(m + 1).padStart(2, '0');
+}
+
+function pvNormVendMapa(s) {
+  return String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Balcão = Marcio (99520011, 99520012 e 99520005). Horeca = Filipe e a equipa Office. */
+const PV_INST_BALCAO_CODS = { 99520011: 1, 99520012: 1, 99520005: 1 };
+const PV_INST_HORECA_CODS = { 99520019: 1, 99520015: 1, 99520016: 1, 99520017: 1 };
+const PV_INST_BALCAO_NOMES = { 'MARCIO GORGA': 1 };
+const PV_INST_HORECA_NOMES = {
+  'FILIPE NEVES': 1,
+  'HELCIO GREGIO': 1,
+  'DANIELA SANTOS': 1,
+  'PAULO FONTES': 1,
+};
+
+function pvCodNaCelulaVenda(cell) {
+  if (!cell) return 0;
+  const direto = parseInt(cell.npess, 10);
+  if (direto) return direto;
+  const m = String(cell.vendedor || '').match(/(\d{6,})/);
+  if (!m) return 0;
+  const n = parseInt(m[1], 10);
+  return n || 0;
+}
+
+/** Lado do institucional. Vazio = este vendedor não entra em Balcão nem em Horeca. */
+function pvLadoInstitucionalCelula(cell) {
+  const cod = pvCodNaCelulaVenda(cell);
+  if (PV_INST_BALCAO_CODS[cod]) return 'balcao';
+  if (PV_INST_HORECA_CODS[cod]) return 'horeca';
+  const nome = pvNormVendMapa(cell && cell.vendedor);
+  if (PV_INST_BALCAO_NOMES[nome]) return 'balcao';
+  if (PV_INST_HORECA_NOMES[nome]) return 'horeca';
+  return '';
+}
+
+/** Canal do mapa → empresa, canal do quadro e, no institucional, o lado. */
+const PV_MAPA_CANAL_VENDA = {
+  dfb_lojas: ['Delta Foods Brasil', 'Lojas online', ''],
+  dfb_dist_reg: ['Delta Foods Brasil', 'Distribuidores regionais', ''],
+  dfb_rest: ['Delta Foods Brasil', 'Restauração', ''],
+  dfb_dist_ret: ['Delta Foods Brasil', 'Distribuidores de retalho', ''],
+  dfb_ret_mod: ['Delta Foods Brasil', 'Retalho moderno', ''],
+  dfb_site: ['Delta Foods Brasil', 'Site próprio', ''],
+  dfb_inst_balcao: ['Delta Foods Brasil', 'Institucional', 'balcao'],
+  dfb_inst_horeca: ['Delta Foods Brasil', 'Institucional', 'horeca'],
+  qb_ret_mod: ['Q Brasil', 'Retalho moderno', ''],
+  qb_dist_ret: ['Q Brasil', 'Distribuidores de retalho', ''],
+  qb_rest: ['Q Brasil', 'Restauração', ''],
+  qb_dist_reg: ['Q Brasil', 'Distribuidores regionais', ''],
+};
+
+/** Objectivo mensal. Balcão e Horeca não estão: o institucional gravado é uma linha só. */
+const PV_MAPA_LINHA_OBJETIVO = {
+  dfb: ['Delta Foods Brasil', ''],
+  dfb_lojas: ['Delta Foods Brasil', 'Lojas online'],
+  dfb_dist_reg: ['Delta Foods Brasil', 'Distribuidores regionais'],
+  dfb_rest: ['Delta Foods Brasil', 'Restauração'],
+  dfb_dist_ret: ['Delta Foods Brasil', 'Distribuidores de retalho'],
+  dfb_ret_mod: ['Delta Foods Brasil', 'Retalho moderno'],
+  dfb_site: ['Delta Foods Brasil', 'Site próprio'],
+  dfb_inst: ['Delta Foods Brasil', 'Institucional'],
+  qb: ['Q Brasil', ''],
+  qb_ret_mod: ['Q Brasil', 'Retalho moderno'],
+  qb_dist_ret: ['Q Brasil', 'Distribuidores de retalho'],
+  qb_rest: ['Q Brasil', 'Restauração'],
+  qb_dist_reg: ['Q Brasil', 'Distribuidores regionais'],
+  total: ['', ''],
+};
+
+function pvCentavosMapa(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 0;
+  return Math.round((x + Number.EPSILON) * 100) / 100;
+}
+
+/** Agregado vivo: memória da última carga, senão o que está gravado neste browser. */
+function pvLerQuadroParaMapa() {
+  try {
+    if (typeof window !== 'undefined' && window._vendasQuadro && window._vendasQuadro.meses) {
+      return window._vendasQuadro;
+    }
+  } catch (_) {}
+  try {
+    if (typeof localStorage !== 'undefined' && typeof VENDAS_QUADRO_LS_KEY === 'string') {
+      const raw = localStorage.getItem(VENDAS_QUADRO_LS_KEY);
+      if (raw) {
+        const q = JSON.parse(raw);
+        if (q && q.meses) return q;
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+function pvMesTemVendas(quadro, ym) {
+  const mes = quadro && quadro.meses && quadro.meses[ym];
+  return !!(mes && mes.celulas && Object.keys(mes.celulas).length);
+}
+
+/** Soma Fatur. (valor) do agregado. lado vazio = o canal inteiro, uma vez. */
+function pvSomarFaturMapa(quadro, ym, empresa, canal, lado) {
+  const mes = quadro && quadro.meses && quadro.meses[ym];
+  if (!mes || !mes.celulas) return { tem: false, valor: 0 };
+  let valor = 0;
+  let tem = false;
+  const celulas = Object.values(mes.celulas);
+  for (let i = 0; i < celulas.length; i++) {
+    const c = celulas[i];
+    if (!c) continue;
+    if (empresa && c.empresa !== empresa) continue;
+    if (canal && c.canal !== canal) continue;
+    if (lado && pvLadoInstitucionalCelula(c) !== lado) continue;
+    const v = Number(c.valor);
+    if (!Number.isFinite(v)) continue;
+    valor += v;
+    tem = true;
+  }
+  return { tem: tem, valor: pvCentavosMapa(valor) };
+}
+
+function pvBudgetNumero(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Partição já gravada nas duas sublinhas e que soma o objectivo (1 real de arredondamento). */
+function pvParticaoInstPreservada(a, b, objetivo) {
+  const sa = pvBudgetNumero(a);
+  const sb = pvBudgetNumero(b);
+  const o = pvBudgetNumero(objetivo);
+  if (sa == null || sb == null || o == null) return false;
+  return Math.abs((sa + sb) - o) <= 1;
+}
+
+/**
+ * Budget do mapa = objectivo mensal gravado.
+ * Se o número já é o objectivo, fica. Vazio ou antigo passa a ser o objectivo.
+ * A partição Balcão/Horeca que já soma o institucional mantém-se; não se inventa outra
+ * nem se põe o total só numa das sublinhas.
+ */
+function pvAplicarBudgetObjetivo(linhas, ano, mes) {
+  if (!Array.isArray(linhas) || typeof objetivoCanalMes !== 'function') return;
+  const ym = pvYmDoMapa(ano, mes);
+  if (!ym) return;
+  const porId = {};
+  linhas.forEach(r => { if (r && r.id) porId[r.id] = r; });
+  const objInst = objetivoCanalMes('Delta Foods Brasil', 'Institucional', ym);
+  const balcao = porId.dfb_inst_balcao;
+  const horeca = porId.dfb_inst_horeca;
+  const preserva = pvParticaoInstPreservada(
+    balcao && balcao.budget,
+    horeca && horeca.budget,
+    objInst
+  );
+  if (!preserva && balcao && horeca && objInst != null) {
+    const sa = pvBudgetNumero(balcao.budget);
+    const sb = pvBudgetNumero(horeca.budget);
+    if (sa != null && sb != null) {
+      balcao.budget = null;
+      horeca.budget = null;
+    }
+  }
+  linhas.forEach(row => {
+    if (!row || !row.id) return;
+    if (row.id === 'dfb_inst_balcao' || row.id === 'dfb_inst_horeca') return;
+    const spec = PV_MAPA_LINHA_OBJETIVO[row.id];
+    if (!spec) return;
+    const obj = objetivoCanalMes(spec[0], spec[1], ym);
+    if (obj == null) return;
+    const actual = pvBudgetNumero(row.budget);
+    if (actual != null && actual === obj) return;
+    if (row.id === 'dfb_inst' && preserva) return;
+    row.budget = obj;
+  });
+}
+
+/**
+ * N de cada canal = Fatur. desse mês no agregado. Não grava uma cópia:
+ * a próxima carga substitui o número. Mês sem vendas no quadro não mexe no N que já estava.
+ */
+function pvAplicarNVendasNoMapa(linhas, ano, mes, quadro) {
+  if (!Array.isArray(linhas)) return false;
+  const ym = pvYmDoMapa(ano, mes);
+  if (!ym || !pvMesTemVendas(quadro, ym)) {
+    linhas.forEach(row => { if (row) row.nLigado = false; });
+    return false;
+  }
+  linhas.forEach(row => {
+    if (!row) return;
+    const spec = PV_MAPA_CANAL_VENDA[row.id];
+    if (!spec) {
+      row.nLigado = false;
+      return;
+    }
+    const soma = pvSomarFaturMapa(quadro, ym, spec[0], spec[1], spec[2]);
+    row.n = soma.tem ? soma.valor : 0;
+    row.nLigado = true;
+  });
+  return true;
+}
+
+/** Totais de empresa = soma Fatur. da empresa, não o institucional inteiro repetido. */
+function pvFixarTotaisNVendas(linhas, ano, mes, quadro) {
+  if (!Array.isArray(linhas)) return;
+  const ym = pvYmDoMapa(ano, mes);
+  if (!ym || !pvMesTemVendas(quadro, ym)) return;
+  const porId = {};
+  linhas.forEach(r => { if (r && r.id) porId[r.id] = r; });
+  function por(id, soma) {
+    const row = porId[id];
+    if (!row) return;
+    row.n = soma.tem ? soma.valor : 0;
+    row.nLigado = true;
+  }
+  const delta = pvSomarFaturMapa(quadro, ym, 'Delta Foods Brasil', '', '');
+  const qb = pvSomarFaturMapa(quadro, ym, 'Q Brasil', '', '');
+  const inst = pvSomarFaturMapa(quadro, ym, 'Delta Foods Brasil', 'Institucional', '');
+  por('dfb', delta);
+  por('qb', qb);
+  por('dfb_inst', inst);
+  const total = porId.total;
+  if (total) {
+    total.n = (delta.tem || qb.tem)
+      ? pvCentavosMapa((delta.tem ? delta.valor : 0) + (qb.tem ? qb.valor : 0))
+      : 0;
+    total.nLigado = true;
+  }
+}
+
+/** Depois das somas, o total de empresa e o institucional ficam no objectivo gravado. */
+function pvFixarBudgetTotais(linhas, ano, mes) {
+  if (!Array.isArray(linhas) || typeof objetivoCanalMes !== 'function') return;
+  const ym = pvYmDoMapa(ano, mes);
+  if (!ym) return;
+  const porId = {};
+  linhas.forEach(r => { if (r && r.id) porId[r.id] = r; });
+  ['dfb', 'qb', 'total', 'dfb_inst'].forEach(id => {
+    const spec = PV_MAPA_LINHA_OBJETIVO[id];
+    const row = porId[id];
+    if (!spec || !row) return;
+    const obj = objetivoCanalMes(spec[0], spec[1], ym);
+    if (obj == null) return;
+    row.budget = obj;
+  });
+}
+
+/**
+ * Liga o mapa ao vivo. Não mexe em prevFecho nem em MYR:
+ * as fórmulas que já existem passam a ver o N real.
+ */
+function pvPrepararLinhasMapa(linhas, ano, mes, quadroOpt) {
+  if (!Array.isArray(linhas)) return linhas;
+  const quadro = quadroOpt || (typeof pvLerQuadroParaMapa === 'function' ? pvLerQuadroParaMapa() : null);
+  pvAplicarBudgetObjetivo(linhas, ano, mes);
+  pvAplicarNVendasNoMapa(linhas, ano, mes, quadro);
+  if (typeof pvRecalcSomasOn === 'function') {
+    pvRecalcSomasOn(linhas, 'n1');
+    pvRecalcSomasOn(linhas, 'budget');
+    pvRecalcSomasOn(linhas, 'prevFecho');
+    pvRecalcSomasOn(linhas, 'n');
+    pvRecalcSomasOn(linhas, 'myr');
+  }
+  pvFixarTotaisNVendas(linhas, ano, mes, quadro);
+  pvFixarBudgetTotais(linhas, ano, mes);
+  return linhas;
+}
+
+function pvActualizarMapaComVendas() {
+  try {
+    const panel = document.getElementById('panel-previsao-vendas');
+    if (!panel || !panel.classList.contains('active')) return;
+    if (typeof _pvView === 'undefined' || (_pvView !== 'mapa' && _pvView !== 'accuracy')) return;
+    if (typeof pvRender === 'function') pvRender();
+  } catch (_) {}
+}
+
 function pvRenderMapaHtml(edit, ano, mesNome) {
-  pvRecalcSomas('n1');
-  pvRecalcSomas('budget');
-  pvRecalcSomas('prevFecho');
-  pvRecalcSomas('n');
-  pvRecalcSomas('myr');
+  if (_pvData && Array.isArray(_pvData.linhas)) {
+    pvPrepararLinhasMapa(_pvData.linhas, _pvData.ano, _pvData.mes);
+  }
 
   let rows = '';
   (_pvData.linhas || []).forEach((row, idx) => {
@@ -13001,7 +13290,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
             <th style="text-align:left;">Empresa</th>
             <th style="text-align:right;">N-1</th>
             <th style="text-align:right;background:#dbeafe;">Previsão de fecho</th>
-            <th style="text-align:right;background:#bbf7d0;">N</th>
+            <th style="text-align:right;background:#bbf7d0;" title="Vendas líquidas do mês (Fatur. do quadro de vendas)">N</th>
             <th style="text-align:right;" title="(N gravado, senão Previsão − N-1) / N-1">N VS N-1 %</th>
             <th style="text-align:right;">Budget</th>
             <th style="text-align:right;">Var Bud %</th>
@@ -13046,8 +13335,7 @@ function pvLoadAnoMeses(ano) {
       }
     }
     if (!data || !Array.isArray(data.linhas)) continue;
-    pvRecalcSomasOn(data.linhas, 'prevFecho');
-    pvRecalcSomasOn(data.linhas, 'n');
+    pvPrepararLinhasMapa(data.linhas, y, m);
     data.linhas.forEach(row => {
       if (row.tipo !== 'canal' && row.tipo !== 'grupo' && row.tipo !== 'total') return;
       if (!byId[row.id]) {
@@ -13450,9 +13738,7 @@ async function pvExportarExcel() {
     }
     pvLoadData(ano, mes);
     const mesNome = PV_MESES[Number(mes)] || mes;
-    pvRecalcSomas('prevFecho');
-    pvRecalcSomas('n');
-    pvRecalcSomas('myr');
+    if (_pvData && Array.isArray(_pvData.linhas)) pvPrepararLinhasMapa(_pvData.linhas, ano, mes);
     const rows = [[
       'Empresa', 'N-1', 'Previsão de fecho', 'N', 'N VS N-1 %', 'Budget', 'Var Bud %',
       'MYR', 'Var Prev/MYR %', 'Var N/MYR %', 'Acum. N-1', 'Acum. N', 'N VS N-1 % Ac.', 'Budget Acm.', 'Var Bud Ac %', 'Accuracy % (0–100)',
@@ -17880,6 +18166,7 @@ async function salvarVendasQuadroPersistida(quadro) {
   // Reafirma a versão da carga: o POST pode ter corrido enquanto um GET antigo ainda estava no ar.
   window._vendasQuadro = payload;
   window._vendasQuadroGravado = payload;
+  try { if (typeof pvActualizarMapaComVendas === 'function') pvActualizarMapaComVendas(); } catch (_) {}
   return payload;
 }
 
@@ -33333,7 +33620,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-ordem: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-mapa-n: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
