@@ -17007,10 +17007,11 @@ async function loadVendasCobertura(forceRefresh = false) {
   }
 }
 
-// ─── QUADRO DE VENDAS (empresa × canal × vendedor, R$) ───
+// ─── QUADRO DE VENDAS (empresa × linha do P&L × vendedor, vendas líquidas) ───
 // Agregados guardados. A abertura do ecrã não lê as ~500k linhas.
 // O mês do dia de hoje só soma linhas novas.
-// Meses fechados de 2025 e 2026: o R$ do Excel substitui o mês no quadro, sem gravar linhas.
+// Meses fechados de 2025 e 2026: o R$ de vendas líquidas do Excel substitui o mês no quadro, sem gravar linhas.
+// Canais = linhas do Power BI (Lojas online, Restauração, …), não Ecommerce/Horeca/Varejo.
 // Antes de 2025 não entra (nem linhas nem R$).
 
 function quadroVendasVazio() {
@@ -17051,18 +17052,41 @@ function parseValorVendaSap(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Coluna de valor do Excel de vendas. Ignora peso líquido. -1 se não houver. */
+/**
+ * Coluna de R$ do Excel de vendas = vendas líquidas (a mesma do Power BI).
+ *
+ * Cabeçalho que entra (acentos e maiúsculas ignorados). Se houver várias, ganha
+ * a que diz venda(s) líquida(s), à frente de valor/vlr líquido:
+ *   1. «venda líquida», «vendas líquidas»
+ *   2. «vlr líquido», «vl líquido», «valor líquido» (também «vlr. líq.»)
+ *
+ * Ficam de fora — nunca são o R$ do quadro, mesmo sendo a primeira coluna
+ * numérica do ficheiro:
+ *   peso (incluindo peso líquido), quantidade, valor bruto, valor unitário,
+ *   imposto (ICMS/IPI/PIS/COFINS), «valor» sozinho, valor total, valor da NF,
+ *   montante, NETWR, KZWI1.
+ * Sem coluna de vendas líquidas devolve -1. Não há fallback.
+ */
 function indiceColunaValorVenda(headers) {
   const list = Array.isArray(headers) ? headers : [];
+  const norm = (raw) => String(raw || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  const excluido = (h) => {
+    if (!h) return true;
+    if (/peso/.test(h)) return true;
+    if (/\b(qtd|qtde|quant|quantidade)\b/.test(h)) return true;
+    if (/bruto/.test(h)) return true;
+    if (/unit/.test(h)) return true;
+    if (/imposto|\bicms\b|\bipi\b|\bpis\b|\bcofins\b/.test(h)) return true;
+    return false;
+  };
   let best = -1;
   let bestScore = 0;
   for (let i = 0; i < list.length; i++) {
-    const h = String(list[i] || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
-    if (!h || /peso/.test(h)) continue;
+    const h = norm(list[i]);
+    if (excluido(h)) continue;
     let score = 0;
-    if (/valor\s*liq|vlr\.?\s*liq|val\.?\s*liq|montante|netwr|kzwi1|valor\s*net/.test(h)) score = 3;
-    else if (/^valor$/.test(h) || /valor\s*(venda|total|nf)/.test(h)) score = 2;
-    else if (/\bvalor\b/.test(h) && !/unit/.test(h)) score = 1;
+    if (/\bvendas?\s*liquidas?\b/.test(h)) score = 4;
+    else if (/\b(?:valor|vlr\.?|vl\.?)\s*liq(?:uido)?\b/.test(h)) score = 3;
     if (score > bestScore) { bestScore = score; best = i; }
   }
   return best;
@@ -17081,7 +17105,9 @@ function indiceColunaNpessVenda(headers) {
 /**
  * Empresa / canal / vendedor a partir do NPess já mapeado.
  * Empresa: 9952 = Delta Foods Brasil, 9953 = Q Brasil. Sem prefixo → Por classificar.
- * Canal e vendedor: só códigos de CANAIS_APP / mapa passado. Código desconhecido → Por classificar.
+ * Canal: linha do P&L (Power BI), não Ecommerce/Horeca/Varejo da app.
+ * Vendedor: só o mapa passado (VENDEDORES_DEFAULT). Código sem nome → Por classificar.
+ * NPess desconhecido em 2025–2026 fica visível em «Por classificar» (não se omite).
  */
 function dimensoesVendaQuadro(npess, mapas) {
   const n = parseInt(npess, 10);
@@ -17115,7 +17141,26 @@ function chaveCelulaQuadro(dim) {
   return dim.empresa + '\t' + dim.canal + '\t' + dim.vendedor;
 }
 
-/** Mapas só com os NPess de CANAIS_APP e nomes de VENDEDORES_DEFAULT. Não inventa donos. */
+/**
+ * Linhas do P&L do quadro, iguais ao Power BI (não os canais da app).
+ * Nomes de vendedor só de VENDEDORES_DEFAULT — não se inventa dono.
+ * 99520005, 99530002 e 99530003 não estão nesse mapa: canal do P&L, vendedor «Por classificar».
+ * Horeca restauração já mapeada (canal 04: 02/06/07/10) cai em Restauração.
+ * Office (15/16/17/19) fica em Institucional, como no P&L.
+ */
+function linhasPlVendasQuadro() {
+  return [
+    ['Lojas online', [99520001, 99520008]],
+    ['Distribuidores regionais', [99520003, 99520020, 99530002]],
+    ['Restauração', [99520002, 99520006, 99520007, 99520010, 99530003]],
+    ['Distribuidores de retalho', [99520004, 99530005]],
+    ['Retalho moderno', [99520018, 99530001]],
+    ['Institucional', [99520011, 99520012, 99520005, 99520015, 99520016, 99520017, 99520019]],
+    ['Site próprio', [99520009]],
+  ];
+}
+
+/** Mapas do quadro: canal = linha do P&L; vendedor = VENDEDORES_DEFAULT. Não inventa donos. */
 function mapasVendasQuadro() {
   const canalPorNpess = {};
   const vendedorPorNpess = {};
@@ -17126,21 +17171,15 @@ function mapasVendasQuadro() {
     if (!n || isNaN(n) || !defs[i].nome) continue;
     nomePorCod[n] = String(defs[i].nome);
   }
-  const canais = typeof CANAIS_APP !== 'undefined' ? CANAIS_APP : {};
-  for (const canal of Object.values(canais)) {
-    const nomeCanal = canal && canal.nome ? String(canal.nome) : '';
-    const cods = (canal && canal.vendedorCods) || [];
+  const linhas = linhasPlVendasQuadro();
+  for (let li = 0; li < linhas.length; li++) {
+    const nomeCanal = linhas[li][0];
+    const cods = linhas[li][1];
     for (let i = 0; i < cods.length; i++) {
       const n = parseInt(cods[i], 10);
       if (!n || isNaN(n)) continue;
       if (!canalPorNpess[n] && nomeCanal) canalPorNpess[n] = nomeCanal;
-      if (defs.length) {
-        if (nomePorCod[n] && !vendedorPorNpess[n]) vendedorPorNpess[n] = nomePorCod[n];
-      } else if (typeof getVendedoresMap === 'function') {
-        const nomeMap = getVendedoresMap();
-        const nome = nomeMap && (nomeMap[n] || nomeMap[String(n)]);
-        if (nome && !vendedorPorNpess[n]) vendedorPorNpess[n] = String(nome);
-      }
+      if (nomePorCod[n] && !vendedorPorNpess[n]) vendedorPorNpess[n] = nomePorCod[n];
     }
   }
   return { canalPorNpess, vendedorPorNpess };
@@ -17313,9 +17352,12 @@ function linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpess, dataStr) {
 
 /**
  * Para cada mês fechado de 2025–2026 presente nas linhas, o R$ desse mês
- * passa a ser o total do ficheiro (não soma por cima).
- * A contagem de linhas já guardada fica. Meses que o ficheiro não traz ficam.
- * O mês do dia de hoje não é reposto.
+ * passa a ser o total do ficheiro (vendas líquidas, linhas do P&L) — não soma por cima.
+ * O mês fica só com as células deste ficheiro: a linha antiga (Ecommerce/Horeca/Varejo)
+ * não permanece a R$ 0 ao lado do Power BI. Meses que o ficheiro não traz ficam.
+ * Chave que já existia conserva a contagem de linhas. Chave nova usa a contagem
+ * do ficheiro, para o R$ aparecer (o ecrã esconde valor sem linhas).
+ * O mês do dia de hoje não é reposto. Segunda carga do mesmo Excel substitui pelos mesmos totais.
  */
 function substituirValorMesesFechadosNoQuadro(quadro, linhas, opts) {
   const o = opts || {};
@@ -17335,19 +17377,18 @@ function substituirValorMesesFechadosNoQuadro(quadro, linhas, opts) {
     const src = (delta.meses[ym] && delta.meses[ym].celulas) || {};
     const prev = (out.meses[ym] && out.meses[ym].celulas) || {};
     const celulas = {};
-    const keys = new Set([...Object.keys(prev), ...Object.keys(src)]);
-    for (const key of keys) {
-      const p = prev[key];
+    for (const key of Object.keys(src)) {
       const s = src[key];
-      const base = s || p;
-      const linhasGuardadas = p ? (+p.linhas || 0) : 0;
-      const teveValor = !!(s && (+s.linhasComValor || 0) > 0);
+      const p = prev[key];
+      const linhasFicheiro = +s.linhas || 0;
+      const linhasGuardadas = p && (+p.linhas || 0) > 0 ? (+p.linhas || 0) : linhasFicheiro;
+      const teveValor = (+s.linhasComValor || 0) > 0;
       celulas[key] = {
-        empresa: base.empresa,
-        canal: base.canal,
-        vendedor: base.vendedor,
+        empresa: s.empresa,
+        canal: s.canal,
+        vendedor: s.vendedor,
         linhas: linhasGuardadas,
-        valor: s ? (+s.valor || 0) : 0,
+        valor: +s.valor || 0,
         linhasComValor: teveValor
           ? (linhasGuardadas > 0 ? linhasGuardadas : (+s.linhasComValor || 0))
           : 0,
@@ -17696,6 +17737,7 @@ function renderVendasQuadro(quadroOpt) {
   if (!quadro || !quadro.meses) {
     el.innerHTML = `<div style="font-size:13px;color:var(--muted);line-height:1.5;">
       Ainda não há agregado guardado.<br>
+      Valores = vendas líquidas, como no Power BI.<br>
       O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.
       O dia de hoje soma só as linhas novas. Abrir esta vista não relê as linhas de venda.
     </div>`;
@@ -17722,6 +17764,15 @@ function renderVendasQuadro(quadroOpt) {
     porEmpresa.get(c.empresa).push(c);
   }
   const ordemEmp = ['Delta Foods Brasil', 'Q Brasil', 'Por classificar'];
+  const ordemCanal = {
+    'Delta Foods Brasil': ['Lojas online', 'Distribuidores regionais', 'Restauração', 'Distribuidores de retalho', 'Retalho moderno', 'Institucional', 'Site próprio', 'Por classificar'],
+    'Q Brasil': ['Distribuidores de retalho', 'Retalho moderno', 'Restauração', 'Distribuidores regionais', 'Por classificar'],
+  };
+  const idxCanal = (emp, can) => {
+    const lista = ordemCanal[emp] || [];
+    const i = lista.indexOf(can);
+    return i < 0 ? 50 : i;
+  };
   const empresas = [...porEmpresa.keys()].sort((a, b) => {
     const ia = ordemEmp.indexOf(a);
     const ib = ordemEmp.indexOf(b);
@@ -17748,7 +17799,7 @@ function renderVendasQuadro(quadroOpt) {
       <td class="vq-num">${htmlValorQuadroClicavel(vEmp, lEmp, { empresa: emp, canal: '', vendedor: '' }, onEmp)}</td>
       <td class="vq-num vq-linhas">${htmlContagemQuadroClicavel(lEmp, { empresa: emp, canal: '', vendedor: '' }, onEmp)}</td>
     </tr>`;
-    const canais = [...porCanal.keys()].sort((a, b) => a.localeCompare(b, 'pt'));
+    const canais = [...porCanal.keys()].sort((a, b) => idxCanal(emp, a) - idxCanal(emp, b) || a.localeCompare(b, 'pt'));
     for (const can of canais) {
       const b = porCanal.get(can);
       const onCan = filtroQuadroActivoIgual(filtro, emp, can, '');
@@ -17763,12 +17814,18 @@ function renderVendasQuadro(quadroOpt) {
 
   const detalhe = celulas
     .filter(c => vendasQuadroPassaFiltro(c, filtro))
-    .sort((a, b) =>
-      a.empresa.localeCompare(b.empresa, 'pt')
-      || a.canal.localeCompare(b.canal, 'pt')
-      || (b.valor - a.valor)
-      || a.vendedor.localeCompare(b.vendedor, 'pt')
-    );
+    .sort((a, b) => {
+      const ia = ordemEmp.indexOf(a.empresa);
+      const ib = ordemEmp.indexOf(b.empresa);
+      const ea = ia < 0 ? 99 : ia;
+      const eb = ib < 0 ? 99 : ib;
+      if (ea !== eb) return ea - eb;
+      const ca = idxCanal(a.empresa, a.canal);
+      const cb = idxCanal(b.empresa, b.canal);
+      if (ca !== cb) return ca - cb;
+      if ((+b.valor || 0) !== (+a.valor || 0)) return (+b.valor || 0) - (+a.valor || 0);
+      return String(a.vendedor || '').localeCompare(String(b.vendedor || ''), 'pt');
+    });
 
   let banner = '';
   if (filtro && (filtro.empresa || filtro.canal || filtro.vendedor)) {
@@ -17815,6 +17872,7 @@ function renderVendasQuadro(quadroOpt) {
       </div>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${anoNota}</div>
+    <div class="vcob-note" style="margin-bottom:8px;">Valores = vendas líquidas, como no Power BI.</div>
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Resumo <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica no valor em R$ para filtrar o detalhe)</span></div>
     <div class="vq-scroll">
       <table class="vq-table">
@@ -17881,7 +17939,7 @@ function pvMontarVistaVendas() {
       <div style="margin-bottom:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;">
         <div>
           <div style="font-size:16px;font-weight:700;">Vendas</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px;">por empresa, canal e vendedor — valores em R$</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;">por empresa, canal e vendedor — vendas líquidas, como no Power BI</div>
         </div>
         ${adminBtn}
       </div>
@@ -18225,7 +18283,7 @@ async function processVendasFile(event) {
       const iEmissor = headers.findIndex(h => /emissor/i.test(h));
       const iData = headers.findIndex(h => /^data$/i.test(h));
       const iPeso = headers.findIndex(h => /peso\s*l[ií]q/i.test(h));
-      const iValor = indiceColunaValorVenda(headers);
+      const iValor = indiceColunaValorVenda(headers); // só vendas líquidas (não peso, qtd, bruto, unitário, imposto)
       const iNpessVenda = indiceColunaNpessVenda(headers);
 
       if (iHierarq < 0 || iEmissor < 0 || iData < 0 || iPeso < 0) {
@@ -32030,7 +32088,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-rs: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-liq: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

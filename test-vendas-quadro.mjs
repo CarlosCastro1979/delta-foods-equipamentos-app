@@ -93,6 +93,7 @@ const fns = [
   'aplicarCargaAoQuadro',
   'completarQuadroDesdeBase',
   'totalQuadroAno',
+  'linhasPlVendasQuadro',
   'mapasVendasQuadro',
   'vendasQuadroPassaFiltro',
   'vendaDataCaiEmMesFechado',
@@ -265,14 +266,19 @@ check('linha sem canal cai em Por classificar', () => {
 check('mapasVendasQuadro não inventa vendedores', () => {
   ctx.CANAIS_APP = {
     horeca: { nome: 'Horeca', vendedorCods: [99520010] },
+    varejo: { nome: 'Varejo e Distr. Varejo', vendedorCods: [99520018] },
   };
   ctx.VENDEDORES_DEFAULT = [
     { cod: 99520010, nome: 'FILIPE NEVES' },
+    { cod: 99520018, nome: 'DIOGO OLIVEIRA' },
     { cod: 99529999, nome: 'ALGUEM NOVO' },
   ];
   const m = ctx.mapasVendasQuadro();
-  assert.equal(m.canalPorNpess[99520010], 'Horeca');
+  assert.equal(m.canalPorNpess[99520010], 'Restauração');
+  assert.notEqual(m.canalPorNpess[99520010], 'Horeca');
   assert.equal(m.vendedorPorNpess[99520010], 'FILIPE NEVES');
+  assert.equal(m.canalPorNpess[99520018], 'Retalho moderno');
+  assert.notEqual(m.canalPorNpess[99520018], 'Varejo e Distr. Varejo');
   assert.equal(m.vendedorPorNpess[99529999], undefined);
   assert.equal(m.canalPorNpess[99529999], undefined);
 });
@@ -430,8 +436,7 @@ check('ficheiro 2025–2026 fechado preenche R$ sem gravar linhas nem duplicar',
   assert.equal(jan.valor, 350, 'R$ de Jan/2025 igual ao ficheiro, não soma ao que já havia');
   assert.equal(jan.linhas, 120, 'contagem de linhas já guardada não muda');
   const diogo = celula(q, '2025-01', 'Q Brasil', 'Varejo e Distr. Varejo', 'DIOGO OLIVEIRA');
-  assert.equal(diogo.valor, 0, 'célula que o ficheiro não traz perde o R$ antigo desse mês');
-  assert.equal(diogo.linhas, 8, 'a contagem dessa célula fica');
+  assert.equal(diogo, null, 'célula que o ficheiro não traz sai do mês — não fica a R$ 0');
   assert.equal(totalMes(q, '2025-01'), 350);
   const set = celula(q, '2026-09', 'Delta Foods Brasil', 'Distribuidores', 'MASSIMO BOTTELLO');
   assert.equal(set.valor, 100);
@@ -534,9 +539,11 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(html.includes('Por classificar'));
   assert.ok(html.includes('O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-rs'));
+  assert.ok(sw.includes('v2026-10-01-vendas-liq'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-01-vendas-rs'));
+  assert.ok(html.includes('v2026-10-01-vendas-liq'));
+  assert.ok(!html.includes('v2026-10-01-vendas-rs'));
   assert.ok(!html.includes('v2026-10-01-vendas-prev'));
 });
 
