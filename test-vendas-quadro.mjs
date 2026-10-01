@@ -70,6 +70,7 @@ const ctx = {
   parseFloat,
   isNaN,
   window: {},
+  VENDAS_COBERTURA_REGRA_DESDE: '2026-07',
 };
 vm.createContext(ctx);
 
@@ -113,6 +114,20 @@ const fns = [
   'vendaLinhaEntraValorHistorico',
   'classificarLinhasCargaVendas',
   'substituirValorMesesFechadosNoQuadro',
+  'vendasISODateOnly',
+  'vendasHojeISO',
+  'isVendasMesRegraNova',
+  'ultimoDiaUtilMes',
+  'statusVendasCoberturaMes',
+  'isVendasMesFechado',
+  'maxDataVendaISO',
+  'fundirLinhasVendaMesmoDia',
+  'substituirValorMesAbertoPeloFicheiro',
+  'ultimoDiaCivilMesISO',
+  'formatDataQuadroPt',
+  'diaDeCoberturaQuadro',
+  'diaMaxMesQuadro',
+  'textoAtualizacaoQuadroMes',
 ];
 for (const name of fns) {
   vm.runInContext(extractFn(html, name), ctx);
@@ -686,7 +701,9 @@ check('ficheiro só com o dia de hoje não zera o R$ do mês', () => {
 
 check('processVendasFile actualiza o quadro sem varrer a base', () => {
   const proc = extractFn(html, 'processVendasFile');
-  assert.ok(proc.includes('aplicarNovasLinhasAoQuadro(newVendas, hoje, mesesFechados)'));
+  assert.ok(proc.includes('aplicarFaturDoDiaAoQuadro(candidatos, newVendas, hoje, mesesFechados)'));
+  assert.ok(proc.includes('fundirLinhasVendaMesmoDia(candidatos)'));
+  assert.ok(proc.includes('aplicarFaturDoDiaAoQuadro(candidatos, [], hoje, mesesFechados)'), 'dia já gravado ainda repõe o Fatur.');
   assert.ok(proc.includes('substituirValorHistoricoNoQuadro(linhasValorHistorico, hoje, mesesFechados)'));
   assert.ok(proc.includes('vendaDataAntesDe2025'));
   assert.ok(proc.includes('linhaValorQuadroDeExcel'));
@@ -703,7 +720,8 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(html.includes('Por classificar'));
   assert.ok(html.includes('O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-nfe-filtros'));
+  assert.ok(sw.includes('v2026-10-01-vendas-1out'));
+  assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-marco'));
@@ -712,7 +730,8 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-01-nfe-filtros'));
+  assert.ok(html.includes('v2026-10-01-vendas-1out'));
+  assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));
   assert.ok(!html.includes('v2026-10-01-vendas-marco'));
@@ -973,6 +992,79 @@ check('Set/2026: Objetivo da Delta fica a seguir a N e os Acum.* só depois das 
   assert.ok(out.includes('Restauração'), 'o quadro geral mantém os outros canais');
 });
 
+});
+
+check('Fatur. com sinal à direita do SAP é negativo; Valor Boni não é a coluna', () => {
+  assert.equal(ctx.parseValorVendaSap('157.751,58-'), -157751.58);
+  assert.equal(ctx.parseValorVendaSap('88.374,96-'), -88374.96);
+  assert.equal(ctx.parseValorVendaSap('3.238,76'), 3238.76);
+  assert.equal(ctx.parseValorVendaSap(3238.76), 3238.76);
+  assert.equal(ctx.parseValorVendaSap(-40921.56), -40921.56);
+  const headers = ['Data', 'Valor Boni', 'Valor Doação', 'Fatur.', 'QtFaturada'];
+  assert.equal(ctx.indiceColunaValorVenda(headers), 3);
+});
+
+check('linhas do mesmo cliente e tipo somam o Fatur. em vez de ficar só a primeira', () => {
+  const fundidas = ctx.fundirLinhasVendaMesmoDia([
+    { cod: '444540', data: '2026-10-01', tipo: 'GRÃO', valor: -10000, peso: 10, npess: 99520010 },
+    { cod: '444540', data: '2026-10-01', tipo: 'GRÃO', valor: '147.751,58-', peso: 5, npess: 99520010 },
+    { cod: '444090', data: '2026-10-01', tipo: 'GRÃO', valor: '3.238,76', peso: 40, npess: 99520010 },
+  ]);
+  assert.equal(fundidas.length, 2);
+  const dif = fundidas.find(r => r.cod === '444540');
+  assert.equal(dif.valor, -157751.58);
+  assert.equal(dif.peso, 15);
+  const spi = fundidas.find(r => r.cod === '444090');
+  assert.equal(spi.valor, 3238.76);
+});
+
+check('repor o dia aberto não mexe em Setembro nem nas linhas/volume já gravados', () => {
+  const antes = ctx.quadroVendasVazio();
+  antes.meses['2026-09'] = {
+    celulas: {
+      'Delta Foods Brasil\tHoreca\tFILIPE NEVES': {
+        empresa: 'Delta Foods Brasil', canal: 'Horeca', vendedor: 'FILIPE NEVES',
+        valor: 332926.37, linhas: 400, linhasComValor: 400, volume: 0, temVolume: false,
+      },
+    },
+    ultima_data: '2026-09-30',
+  };
+  antes.meses['2026-10'] = {
+    celulas: {
+      'Delta Foods Brasil\tHoreca\tFILIPE NEVES': {
+        empresa: 'Delta Foods Brasil', canal: 'Horeca', vendedor: 'FILIPE NEVES',
+        valor: -207.56, linhas: 42, linhasComValor: 42, volume: -1847, temVolume: true,
+      },
+    },
+  };
+  const depois = ctx.substituirValorMesAbertoPeloFicheiro(antes, [
+    { cod: '444540', data: HOJE, tipo: 'GRÃO', valor: -100000, npess: 99520010 },
+    { cod: '444540', data: HOJE, tipo: 'GRÃO', valor: '57.751,58-', npess: 99520010 },
+    { cod: '444090', data: HOJE, tipo: 'OUTRO', valor: 3238.76, npess: 99520010 },
+  ], opts);
+  assert.equal(depois.meses['2026-09'].celulas['Delta Foods Brasil\tHoreca\tFILIPE NEVES'].valor, 332926.37);
+  assert.equal(depois.meses['2026-09'].ultima_data, '2026-09-30');
+  const out = depois.meses['2026-10'].celulas['Delta Foods Brasil\tHoreca\tFILIPE NEVES'];
+  assert.equal(out.valor, -154512.82);
+  assert.equal(out.linhas, 42, 'a contagem de linhas já gravada fica');
+  assert.equal(out.volume, -1847, 'o volume já gravado fica');
+  assert.equal(out.temVolume, true);
+  assert.equal(depois.meses['2026-10'].ultima_data, '2026-10-01');
+});
+
+check('atualizado até 1 de outubro quando a cobertura tem esse dia', () => {
+  const q = ctx.quadroVendasVazio();
+  q.meses['2026-10'] = { celulas: { a: { valor: -207.56, linhas: 42 } } };
+  const cob = { meses: { '2026-10': { linhas: 42, ultima_data: '2026-10-01' }, '2026-09': { linhas: 512, ultima_data: '2026-09-30' } } };
+  assert.equal(
+    ctx.textoAtualizacaoQuadroMes(q, '2026-10', { hoje: '2026-10-01', cobertura: cob }),
+    'Atualizado até 01/10/2026'
+  );
+  assert.equal(
+    ctx.textoAtualizacaoQuadroMes(q, '2026-09', { hoje: '2026-10-01', cobertura: cob }),
+    'Atualizado até 30/09/2026'
+  );
+  assert.equal(ctx.textoAtualizacaoQuadroMes(ctx.quadroVendasVazio(), '2026-11', { hoje: '2026-10-01' }), 'sem vendas carregadas neste mês');
 });
 
 if (process.exitCode) {

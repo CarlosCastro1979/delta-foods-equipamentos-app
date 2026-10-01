@@ -106,6 +106,8 @@ for (const name of [
   'quadroVendasVazio',
   'quadroVendasClone',
   'somarValorQuadro',
+  'vendasISODateOnly',
+  'maxDataVendaISO',
   'agregarVendasQuadro',
   'vendaDataCaiEmMesFechado',
   'vendaDataEntraNaCarga',
@@ -464,9 +466,11 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   assert.ok(act.includes('decidirActualizarQuadroVendas'));
   assert.ok(act.indexOf('decidirActualizarQuadroVendas') < act.indexOf('somarQuadrosVendas'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-nfe-filtros'));
+  assert.ok(sw.includes('v2026-10-01-vendas-1out'));
+  assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
-  assert.ok(html.includes('v2026-10-01-nfe-filtros'));
+  assert.ok(html.includes('v2026-10-01-vendas-1out'));
+  assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));
   assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));

@@ -2972,7 +2972,7 @@ var _unused_placeholder = 1;
           • O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra<br>
           • Se o resumo ainda disser o mês fechado, as linhas de hoje entram na mesma. O resto desse mês fica intacto<br>
           • No próprio último dia útil o mês continua aberto: uma venda já gravada nesse dia não o fecha<br>
-          • Linhas de hoje já gravadas não duplicam (dedup: cliente + data + tipo)<br>
+          • Linhas de hoje já gravadas não duplicam (cliente + data + tipo). O Fatur. de todas as linhas do dia entra no quadro; se o mês só tem esse dia, a segunda carga repõe o R$ em vez de o ignorar<br>
           • GRÃO → Peso líq. em Kg · CÁPSULAS → Peso ÷ 0,0055
         </div>
         <div id="vendas-status" style="margin-bottom:10px"></div>
@@ -3559,6 +3559,7 @@ var _unused_placeholder = 1;
     <div id="cvm-pane-quadro">
     <div style="margin-bottom:12px;">
       <div id="canal-vendas-titulo" style="font-size:16px;font-weight:700;">Vendas</div>
+      <div id="canal-vendas-ate" style="font-size:14px;font-weight:700;color:#1e40af;margin-top:4px;"></div>
       <div style="font-size:12px;color:var(--muted);margin-top:2px;">Vendas líquidas só dos canais deste menu. O vendedor fica na mesma tabela.</div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
@@ -18317,13 +18318,21 @@ function somarValorQuadro(a, b) {
   return Math.round(((+a || 0) + (+b || 0)) * 100) / 100;
 }
 
-/** Número do Excel SAP (1234.56, 1.234,56 ou 1234,56). Sem valor → null. */
+/**
+ * Número do Excel SAP (1234.56, 1.234,56 ou 1234,56).
+ * O SAP põe o sinal à direita nos créditos: «157.751,58-» é negativo.
+ * Sem valor → null.
+ */
 function parseValorVendaSap(v) {
   if (v == null || v === '') return null;
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
   let s = String(v).trim();
   if (!s || s === '-' || s === '—') return null;
   s = s.replace(/r\$/ig, '').replace(/\s/g, '');
+  if (!s || s === '-') return null;
+  let neg = false;
+  if (s.charAt(s.length - 1) === '-') { neg = true; s = s.slice(0, -1); }
+  else if (s.charAt(0) === '-') { neg = true; s = s.slice(1); }
   if (!s) return null;
   const temVirgula = s.indexOf(',') >= 0;
   const temPonto = s.indexOf('.') >= 0;
@@ -18334,7 +18343,8 @@ function parseValorVendaSap(v) {
     s = s.replace(',', '.');
   }
   const n = parseFloat(s);
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) return null;
+  return neg ? -Math.abs(n) : n;
 }
 
 /**
@@ -18364,6 +18374,7 @@ function indiceColunaValorVenda(headers) {
     if (/bruto/.test(h)) return true;
     if (/unit/.test(h)) return true;
     if (/imposto|\bicms\b|\bipi\b|\bpis\b|\bcofins\b/.test(h)) return true;
+    if (/boni|doac/.test(h)) return true; // Valor Boni e Valor Doação não são o Fatur.
     return false;
   };
   let best = -1;
@@ -18547,10 +18558,22 @@ function npessPorCodDeLista(lista) {
   return m;
 }
 
+/** Maior data ISO (YYYY-MM-DD). Data inválida não conta. */
+function maxDataVendaISO(a, b) {
+  const da = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(a) : String(a || '').slice(0, 10);
+  const db = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(b) : String(b || '').slice(0, 10);
+  const okA = /^\d{4}-\d{2}-\d{2}$/.test(da);
+  const okB = /^\d{4}-\d{2}-\d{2}$/.test(db);
+  if (!okA) return okB ? db : '';
+  if (!okB) return da;
+  return da > db ? da : db;
+}
+
 /**
  * Soma valor e linhas por empresa × canal × vendedor × mês.
  * Linha sem canal conhecido fica em «Por classificar» (não é omitida).
  * Valor em falta não entra na soma de R$ (linhasComValor não sobe).
+ * Cada mês guarda ultima_data = dia máximo da coluna Data que entrou nesse mês.
  */
 function agregarVendasQuadro(rows, opts) {
   const out = quadroVendasVazio();
@@ -18559,10 +18582,14 @@ function agregarVendasQuadro(rows, opts) {
   for (const row of list) {
     const ym = typeof vendasYmFromISO === 'function' ? vendasYmFromISO(row && row.data) : String(row && row.data || '').slice(0, 7);
     if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+    const isoDia = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(row && row.data) : String(row && row.data || '').slice(0, 10);
     const npess = npessDaLinhaVendaQuadro(row, o.npessPorCod);
     const dim = dimensoesVendaQuadro(npess, o.mapas);
     const key = chaveCelulaQuadro(dim);
     if (!out.meses[ym]) out.meses[ym] = { celulas: {} };
+    if (/^\d{4}-\d{2}-\d{2}$/.test(isoDia) && isoDia.slice(0, 7) === ym) {
+      out.meses[ym].ultima_data = maxDataVendaISO(out.meses[ym].ultima_data, isoDia);
+    }
     const celulas = out.meses[ym].celulas;
     if (!celulas[key]) {
       celulas[key] = {
@@ -18623,6 +18650,8 @@ function somarQuadrosVendas(a, b) {
         dest[key].temVolume = true;
       }
     }
+    const dia = maxDataVendaISO(out.meses[ym].ultima_data, meses[ym].ultima_data);
+    if (dia) out.meses[ym].ultima_data = dia;
   }
   return out;
 }
@@ -18877,11 +18906,144 @@ function substituirValorMesesFechadosNoQuadro(quadro, linhas, opts) {
       };
     }
     // Apaga o mês inteiro (não deixa Ecommerce/Horeca/Varejo ao lado do Power BI).
+    // O dia máximo vem das linhas deste ficheiro — não se inventa outra data.
+    const diaMes = delta.meses[ym] && delta.meses[ym].ultima_data;
     out.meses[ym] = { celulas };
+    if (diaMes) out.meses[ym].ultima_data = diaMes;
     substituiu = true;
   }
   if (substituiu) out.origem_liquida = true;
   return out;
+}
+
+/**
+ * Várias linhas do mesmo cliente, dia e tipo (GRÃO / CÁPSULAS / OUTRO) são uma só
+ * na tabela, mas o Fatur. soma. A primeira linha fica com o total — a segunda carga
+ * não duplica a chave e também não deita fora o R$ das outras linhas do ficheiro.
+ */
+function fundirLinhasVendaMesmoDia(rows) {
+  const order = [];
+  const by = new Map();
+  const list = Array.isArray(rows) ? rows : [];
+  for (let i = 0; i < list.length; i++) {
+    const row = list[i];
+    if (!row) continue;
+    const key = vendaDedupKey(row.cod, row.data, row.tipo);
+    const prev = by.get(key);
+    if (!prev) {
+      const copy = Object.assign({}, row);
+      const v0 = parseValorVendaSap(copy.valor);
+      if (v0 != null) copy.valor = v0;
+      const vol0 = parseValorVendaSap(copy.volume);
+      if (vol0 != null) copy.volume = vol0;
+      by.set(key, copy);
+      order.push(copy);
+      continue;
+    }
+    const bVal = parseValorVendaSap(row.valor);
+    if (bVal != null) {
+      const aVal = parseValorVendaSap(prev.valor);
+      prev.valor = somarValorQuadro(aVal == null ? 0 : aVal, bVal);
+    }
+    const bVol = parseValorVendaSap(row.volume);
+    if (bVol != null) {
+      const aVol = parseValorVendaSap(prev.volume);
+      prev.volume = somarValorQuadro(aVol == null ? 0 : aVol, bVol);
+    }
+    if (row.peso != null && row.peso !== '') {
+      prev.peso = Math.round(((+prev.peso || 0) + (+row.peso || 0)) * 1000) / 1000;
+    }
+    if (row.qty != null && row.qty !== '') {
+      prev.qty = (+prev.qty || 0) + (+row.qty || 0);
+    }
+  }
+  return order;
+}
+
+/**
+ * O mês aberto só tem o dia de hoje: o R$ desse mês passa a ser o Fatur. completo do ficheiro.
+ * Não soma por cima de uma carga que tenha ficado só com a primeira linha de cada tipo.
+ * Não mexe noutros meses. Volume e contagem de linhas já gravados ficam.
+ */
+function substituirValorMesAbertoPeloFicheiro(quadro, linhasDia, opts) {
+  const o = opts || {};
+  const hoje = String(o.hoje || '').slice(0, 10);
+  const ym = typeof vendasYmFromISO === 'function' ? vendasYmFromISO(hoje) : hoje.slice(0, 7);
+  const linhas = (Array.isArray(linhasDia) ? linhasDia : []).filter(r => String(r && r.data || '').slice(0, 10) === hoje);
+  const out = quadroVendasClone(quadro);
+  if (!/^\d{4}-\d{2}$/.test(ym) || !linhas.length) return out;
+  const delta = agregarVendasQuadro(linhas, o);
+  const srcMes = delta.meses[ym];
+  if (!srcMes || !srcMes.celulas) return out;
+  const prev = (out.meses[ym] && out.meses[ym].celulas) || {};
+  const src = srcMes.celulas;
+  const celulas = {};
+  for (const key of Object.keys(src)) {
+    const s = src[key];
+    const p = prev[key];
+    celulas[key] = {
+      empresa: s.empresa,
+      canal: s.canal,
+      vendedor: s.vendedor,
+      valor: +s.valor || 0,
+      linhasComValor: +s.linhasComValor || 0,
+      linhas: p ? (+p.linhas || 0) : (+s.linhas || 0),
+      volume: p && p.temVolume ? (+p.volume || 0) : 0,
+      temVolume: !!(p && p.temVolume),
+    };
+  }
+  out.meses[ym] = { celulas };
+  const dia = srcMes.ultima_data || hoje;
+  if (dia) out.meses[ym].ultima_data = dia;
+  return out;
+}
+
+/** true se o mês já tem alguma venda anterior ao dia de hoje. Em dúvida, true (não repõe o mês). */
+async function vendasMesTemDiaAnterior(ym, hoje) {
+  const de = String(ym || '') + '-01';
+  const ate = String(hoje || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-01$/.test(de) || !/^\d{4}-\d{2}-\d{2}$/.test(ate) || de >= ate) return false;
+  const res = await fetch(
+    `${SUPA_VENDAS}?select=id&data=gte.${encodeURIComponent(de)}&data=lt.${encodeURIComponent(ate)}&limit=1`,
+    { headers: HEADERS }
+  );
+  if (!res.ok) return true;
+  const rows = await res.json();
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+/**
+ * Mês que só tem o dia de hoje: repõe o Fatur. completo do ficheiro.
+ * Mês que já tem dias anteriores: soma só as linhas novas (já fundidas).
+ * 2025-01 … o mês anterior a hoje não entram aqui.
+ */
+async function aplicarFaturDoDiaAoQuadro(todasLinhasDia, novasLinhas, hoje, mesesFechados) {
+  const dia = String(hoje || '').slice(0, 10);
+  const ym = typeof vendasYmFromISO === 'function' ? vendasYmFromISO(dia) : dia.slice(0, 7);
+  const todas = Array.isArray(todasLinhasDia) ? todasLinhasDia : [];
+  const novas = Array.isArray(novasLinhas) ? novasLinhas : [];
+  if (!/^\d{4}-\d{2}$/.test(ym)) return { substituiu: false };
+  let anterior = true;
+  try { anterior = await vendasMesTemDiaAnterior(ym, dia); }
+  catch (_) { anterior = true; }
+  const repoe = !anterior && todas.length > 0;
+  if (!repoe && !novas.length) return { substituiu: false };
+  const antes = (await lerVendasQuadroPersistida()) || quadroVendasVazio();
+  const mapas = mapasVendasQuadro();
+  let lista = [];
+  try { lista = typeof getListaClientesCompleta === 'function' ? getListaClientesCompleta() : []; } catch (_) {}
+  const o = { hoje: dia, mesesFechados, mapas, npessPorCod: npessPorCodDeLista(lista) };
+  const merged = repoe
+    ? substituirValorMesAbertoPeloFicheiro(antes, todas, o)
+    : aplicarCargaAoQuadro(antes, novas, o);
+  merged.valor_na_base = window._vendasColunasExtra
+    ? !!window._vendasColunasExtra.valor
+    : !!antes.valor_na_base;
+  merged.base_completa = !!antes.base_completa;
+  const saved = await salvarVendasQuadroPersistida(merged);
+  try { renderVendasQuadro(saved); } catch (_) {}
+  try { renderVendasMenuCanal(saved); } catch (_) {}
+  return { substituiu: repoe };
 }
 
 /**
@@ -18952,7 +19114,9 @@ function completarQuadroDesdeBase(anterior, dbQuadro, opts) {
         temVolume: !!((p && p.temVolume) || (d && d.temVolume)),
       };
     }
+    const diaMes = maxDataVendaISO(prev && prev.ultima_data, dbMes && dbMes.ultima_data);
     out.meses[ym] = { celulas };
+    if (diaMes) out.meses[ym].ultima_data = diaMes;
   }
   return out;
 }
@@ -19780,6 +19944,7 @@ function quadroComMarcioIdentificado(quadro) {
   const meses = out.meses || {};
   for (const ym of Object.keys(meses)) {
     const src = (meses[ym] && meses[ym].celulas) || {};
+    const ultimaData = meses[ym] && meses[ym].ultima_data ? meses[ym].ultima_data : '';
     const celulas = {};
     for (const key of Object.keys(src)) {
       const c = src[key];
@@ -19808,6 +19973,7 @@ function quadroComMarcioIdentificado(quadro) {
       }
     }
     meses[ym] = { celulas: celulas };
+    if (ultimaData) meses[ym].ultima_data = ultimaData;
   }
   return out;
 }
@@ -20494,6 +20660,86 @@ function periodoVendasMenuSelecionado() {
   return { mes: mes, ano: ano, ym: ano + '-' + String(mes).padStart(2, '0') };
 }
 
+/** Último dia civil do mês YYYY-MM. */
+function ultimoDiaCivilMesISO(ym) {
+  const parts = String(ym || '').split('-');
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (!y || !m) return '';
+  const d = new Date(y, m, 0);
+  return y + '-' + String(m).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+/** 2026-10-01 → 01/10/2026. Sem data válida → ''. */
+function formatDataQuadroPt(iso) {
+  const s = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(iso) : String(iso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  return s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4);
+}
+
+/**
+ * ultima_data gravada pela cobertura (o que a carga guarda por mês).
+ * Aceita Map, { map }, { meses } ou o objecto YYYY-MM → info.
+ */
+function diaDeCoberturaQuadro(cobertura, ym) {
+  if (!cobertura || !/^\d{4}-\d{2}$/.test(String(ym || ''))) return '';
+  let info = null;
+  if (typeof Map !== 'undefined' && cobertura instanceof Map) info = cobertura.get(ym);
+  else if (cobertura.map instanceof Map) info = cobertura.map.get(ym);
+  else if (cobertura.meses && typeof cobertura.meses === 'object') info = cobertura.meses[ym];
+  else if (typeof cobertura === 'object') info = cobertura[ym];
+  const dia = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(info && info.ultima_data) : '';
+  return dia && dia.slice(0, 7) === ym ? dia : '';
+}
+
+/** Dia máximo do mês: primeiro o agregado vendas_quadro; senão a cobertura já gravada. */
+function diaMaxMesQuadro(quadro, ym, cobertura) {
+  const mes = quadro && quadro.meses ? quadro.meses[ym] : null;
+  let dia = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(mes && mes.ultima_data) : '';
+  if (!dia || dia.slice(0, 7) !== ym) dia = '';
+  if (!dia) dia = diaDeCoberturaQuadro(cobertura, ym);
+  return dia || '';
+}
+
+/**
+ * Frase junto do título.
+ * Mês completo (último dia civil presente, ou mês fechado) → até ao último dia desse mês.
+ * Mês aberto → último dia que entrou.
+ * Sem dia no agregado nem na cobertura → não se inventa data.
+ */
+function textoAtualizacaoQuadroMes(quadro, ym, opts) {
+  const o = opts || {};
+  if (!/^\d{4}-\d{2}$/.test(String(ym || ''))) return 'sem vendas carregadas neste mês';
+  const dia = diaMaxMesQuadro(quadro, ym, o.cobertura);
+  if (!dia) return 'sem vendas carregadas neste mês';
+  const ultimo = ultimoDiaCivilMesISO(ym);
+  const hoje = o.hoje || (typeof vendasHojeISO === 'function' ? vendasHojeISO() : '');
+  const ultimoPresente = !!(ultimo && dia >= ultimo);
+  let fechado = false;
+  if (typeof isVendasMesFechado === 'function') {
+    fechado = isVendasMesFechado(ym, { linhas: 1, ultima_data: dia }, hoje || undefined);
+  }
+  const mostrar = (ultimoPresente || fechado) ? (ultimo || dia) : dia;
+  const fmt = formatDataQuadroPt(mostrar);
+  if (!fmt) return 'sem vendas carregadas neste mês';
+  return 'Atualizado até ' + fmt;
+}
+
+/** Cobertura já em memória (a carga grava ultima_data por mês). */
+function coberturaParaFraseQuadro() {
+  if (typeof window === 'undefined') return null;
+  if (window._vendasCoberturaMeta && window._vendasCoberturaMeta.meses) return window._vendasCoberturaMeta;
+  if (window._vendasCoberturaCache instanceof Map && window._vendasCoberturaCache.size) return window._vendasCoberturaCache;
+  return null;
+}
+
+function fraseAtualizacaoQuadroVisivel(quadro, ym) {
+  return textoAtualizacaoQuadroMes(quadro, ym, {
+    hoje: typeof vendasHojeISO === 'function' ? vendasHojeISO() : '',
+    cobertura: coberturaParaFraseQuadro(),
+  });
+}
+
 function renderVendasMenuCanal(quadroOpt) {
   const el = document.getElementById('canal-vendas-quadro');
   if (!el) return;
@@ -20505,6 +20751,10 @@ function renderVendasMenuCanal(quadroOpt) {
   const titulo = document.getElementById('canal-vendas-titulo');
   const canal = (typeof CANAIS_APP !== 'undefined' && canalId && CANAIS_APP[canalId]) ? CANAIS_APP[canalId] : null;
   if (titulo) titulo.textContent = canal ? ('Vendas · ' + canal.nome) : 'Vendas';
+  const ateCanal = document.getElementById('canal-vendas-ate');
+  if (ateCanal && typeof fraseAtualizacaoQuadroVisivel === 'function') {
+    ateCanal.textContent = fraseAtualizacaoQuadroVisivel(quadro, periodo.ym);
+  }
   const esc = (s) => (typeof escHtml === 'function' ? escHtml(s) : String(s || ''));
   const filtro = (typeof window !== 'undefined' && window._cvmFiltro) ? window._cvmFiltro : null;
   el.innerHTML = htmlQuadroVendasMenuCanal(quadro, periodo.mes, periodo.ano, canalId, filtro, esc);
@@ -20551,6 +20801,7 @@ async function loadVendasMenuCanal() {
   preencherSelectsVendasMenu();
   try {
     const q = await lerVendasQuadroPersistida();
+    try { if (typeof lerVendasCoberturaPersistida === 'function') await lerVendasCoberturaPersistida(); } catch (_) {}
     renderVendasMenuCanal(q);
   } catch (e) {
     el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao ler o quadro: ${e.message || e}</div>`;
@@ -20597,6 +20848,10 @@ function renderVendasQuadro(quadroOpt) {
   if (selMesEl && selMesEl.style) {
     selMesEl.style.outline = ehActual ? '2px solid #2563eb' : '';
     selMesEl.style.background = ehActual ? '#eff6ff' : '';
+  }
+  const ateGeral = document.getElementById('vq-atualizado-ate');
+  if (ateGeral && typeof fraseAtualizacaoQuadroVisivel === 'function') {
+    ateGeral.textContent = fraseAtualizacaoQuadroVisivel(quadro, ym);
   }
 
   const mesAgg = quadro.meses[ym];
@@ -20777,6 +21032,7 @@ function pvMontarVistaVendas() {
       <div style="margin-bottom:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;">
         <div>
           <div style="font-size:16px;font-weight:700;">Vendas</div>
+          <div id="vq-atualizado-ate" style="font-size:14px;font-weight:700;color:#1e40af;margin-top:4px;"></div>
           <div id="vq-subtitulo" style="font-size:12px;color:var(--muted);margin-top:2px;">mês, ano anterior (N-1) e acumulado até esse mês — vendas líquidas, como no Power BI</div>
         </div>
         ${adminBtn}
@@ -20803,6 +21059,7 @@ async function loadVendasQuadro() {
   preencherSelectsQuadroVendas();
   try {
     const q = await lerVendasQuadroPersistida();
+    try { if (typeof lerVendasCoberturaPersistida === 'function') await lerVendasCoberturaPersistida(); } catch (_) {}
     renderVendasQuadro(q);
   } catch (e) {
     el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao ler o quadro: ${e.message || e}</div>`;
@@ -21389,9 +21646,11 @@ async function processVendasFile(event) {
     });
     console.log('Dedup vendas dia', hoje, '→', existingInRange, 'chaves; ignoradas outro dia', linhasIgnoradasOutroDia, 'fechado', linhasIgnoradasFechado);
 
-    // Dedup entre ficheiros desta carga + contra o servidor (só meses abertos)
+    // O Fatur. de todas as linhas do dia soma, mesmo quando o cliente repete o tipo.
+    // A tabela continua com uma chave (cliente + data + tipo) para não duplicar na segunda carga.
+    const linhasFundidas = fundirLinhasVendaMesmoDia(candidatos);
     const seenLocal = new Set();
-    for (const row of candidatos) {
+    for (const row of linhasFundidas) {
       const dedupKey = vendaDedupKey(row.cod, row.data, row.tipo);
       if (seenLocal.has(dedupKey)) continue;
       seenLocal.add(dedupKey);
@@ -21409,6 +21668,15 @@ async function processVendasFile(event) {
       } catch (e) {
         console.warn('quadro valor histórico:', e.message || e);
       }
+      let quadroDiaMsg = '';
+      try {
+        const reposto = await aplicarFaturDoDiaAoQuadro(candidatos, [], hoje, mesesFechados);
+        if (reposto && reposto.substituiu) {
+          quadroDiaMsg = '<br>• Quadro: R$ de hoje reposto com o Fatur. completo do ficheiro (não soma por cima, meses anteriores intactos)';
+        }
+      } catch (e) {
+        console.warn('quadro dia já carregado:', e.message || e);
+      }
       setStatus(
         `<div style="background:#fff3e0;border-radius:6px;padding:10px;font-size:12px;color:#e65100;line-height:1.6">
           ℹ️ Nenhum registo novo no dia <strong>${hoje}</strong> — as linhas já na base ficam.<br>
@@ -21419,6 +21687,7 @@ async function processVendasFile(event) {
           • Já no servidor nesse dia: <strong>${existingInRange.toLocaleString('pt-BR')}</strong>
           ${txtAntes2025}
           ${quadroHistMsg}
+          ${quadroDiaMsg}
         </div>`
       );
       localStorage.setItem('delta_vendas_ultima_carga', JSON.stringify({
@@ -21495,11 +21764,13 @@ async function processVendasFile(event) {
     let quadroMsg = '';
     try {
       await aplicarValorHistoricoDestaCarga();
-      await aplicarNovasLinhasAoQuadro(newVendas, hoje, mesesFechados);
+      const reposto = await aplicarFaturDoDiaAoQuadro(candidatos, newVendas, hoje, mesesFechados);
       const temValorCol = !!(window._vendasColunasExtra && window._vendasColunasExtra.valor);
-      quadroMsg = temValorCol
-        ? '<br>• Quadro de vendas: mês de hoje actualizado (R$ na tabela)'
-        : '<br>• Quadro de vendas: mês de hoje actualizado com o R$ desta carga (a tabela ainda não tem coluna de valor — o agregado guarda o R$)';
+      quadroMsg = (reposto && reposto.substituiu)
+        ? '<br>• Quadro de vendas: R$ de hoje reposto com o Fatur. completo do ficheiro'
+        : (temValorCol
+          ? '<br>• Quadro de vendas: mês de hoje actualizado (R$ na tabela)'
+          : '<br>• Quadro de vendas: mês de hoje actualizado com o R$ desta carga (a tabela ainda não tem coluna de valor — o agregado guarda o R$)');
       quadroMsg += quadroHistMsg;
     } catch (e) {
       console.warn('quadro após carga:', e.message || e);
@@ -35038,7 +35309,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-nfe-filtros: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-1out: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
