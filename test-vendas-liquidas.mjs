@@ -109,7 +109,16 @@ for (const name of [
   'vendaDataEntraNaCarga',
   'vendaDataAntesDe2025',
   'vendaAnoRecebeValorQuadro',
+  'canalQuadroEAntigo',
+  'mesQuadroTemCanaisAntigos',
+  'quadroTemCanaisAntigos',
+  'mesQuadroCorrigido',
+  'quadroJaCorrigidoPeloExcel',
+  'decidirActualizarQuadroVendas',
+  'vendaMesQuadroSubstituivel',
   'vendaLinhaEntraValorHistorico',
+  'classificarLinhasCargaVendas',
+  'totalQuadroAno',
   'substituirValorMesesFechadosNoQuadro',
 ]) {
   vm.runInContext(extractFn(html, name), ctx);
@@ -292,15 +301,141 @@ check('substituir o mês fechado usa o P&L e a segunda carga não duplica', () =
   assert.equal(celula(q, '2026-09', 'Q Brasil', 'Distribuidores de retalho', 'DIOGO OLIVEIRA').valor, 246644);
 });
 
+check('carga Set/2026 apaga Ecommerce 14016, grava Lojas online e a segunda não duplica', () => {
+  const mapas = ctx.mapasVendasQuadro();
+  const hoje = '2026-10-01';
+  const fechados = new Set();
+  const base = ctx.quadroVendasVazio();
+  base.meses['2026-09'] = {
+    celulas: {
+      'Delta Foods Brasil\tEcommerce\tMARCIO GORGA': {
+        empresa: 'Delta Foods Brasil', canal: 'Ecommerce', vendedor: 'MARCIO GORGA',
+        valor: 14016, linhas: 98, linhasComValor: 98,
+      },
+    },
+  };
+  base.meses['2026-08'] = {
+    celulas: {
+      'Delta Foods Brasil\tHoreca\tHÉLCIO GRÉGIO': {
+        empresa: 'Delta Foods Brasil', canal: 'Horeca', vendedor: 'HÉLCIO GRÉGIO',
+        valor: 7760, linhas: 16, linhasComValor: 16,
+      },
+    },
+  };
+  const linhas = [{ data: '2026-09-10', valor: 5000, npess: 99520001, tipo: 'OUTRO', cod: '100' }];
+  const partes = ctx.classificarLinhasCargaVendas(linhas, fechados, hoje);
+  assert.equal(partes.inserir.length, 0, 'Set/2026 não entra na tabela vendas');
+  assert.equal(partes.valorHistorico.length, 1);
+  assert.equal(ctx.vendaMesQuadroSubstituivel('2026-09', fechados, hoje), true);
+  let q = ctx.substituirValorMesesFechadosNoQuadro(base, partes.valorHistorico, { mapas, hoje, mesesFechados: fechados });
+  assert.equal(celula(q, '2026-09', 'Delta Foods Brasil', 'Ecommerce', 'MARCIO GORGA'), null);
+  const lojas = celula(q, '2026-09', 'Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA');
+  assert.ok(lojas, '99520001 fica em Lojas online');
+  assert.equal(lojas.valor, 5000);
+  assert.notEqual(lojas.valor, 14016);
+  assert.notEqual(lojas.valor, 14016 + 5000, 'não soma por cima do valor antigo');
+  assert.equal(celula(q, '2026-08', 'Delta Foods Brasil', 'Horeca', 'HÉLCIO GRÉGIO').valor, 7760, 'mês ausente do ficheiro fica');
+  const outraVez = ctx.classificarLinhasCargaVendas(linhas, fechados, hoje);
+  assert.equal(outraVez.inserir.length, 0, 'segunda carga também não grava linhas');
+  q = ctx.substituirValorMesesFechadosNoQuadro(q, outraVez.valorHistorico, { mapas, hoje, mesesFechados: fechados });
+  assert.equal(celula(q, '2026-09', 'Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA').valor, 5000, 'segunda carga não duplica');
+  assert.equal(celula(q, '2026-09', 'Delta Foods Brasil', 'Ecommerce', 'MARCIO GORGA'), null);
+  assert.equal(Object.keys(q.meses['2026-09'].celulas).length, 1);
+  assert.equal(q.origem_liquida, true);
+});
+
+check('o ecrã avisa quando o agregado ainda tem canais antigos', () => {
+  assert.equal(ctx.canalQuadroEAntigo('Ecommerce'), true);
+  assert.equal(ctx.canalQuadroEAntigo('Horeca'), true);
+  assert.equal(ctx.canalQuadroEAntigo('Varejo e Distr. Varejo'), true);
+  assert.equal(ctx.canalQuadroEAntigo('Distribuidores'), true);
+  assert.equal(ctx.canalQuadroEAntigo('Distribuidores regionais'), false);
+  assert.equal(ctx.canalQuadroEAntigo('Distribuidores de retalho'), false);
+  assert.equal(ctx.canalQuadroEAntigo('Lojas online'), false);
+  assert.equal(ctx.canalQuadroEAntigo('Restauração'), false);
+  const antigo = ctx.quadroVendasVazio();
+  antigo.meses['2026-09'] = {
+    celulas: {
+      'Delta Foods Brasil\tEcommerce\tMARCIO GORGA': {
+        empresa: 'Delta Foods Brasil', canal: 'Ecommerce', vendedor: 'MARCIO GORGA',
+        valor: 14016, linhas: 98, linhasComValor: 98,
+      },
+    },
+  };
+  assert.equal(ctx.quadroTemCanaisAntigos(antigo), true);
+  const semValor = ctx.decidirActualizarQuadroVendas({ valor: false }, antigo);
+  assert.equal(semValor.acao, 'explicar');
+  assert.ok(/coluna de valor/.test(semValor.mensagem));
+  assert.ok(/Carregar Vendas/.test(semValor.mensagem));
+  const comValor = ctx.decidirActualizarQuadroVendas({ valor: true }, antigo);
+  assert.equal(comValor.acao, 'explicar');
+  assert.ok(/canais anteriores/.test(comValor.mensagem));
+  const corrigido = ctx.quadroVendasVazio();
+  corrigido.origem_liquida = true;
+  corrigido.meses['2026-09'] = {
+    celulas: {
+      'Delta Foods Brasil\tLojas online\tMARCIO GORGA': {
+        empresa: 'Delta Foods Brasil', canal: 'Lojas online', vendedor: 'MARCIO GORGA',
+        valor: 5000, linhas: 2, linhasComValor: 2,
+      },
+    },
+  };
+  const manter = ctx.decidirActualizarQuadroVendas({ valor: true }, corrigido);
+  assert.equal(manter.acao, 'manter');
+  const vazio = ctx.decidirActualizarQuadroVendas({ valor: true }, ctx.quadroVendasVazio());
+  assert.equal(vazio.acao, 'reconstruir');
+
+  const els = {};
+  function makeEl() {
+    return {
+      options: [], dataset: { ready: '1' }, value: '', style: {}, innerHTML: '', textContent: '',
+      addEventListener() {},
+    };
+  }
+  ctx.document = { getElementById(id) { if (!els[id]) els[id] = makeEl(); return els[id]; } };
+  ctx.VENDAS_MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  ctx.VENDAS_COBERTURA_INICIO = { y: 2019, m: 9 };
+  ctx.escHtml = (s) => String(s == null ? '' : s);
+  ctx.window = ctx.window || {};
+  ctx.onClickVendasQuadro = function () {};
+  for (const name of [
+    'formatValorQuadroRs', 'preencherSelectsQuadroVendas', 'periodoQuadroSelecionado',
+    'htmlValorQuadroClicavel', 'htmlContagemQuadroClicavel', 'filtroQuadroActivoIgual',
+    'vendasQuadroPassaFiltro',
+    'renderVendasQuadro',
+  ]) {
+    vm.runInContext(extractFn(html, name), ctx);
+  }
+  ctx.document.getElementById('vq-mes');
+  ctx.document.getElementById('vq-ano');
+  els['vq-mes'].value = '9';
+  els['vq-ano'].value = '2026';
+  els['vq-mes'].dataset.ready = '1';
+  ctx.renderVendasQuadro(antigo);
+  const out = els['pv-vendas-quadro'].innerHTML;
+  assert.ok(out.includes('quadro anterior'), 'avisa que o R$ é o quadro anterior');
+  assert.ok(out.includes('Carregar Vendas'));
+  assert.ok(out.includes('14016') || out.includes('14.016') || out.includes('14\u00a0016'), 'mostra o valor antigo');
+  assert.ok(!out.includes('Valores = vendas líquidas, como no Power BI.'), 'não apresenta o quadro antigo como Power BI');
+  assert.ok(/quadro anterior/.test(els['vq-subtitulo'].textContent));
+});
+
 check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   assert.ok(html.includes('Valores = vendas líquidas, como no Power BI.'));
   assert.ok(html.includes('vendas líquidas, como no Power BI'));
+  assert.ok(html.includes('Estes R$ são o quadro anterior'));
   const proc = extractFn(html, 'processVendasFile');
   assert.ok(proc.includes('indiceColunaValorVenda(headers)'));
+  assert.ok(proc.includes('indiceColunaNpessVenda(headers)'));
   assert.ok(proc.includes('substituirValorHistoricoNoQuadro'));
+  assert.ok(proc.includes('iNpessVenda >= 0'));
+  const act = extractFn(html, 'actualizarQuadroVendas');
+  assert.ok(act.includes('decidirActualizarQuadroVendas'));
+  assert.ok(act.indexOf('decidirActualizarQuadroVendas') < act.indexOf('somarQuadrosVendas'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-liq'));
-  assert.ok(html.includes('v2026-10-01-vendas-liq'));
+  assert.ok(sw.includes('v2026-10-01-vendas-liq2'));
+  assert.ok(html.includes('v2026-10-01-vendas-liq2'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-liq —'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
 });
 

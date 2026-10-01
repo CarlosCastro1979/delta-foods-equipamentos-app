@@ -17012,10 +17012,12 @@ async function loadVendasCobertura(forceRefresh = false) {
 // O mês do dia de hoje só soma linhas novas.
 // Meses fechados de 2025 e 2026: o R$ de vendas líquidas do Excel substitui o mês no quadro, sem gravar linhas.
 // Canais = linhas do Power BI (Lojas online, Restauração, …), não Ecommerce/Horeca/Varejo.
+// O agregado antigo (esses canais) não é reclassificado ao abrir o ecrã: fica visível como quadro anterior
+// até Dados → Carregar Vendas com o Excel (vendas líquidas + Nº pessoal).
 // Antes de 2025 não entra (nem linhas nem R$).
 
 function quadroVendasVazio() {
-  return { atualizado_em: null, valor_na_base: false, base_completa: false, meses: {} };
+  return { atualizado_em: null, valor_na_base: false, base_completa: false, origem_liquida: false, meses: {} };
 }
 
 function quadroVendasClone(q) {
@@ -17024,6 +17026,7 @@ function quadroVendasClone(q) {
     atualizado_em: src.atualizado_em || null,
     valor_na_base: !!src.valor_na_base,
     base_completa: !!src.base_completa,
+    origem_liquida: !!src.origem_liquida,
     meses: JSON.parse(JSON.stringify(src.meses || {})),
   };
 }
@@ -17308,6 +17311,99 @@ function vendaAnoRecebeValorQuadro(dataStr) {
   return y === 2025 || y === 2026;
 }
 
+/**
+ * Canal gravado pela classificação antiga da app.
+ * Ecommerce, Horeca, Varejo (incluindo «Varejo e Distr. Varejo») e «Distribuidores»
+ * sem «regionais» / «de retalho». Lojas online, Restauração, Retalho moderno,
+ * Distribuidores regionais e Distribuidores de retalho não contam.
+ */
+function canalQuadroEAntigo(canal) {
+  const n = String(canal || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!n || n === 'por classificar') return false;
+  if (n === 'ecommerce' || n === 'e-commerce' || n === 'e commerce') return true;
+  if (n === 'horeca') return true;
+  if (n.indexOf('varejo') >= 0) return true;
+  if (n === 'distribuidores' || n === 'distribuidor') return true;
+  if (/^distribuidores?\b/.test(n) && n.indexOf('region') < 0 && n.indexOf('retalh') < 0) return true;
+  return false;
+}
+
+function mesQuadroTemCanaisAntigos(mes) {
+  const celulas = mes && mes.celulas;
+  if (!celulas) return false;
+  const lista = Object.values(celulas);
+  for (let i = 0; i < lista.length; i++) {
+    if (canalQuadroEAntigo(lista[i] && lista[i].canal)) return true;
+  }
+  return false;
+}
+
+function quadroTemCanaisAntigos(quadro) {
+  const meses = (quadro && quadro.meses) || {};
+  const chaves = Object.keys(meses);
+  for (let i = 0; i < chaves.length; i++) {
+    if (mesQuadroTemCanaisAntigos(meses[chaves[i]])) return true;
+  }
+  return false;
+}
+
+/** Mês com linhas do Power BI e R$ — não é o quadro anterior. */
+function mesQuadroCorrigido(mes) {
+  const celulas = mes && mes.celulas ? Object.values(mes.celulas) : [];
+  if (!celulas.length || mesQuadroTemCanaisAntigos(mes)) return false;
+  for (let i = 0; i < celulas.length; i++) {
+    if (Math.abs(+celulas[i].valor || 0) > 0) return true;
+  }
+  return false;
+}
+
+function quadroJaCorrigidoPeloExcel(quadro) {
+  if (quadro && quadro.origem_liquida) return true;
+  const meses = quadro && quadro.meses ? Object.values(quadro.meses) : [];
+  if (!meses.length || quadroTemCanaisAntigos(quadro)) return false;
+  for (let i = 0; i < meses.length; i++) {
+    if (mesQuadroCorrigido(meses[i])) return true;
+  }
+  return false;
+}
+
+/**
+ * Actualizar quadro lê a tabela vendas, que não tem valor líquido nem NPess histórico.
+ * Sem coluna de valor, ou com canais antigos, ou já corrigido pelo Excel: não reconstrói.
+ */
+function decidirActualizarQuadroVendas(cols, quadro) {
+  if (!cols || !cols.valor) {
+    return {
+      acao: 'explicar',
+      mensagem: 'A tabela de vendas não tem a coluna de valor (vendas líquidas). Actualizar o quadro a partir da base gravaria zeros ou os canais antigos por cima, e apagaria um quadro já corrigido. Use Dados → Carregar Vendas com o Excel de 2026 (coluna de vendas líquidas e Nº pessoal).',
+    };
+  }
+  if (quadroTemCanaisAntigos(quadro)) {
+    return {
+      acao: 'explicar',
+      mensagem: 'O quadro guardado ainda tem os canais anteriores (Ecommerce, Horeca, Varejo ou Distribuidores). Este botão não os substitui: a tabela de vendas não tem o valor líquido nem o Nº pessoal desses meses. Use Dados → Carregar Vendas com o Excel de 2026.',
+    };
+  }
+  if (quadroJaCorrigidoPeloExcel(quadro)) {
+    return {
+      acao: 'manter',
+      mensagem: 'O quadro já está com as linhas do Power BI. Actualizar a partir da tabela de vendas não volta a gravar por cima nem limpa estes R$.',
+    };
+  }
+  if (quadro && quadro.base_completa) {
+    return {
+      acao: 'manter',
+      mensagem: 'Quadro já guardado. Meses fechados intactos — o fim do dia só soma o dia de hoje.',
+    };
+  }
+  return { acao: 'reconstruir', mensagem: '' };
+}
+
 /** Antes de 2025 a carga ignora a linha por completo: nem grava nem soma R$. */
 function vendaDataAntesDe2025(dataStr) {
   const ym = vendasYmFromISO(dataStr);
@@ -17317,9 +17413,27 @@ function vendaDataAntesDe2025(dataStr) {
 }
 
 /**
- * Linha de mês fechado em 2025 ou 2026, fora do mês do dia local de hoje.
+ * Mês de 2025–2026 cujo R$ o Excel pode substituir por completo.
+ * Entra se a cobertura o marca fechado, ou se o mês já passou (é anterior ao mês de hoje).
+ * O mês do dia de hoje nunca é reposto — senão um ficheiro parcial apagava o acumulado.
+ * Antes de 2025 não entra.
+ */
+function vendaMesQuadroSubstituivel(ym, mesesFechados, hojeOpt) {
+  if (!/^\d{4}-\d{2}$/.test(String(ym || ''))) return false;
+  if (!vendaAnoRecebeValorQuadro(ym + '-01')) return false;
+  const hoje = String(hojeOpt || '').slice(0, 10);
+  const hojeYm = vendasYmFromISO(hoje);
+  if (hojeYm && ym === hojeYm) return false;
+  if (mesesFechados && typeof mesesFechados.has === 'function' && mesesFechados.has(ym)) return true;
+  return !!(hojeYm && ym < hojeYm);
+}
+
+/**
+ * Linha de mês fechado (ou já passado) em 2025 ou 2026, fora do mês do dia local de hoje.
  * O R$ entra no quadro; a linha não é gravada na tabela vendas.
  * O mês de hoje fica de fora: um ficheiro só com o dia de hoje não repõe o mês inteiro.
+ * Um mês de 2025–2026 já terminado entra mesmo que a cobertura ainda o diga pendente —
+ * senão o Excel recarregado deixava o agregado antigo (Ecommerce/Horeca/Varejo).
  */
 function vendaLinhaEntraValorHistorico(dataStr, mesesFechados, hojeOpt) {
   const hoje = String(hojeOpt || '').slice(0, 10);
@@ -17327,9 +17441,7 @@ function vendaLinhaEntraValorHistorico(dataStr, mesesFechados, hojeOpt) {
   if (!dia || (hoje && dia === hoje)) return false;
   if (!vendaAnoRecebeValorQuadro(dia)) return false;
   const ym = vendasYmFromISO(dia);
-  const hojeYm = vendasYmFromISO(hoje);
-  if (hojeYm && ym === hojeYm) return false;
-  return vendaDataCaiEmMesFechado(dia, mesesFechados);
+  return vendaMesQuadroSubstituivel(ym, mesesFechados, hoje);
 }
 
 /**
@@ -17358,9 +17470,14 @@ function classificarLinhasCargaVendas(rows, mesesFechados, hojeOpt) {
       inserir.push(row);
       continue;
     }
+    // Mês substituível: o R$ entra no quadro e a linha NÃO vai para a tabela vendas.
+    if (vendaLinhaEntraValorHistorico(dataStr, fechados, hoje)) {
+      ignoradasFechado++;
+      valorHistorico.push(row);
+      continue;
+    }
     if (vendaDataCaiEmMesFechado(dataStr, fechados)) {
       ignoradasFechado++;
-      if (vendaLinhaEntraValorHistorico(dataStr, fechados, hoje)) valorHistorico.push(row);
       continue;
     }
     ignoradasOutroDia++;
@@ -17388,18 +17505,17 @@ function linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpess, dataStr) {
 }
 
 /**
- * Para cada mês fechado de 2025–2026 presente nas linhas, o R$ desse mês
- * passa a ser o total do ficheiro (vendas líquidas, linhas do P&L) — não soma por cima.
- * O mês fica só com as células deste ficheiro: a linha antiga (Ecommerce/Horeca/Varejo)
- * não permanece a R$ 0 ao lado do Power BI. Meses que o ficheiro não traz ficam.
- * Chave que já existia conserva a contagem de linhas. Chave nova usa a contagem
- * do ficheiro, para o R$ aparecer (o ecrã esconde valor sem linhas).
- * O mês do dia de hoje não é reposto. Segunda carga do mesmo Excel substitui pelos mesmos totais.
+ * Para cada mês fechado (ou já passado) de 2025–2026 presente nas linhas, apaga as
+ * células desse mês — Ecommerce, Horeca, Varejo, Distribuidores genéricos — e grava
+ * só as células deste ficheiro (linhas do P&L + vendas líquidas + NPess).
+ * O valor novo substitui; não soma por cima do R$ antigo.
+ * Meses que o ficheiro não traz ficam. O mês do dia de hoje não é reposto.
+ * Chave que já existia (mesma linha do P&L) conserva a contagem de linhas, para a
+ * segunda carga não duplicar. Chave nova usa a contagem do ficheiro.
  */
 function substituirValorMesesFechadosNoQuadro(quadro, linhas, opts) {
   const o = opts || {};
   const hoje = String(o.hoje || '').slice(0, 10);
-  const hojeYm = vendasYmFromISO(hoje);
   const fechados = o.mesesFechados;
   const historicas = (Array.isArray(linhas) ? linhas : []).filter(r =>
     vendaLinhaEntraValorHistorico(r && r.data, fechados, hoje)
@@ -17407,10 +17523,9 @@ function substituirValorMesesFechadosNoQuadro(quadro, linhas, opts) {
   if (!historicas.length) return quadroVendasClone(quadro);
   const delta = agregarVendasQuadro(historicas, o);
   const out = quadroVendasClone(quadro);
+  let substituiu = false;
   for (const ym of Object.keys(delta.meses || {})) {
-    if (!vendaAnoRecebeValorQuadro(ym + '-01')) continue;
-    if (hojeYm && ym === hojeYm) continue;
-    if (!(fechados && typeof fechados.has === 'function' && fechados.has(ym))) continue;
+    if (!vendaMesQuadroSubstituivel(ym, fechados, hoje)) continue;
     const src = (delta.meses[ym] && delta.meses[ym].celulas) || {};
     const prev = (out.meses[ym] && out.meses[ym].celulas) || {};
     const celulas = {};
@@ -17431,8 +17546,11 @@ function substituirValorMesesFechadosNoQuadro(quadro, linhas, opts) {
           : 0,
       };
     }
+    // Apaga o mês inteiro (não deixa Ecommerce/Horeca/Varejo ao lado do Power BI).
     out.meses[ym] = { celulas };
+    substituiu = true;
   }
+  if (substituiu) out.origem_liquida = true;
   return out;
 }
 
@@ -17470,6 +17588,7 @@ function completarQuadroDesdeBase(anterior, dbQuadro, opts) {
   const fechados = o.mesesFechados;
   const dbMeses = (dbQuadro && dbQuadro.meses) || {};
   for (const ym of Object.keys(dbMeses)) {
+    if (mesQuadroCorrigido(out.meses[ym])) continue;
     const fechado = !!(fechados && typeof fechados.has === 'function' && fechados.has(ym) && ym !== hojeYm);
     if (fechado && out.meses[ym]) continue;
     if (ym !== hojeYm && out.meses[ym] && out.base_completa) continue;
@@ -17582,6 +17701,7 @@ function normalizarQuadroPersistido(payload) {
   q.atualizado_em = payload.atualizado_em || null;
   q.valor_na_base = !!payload.valor_na_base;
   q.base_completa = !!payload.base_completa;
+  q.origem_liquida = !!payload.origem_liquida;
   q.meses = payload.meses;
   return q;
 }
@@ -17783,6 +17903,16 @@ function renderVendasQuadro(quadroOpt) {
 
   const mesAgg = quadro.meses[ym];
   const celulas = mesAgg && mesAgg.celulas ? Object.values(mesAgg.celulas) : [];
+  const mesAntigo = mesQuadroTemCanaisAntigos(mesAgg);
+  const quadroAntigo = quadroTemCanaisAntigos(quadro);
+  const subEl = document.getElementById('vq-subtitulo');
+  if (subEl) {
+    subEl.textContent = mesAntigo
+      ? 'quadro anterior — estes R$ ainda não são o Power BI. Dados → Carregar Vendas com o Excel de 2026.'
+      : (quadroAntigo
+        ? 'há meses com o quadro anterior (Ecommerce, Horeca, Varejo). Dados → Carregar Vendas com o Excel de 2026.'
+        : 'por empresa, canal e vendedor — vendas líquidas, como no Power BI');
+  }
   const anoTot = totalQuadroAno(quadro, ano);
   const filtro = window._vqFiltro || null;
   const esc = (s) => (typeof escHtml === 'function' ? escHtml(s) : String(s || ''));
@@ -17895,7 +18025,14 @@ function renderVendasQuadro(quadroOpt) {
     : '';
   const baseTxt = 'Agregado guardado' + (ts ? ' · ' + ts : '') + '.';
 
+  const avisoQuadro = mesAntigo
+    ? `<div class="vq-aviso-antigo" style="background:#fff7ed;border:1px solid #c2410c;color:#9a3412;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:14px;line-height:1.5;"><strong>Estes R$ são o quadro anterior</strong> (Ecommerce, Horeca, Varejo ou Distribuidores). Ainda não são as linhas do Power BI. Para substituir este mês: <strong>Dados → Carregar Vendas</strong> com o Excel de 2026 (coluna de vendas líquidas e Nº pessoal).</div>`
+    : (quadroAntigo
+      ? `<div class="vq-aviso-antigo" style="background:#fff7ed;border:1px solid #c2410c;color:#9a3412;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:14px;line-height:1.5;">O quadro guardado ainda tem meses com os canais anteriores (Ecommerce, Horeca, Varejo ou Distribuidores). Esses R$ não são o Power BI. <strong>Dados → Carregar Vendas</strong> com o Excel de 2026 (coluna de vendas líquidas e Nº pessoal).</div>`
+      : `<div class="vcob-note" style="margin-bottom:8px;">Valores = vendas líquidas, como no Power BI.</div>`);
+
   el.innerHTML = `
+    ${avisoQuadro}
     <div class="vq-cards">
       <div class="vq-card${ehActual ? ' vq-card-actual' : ''}">
         <div class="vq-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Mês ${esc(nomeMes)}${ehActual ? ' · actual' : ''}</div>
@@ -17909,7 +18046,6 @@ function renderVendasQuadro(quadroOpt) {
       </div>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${anoNota}</div>
-    <div class="vcob-note" style="margin-bottom:8px;">Valores = vendas líquidas, como no Power BI.</div>
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Resumo <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica no valor em R$ para filtrar o detalhe)</span></div>
     <div class="vq-scroll">
       <table class="vq-table">
@@ -17976,7 +18112,7 @@ function pvMontarVistaVendas() {
       <div style="margin-bottom:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;">
         <div>
           <div style="font-size:16px;font-weight:700;">Vendas</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px;">por empresa, canal e vendedor — vendas líquidas, como no Power BI</div>
+          <div id="vq-subtitulo" style="font-size:12px;color:var(--muted);margin-top:2px;">por empresa, canal e vendedor — vendas líquidas, como no Power BI</div>
         </div>
         ${adminBtn}
       </div>
@@ -18015,9 +18151,16 @@ async function actualizarQuadroVendas() {
   if (btn) btn.disabled = true;
   try {
     const existente = (await lerVendasQuadroPersistida()) || quadroVendasVazio();
-    if (existente.base_completa) {
+    const cols = await detectarColunasVendasQuadro();
+    const decisao = decidirActualizarQuadroVendas(cols, existente);
+    if (decisao.acao !== 'reconstruir') {
       renderVendasQuadro(existente);
-      if (typeof toast === 'function') toast('Quadro já guardado. Meses fechados intactos — o fim do dia só soma o dia de hoje.');
+      const escMsg = typeof escHtml === 'function' ? escHtml(decisao.mensagem) : String(decisao.mensagem || '');
+      const caixa = document.getElementById('pv-vendas-quadro');
+      if (caixa && escMsg) {
+        caixa.innerHTML = `<div class="vq-aviso-antigo" style="background:#fff7ed;border:1px solid #c2410c;color:#9a3412;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:14px;line-height:1.5;">${escMsg}</div>` + (caixa.innerHTML || '');
+      }
+      if (typeof toast === 'function' && decisao.mensagem) toast(decisao.mensagem);
       return;
     }
     let lista = [];
@@ -18028,7 +18171,6 @@ async function actualizarQuadroVendas() {
     }
     const mapas = mapasVendasQuadro();
     const npessPorCod = npessPorCodDeLista(lista);
-    const cols = await detectarColunasVendasQuadro();
     const select = cols.valor ? 'cod,data,valor,npess' : 'cod,data';
     el.innerHTML = `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> A construir o quadro em lotes… 0 linhas. Meses fechados não são reescritos.</div>`;
     let db = quadroVendasVazio();
@@ -18354,15 +18496,22 @@ async function processVendasFile(event) {
           continue;
         }
         // Só o dia local de hoje é gravado — mesmo que o resumo ainda diga o mês fechado.
-        // Meses fechados de 2025–2026: não grava a linha; o R$ do Excel substitui esse mês no quadro.
+        // Mês fechado ou já passado de 2025–2026, com vendas líquidas e Nº pessoal:
+        // não grava a linha (não duplica a tabela); apaga as células antigas desse mês no quadro.
+        const ymLinha = dataStr.slice(0, 7);
+        const substituiMes = iValor >= 0 && iNpessVenda >= 0
+          && vendaLinhaEntraValorHistorico(dataStr, mesesFechados, hoje);
+        if (substituiMes) {
+          linhasIgnoradasFechado++;
+          mesesIgnoradosSet.add(ymLinha);
+          linhasValorHistorico.push(linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpessVenda, dataStr));
+          mesesValorHistoricoSet.add(ymLinha);
+          continue;
+        }
         if (!vendaDataEntraNaCarga(dataStr, hoje)) {
           if (vendaDataCaiEmMesFechado(dataStr, mesesFechados)) {
             linhasIgnoradasFechado++;
-            mesesIgnoradosSet.add(dataStr.slice(0, 7));
-            if (iValor >= 0 && vendaLinhaEntraValorHistorico(dataStr, mesesFechados, hoje)) {
-              linhasValorHistorico.push(linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpessVenda, dataStr));
-              mesesValorHistoricoSet.add(dataStr.slice(0, 7));
-            }
+            mesesIgnoradosSet.add(ymLinha);
           } else {
             linhasIgnoradasOutroDia++;
           }
@@ -18413,7 +18562,7 @@ async function processVendasFile(event) {
       if (!linhasValorHistorico.length) return;
       await substituirValorHistoricoNoQuadro(linhasValorHistorico, hoje, mesesFechados);
       const mesesTxt = [...mesesValorHistoricoSet].sort().map(formatVendasMesLabel).join(', ');
-      quadroHistMsg = `<br>• Quadro: R$ de 2025–2026 substituído pelo total do Excel (${linhasValorHistorico.length.toLocaleString('pt-BR')} linhas, sem gravar outra vez)${mesesTxt ? ` — ${mesesTxt}` : ''}`;
+      quadroHistMsg = `<br>• Quadro: meses de 2025–2026 substituídos pelo Excel (canais antigos apagados, sem somar ao R$ anterior, ${linhasValorHistorico.length.toLocaleString('pt-BR')} linhas sem gravar outra vez)${mesesTxt ? ` — ${mesesTxt}` : ''}`;
     };
 
     if (!candidatos.length) {
@@ -32125,7 +32274,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-liq: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-liq2: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
