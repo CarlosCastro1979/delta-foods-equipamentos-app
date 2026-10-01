@@ -95,6 +95,7 @@ for (const name of [
   'vendasYmFromISO',
   'parseValorVendaSap',
   'indiceColunaValorVenda',
+  'indiceColunaVolumeVenda',
   'indiceColunaNpessVenda',
   'npessDeCelulaExcel',
   'dimensoesVendaQuadro',
@@ -186,6 +187,10 @@ check('a coluna lida é Vendas líquidas, não peso, bruto, quantidade nem a pri
   const REAL = ['Organização vendas', 'Canal distribuição', 'Emissor da ordem', 'Doc.faturamento', 'Escritório de vendas', 'Equipe de vendas', 'Material', 'Representante de vendas', 'Hierarq.produtos', 'Data', 'Fatur.', 'Fatur.', 'QtFaturada', 'QtFaturada', 'VendasBrut', 'VendasBrut', 'Desc.Com.', 'Desc.Com.', 'Valor Boni', 'Valor Boni', 'Qtd Bonifi', 'Qtd Bonifi', 'Valor Doaç', 'Valor Doaç', 'Qtd Doação', 'Qtd Doação', 'Peso líq.', 'Peso líq.'];
   assert.equal(ctx.indiceColunaValorVenda(REAL), 10);
   assert.equal(ctx.indiceColunaNpessVenda(REAL), 7);
+  assert.equal(ctx.indiceColunaVolumeVenda(REAL), 12, 'QtFaturada, a primeira, não a unidade');
+  assert.notEqual(ctx.indiceColunaVolumeVenda(REAL), 10, 'Fatur. não é volume');
+  assert.equal(ctx.indiceColunaVolumeVenda(['Fatur.', 'Peso líq.', 'Qtd Bonifi', 'Qtd Doação']), -1);
+  assert.equal(ctx.indiceColunaVolumeVenda(['QtFaturada', 'QtFaturada']), 0);
   const fn = extractFn(html, 'indiceColunaValorVenda');
   assert.ok(fn.includes('vendas líquidas') || fn.includes('vendas liquidas') || fn.includes('liquidas'));
   assert.ok(fn.includes('peso'));
@@ -267,9 +272,9 @@ check('NPess do P&L: Delta Lojas online, Q Brasil dist. retalho, 99520018 não �
     99520017: ['Delta Foods Brasil', 'Institucional', 'PAULO FONTES'],
     99520019: ['Delta Foods Brasil', 'Institucional', 'FILIPE NEVES'],
     99530001: ['Q Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA'],
-    99530003: ['Q Brasil', 'Restauração', 'Por classificar'],
+    99530003: ['Q Brasil', 'Restauração', 'MARCIO GORGA'],
     99530002: ['Q Brasil', 'Distribuidores regionais', 'Por classificar'],
-    99520005: ['Delta Foods Brasil', 'Institucional', 'Por classificar'],
+    99520005: ['Delta Foods Brasil', 'Institucional', 'MARCIO GORGA'],
   };
   for (const [cod, [emp, can, ven]] of Object.entries(esperado)) {
     const d = ctx.dimensoesVendaQuadro(Number(cod), m);
@@ -421,6 +426,12 @@ check('o ecrã avisa quando o agregado ainda tem canais antigos', () => {
     'ymQuadroAnoAnterior', 'listaYmAcumuladoQuadro', 'periodoComparacaoQuadro',
     'somarQuadroNosMeses', 'variacaoQuadroPct', 'canaisFixosQuadroEmpresa',
     'metricasLinhaQuadro', 'ordenarNomesQuadroPnL', 'linhasResumoQuadroPnL', 'htmlLinhaResumoPnL',
+    'chaveObjetivoQuadro', 'objetivoCanalMes', 'objetivoAcumuladoQuadro',
+    'htmlCelulaObjetivoPnL', 'htmlCelsObjetivoPnL',
+    'nomeVendedorQuadroMarcio', 'quadroComMarcioIdentificado',
+    'menusCanalVendasQuadro', 'canalMenuVendasActivo', 'htmlMenusCanalVendas',
+    'volumeEfetivoCelula', 'somarVolumeQuadroNosMeses', 'metricasVolumeLinhaQuadro',
+    'vendedoresCanalQuadro', 'htmlLinhaMetricasPnL', 'htmlResumoVolumeQuadro', 'htmlVistaCanalVendas',
     'renderVendasQuadro',
   ]) {
     vm.runInContext(extractFn(html, name), ctx);
@@ -452,8 +463,8 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   assert.ok(act.includes('decidirActualizarQuadroVendas'));
   assert.ok(act.indexOf('decidirActualizarQuadroVendas') < act.indexOf('somarQuadrosVendas'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-pnl'));
-  assert.ok(html.includes('v2026-10-01-vendas-pnl'));
+  assert.ok(sw.includes('v2026-10-01-vendas-canal-vol'));
+  assert.ok(html.includes('v2026-10-01-vendas-canal-vol'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq4'));
   assert.ok(!html.includes('v2026-10-01-vendas-liq4'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq3'));
@@ -561,12 +572,14 @@ check('Set/2026: N-1 é 2025-09, o acumulado soma Jan–Set e um canal sem mês 
   assert.ok(out.includes('vq-var-neg'));
   assert.ok(out.includes('vq-var-pos'));
   assert.ok(out.includes('-20%'));
-  assert.ok(!out.includes('Budget'));
+  assert.ok(out.includes('>Objetivo<'));
+  assert.ok(out.includes('Acum. objetivo'));
   assert.ok(!out.includes('Var Bud'));
   assert.ok(!out.includes('Previsão Fecho'));
-  assert.ok(out.indexOf('Delta Foods Brasil') < out.indexOf('Q Brasil'));
-  assert.ok(out.indexOf('Q Brasil') < out.lastIndexOf('Distribuidores regionais'));
-  assert.ok(out.lastIndexOf('Distribuidores regionais') < out.indexOf('>Total<'));
+  const valorTbl = out.split('Volumes')[0];
+  assert.ok(valorTbl.indexOf('Delta Foods Brasil') < valorTbl.indexOf('Q Brasil'));
+  assert.ok(valorTbl.indexOf('Q Brasil') < valorTbl.lastIndexOf('Distribuidores regionais'));
+  assert.ok(valorTbl.lastIndexOf('Distribuidores regionais') < valorTbl.indexOf('>Total<'));
   const buttons = [...out.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].map(m => m[1].replace(/\u00a0/g, ' ').trim());
   assert.ok(buttons.every(b => b !== '0' && b !== '—' && b !== '0%'), 'zero e travessão não são clicáveis: ' + buttons.join(' | '));
   assert.ok(out.includes('class="vq-emp"'), 'linha de empresa');

@@ -1497,6 +1497,13 @@
   }
   .vq-link.vq-on { background: #fff7ed; outline: 2px solid #fdba74; outline-offset: 1px; border-radius: 4px; }
   .vq-muted { color: var(--muted); cursor: default; }
+  .vq-canal-nav { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 12px; }
+  .vq-canal-grupo { font-size: 11px; font-weight: 700; color: var(--muted); margin: 0 2px 0 8px; }
+  .vq-canal-btn {
+    cursor: pointer; border: 1px solid var(--border); background: var(--surface);
+    border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--text);
+  }
+  .vq-canal-btn.active { background: #1e3a5f; color: #fff; border-color: #1e3a5f; font-weight: 700; }
   @media (max-width: 900px) {
     .vq-table { font-size: 12px; min-width: 680px; }
     .vq-table th, .vq-table td { padding: 6px 8px; }
@@ -2123,7 +2130,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal, Accuracy de fecho e Vendas. Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
+          <div class="hd-desc">Mapa mensal, Accuracy de fecho, Vendas por canal e volumes. Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -4465,6 +4472,7 @@ const VENDEDOR_MAP = {
   // Ecommerce / sellers — todos → Marcio Gorga (padrão Diogo→Varejo)
   "99520001": "MARCIO GORGA", "99520009": "MARCIO GORGA", "99520008": "MARCIO GORGA",
   "99520011": "MARCIO GORGA", "99520012": "MARCIO GORGA",
+  "99520005": "MARCIO GORGA", "99530003": "MARCIO GORGA",
 };
 
 // ─── EQUIPMENT ROWS ──────────────────────────────────
@@ -5290,6 +5298,9 @@ const VENDEDORES_DEFAULT = [
   { cod: 99520008, nome: 'MARCIO GORGA' },
   { cod: 99520011, nome: 'MARCIO GORGA' },
   { cod: 99520012, nome: 'MARCIO GORGA' },
+  // Por identificar: Institucional Balcão (99520005) e Restauração Q Brasil (99530003)
+  { cod: 99520005, nome: 'MARCIO GORGA' },
+  { cod: 99530003, nome: 'MARCIO GORGA' },
 ];
 
 /** NPess do canal Ecommerce — display unificado (como Diogo no Varejo). */
@@ -6231,6 +6242,8 @@ const NPESS_VENDEDOR_SC = {
   99520008: 'MARCIO GORGA',
   99520011: 'MARCIO GORGA',
   99520012: 'MARCIO GORGA',
+  99520005: 'MARCIO GORGA',
+  99530003: 'MARCIO GORGA',
 };
 
 // Normaliza código de cliente (remove espaços e zeros à esquerda)
@@ -12713,7 +12726,7 @@ function pvRender(opts) {
     if (excelBtnV) excelBtnV.style.display = 'none';
     const bannerV = document.getElementById('pv-banner');
     if (bannerV) {
-      bannerV.innerHTML = '<strong>Vendas</strong> — mês (N), mesmo mês do ano anterior (N-1) e acumulado de Janeiro até esse mês. Sem orçamento. O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra. Só consulta. Este ecrã lê o agregado guardado e não relê as linhas de venda.';
+      bannerV.innerHTML = '<strong>Vendas</strong> — mês (N), mesmo mês do ano anterior (N-1), acumulado e objectivo (Budget) do mês. Cada canal tem o mesmo quadro só com as vendas desse canal e o detalhe por vendedor. Volumes = quantidade (QtFaturada), não R$. Março não tem objectivo. O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra. Só consulta. Este ecrã lê o agregado guardado e não relê as linhas de venda.';
     }
     pvMontarVistaVendas();
     return;
@@ -17036,7 +17049,7 @@ async function loadVendasCobertura(forceRefresh = false) {
 // Meses fechados de 2025 e 2026: o R$ de vendas líquidas do Excel substitui o mês no quadro, sem gravar linhas.
 // Canais = linhas do Power BI (Lojas online, Restauração, …), não Ecommerce/Horeca/Varejo.
 // Vista: N (mês escolhido, com o dia 30), N-1 (mesmo mês do ano anterior) e acumulado de Janeiro até esse mês.
-// Sem orçamento e sem previsão. Verde/vermelho só na variação %.
+// Objectivo (Budget colado) no mês e no acumulado. Março sem objectivo. Verde/vermelho só na variação %.
 // O agregado antigo (esses canais) não é reclassificado ao abrir o ecrã: fica visível como quadro anterior
 // até Dados → Carregar Vendas com o Excel (vendas líquidas + Nº pessoal).
 // Antes de 2025 não entra (nem linhas nem R$).
@@ -17123,6 +17136,24 @@ function indiceColunaValorVenda(headers) {
     if (score > bestScore) { bestScore = score; best = i; }
   }
   return best;
+}
+
+/**
+ * Coluna de quantidade do Excel de vendas = QtFaturada (unidades faturadas).
+ * Não é «Fatur.» (isso é R$), nem peso, nem Qtd Bonifi, nem Qtd Doação.
+ * O SAP repete o cabeçalho (valor + unidade): fica a primeira coluna «QtFaturada».
+ * Sem esta coluna devolve -1. Não há fallback para reais.
+ */
+function indiceColunaVolumeVenda(headers) {
+  const list = Array.isArray(headers) ? headers : [];
+  const norm = (raw) => String(raw || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < list.length; i++) {
+    const h = norm(list[i]);
+    if (!h) continue;
+    const compact = h.replace(/[^a-z0-9]+/g, '');
+    if (compact === 'qtfaturada' || compact === 'qtdfaturada' || compact === 'quantidadefaturada') return i;
+  }
+  return -1;
 }
 
 /**
@@ -17217,9 +17248,10 @@ function chaveCelulaQuadro(dim) {
 /**
  * Linhas do P&L do quadro, iguais ao Power BI (não os canais da app).
  * Nomes de vendedor só de VENDEDORES_DEFAULT — não se inventa dono.
- * 99520005, 99530002 e 99530003 não estão nesse mapa: canal do P&L, vendedor «Por classificar».
+ * 99520005 (Institucional Balcão) e 99530003 (Restauração Q Brasil) são do Marcio Gorga.
+ * 99530002 (Distribuidores regionais Q Brasil) continua sem nome: «Por classificar».
  * Horeca restauração já mapeada (canal 04: 02/06/07/10) cai em Restauração.
- * Office (15/16/17/19) fica em Institucional, como no P&L.
+ * Office (15/16/17/19) fica em Institucional, como no P&L. O split Horeca/Balcão não se desfaz.
  */
 function linhasPlVendasQuadro() {
   return [
@@ -17296,6 +17328,8 @@ function agregarVendasQuadro(rows, opts) {
         valor: 0,
         linhas: 0,
         linhasComValor: 0,
+        volume: 0,
+        temVolume: false,
       };
     }
     const cell = celulas[key];
@@ -17304,6 +17338,13 @@ function agregarVendasQuadro(rows, opts) {
     if (valor != null) {
       cell.valor = somarValorQuadro(cell.valor, valor);
       cell.linhasComValor += 1;
+    }
+    if (row && row.volume != null && row.volume !== '') {
+      const vol = parseValorVendaSap(row.volume);
+      if (vol != null) {
+        cell.volume = somarValorQuadro(cell.volume, vol);
+        cell.temVolume = true;
+      }
     }
   }
   return out;
@@ -17326,11 +17367,17 @@ function somarQuadrosVendas(a, b) {
           valor: 0,
           linhas: 0,
           linhasComValor: 0,
+          volume: 0,
+          temVolume: false,
         };
       }
       dest[key].valor = somarValorQuadro(dest[key].valor, c.valor);
       dest[key].linhas += +c.linhas || 0;
       dest[key].linhasComValor += +c.linhasComValor || 0;
+      if (c.temVolume) {
+        dest[key].volume = somarValorQuadro(dest[key].temVolume ? dest[key].volume : 0, c.volume);
+        dest[key].temVolume = true;
+      }
     }
   }
   return out;
@@ -17519,7 +17566,7 @@ function classificarLinhasCargaVendas(rows, mesesFechados, hojeOpt) {
 }
 
 /** Valor e NPess de uma linha Excel, sem peso nem tipo — não entra na tabela. */
-function linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpess, dataStr) {
+function linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpess, dataStr, iVolume) {
   const emissor = String((row && row[iEmissor]) || '').trim();
   const codRaw = emissor.split(/\s+/)[0].trim();
   let cod = '';
@@ -17528,13 +17575,17 @@ function linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpess, dataStr) {
   }
   const valorLinha = iValor >= 0 ? parseValorVendaSap(row[iValor]) : null;
   const npessLinha = iNpess >= 0 ? npessDeCelulaExcel(row[iNpess]) : 0;
-  return {
+  const iVol = iVolume == null ? -1 : iVolume;
+  const volLinha = iVol >= 0 ? parseValorVendaSap(row[iVol]) : null;
+  const linha = {
     cod: cod || undefined,
     data: dataStr,
     tipo: 'OUTRO',
     valor: valorLinha == null ? undefined : valorLinha,
     npess: npessLinha || undefined,
   };
+  if (volLinha != null) linha.volume = volLinha;
+  return linha;
 }
 
 /**
@@ -17577,6 +17628,8 @@ function substituirValorMesesFechadosNoQuadro(quadro, linhas, opts) {
         linhasComValor: teveValor
           ? (linhasGuardadas > 0 ? linhasGuardadas : (+s.linhasComValor || 0))
           : 0,
+        volume: s.temVolume ? (+s.volume || 0) : 0,
+        temVolume: !!s.temVolume,
       };
     }
     // Apaga o mês inteiro (não deixa Ecommerce/Horeca/Varejo ao lado do Power BI).
@@ -17651,6 +17704,8 @@ function completarQuadroDesdeBase(anterior, dbQuadro, opts) {
         linhas: d ? (+d.linhas || 0) : (+p.linhas || 0),
         valor: p ? (+p.valor || 0) : 0,
         linhasComValor: p ? (+p.linhasComValor || 0) : 0,
+        volume: (p && p.temVolume) ? (+p.volume || 0) : ((d && d.temVolume) ? (+d.volume || 0) : 0),
+        temVolume: !!((p && p.temVolume) || (d && d.temVolume)),
       };
     }
     out.meses[ym] = { celulas };
@@ -18166,7 +18221,557 @@ function linhasResumoQuadroPnL(quadro, mes, ano) {
   return { periodo, linhas };
 }
 
-function htmlLinhaResumoPnL(row, filtro, escFn) {
+const PV_OBJETIVOS_CANAL = {
+  "2026-01": {
+    "": 2488269,
+    "Delta Foods Brasil": 2346380,
+    "Q Brasil": 141889,
+    "Delta Foods Brasil\tLojas online": 866445,
+    "Delta Foods Brasil\tDistribuidores regionais": 556758,
+    "Delta Foods Brasil\tDistribuidores de retalho": 238464,
+    "Delta Foods Brasil\tRestauração": 422788,
+    "Delta Foods Brasil\tRetalho moderno": 169337,
+    "Delta Foods Brasil\tSite próprio": 70212,
+    "Delta Foods Brasil\tInstitucional": 22375,
+    "Q Brasil\tRetalho moderno": 95375,
+    "Q Brasil\tDistribuidores de retalho": 22464,
+    "Q Brasil\tDistribuidores regionais": 909,
+    "Q Brasil\tRestauração": 23142
+  },
+  "2026-02": {
+    "": 2644846,
+    "Delta Foods Brasil": 2506589,
+    "Q Brasil": 138256,
+    "Delta Foods Brasil\tLojas online": 729334,
+    "Delta Foods Brasil\tDistribuidores regionais": 769794,
+    "Delta Foods Brasil\tDistribuidores de retalho": 346522,
+    "Delta Foods Brasil\tRestauração": 432725,
+    "Delta Foods Brasil\tRetalho moderno": 143230,
+    "Delta Foods Brasil\tSite próprio": 61804,
+    "Delta Foods Brasil\tInstitucional": 23181,
+    "Q Brasil\tRetalho moderno": 80671,
+    "Q Brasil\tDistribuidores de retalho": 32643,
+    "Q Brasil\tDistribuidores regionais": 1257,
+    "Q Brasil\tRestauração": 23685
+  },
+  "2026-04": {
+    "": 3276120,
+    "Delta Foods Brasil": 3089061,
+    "Q Brasil": 187059,
+    "Delta Foods Brasil\tLojas online": 1065629,
+    "Delta Foods Brasil\tDistribuidores regionais": 742456,
+    "Delta Foods Brasil\tDistribuidores de retalho": 378303,
+    "Delta Foods Brasil\tRestauração": 546967,
+    "Delta Foods Brasil\tRetalho moderno": 213540,
+    "Delta Foods Brasil\tSite próprio": 62424,
+    "Delta Foods Brasil\tInstitucional": 79741,
+    "Q Brasil\tRetalho moderno": 120272,
+    "Q Brasil\tDistribuidores de retalho": 35637,
+    "Q Brasil\tDistribuidores regionais": 1212,
+    "Q Brasil\tRestauração": 29939
+  },
+  "2026-05": {
+    "": 3578989,
+    "Delta Foods Brasil": 3381452,
+    "Q Brasil": 197538,
+    "Delta Foods Brasil\tLojas online": 1144116,
+    "Delta Foods Brasil\tDistribuidores regionais": 878339,
+    "Delta Foods Brasil\tDistribuidores de retalho": 381338,
+    "Delta Foods Brasil\tRestauração": 573676,
+    "Delta Foods Brasil\tRetalho moderno": 228648,
+    "Delta Foods Brasil\tSite próprio": 153476,
+    "Delta Foods Brasil\tInstitucional": 21858,
+    "Q Brasil\tRetalho moderno": 128780,
+    "Q Brasil\tDistribuidores de retalho": 35923,
+    "Q Brasil\tDistribuidores regionais": 1434,
+    "Q Brasil\tRestauração": 31401
+  },
+  "2026-06": {
+    "": 3747223,
+    "Delta Foods Brasil": 3533736,
+    "Q Brasil": 213487,
+    "Delta Foods Brasil\tLojas online": 1176881,
+    "Delta Foods Brasil\tDistribuidores regionais": 1198100,
+    "Delta Foods Brasil\tDistribuidores de retalho": 325431,
+    "Delta Foods Brasil\tRestauração": 495756,
+    "Delta Foods Brasil\tRetalho moderno": 272962,
+    "Delta Foods Brasil\tSite próprio": 48508,
+    "Delta Foods Brasil\tInstitucional": 16097,
+    "Q Brasil\tRetalho moderno": 153740,
+    "Q Brasil\tDistribuidores de retalho": 30656,
+    "Q Brasil\tDistribuidores regionais": 1956,
+    "Q Brasil\tRestauração": 27136
+  },
+  "2026-07": {
+    "": 3049124,
+    "Delta Foods Brasil": 2847193,
+    "Q Brasil": 201931,
+    "Delta Foods Brasil\tLojas online": 1028136,
+    "Delta Foods Brasil\tDistribuidores regionais": 715001,
+    "Delta Foods Brasil\tDistribuidores de retalho": 374483,
+    "Delta Foods Brasil\tRestauração": 418689,
+    "Delta Foods Brasil\tRetalho moderno": 253130,
+    "Delta Foods Brasil\tSite próprio": 42759,
+    "Delta Foods Brasil\tInstitucional": 14995,
+    "Q Brasil\tRetalho moderno": 142570,
+    "Q Brasil\tDistribuidores de retalho": 35277,
+    "Q Brasil\tDistribuidores regionais": 1167,
+    "Q Brasil\tRestauração": 22917
+  },
+  "2026-08": {
+    "": 2886654,
+    "Delta Foods Brasil": 2692407,
+    "Q Brasil": 194247,
+    "Delta Foods Brasil\tLojas online": 1092541,
+    "Delta Foods Brasil\tDistribuidores regionais": 584907,
+    "Delta Foods Brasil\tDistribuidores de retalho": 323546,
+    "Delta Foods Brasil\tRestauração": 386926,
+    "Delta Foods Brasil\tRetalho moderno": 251470,
+    "Delta Foods Brasil\tSite próprio": 24990,
+    "Delta Foods Brasil\tInstitucional": 28026,
+    "Q Brasil\tRetalho moderno": 141635,
+    "Q Brasil\tDistribuidores de retalho": 30479,
+    "Q Brasil\tDistribuidores regionais": 955,
+    "Q Brasil\tRestauração": 21179
+  },
+  "2026-09": {
+    "": 3507862,
+    "Delta Foods Brasil": 3317777,
+    "Q Brasil": 190086,
+    "Delta Foods Brasil\tLojas online": 1256087,
+    "Delta Foods Brasil\tDistribuidores regionais": 1018168,
+    "Delta Foods Brasil\tDistribuidores de retalho": 436848,
+    "Delta Foods Brasil\tRestauração": 337827,
+    "Delta Foods Brasil\tRetalho moderno": 228648,
+    "Delta Foods Brasil\tSite próprio": 17709,
+    "Delta Foods Brasil\tInstitucional": 22490,
+    "Q Brasil\tRetalho moderno": 128780,
+    "Q Brasil\tDistribuidores de retalho": 41152,
+    "Q Brasil\tDistribuidores regionais": 1662,
+    "Q Brasil\tRestauração": 18491
+  },
+  "2026-10": {
+    "": 4070160,
+    "Delta Foods Brasil": 3846753,
+    "Q Brasil": 223407,
+    "Delta Foods Brasil\tLojas online": 1269607,
+    "Delta Foods Brasil\tDistribuidores regionais": 1170966,
+    "Delta Foods Brasil\tDistribuidores de retalho": 602868,
+    "Delta Foods Brasil\tRestauração": 473623,
+    "Delta Foods Brasil\tRetalho moderno": 246402,
+    "Delta Foods Brasil\tSite próprio": 59867,
+    "Delta Foods Brasil\tInstitucional": 23420,
+    "Q Brasil\tRetalho moderno": 138780,
+    "Q Brasil\tDistribuidores de retalho": 56791,
+    "Q Brasil\tDistribuidores regionais": 1911,
+    "Q Brasil\tRestauração": 25924
+  },
+  "2026-11": {
+    "": 4667971,
+    "Delta Foods Brasil": 4427436,
+    "Q Brasil": 240535,
+    "Delta Foods Brasil\tLojas online": 2534421,
+    "Delta Foods Brasil\tDistribuidores regionais": 615899,
+    "Delta Foods Brasil\tDistribuidores de retalho": 355076,
+    "Delta Foods Brasil\tRestauração": 420022,
+    "Delta Foods Brasil\tRetalho moderno": 325074,
+    "Delta Foods Brasil\tSite próprio": 141216,
+    "Delta Foods Brasil\tInstitucional": 35728,
+    "Q Brasil\tRetalho moderno": 183090,
+    "Q Brasil\tDistribuidores de retalho": 33449,
+    "Q Brasil\tDistribuidores regionais": 1005,
+    "Q Brasil\tRestauração": 22990
+  },
+  "2026-12": {
+    "": 3122585,
+    "Delta Foods Brasil": 2966949,
+    "Q Brasil": 155636,
+    "Delta Foods Brasil\tLojas online": 1268936,
+    "Delta Foods Brasil\tDistribuidores regionais": 677552,
+    "Delta Foods Brasil\tDistribuidores de retalho": 266007,
+    "Delta Foods Brasil\tRestauração": 446631,
+    "Delta Foods Brasil\tRetalho moderno": 186471,
+    "Delta Foods Brasil\tSite próprio": 100391,
+    "Delta Foods Brasil\tInstitucional": 20961,
+    "Q Brasil\tRetalho moderno": 105025,
+    "Q Brasil\tDistribuidores de retalho": 25058,
+    "Q Brasil\tDistribuidores regionais": 1106,
+    "Q Brasil\tRestauração": 24447
+  }
+};
+
+const VENDAS_VOLUME_SEED = {"2025-02":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5194.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":8275.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":6788.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3324.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":122.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3695.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":160.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":67.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2228.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":45.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":242.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":28279.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":2336.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4876.0,"Q Brasil\tRestauração\tMARCIO GORGA":1584.0},"2025-01":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":13208.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":14242.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":135.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":142.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":67.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1427.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3161.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3034.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":41.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":582.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":2561.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":14030.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7140.0,"Q Brasil\tRestauração\tMARCIO GORGA":946.0},"2025-03":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":14075.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7957.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":85.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":82.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":55.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1977.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3676.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3117.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":452.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":11634.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":42.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":18888.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":25445.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":9640.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":1234.0,"Q Brasil\tRestauração\tMARCIO GORGA":1504.0},"2025-04":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":4902.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5593.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":24.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":32.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3730.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2242.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4234.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":293.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":478.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":14451.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":20153.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":5336.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4620.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":2200.0,"Q Brasil\tRestauração\tMARCIO GORGA":1470.0},"2025-05":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":13907.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":12829.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":3912.0,"Delta Foods Brasil\tInstitucional\tFILIPE NEVES":36.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":60.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":190.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":49.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2910.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3987.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4394.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":198.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":10.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":23821.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":6709.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4096.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":1180.0,"Q Brasil\tRestauração\tMARCIO GORGA":2236.0},"2025-08":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":8745.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":9994.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":71.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":56.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":12.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1927.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2607.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3300.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":0.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":12532.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":106.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":11329.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":14009.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":10822.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":3380.0,"Q Brasil\tRestauração\tMARCIO GORGA":2542.0},"2025-09":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":19477.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":-194.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":83.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":74.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":82.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1288.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3156.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4271.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":20753.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":118.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":15668.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":2415.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":2152.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":3200.0,"Q Brasil\tRestauração\tMARCIO GORGA":736.0},"2025-10":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":9683.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":3789.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":25.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":134.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":132.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2090.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4151.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4971.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":774.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":7059.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":4.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":30552.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":5566.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":1644.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":980.0,"Q Brasil\tRestauração\tMARCIO GORGA":1092.0},"2025-11":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":10316.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":8110.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":786.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":78.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":1279.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1054.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":1748.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":20304.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":30.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":12740.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":19250.0},"2025-12":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":10605.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":14514.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":1225.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":0.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1254.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3094.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3251.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":332.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":22538.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":38.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":18159.0},"2026-01":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":16020.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":2919.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4112.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":193.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":90.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1202.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":1993.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2265.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":628.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":0.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":10613.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":33116.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":6277.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":4260.0},"2026-04":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":4570.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":12369.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7944.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":10.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":106.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2286.0,"Delta Foods Brasil\tInstitucional\tFILIPE NEVES":24.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1394.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2772.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":36.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":92.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":4766.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":5068.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":23592.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":2814.0},"2026-05":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":8038.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":10690.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":14813.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":83.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":92.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":64.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2955.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1407.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":5272.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":600.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":3.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":3893.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":13107.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":28062.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":3130.0,"Q Brasil\tRestauração\tMARCIO GORGA":2466.0},"2025-07":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":7465.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":8490.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":118.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3566.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3443.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1664.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":434.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":17979.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":133.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":15669.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":46889.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7066.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":3070.0,"Q Brasil\tRestauração\tMARCIO GORGA":1362.0},"2026-02":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":14860.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":6640.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":24.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":42.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":65.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1783.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2450.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2561.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":326.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":367.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":30.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":11404.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":3900.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":10430.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":536.0,"Q Brasil\tRestauração\tMARCIO GORGA":3496.0},"2026-03":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":20453.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":6776.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":1831.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":125.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3986.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":8.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1853.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3041.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":590.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":1081.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":5069.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":9069.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":37225.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":9915.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":-4260.0,"Q Brasil\tRestauração\tMARCIO GORGA":1720.0},"2026-07":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5804.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":442.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":26551.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":88.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":132.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":19834.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":161.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3313.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1148.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2639.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":681.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":7270.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":10317.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":-252.0,"Q Brasil\tRestauração\tMARCIO GORGA":1964.0},"2026-09":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":8498.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":26324.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":55.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":234.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":36.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1197.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3079.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3082.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":448.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":10623.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":7784.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":11180.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":-1852.0,"Q Brasil\tRestauração\tMARCIO GORGA":1514.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":24762.0},"2025-06":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":15145.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":5610.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":21.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":70.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":56.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2535.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4240.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4376.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":545.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":25269.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":63.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":22311.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":37222.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4151.0},"2026-06":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4234.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":2372.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":22495.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":27.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":88.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1272.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2619.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2660.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":226.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":13.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":10185.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":9030.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":12465.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5234.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":4888.0},"2026-08":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":33615.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5654.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":133.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":100.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":2.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1714.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4620.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":7070.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":238.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":397.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":113.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":6547.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":4076.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":28214.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":42.0,"Q Brasil\tRestauração\tMARCIO GORGA":337.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":20024.0}};
+
+/**
+ * Objectivo (Budget) por mês e canal, colado pelo Carlos (Jan–Dez 2026, excepto Março).
+ * Valores em reais inteiros. Célula vazia no print não entra (não se grava 0).
+ * Março ficou de fora: o anual menos os outros 11 meses não fechou ao real nos canais da Delta.
+ * A chave "" é o total geral. Empresa sem canal é o total dessa empresa.
+ * O total da empresa é o do print, não a soma dos canais (a diferença de 1 real é arredondamento).
+ */
+function chaveObjetivoQuadro(empresa, canal) {
+  if (!empresa) return '';
+  if (!canal) return String(empresa);
+  return String(empresa) + '\t' + String(canal);
+}
+
+function objetivoCanalMes(empresa, canal, ym) {
+  const mapa = (typeof PV_OBJETIVOS_CANAL !== 'undefined') ? PV_OBJETIVOS_CANAL : null;
+  if (!mapa || !ym || !mapa[ym]) return null;
+  const bruto = mapa[ym][chaveObjetivoQuadro(empresa, canal)];
+  if (bruto == null || bruto === '') return null;
+  const n = +bruto;
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Soma dos objectivos de Janeiro até ao mês. Mês sem objectivo (Março) não entra e não vira zero. */
+function objetivoAcumuladoQuadro(empresa, canal, ano, mes) {
+  const y = parseInt(ano, 10);
+  const m = parseInt(mes, 10);
+  if (!y || !m) return null;
+  let soma = 0;
+  let tem = false;
+  for (let i = 1; i <= m; i++) {
+    const v = objetivoCanalMes(empresa, canal, y + '-' + String(i).padStart(2, '0'));
+    if (v == null) continue;
+    soma += v;
+    tem = true;
+  }
+  return tem ? soma : null;
+}
+
+function htmlCelulaObjetivoPnL(valor, filtro, activo) {
+  const tem = valor != null && Number.isFinite(+valor);
+  return htmlCelulaNumeroPnL(tem ? +valor : 0, tem, filtro, activo);
+}
+
+function htmlCelsObjetivoPnL(tipo, empresa, canal, periodo, filtro, activo) {
+  if (!periodo) return '';
+  const emp = tipo === 'total' ? '' : (empresa || '');
+  const can = tipo === 'canal' ? (canal || '') : '';
+  const f = tipo === 'total' ? null : filtro;
+  const mesV = objetivoCanalMes(emp, can, periodo.ym);
+  const acV = objetivoAcumuladoQuadro(emp, can, periodo.ano, periodo.mes);
+  return `<td class="vq-num">${htmlCelulaObjetivoPnL(mesV, f, activo)}</td>`
+    + `<td class="vq-num">${htmlCelulaObjetivoPnL(acV, f, activo)}</td>`;
+}
+
+/** 99520005 (Institucional) e 99530003 (Restauração Q Brasil) passam a Marcio. 99530002 fica. */
+function nomeVendedorQuadroMarcio(empresa, canal, vendedor) {
+  const v = String(vendedor || '');
+  if (v && v !== 'Por classificar') return v;
+  if (empresa === 'Q Brasil' && canal === 'Restauração') return 'MARCIO GORGA';
+  if (empresa === 'Delta Foods Brasil' && canal === 'Institucional') return 'MARCIO GORGA';
+  return v || 'Por classificar';
+}
+
+function quadroComMarcioIdentificado(quadro) {
+  if (!quadro || !quadro.meses) return quadro;
+  const out = quadroVendasClone(quadro);
+  const meses = out.meses || {};
+  for (const ym of Object.keys(meses)) {
+    const src = (meses[ym] && meses[ym].celulas) || {};
+    const celulas = {};
+    for (const key of Object.keys(src)) {
+      const c = src[key];
+      if (!c) continue;
+      const vendedor = nomeVendedorQuadroMarcio(c.empresa, c.canal, c.vendedor);
+      const nk = (c.empresa || '') + '\t' + (c.canal || '') + '\t' + vendedor;
+      if (!celulas[nk]) {
+        celulas[nk] = {
+          empresa: c.empresa,
+          canal: c.canal,
+          vendedor: vendedor,
+          valor: 0,
+          linhas: 0,
+          linhasComValor: 0,
+          volume: 0,
+          temVolume: false,
+        };
+      }
+      const d = celulas[nk];
+      d.valor = somarValorQuadro(d.valor, c.valor);
+      d.linhas += +c.linhas || 0;
+      d.linhasComValor += +c.linhasComValor || 0;
+      if (c.temVolume) {
+        d.volume = somarValorQuadro(d.temVolume ? d.volume : 0, c.volume);
+        d.temVolume = true;
+      }
+    }
+    meses[ym] = { celulas: celulas };
+  }
+  return out;
+}
+
+function menusCanalVendasQuadro() {
+  const delta = canaisFixosQuadroEmpresa('Delta Foods Brasil').map(c => ({ empresa: 'Delta Foods Brasil', canal: c }));
+  const qb = canaisFixosQuadroEmpresa('Q Brasil').map(c => ({ empresa: 'Q Brasil', canal: c }));
+  return delta.concat(qb);
+}
+
+function canalMenuVendasActivo() {
+  const c = (typeof window !== 'undefined' && window._vqCanal) ? window._vqCanal : null;
+  if (!c || !c.canal) return null;
+  const menus = menusCanalVendasQuadro();
+  for (let i = 0; i < menus.length; i++) {
+    if (menus[i].empresa === c.empresa && menus[i].canal === c.canal) return menus[i];
+  }
+  return null;
+}
+
+function htmlMenusCanalVendas(activo, escFn) {
+  const esc = typeof escFn === 'function' ? escFn : (s) => String(s == null ? '' : s);
+  const menus = menusCanalVendasQuadro();
+  let html = '<div class="vq-canal-nav" id="vq-canais" role="tablist">';
+  html += `<button type="button" class="vq-canal-btn${!activo ? ' active' : ''}" data-vq-canal-menu="1" data-vq-empresa="" data-vq-canal="">Todos</button>`;
+  let grupo = '';
+  for (let i = 0; i < menus.length; i++) {
+    const m = menus[i];
+    if (m.empresa !== grupo) {
+      grupo = m.empresa;
+      html += `<span class="vq-canal-grupo">${esc(grupo)}</span>`;
+    }
+    const on = !!(activo && activo.empresa === m.empresa && activo.canal === m.canal);
+    html += `<button type="button" class="vq-canal-btn${on ? ' active' : ''}" data-vq-canal-menu="1" data-vq-empresa="${esc(m.empresa)}" data-vq-canal="${esc(m.canal)}">${esc(m.canal)}</button>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function volumeEfetivoCelula(cell, ym) {
+  if (cell && cell.temVolume && Number.isFinite(+cell.volume)) return +cell.volume;
+  const seed = (typeof VENDAS_VOLUME_SEED !== 'undefined') ? VENDAS_VOLUME_SEED : null;
+  if (!seed || !seed[ym] || !cell) return null;
+  const key = (cell.empresa || '') + '\t' + (cell.canal || '') + '\t' + (cell.vendedor || '');
+  if (!Object.prototype.hasOwnProperty.call(seed[ym], key)) return null;
+  const n = +seed[ym][key];
+  return Number.isFinite(n) ? n : null;
+}
+
+function somarVolumeQuadroNosMeses(quadro, yms, filtro) {
+  let volume = 0;
+  let tem = false;
+  const lista = Array.isArray(yms) ? yms : [];
+  const meses = (quadro && quadro.meses) || {};
+  const seed = (typeof VENDAS_VOLUME_SEED !== 'undefined') ? VENDAS_VOLUME_SEED : null;
+  const vistos = {};
+  for (let i = 0; i < lista.length; i++) {
+    const ym = lista[i];
+    const mesObj = meses[ym];
+    const celulas = mesObj && mesObj.celulas ? Object.values(mesObj.celulas) : [];
+    for (let j = 0; j < celulas.length; j++) {
+      const c = celulas[j];
+      if (!c || !vendasQuadroPassaFiltro(c, filtro)) continue;
+      vistos[ym + '\t' + (c.empresa || '') + '\t' + (c.canal || '') + '\t' + (c.vendedor || '')] = 1;
+      const vol = volumeEfetivoCelula(c, ym);
+      if (vol == null) continue;
+      volume = somarValorQuadro(volume, vol);
+      tem = true;
+    }
+    if (seed && seed[ym]) {
+      const keys = Object.keys(seed[ym]);
+      for (let k = 0; k < keys.length; k++) {
+        const id = ym + '\t' + keys[k];
+        if (vistos[id]) continue;
+        const parts = keys[k].split('\t');
+        const fake = { empresa: parts[0] || '', canal: parts[1] || '', vendedor: parts[2] || '' };
+        if (!vendasQuadroPassaFiltro(fake, filtro)) continue;
+        const n = +seed[ym][keys[k]];
+        if (!Number.isFinite(n)) continue;
+        volume = somarValorQuadro(volume, n);
+        tem = true;
+      }
+    }
+  }
+  return { volume: volume, tem: tem };
+}
+
+function metricasVolumeLinhaQuadro(quadro, periodo, filtro) {
+  const p = periodo || {};
+  const n = somarVolumeQuadroNosMeses(quadro, p.ym ? [p.ym] : [], filtro);
+  const n1 = somarVolumeQuadroNosMeses(quadro, p.ymN1 ? [p.ymN1] : [], filtro);
+  const ac = somarVolumeQuadroNosMeses(quadro, p.ymsN, filtro);
+  const ac1 = somarVolumeQuadroNosMeses(quadro, p.ymsN1, filtro);
+  return {
+    n: n.volume,
+    nTem: n.tem,
+    n1: n1.volume,
+    n1Tem: n1.tem,
+    ac: ac.volume,
+    acTem: ac.tem,
+    ac1: ac1.volume,
+    ac1Tem: ac1.tem,
+    varN: variacaoQuadroPct(n.tem ? n.volume : 0, n1.volume, n1.tem),
+    varAc: variacaoQuadroPct(ac.tem ? ac.volume : 0, ac1.volume, ac1.tem),
+  };
+}
+
+function vendedoresCanalQuadro(quadro, periodo, empresa, canal) {
+  const nomes = {};
+  const p = periodo || {};
+  const yms = [].concat(p.ym ? [p.ym] : [], p.ymN1 ? [p.ymN1] : [], p.ymsN || [], p.ymsN1 || []);
+  const meses = (quadro && quadro.meses) || {};
+  for (let i = 0; i < yms.length; i++) {
+    const mesObj = meses[yms[i]];
+    if (mesObj && mesObj.celulas) {
+      const celulas = Object.values(mesObj.celulas);
+      for (let j = 0; j < celulas.length; j++) {
+        const c = celulas[j];
+        if (!c || c.empresa !== empresa || c.canal !== canal || !c.vendedor) continue;
+        nomes[c.vendedor] = 1;
+      }
+    }
+    const seed = (typeof VENDAS_VOLUME_SEED !== 'undefined') ? VENDAS_VOLUME_SEED : null;
+    const bloco = seed && seed[yms[i]];
+    if (!bloco) continue;
+    const keys = Object.keys(bloco);
+    for (let k = 0; k < keys.length; k++) {
+      const parts = keys[k].split('\t');
+      if (parts[0] === empresa && parts[1] === canal && parts[2]) nomes[parts[2]] = 1;
+    }
+  }
+  return ordenarNomesQuadroPnL(Object.keys(nomes));
+}
+
+function htmlLinhaMetricasPnL(labelHtml, trCls, met, filtro, on, extraHtml) {
+  const m = met || {};
+  const varN = classeVarPnL(m.varN);
+  const varA = classeVarPnL(m.varAc);
+  return `<tr class="${trCls}">
+    <td class="vq-linha">${labelHtml}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.n1, m.n1Tem, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.n, m.nTem, filtro, on)}</td>
+    <td class="vq-num${varN ? ' ' + varN : ''}">${htmlCelulaPctPnL(m.varN, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.ac1, m.ac1Tem, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.ac, m.acTem, filtro, on)}</td>
+    <td class="vq-num${varA ? ' ' + varA : ''}">${htmlCelulaPctPnL(m.varAc, filtro, on)}</td>
+    ${extraHtml || ''}
+  </tr>`;
+}
+
+function htmlResumoVolumeQuadro(quadro, periodo, filtro, escFn) {
+  const esc = typeof escFn === 'function' ? escFn : (s) => String(s == null ? '' : s);
+  const pacote = linhasResumoQuadroPnL(quadro, periodo.mes, periodo.ano);
+  const rows = pacote.linhas.map(row => {
+    const f = row.tipo === 'total' ? null : { empresa: row.empresa, canal: row.canal || '', vendedor: '' };
+    const on = !!(f && filtroQuadroActivoIgual(filtro, f.empresa, f.canal, ''));
+    let filtroMet = null;
+    if (row.tipo === 'empresa') filtroMet = { empresa: row.empresa };
+    else if (row.tipo === 'canal') filtroMet = { empresa: row.empresa, canal: row.canal };
+    const met = metricasVolumeLinhaQuadro(quadro, periodo, filtroMet);
+    let nome = 'Total';
+    if (row.tipo === 'canal') nome = `<span class="vq-indent">${esc(row.canal)}</span>`;
+    else if (row.tipo === 'empresa') nome = esc(row.empresa);
+    const trCls = row.tipo === 'empresa' ? 'vq-emp' : (row.tipo === 'total' ? 'vq-total' : 'vq-can');
+    return htmlLinhaMetricasPnL(nome, trCls, met, f, on, '');
+  }).join('');
+  return `<div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;">Volumes <span style="font-weight:400;text-transform:none;letter-spacing:0;">(QtFaturada — quantidade, não é R$ nem peso)</span></div>
+    <div class="vq-legenda">Quantidade faturada. Jan/2025 a Set/2026 vêm do Excel. Mês sem quantidade fica —. O R$ não entra aqui.</div>
+    <div class="vq-scroll vq-scroll-main">
+      <table class="vq-table">
+        <thead><tr>
+          <th class="vq-linha">Empresa</th>
+          <th class="vq-num">N-1</th>
+          <th class="vq-num">N</th>
+          <th class="vq-num">N vs N-1 %</th>
+          <th class="vq-num">Acum. N-1</th>
+          <th class="vq-num">Acum. N</th>
+          <th class="vq-num">Acum. vs N-1 %</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function htmlVistaCanalVendas(quadro, mes, ano, menu, filtro, escFn) {
+  const esc = typeof escFn === 'function' ? escFn : (s) => String(s == null ? '' : s);
+  const empresa = menu.empresa;
+  const canal = menu.canal;
+  const periodo = periodoComparacaoQuadro(mes, ano);
+  const abrevMes = (typeof VENDAS_MES_ABREV !== 'undefined' ? VENDAS_MES_ABREV[mes - 1] : '') || periodo.ym;
+  const nomeMes = abrevMes + '/' + ano;
+  const nomeN1 = abrevMes + '/' + (ano - 1);
+  const metCanal = metricasLinhaQuadro(quadro, periodo, { empresa: empresa, canal: canal });
+  const fCanal = { empresa: empresa, canal: canal, vendedor: '' };
+  const onCanal = !!(filtro && filtroQuadroActivoIgual(filtro, empresa, canal, ''));
+  const objMes = htmlCelulaObjetivoPnL(objetivoCanalMes(empresa, canal, periodo.ym), fCanal, onCanal);
+  const objAc = htmlCelulaObjetivoPnL(objetivoAcumuladoQuadro(empresa, canal, ano, mes), fCanal, onCanal);
+  let linhasValor = htmlLinhaMetricasPnL(esc(canal), 'vq-emp', metCanal, fCanal, onCanal, `<td class="vq-num">${objMes}</td><td class="vq-num">${objAc}</td>`);
+  let linhasVol = htmlLinhaMetricasPnL(esc(canal), 'vq-emp', metricasVolumeLinhaQuadro(quadro, periodo, { empresa: empresa, canal: canal }), fCanal, onCanal, '');
+  const vendedores = vendedoresCanalQuadro(quadro, periodo, empresa, canal);
+  for (let i = 0; i < vendedores.length; i++) {
+    const ven = vendedores[i];
+    const f = { empresa: empresa, canal: canal, vendedor: ven };
+    const on = !!(filtro && filtroQuadroActivoIgual(filtro, empresa, canal, ven));
+    const label = `<span class="vq-indent">${esc(ven)}</span>`;
+    const met = metricasLinhaQuadro(quadro, periodo, f);
+    const metV = metricasVolumeLinhaQuadro(quadro, periodo, f);
+    linhasValor += htmlLinhaMetricasPnL(label, 'vq-can', met, f, on, '<td class="vq-num"><span class="vq-muted">—</span></td><td class="vq-num"><span class="vq-muted">—</span></td>');
+    linhasVol += htmlLinhaMetricasPnL(label, 'vq-can', metV, f, on, '');
+  }
+  let banner = '';
+  if (filtro && (filtro.vendedor || (filtro.canal && filtro.canal !== canal) || (filtro.empresa && filtro.empresa !== empresa))) {
+    const partes = [];
+    if (filtro.vendedor) partes.push('Vendedor: ' + filtro.vendedor);
+    else if (filtro.canal) partes.push('Canal: ' + filtro.canal);
+    banner = `<div class="vq-banner"><span>Filtro: ${esc(partes.join(' · ') || canal)}</span><button type="button" class="btn btn-secondary btn-sm" onclick="limparFiltroVendasQuadro()">Limpar</button></div>`;
+  } else if (filtro && filtro.vendedor === '' && filtro.canal === canal) {
+    banner = `<div class="vq-banner"><span>Filtro: Canal: ${esc(canal)}</span><button type="button" class="btn btn-secondary btn-sm" onclick="limparFiltroVendasQuadro()">Limpar</button></div>`;
+  }
+  const ym = periodo.ym;
+  const mesAgg = quadro && quadro.meses ? quadro.meses[ym] : null;
+  const celulas = mesAgg && mesAgg.celulas ? Object.values(mesAgg.celulas) : [];
+  const detalhe = celulas.filter(c => c && c.empresa === empresa && c.canal === canal && vendasQuadroPassaFiltro(c, filtro));
+  let detRows = detalhe.map(c => {
+    const on = filtroQuadroActivoIgual(filtro, c.empresa, c.canal, c.vendedor);
+    const fdet = { empresa: c.empresa, canal: c.canal, vendedor: c.vendedor };
+    return `<tr class="vq-can"><td class="vq-linha">${esc(c.vendedor)}</td><td class="vq-num">${htmlValorQuadroClicavel(c.valor, c.linhas, fdet, on)}</td><td class="vq-num">${htmlContagemQuadroClicavel(c.linhas, fdet, on)}</td></tr>`;
+  }).join('');
+  if (!detRows) detRows = `<tr><td colspan="3" class="vq-muted" style="padding:16px;">Sem vendedores neste mês${filtro && filtro.vendedor ? ' com este filtro' : ''}.</td></tr>`;
+  const notaInst = (empresa === 'Delta Foods Brasil' && canal === 'Institucional')
+    ? `<div class="vcob-note">Institucional Balcão é o Marcio Gorga (99520011, 99520012 e 99520005). Institucional Horeca continua no Filipe e na equipa (99520019, 99520015, 99520016, 99520017).</div>`
+    : '';
+  return `
+    <div style="font-size:16px;font-weight:700;margin-bottom:4px;">${esc(canal)}</div>
+    <div class="vq-legenda">${esc(empresa)} · N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objectivo é o Budget do mês; Acum. objectivo soma Janeiro até este mês (Março não tem objectivo).</div>
+    ${notaInst}
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Vendas <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica num número para filtrar o detalhe)</span></div>
+    <div class="vq-scroll vq-scroll-main">
+      <table class="vq-table">
+        <thead><tr>
+          <th class="vq-linha">Canal / vendedor</th>
+          <th class="vq-num">N-1</th><th class="vq-num">N</th><th class="vq-num">N vs N-1 %</th>
+          <th class="vq-num">Acum. N-1</th><th class="vq-num">Acum. N</th><th class="vq-num">Acum. vs N-1 %</th>
+          <th class="vq-num" title="Budget do mês neste canal. Março está vazio.">Objetivo</th>
+          <th class="vq-num" title="Soma dos objectivos de Janeiro até este mês">Acum. objetivo</th>
+        </tr></thead>
+        <tbody>${linhasValor}</tbody>
+      </table>
+    </div>
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;">Volumes <span style="font-weight:400;text-transform:none;letter-spacing:0;">(QtFaturada — quantidade, não é R$)</span></div>
+    <div class="vq-scroll vq-scroll-main">
+      <table class="vq-table">
+        <thead><tr>
+          <th class="vq-linha">Canal / vendedor</th>
+          <th class="vq-num">N-1</th><th class="vq-num">N</th><th class="vq-num">N vs N-1 %</th>
+          <th class="vq-num">Acum. N-1</th><th class="vq-num">Acum. N</th><th class="vq-num">Acum. vs N-1 %</th>
+        </tr></thead>
+        <tbody>${linhasVol}</tbody>
+      </table>
+    </div>
+    ${banner}
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px;">Detalhe por vendedor · ${esc(nomeMes)}</div>
+    <div class="vq-scroll vq-scroll-det">
+      <table class="vq-table">
+        <thead><tr><th class="vq-linha">Vendedor</th><th class="vq-num">N</th><th class="vq-num">Linhas</th></tr></thead>
+        <tbody>${detRows}</tbody>
+      </table>
+    </div>
+    <div class="vcob-note">N e N-1 são as vendas líquidas do agregado. O objectivo é o Budget colado, em reais inteiros. Quantidade = QtFaturada (Jan/2025–Set/2026). Sem quantidade, fica —.</div>
+  `;
+}
+
+function htmlLinhaResumoPnL(row, filtro, escFn, periodo) {
   const esc = typeof escFn === 'function' ? escFn : (s) => String(s == null ? '' : s);
   const f = row.tipo === 'total' ? null : { empresa: row.empresa, canal: row.canal || '', vendedor: '' };
   const on = !!(f && filtroQuadroActivoIgual(filtro, f.empresa, f.canal, ''));
@@ -18177,6 +18782,7 @@ function htmlLinhaResumoPnL(row, filtro, escFn) {
   else if (row.tipo === 'empresa') nome = esc(row.empresa);
   const varN = classeVarPnL(m.varN);
   const varA = classeVarPnL(m.varAc);
+  const obj = htmlCelsObjetivoPnL(row.tipo, row.empresa, row.canal, periodo, f, on);
   return `<tr class="${trCls}">
     <td class="vq-linha">${nome}</td>
     <td class="vq-num">${htmlCelulaNumeroPnL(m.n1, m.n1Tem, f, on)}</td>
@@ -18185,13 +18791,21 @@ function htmlLinhaResumoPnL(row, filtro, escFn) {
     <td class="vq-num">${htmlCelulaNumeroPnL(m.ac1, m.ac1Tem, f, on)}</td>
     <td class="vq-num">${htmlCelulaNumeroPnL(m.ac, m.acTem, f, on)}</td>
     <td class="vq-num${varA ? ' ' + varA : ''}">${htmlCelulaPctPnL(m.varAc, f, on)}</td>
+    ${obj}
   </tr>`;
 }
 
 function renderVendasQuadro(quadroOpt) {
   const el = document.getElementById('pv-vendas-quadro');
   if (!el) return;
-  const quadro = quadroOpt || window._vendasQuadro;
+  let quadro = quadroOpt || window._vendasQuadro;
+  let semAgregado = false;
+  if (!quadro || !quadro.meses) {
+    quadro = quadroVendasVazio();
+    semAgregado = true;
+  } else {
+    quadro = quadroComMarcioIdentificado(quadro);
+  }
   preencherSelectsQuadroVendas();
   const { mes, ano, ym } = periodoQuadroSelecionado();
   const periodoEl = document.getElementById('vq-periodo');
@@ -18205,16 +18819,6 @@ function renderVendasQuadro(quadroOpt) {
   if (selMesEl && selMesEl.style) {
     selMesEl.style.outline = ehActual ? '2px solid #2563eb' : '';
     selMesEl.style.background = ehActual ? '#eff6ff' : '';
-  }
-
-  if (!quadro || !quadro.meses) {
-    el.innerHTML = `<div style="font-size:13px;color:var(--muted);line-height:1.5;">
-      Ainda não há agregado guardado.<br>
-      Valores = vendas líquidas, como no Power BI.<br>
-      O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.
-      O dia de hoje soma só as linhas novas. Abrir esta vista não relê as linhas de venda.
-    </div>`;
-    return;
   }
 
   const mesAgg = quadro.meses[ym];
@@ -18257,7 +18861,10 @@ function renderVendasQuadro(quadroOpt) {
     const i = lista.indexOf(can);
     return i < 0 ? 50 : i;
   };
-  const resumoRows = pacote.linhas.map(row => htmlLinhaResumoPnL(row, filtro, esc)).join('');
+  const resumoRows = pacote.linhas.map(row => htmlLinhaResumoPnL(row, filtro, esc, pacote.periodo)).join('');
+  const volumeHtml = htmlResumoVolumeQuadro(quadro, pacote.periodo, filtro, esc);
+  const canalActivo = canalMenuVendasActivo();
+  const navCanais = htmlMenusCanalVendas(canalActivo, esc);
 
   const detalhe = celulas
     .filter(c => vendasQuadroPassaFiltro(c, filtro))
@@ -18306,13 +18913,29 @@ function renderVendasQuadro(quadroOpt) {
     : '';
   const baseTxt = 'Agregado guardado' + (ts ? ' · ' + ts : '') + '.';
 
-  const avisoQuadro = mesAntigo
+  let avisoQuadro = mesAntigo
     ? `<div class="vq-aviso-antigo" style="background:#fff7ed;border:1px solid #c2410c;color:#9a3412;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:14px;line-height:1.5;"><strong>Estes R$ são o quadro anterior</strong> (Ecommerce, Horeca, Varejo ou Distribuidores). Ainda não são as linhas do Power BI. Para substituir este mês: <strong>Dados → Carregar Vendas</strong> com o Excel de 2026 (coluna de vendas líquidas e Nº pessoal).</div>`
     : (quadroAntigo
       ? `<div class="vq-aviso-antigo" style="background:#fff7ed;border:1px solid #c2410c;color:#9a3412;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:14px;line-height:1.5;">O quadro guardado ainda tem meses com os canais anteriores (Ecommerce, Horeca, Varejo ou Distribuidores). Esses R$ não são o Power BI. <strong>Dados → Carregar Vendas</strong> com o Excel de 2026 (coluna de vendas líquidas e Nº pessoal).</div>`
       : `<div class="vcob-note" style="margin-bottom:8px;">Valores = vendas líquidas, como no Power BI.</div>`);
+  if (semAgregado) {
+    avisoQuadro = `<div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:8px;">Ainda não há agregado guardado. O objectivo do mês aparece na mesma. O R$ entra ao carregar o Excel do SAP.</div>` + avisoQuadro;
+  }
+
+  const bindQuadro = () => {
+    if (!el.dataset.vqBound) {
+      el.dataset.vqBound = '1';
+      el.addEventListener('click', onClickVendasQuadro);
+    }
+  };
+  if (canalActivo) {
+    el.innerHTML = navCanais + avisoQuadro + htmlVistaCanalVendas(quadro, mes, ano, canalActivo, filtro, esc);
+    bindQuadro();
+    return;
+  }
 
   el.innerHTML = `
+    ${navCanais}
     ${avisoQuadro}
     <div class="vq-cards">
       <div class="vq-card${ehActual ? ' vq-card-actual' : ''}">
@@ -18327,7 +18950,7 @@ function renderVendasQuadro(quadroOpt) {
       </div>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${anoNota}</div>
-    <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Sem orçamento.</div>
+    <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget do mês. Acum. objetivo = soma de Janeiro até este mês. Março não tem objectivo.</div>
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Resumo <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica num número para filtrar o detalhe)</span></div>
     <div class="vq-scroll vq-scroll-main">
       <table class="vq-table">
@@ -18339,10 +18962,13 @@ function renderVendasQuadro(quadroOpt) {
           <th class="vq-num">Acum. N-1</th>
           <th class="vq-num">Acum. N</th>
           <th class="vq-num">Acum. vs N-1 %</th>
+          <th class="vq-num" title="Budget do mês. Março está vazio.">Objetivo</th>
+          <th class="vq-num" title="Soma dos objectivos de Janeiro até este mês">Acum. objetivo</th>
         </tr></thead>
         <tbody>${resumoRows}</tbody>
       </table>
     </div>
+    ${volumeHtml}
     ${banner}
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px;">Detalhe por vendedor · ${esc(nomeMes)}</div>
     <div class="vq-scroll vq-scroll-det">
@@ -18360,14 +18986,21 @@ function renderVendasQuadro(quadroOpt) {
       O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.
       O dia de hoje soma só as linhas novas.</div>
   `;
-  if (!el.dataset.vqBound) {
-    el.dataset.vqBound = '1';
-    el.addEventListener('click', onClickVendasQuadro);
-  }
+  bindQuadro();
 }
 
 function onClickVendasQuadro(ev) {
-  const btn = ev.target && ev.target.closest ? ev.target.closest('[data-vq-filtro]') : null;
+  const t = ev.target;
+  const menu = t && t.closest ? t.closest('[data-vq-canal-menu]') : null;
+  if (menu && menu.getAttribute && menu.getAttribute('data-vq-canal-menu')) {
+    const emp = menu.getAttribute('data-vq-empresa') || '';
+    const can = menu.getAttribute('data-vq-canal') || '';
+    window._vqCanal = can ? { empresa: emp, canal: can } : null;
+    window._vqFiltro = null;
+    renderVendasQuadro();
+    return;
+  }
+  const btn = t && t.closest ? t.closest('[data-vq-filtro]') : null;
   if (!btn) return;
   const next = {
     empresa: btn.getAttribute('data-vq-empresa') || '',
@@ -18825,6 +19458,7 @@ async function processVendasFile(event) {
       const iData = headers.findIndex(h => /^data$/i.test(h));
       const iPeso = headers.findIndex(h => /peso\s*l[ií]q/i.test(h));
       const iValor = indiceColunaValorVenda(headers); // só vendas líquidas (não peso, qtd, bruto, unitário, imposto)
+      const iVolume = indiceColunaVolumeVenda(headers); // QtFaturada; não é Fatur. nem peso
       const iNpessVenda = indiceColunaNpessVenda(headers);
       const vistosCab = headers.map(h => String(h || '').trim()).filter(Boolean);
       const txtVistos = vistosCab.length ? vistosCab.join(' | ') : '(nenhum cabeçalho)';
@@ -18881,7 +19515,7 @@ async function processVendasFile(event) {
         if (substituiMes) {
           linhasIgnoradasFechado++;
           mesesIgnoradosSet.add(ymLinha);
-          linhasValorHistorico.push(linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpessVenda, dataStr));
+          linhasValorHistorico.push(linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpessVenda, dataStr, iVolume));
           mesesValorHistoricoSet.add(ymLinha);
           continue;
         }
@@ -18914,10 +19548,12 @@ async function processVendasFile(event) {
         mesesAbertosSet.add(dataStr.slice(0, 7));
         const valorLinha = iValor >= 0 ? parseValorVendaSap(row[iValor]) : null;
         const npessLinha = iNpessVenda >= 0 ? npessDeCelulaExcel(row[iNpessVenda]) : 0;
+        const volLinha = iVolume >= 0 ? parseValorVendaSap(row[iVolume]) : null;
         candidatos.push({
           cod, data: dataStr, tipo, qty, peso: isNaN(peso) ? 0 : peso,
           valor: valorLinha == null ? undefined : valorLinha,
           npess: npessLinha || undefined,
+          volume: volLinha == null ? undefined : volLinha,
         });
       }
     }
@@ -32656,7 +33292,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-pnl: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-canal-vol: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
