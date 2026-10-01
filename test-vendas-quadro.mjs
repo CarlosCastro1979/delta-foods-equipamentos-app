@@ -432,10 +432,11 @@ check('números do resumo filtram o detalhe; zero não é clicável', () => {
   const limpo = els['pv-vendas-quadro'].innerHTML;
   assert.ok(!limpo.includes('Filtro:'), 'Limpar tira o banner');
   assert.ok(limpo.includes('DIOGO OLIVEIRA'));
-  assert.ok(limpo.includes('id="vq-canais"'), 'menus de canal no quadro de Vendas');
+  assert.ok(!limpo.includes('id="vq-canais"'), 'o quadro geral não é um selector de canais');
   assert.ok(limpo.includes('Objetivo'), 'coluna de objectivo');
-  assert.ok(limpo.includes('Volumes'), 'quadro de volumes');
-  assert.ok(limpo.includes('QtFaturada'));
+  assert.ok(!limpo.includes('Volumes'), 'sem bloco de volumes');
+  assert.ok(!limpo.includes('>Linhas<'), 'sem coluna Linhas');
+  assert.ok(!limpo.includes('QtFaturada'));
 });
 
 function extractConstObject(src, name) {
@@ -524,8 +525,10 @@ check('objectivos de Julho e Março oficial; 99520005 e 99530003 são o Marcio',
   ctx.renderVendasQuadro(ctx.quadroVendasVazio());
   const canalHtml = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
   assert.ok(canalHtml.includes('Lojas online'));
-  assert.ok(canalHtml.includes('1.269.607') || canalHtml.includes('1269607'), 'objectivo de Outubro no menu do canal');
-  assert.ok(canalHtml.includes('Volumes'));
+  assert.ok(canalHtml.includes('Restauração'), 'o quadro geral mantém os outros canais');
+  assert.ok(canalHtml.includes('1.269.607') || canalHtml.includes('1269607'), 'objectivo de Outubro continua no quadro geral');
+  assert.ok(!canalHtml.includes('Volumes'));
+  assert.ok(!canalHtml.includes('>Linhas<'));
   ctx.window._vqCanal = null;
 });
 
@@ -701,14 +704,173 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(html.includes('O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(sw.includes('v2026-10-01-nfe-cpf-marcio'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-marco'));
   assert.ok(!sw.includes('v2026-10-01-vendas-ordem'));
+  assert.ok(!sw.includes('v2026-10-01-nfe-zip'));
+  assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
   assert.ok(html.includes('v2026-10-01-nfe-cpf-marcio'));
+  assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));
+  assert.ok(!html.includes('v2026-10-01-vendas-marco'));
   assert.ok(!html.includes('v2026-10-01-vendas-ordem'));
+  assert.ok(!html.includes('v2026-10-01-nfe-zip'));
+  assert.ok(!html.includes('v2026-10-01-mapa-n'));
   assert.ok(!html.includes('v2026-10-01-vendas-rs'));
   assert.ok(!html.includes('v2026-10-01-vendas-prev'));
 });
+
+function extractAssignedArray(src, name) {
+  const marker = `const ${name} = `;
+  const start = src.indexOf(marker);
+  if (start < 0) throw new Error('const em falta: ' + name);
+  const i0 = src.indexOf('[', start);
+  let depth = 0;
+  for (let i = i0; i < src.length; i++) {
+    if (src[i] === '[') depth++;
+    else if (src[i] === ']') {
+      depth--;
+      if (depth === 0) return src.slice(i0, i + 1);
+    }
+  }
+  throw new Error('array não fechou: ' + name);
+}
+
+check('menu Vendas de cada canal: só os canais desse menu, vendedor na mesma tabela', () => {
+  vm.runInContext('var CANAIS_APP = ' + extractConstObject(html, 'CANAIS_APP') + ';', ctx);
+  vm.runInContext('var PV_ACC_CANAL_VENDEDOR = ' + extractConstObject(html, 'PV_ACC_CANAL_VENDEDOR') + ';', ctx);
+  vm.runInContext('var VENDEDORES_DEFAULT = ' + extractAssignedArray(html, 'VENDEDORES_DEFAULT') + ';', ctx);
+  if (!ctx.PV_OBJETIVOS_CANAL) {
+    vm.runInContext('var PV_OBJETIVOS_CANAL = ' + extractConstObject(html, 'PV_OBJETIVOS_CANAL') + ';', ctx);
+  }
+  for (const name of [
+    'normNomeVendaMenu', 'npessPorMenuApp', 'empresaDeNpessQuadro', 'canalPlDeNpess',
+    'canaisVendaDoMenuApp', 'nomesVendedorMenuNoCanal', 'ordenarGruposCanalMenu',
+    'variacaoObjectivoQuadro', 'somarQuadroMenuCanal', 'metricasMenuCanal',
+    'metricaVaziaQuadro', 'somarMetricasQuadro', 'vendedoresVisiveisMenu', 'mapaUmNomeVenda',
+    'linhaMenuVisivel', 'bannerFiltroVendasMenu', 'htmlLinhaVendasMenu', 'htmlQuadroVendasMenuCanal',
+  ]) {
+    vm.runInContext(extractFn(html, name), ctx);
+  }
+  ctx.VENDAS_MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  ctx.escHtml = (s) => String(s == null ? '' : s);
+
+  assert.equal(Math.round(ctx.variacaoObjectivoQuadro(110, true, 100)), 10);
+  assert.equal(Math.round(ctx.variacaoObjectivoQuadro(90, true, 100)), -10);
+  assert.equal(ctx.variacaoObjectivoQuadro(90, false, 100), null);
+  assert.equal(ctx.variacaoObjectivoQuadro(90, true, null), null);
+  assert.equal(ctx.variacaoObjectivoQuadro(90, true, 0), null);
+  assert.equal(ctx.classeVarPnL(10), 'vq-var-pos');
+  assert.equal(ctx.classeVarPnL(-10), 'vq-var-neg');
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', '', '2026-03'), 3225965);
+  assert.equal(ctx.objetivoCanalMes('Q Brasil', '', '2026-03'), 280275);
+  assert.equal(ctx.objetivoCanalMes('', '', '2026-03'), 3506241);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Restauração', '2026-03'), 447592);
+
+  function chaves(id) {
+    return ctx.canaisVendaDoMenuApp(id).map(g => g.empresa + '|' + g.canal);
+  }
+  const horeca = chaves('horeca');
+  assert.ok(horeca.includes('Delta Foods Brasil|Restauração'), horeca.join(', '));
+  assert.ok(horeca.includes('Delta Foods Brasil|Institucional'), horeca.join(', '));
+  assert.ok(!horeca.some(k => k.includes('Lojas online')), horeca.join(', '));
+  assert.ok(!horeca.some(k => k.includes('Distribuidores')), horeca.join(', '));
+  assert.ok(!horeca.some(k => k.startsWith('Q Brasil|')), horeca.join(', '));
+
+  const ecom = chaves('ecommerce');
+  assert.ok(ecom.includes('Delta Foods Brasil|Lojas online'), ecom.join(', '));
+  assert.ok(ecom.includes('Delta Foods Brasil|Site próprio'), ecom.join(', '));
+  assert.ok(ecom.includes('Delta Foods Brasil|Institucional'), ecom.join(', '));
+  assert.ok(ecom.includes('Q Brasil|Restauração'), ecom.join(', '));
+  assert.ok(!ecom.some(k => k.includes('Distribuidores')), ecom.join(', '));
+  assert.ok(!ecom.some(k => k.includes('Retalho')), ecom.join(', '));
+
+  const varejo = chaves('varejo');
+  assert.ok(varejo.includes('Delta Foods Brasil|Retalho moderno'));
+  assert.ok(varejo.includes('Delta Foods Brasil|Distribuidores de retalho'));
+  assert.ok(varejo.includes('Q Brasil|Retalho moderno'));
+  assert.ok(varejo.includes('Q Brasil|Distribuidores de retalho'));
+  assert.ok(!varejo.some(k => k.includes('Restauração')));
+  assert.ok(!varejo.some(k => k.includes('Lojas online')));
+  assert.ok(!varejo.some(k => k.includes('regionais')));
+
+  const dist = chaves('distribuidores');
+  assert.ok(dist.includes('Delta Foods Brasil|Distribuidores regionais'));
+  assert.ok(dist.includes('Q Brasil|Distribuidores regionais'));
+  assert.ok(!dist.some(k => k.includes('retalho')));
+  assert.ok(!dist.some(k => k.includes('Restauração')));
+
+  function cel(empresa, canal, vendedor, valor) {
+    return { empresa, canal, vendedor, valor, linhas: valor ? 1 : 0, linhasComValor: valor ? 1 : 0 };
+  }
+  const quadro = {
+    meses: {
+      '2026-03': {
+        celulas: {
+          a: cel('Delta Foods Brasil', 'Restauração', 'FILIPE NEVES', 1000),
+          b: cel('Delta Foods Brasil', 'Restauração', 'PAULO FONTES', 0),
+          c: cel('Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA', 99999),
+          d: cel('Delta Foods Brasil', 'Distribuidores regionais', 'MASSIMO BOTTELLO', 88888),
+          e: cel('Delta Foods Brasil', 'Institucional', 'PAULO FONTES', 40),
+          f: cel('Delta Foods Brasil', 'Institucional', 'MARCIO GORGA', 70),
+        },
+      },
+      '2025-03': {
+        celulas: {
+          g: cel('Delta Foods Brasil', 'Restauração', 'FILIPE NEVES', 800),
+        },
+      },
+    },
+  };
+  const htmlOut = ctx.htmlQuadroVendasMenuCanal(quadro, 3, 2026, 'horeca', null, ctx.escHtml);
+  assert.equal((htmlOut.match(/<table/g) || []).length, 1, 'um só quadro');
+  assert.ok(htmlOut.includes('FILIPE NEVES'));
+  assert.ok(htmlOut.includes('PAULO FONTES'));
+  assert.ok(htmlOut.includes('vq-indent-vend'), 'vendedor indentado na mesma tabela');
+  assert.ok(htmlOut.includes('Restauração'));
+  assert.ok(htmlOut.includes('Institucional'));
+  assert.ok(!htmlOut.includes('Lojas online'));
+  assert.ok(!htmlOut.includes('Distribuidores'));
+  assert.ok(!htmlOut.includes('MARCIO GORGA'));
+  assert.ok(!htmlOut.includes('Volumes'));
+  assert.ok(!htmlOut.includes('>Linhas<'));
+  assert.ok(!/QtFaturada/.test(htmlOut));
+  const thead = htmlOut.slice(htmlOut.indexOf('<thead>'), htmlOut.indexOf('</thead>'));
+  const cols = ['N-1', 'N', 'Objetivo', 'Var. obj. %', 'N vs N-1 %', 'Acum. N-1', 'Acum. N', 'Acum. objetivo', 'Acum. var. obj. %', 'Acum. vs N-1 %'];
+  let pos = -1;
+  cols.forEach(c => {
+    const i = thead.indexOf('>' + c + '<');
+    assert.ok(i > pos, 'coluna ' + c + ' fora de ordem');
+    pos = i;
+  });
+  const objTxt = ctx.formatNumeroQuadroPnL(447592, true);
+  assert.ok(htmlOut.includes(objTxt), 'objectivo de Março da Restauração: ' + objTxt);
+  const empTxt = ctx.formatNumeroQuadroPnL(3225965, true);
+  assert.ok(!htmlOut.includes(empTxt), 'não usa o budget da empresa inteira');
+  assert.ok(htmlOut.includes('vq-var-neg'), 'variação negativa a vermelho');
+  const buttons = [...htmlOut.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].map(m => m[1].replace(/\u00a0/g, ' ').trim());
+  assert.ok(buttons.every(b => b !== '0' && b !== '—' && b !== '0%'), 'zero e travessão não são clicáveis: ' + buttons.join(' | '));
+  assert.ok(htmlOut.includes('vq-muted">0') || htmlOut.includes('vq-muted">—'));
+
+  const filtrado = ctx.htmlQuadroVendasMenuCanal(quadro, 3, 2026, 'horeca', {
+    empresa: 'Delta Foods Brasil', canal: 'Restauração', vendedor: 'FILIPE NEVES',
+  }, ctx.escHtml);
+  assert.ok(filtrado.includes('Filtro:'));
+  assert.ok(filtrado.includes('Limpar'));
+  assert.ok(filtrado.includes('FILIPE NEVES'));
+  assert.ok(!filtrado.includes('PAULO FONTES'));
+  assert.ok(!filtrado.includes('Lojas online'));
+
+  assert.ok(html.includes('id="tab-vendas-canal"'));
+  assert.ok(html.includes("switchTab('vendas-canal')\">Vendas</button>".replace('">', '">')) || html.includes('id="tab-vendas-canal"'));
+  assert.ok(html.includes('id="panel-vendas-canal"'));
+  assert.ok(html.includes("switchTab('vendas-canal')"));
+  const btn = html.slice(html.indexOf('id="tab-vendas-canal"') - 40, html.indexOf('id="tab-vendas-canal"') + 120);
+  assert.ok(btn.includes('>Vendas</button>'));
+  assert.ok(!btn.includes('tab-horeca-only'));
+  assert.ok(!btn.includes('tab-hide-varejo'));
+  assert.ok(html.includes("if (tab === 'vendas-canal') initVendasMenuCanal();"));
 
 function tabelasVq(htmlOut) {
   return [...String(htmlOut).matchAll(/<table class="vq-table">([\s\S]*?)<\/table>/g)].map(m => m[1]);
@@ -771,8 +933,10 @@ check('Set/2026: Objetivo da Delta fica a seguir a N e os Acum.* só depois das 
   ctx.renderVendasQuadro(q);
   const out = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
   assert.ok(!out.includes('Var Bud'));
+  assert.ok(!out.includes('Volumes'), 'sem bloco de volumes');
+  assert.ok(!out.includes('>Linhas<'), 'sem coluna Linhas');
 
-  const tabs = tabelasVq(out.split('Volumes')[0]);
+  const tabs = tabelasVq(out.split('Detalhe por vendedor')[0]);
   assert.ok(tabs.length >= 1, 'quadro geral tem a tabela de valor');
   const heads = cabecalhosVq(tabs[0]);
   assert.deepEqual(heads, ['Empresa'].concat(ORDEM_VALOR));
@@ -796,9 +960,6 @@ check('Set/2026: Objetivo da Delta fica a seguir a N e os Acum.* só depois das 
   assert.equal(lojas.cells[4].text, '59%');
   assert.ok(lojas.cells[4].attrs.includes('vq-var-pos'));
 
-  const volTabs = tabelasVq(out.split('Volumes')[1] || '');
-  assert.deepEqual(cabecalhosVq(volTabs[0]), ['Empresa', 'N-1', 'N', 'N vs N-1 %', 'Acum. N-1', 'Acum. N', 'Acum. vs N-1 %']);
-
   const det = tabelasVq(out.split('Detalhe por vendedor')[1] || '');
   assert.deepEqual(cabecalhosVq(det[0]), ['Vendedor'].concat(ORDEM_VALOR));
   const marcioDet = linhasVq(det[0]).find(r => r.cells[0] && r.cells[0].text.includes('MARCIO GORGA'));
@@ -807,32 +968,9 @@ check('Set/2026: Objetivo da Delta fica a seguir a N e os Acum.* só depois das 
   assert.ok(!marcioDet.cells[3].html.includes('<button'), 'sem objetivo não é clicável');
   assert.equal(marcioDet.cells[4].text, '—');
   assert.ok(!marcioDet.cells[4].html.includes('<button'));
+  assert.ok(out.includes('Restauração'), 'o quadro geral mantém os outros canais');
+});
 
-  ctx.window._vqCanal = { empresa: 'Delta Foods Brasil', canal: 'Lojas online' };
-  ctx.window._vqFiltro = null;
-  ctx.renderVendasQuadro(q);
-  const canalHtml = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
-  const cTabs = tabelasVq(canalHtml.split('Volumes')[0]);
-  assert.deepEqual(cabecalhosVq(cTabs[0]), ['Canal / vendedor'].concat(ORDEM_VALOR));
-  const canalRow = linhasVq(cTabs[0]).find(r => r.cells[0] && r.cells[0].text === 'Lojas online');
-  assert.equal(canalRow.cells[3].text, ctx.formatNumeroQuadroPnL(1256087, true));
-  assert.equal(canalRow.cells[2].text, ctx.formatNumeroQuadroPnL(2000000, true));
-  const venRow = linhasVq(cTabs[0]).find(r => r.cells[0] && r.cells[0].text === 'MARCIO GORGA');
-  assert.ok(venRow, 'mapa do canal lista o vendedor');
-  assert.equal(venRow.cells[3].text, '—');
-  assert.ok(!venRow.cells[3].html.includes('<button'));
-  assert.equal(venRow.cells[4].text, '—');
-  assert.equal(venRow.cells[5].text, '100%');
-  assert.ok(venRow.cells[5].attrs.includes('vq-var-pos'));
-  const cDet = tabelasVq(canalHtml.split('Detalhe por vendedor')[1] || '');
-  assert.deepEqual(cabecalhosVq(cDet[0]), ['Vendedor'].concat(ORDEM_VALOR));
-  const venDet = linhasVq(cDet[0]).find(r => r.cells[0] && r.cells[0].text === 'MARCIO GORGA');
-  assert.equal(venDet.cells[3].text, '—');
-  assert.ok(!venDet.cells[3].html.includes('<button'));
-  cabecalhosVq(cTabs[0]).forEach((h, i) => {
-    if (h.startsWith('Acum.')) assert.ok(i > cabecalhosVq(cTabs[0]).indexOf('N vs N-1 %'), h);
-  });
-  ctx.window._vqCanal = null;
 });
 
 if (process.exitCode) {

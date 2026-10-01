@@ -401,7 +401,11 @@ check('texto da cobertura alinha o carregamento com o dia de hoje', () => {
   assert.ok(html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   assert.ok(html.includes('as linhas de hoje entram na mesma'));
   assert.ok(html.includes('v2026-10-01-nfe-cpf-marcio'));
+  assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));
+  assert.ok(!html.includes('v2026-10-01-vendas-marco'));
   assert.ok(!html.includes('v2026-10-01-vendas-ordem'));
+  assert.ok(!html.includes('v2026-10-01-nfe-zip'));
+  assert.ok(!html.includes('v2026-10-01-mapa-n'));
   assert.ok(!html.includes('v2026-10-01-vendas-rs'));
   assert.ok(!html.includes('v2026-10-01-vendas-prev'));
   assert.ok(!html.includes('v2026-10-01-vendas-quadro'));
@@ -411,7 +415,11 @@ check('texto da cobertura alinha o carregamento com o dia de hoje', () => {
   assert.ok(html.includes('aberto no próprio último dia útil'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(sw.includes('v2026-10-01-nfe-cpf-marcio'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-marco'));
   assert.ok(!sw.includes('v2026-10-01-vendas-ordem'));
+  assert.ok(!sw.includes('v2026-10-01-nfe-zip'));
+  assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
   assert.ok(!sw.includes('v2026-10-01-vendas-quadro'));

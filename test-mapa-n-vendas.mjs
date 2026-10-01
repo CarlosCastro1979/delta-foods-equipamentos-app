@@ -357,6 +357,10 @@ check('o quadro de Vendas mantém a ordem das colunas e o mapa não ganha volume
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(sw.includes('v2026-10-01-nfe-cpf-marcio'));
   assert.ok(html.includes('v2026-10-01-nfe-cpf-marcio'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));
+  assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));
+  assert.ok(!sw.includes('v2026-10-01-mapa-n'));
+  assert.ok(!html.includes('v2026-10-01-mapa-n'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);

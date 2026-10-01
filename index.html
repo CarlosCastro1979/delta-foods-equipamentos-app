@@ -1487,6 +1487,9 @@
   .vq-table tbody tr.vq-emp td { background: #f4f7fb; font-weight: 700; }
   .vq-table tbody tr.vq-total td { background: #e8eef5; font-weight: 700; border-top: 2px solid var(--border-strong); }
   .vq-indent { display: inline-block; padding-left: 18px; font-weight: 400; }
+  .vq-indent-vend { display: inline-block; padding-left: 36px; font-weight: 400; }
+  .vq-table tbody tr.vq-vend td { background: #fff; font-weight: 400; }
+  .vq-table-menu { min-width: 980px; }
   .vq-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text); }
   .vq-var-pos { color: #15803d; font-weight: 700; }
   .vq-var-neg { color: #dc2626; font-weight: 700; }
@@ -1508,6 +1511,7 @@
     .vq-table { font-size: 12px; min-width: 680px; }
     .vq-table th, .vq-table td { padding: 6px 8px; }
     .vq-indent { padding-left: 12px; }
+    .vq-indent-vend { padding-left: 24px; }
   }
   .vq-banner {
     margin: 10px 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -2072,6 +2076,7 @@ var _unused_placeholder = 1;
 
 <nav class="main-nav" id="main-nav">
   <div class="main-nav-inner">
+    <button class="tab" id="tab-vendas-canal" onclick="switchTab('vendas-canal')">Vendas</button>
     <button class="tab active" id="tab-registos" onclick="switchTab('registos')">Registo Clientes</button>
     <button class="tab" id="tab-analise" onclick="switchTab('analise')">Análise Clientes</button>
     <button class="tab tab-hide-varejo" onclick="switchTab('at')">Pedido AT</button>
@@ -2133,7 +2138,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal, Accuracy de fecho, Vendas por canal, volumes e NF emitidas (zip do cockpit). Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
+          <div class="hd-desc">Mapa mensal, Accuracy de fecho, o quadro geral de Vendas e NF emitidas (zip do cockpit). Cada canal tem o menu Vendas no topo. Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -3543,6 +3548,23 @@ var _unused_placeholder = 1;
 
       <div id="pros-modal-status" style="margin-top:10px;font-size:12px;text-align:right;"></div>
     </div>
+  </div>
+
+  <!-- VENDAS do menu do canal (Horeca, Ecommerce, Varejo, Distribuidores) -->
+  <div class="panel" id="panel-vendas-canal">
+    <div style="margin-bottom:12px;">
+      <div id="canal-vendas-titulo" style="font-size:16px;font-weight:700;">Vendas</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">Vendas líquidas só dos canais deste menu. O vendedor fica na mesma tabela.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+      <label style="font-size:12px;color:var(--muted);">Mês
+        <select id="cvm-mes" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasMenuCanal()"></select>
+      </label>
+      <label style="font-size:12px;color:var(--muted);">Ano
+        <select id="cvm-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasMenuCanal()"></select>
+      </label>
+    </div>
+    <div id="canal-vendas-quadro"><div style="color:var(--muted);font-size:13px;">A ler o agregado guardado…</div></div>
   </div>
 
   <!-- PANEL: VISITAS DO DIA (Horeca) -->
@@ -13152,7 +13174,7 @@ function pvRender(opts) {
     if (excelBtnV) excelBtnV.style.display = 'none';
     const bannerV = document.getElementById('pv-banner');
     if (bannerV) {
-      bannerV.innerHTML = '<strong>Vendas</strong> — mês (N), mesmo mês do ano anterior (N-1), acumulado e objectivo (Budget) do mês. Cada canal tem o mesmo quadro só com as vendas desse canal e o detalhe por vendedor. Volumes = quantidade (QtFaturada), não R$. O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra. Só consulta. Este ecrã lê o agregado guardado e não relê as linhas de venda.';
+      bannerV.innerHTML = '<strong>Vendas</strong> — mês (N), mesmo mês do ano anterior (N-1), acumulado e objectivo (Budget) do mês, todas as empresas. O menu Vendas de cada canal mostra só os canais desse menu, com o vendedor na mesma tabela. O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra. Só consulta. Este ecrã lê o agregado guardado e não relê as linhas de venda.';
     }
     pvMontarVistaVendas();
     return;
@@ -14309,6 +14331,7 @@ function switchTab(tab) {
   if (tab === 'historico-at') loadATHistorico();
   if (tab === 'prospeccao') initProsTab();
   if (tab === 'visitas') initVisitasTab();
+  if (tab === 'vendas-canal') initVendasMenuCanal();
 }
 
 // ─── VISITAS DO DIA (Horeca) ─────────────────────────
@@ -19524,29 +19547,505 @@ function htmlVistaCanalVendas(quadro, mes, ano, menu, filtro, escFn) {
         <tbody>${linhasValor}</tbody>
       </table>
     </div>
-    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;">Volumes <span style="font-weight:400;text-transform:none;letter-spacing:0;">(QtFaturada — quantidade, não é R$)</span></div>
+    ${banner}
+    <div class="vcob-note">N e N-1 são as vendas líquidas do agregado. O objectivo é o Budget gravado, em reais inteiros.</div>
+  `;
+}
+
+function normNomeVendaMenu(s) {
+  return String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** NPess que o menu da app já associa: CANAIS_APP.vendedorCods e os códigos do mapa de previsão do mesmo vendedor. */
+function npessPorMenuApp(canalId) {
+  const set = {};
+  const canal = (typeof CANAIS_APP !== 'undefined' && CANAIS_APP) ? CANAIS_APP[canalId] : null;
+  if (!canal) return [];
+  const cods = canal.vendedorCods || [];
+  for (let i = 0; i < cods.length; i++) {
+    const n = parseInt(cods[i], 10);
+    if (n) set[n] = 1;
+  }
+  const nomes = {};
+  const vends = canal.vendedores || [];
+  for (let i = 0; i < vends.length; i++) nomes[normNomeVendaMenu(vends[i])] = 1;
+  const mapa = (typeof PV_ACC_CANAL_VENDEDOR !== 'undefined') ? PV_ACC_CANAL_VENDEDOR : null;
+  if (mapa) {
+    const chaves = Object.keys(mapa);
+    for (let i = 0; i < chaves.length; i++) {
+      const meta = mapa[chaves[i]];
+      if (!meta || !nomes[normNomeVendaMenu(meta.vendedor)]) continue;
+      const extra = meta.codes || [];
+      for (let j = 0; j < extra.length; j++) {
+        const n = parseInt(extra[j], 10);
+        if (n) set[n] = 1;
+      }
+    }
+  }
+  return Object.keys(set).map(k => parseInt(k, 10));
+}
+
+function empresaDeNpessQuadro(npess) {
+  const gn = (typeof npessEmpresaGn === 'function') ? npessEmpresaGn(npess) : '';
+  if (gn === 'GN53') return 'Q Brasil';
+  if (gn === 'GN52') return 'Delta Foods Brasil';
+  return '';
+}
+
+function canalPlDeNpess(npess) {
+  const n = parseInt(npess, 10);
+  const linhas = (typeof linhasPlVendasQuadro === 'function') ? linhasPlVendasQuadro() : [];
+  for (let i = 0; i < linhas.length; i++) {
+    const cods = linhas[i][1] || [];
+    for (let j = 0; j < cods.length; j++) {
+      if (parseInt(cods[j], 10) === n) return linhas[i][0];
+    }
+  }
+  return '';
+}
+
+/**
+ * Canais de venda (linhas do P&L) deste menu, nas duas empresas quando o código já as associa.
+ * inteiro = todos os NPess dessa linha nesta empresa estão neste menu (aí o Budget gravado aplica-se).
+ */
+function canaisVendaDoMenuApp(canalId) {
+  const npessMenu = npessPorMenuApp(canalId);
+  const noMenu = {};
+  for (let i = 0; i < npessMenu.length; i++) noMenu[npessMenu[i]] = 1;
+  const linhas = (typeof linhasPlVendasQuadro === 'function') ? linhasPlVendasQuadro() : [];
+  const grupos = [];
+  const seen = {};
+  for (let i = 0; i < linhas.length; i++) {
+    const canal = linhas[i][0];
+    const cods = linhas[i][1] || [];
+    const porEmp = {};
+    for (let j = 0; j < cods.length; j++) {
+      const n = parseInt(cods[j], 10);
+      const emp = empresaDeNpessQuadro(n);
+      if (!emp) continue;
+      if (!porEmp[emp]) porEmp[emp] = { meus: 0, todos: 0 };
+      porEmp[emp].todos++;
+      if (noMenu[n]) porEmp[emp].meus++;
+    }
+    const empresas = ['Delta Foods Brasil', 'Q Brasil'];
+    for (let e = 0; e < empresas.length; e++) {
+      const emp = empresas[e];
+      const info = porEmp[emp];
+      if (!info || !info.meus) continue;
+      const key = emp + '\t' + canal;
+      if (seen[key]) continue;
+      seen[key] = 1;
+      grupos.push({
+        empresa: emp,
+        canal: canal,
+        inteiro: info.meus === info.todos && info.todos > 0,
+      });
+    }
+  }
+  return grupos;
+}
+
+function nomesVendedorMenuNoCanal(canalId, empresa, canal) {
+  const npessMenu = npessPorMenuApp(canalId);
+  const nomes = {};
+  const defs = (typeof VENDEDORES_DEFAULT !== 'undefined') ? VENDEDORES_DEFAULT : [];
+  const nomePorCod = {};
+  for (let i = 0; i < defs.length; i++) {
+    const n = parseInt(defs[i].cod, 10);
+    if (n && defs[i].nome) nomePorCod[n] = String(defs[i].nome);
+  }
+  for (let i = 0; i < npessMenu.length; i++) {
+    const n = npessMenu[i];
+    if (empresaDeNpessQuadro(n) !== empresa) continue;
+    if (canalPlDeNpess(n) !== canal) continue;
+    nomes[nomePorCod[n] || 'Por classificar'] = 1;
+  }
+  return nomes;
+}
+
+function ordenarGruposCanalMenu(empresa, grupos) {
+  const fixos = (typeof canaisFixosQuadroEmpresa === 'function') ? canaisFixosQuadroEmpresa(empresa) : [];
+  const arr = (grupos || []).slice();
+  arr.sort((a, b) => {
+    const ia = fixos.indexOf(a.canal);
+    const ib = fixos.indexOf(b.canal);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  return arr;
+}
+
+/** (N − Objetivo) / Objetivo × 100. Sem N ou sem objetivo (ou objetivo 0) → null. */
+function variacaoObjectivoQuadro(atual, temAtual, objetivo) {
+  if (!temAtual) return null;
+  if (objetivo == null || !Number.isFinite(+objetivo) || +objetivo === 0) return null;
+  const a = Number.isFinite(+atual) ? +atual : 0;
+  return ((a - (+objetivo)) / (+objetivo)) * 100;
+}
+
+function somarQuadroMenuCanal(quadro, yms, empresa, canal, nomeMap) {
+  let valor = 0;
+  let tem = false;
+  const lista = Array.isArray(yms) ? yms : [];
+  const meses = (quadro && quadro.meses) || {};
+  let normSet = null;
+  if (nomeMap) {
+    normSet = {};
+    const keys = Object.keys(nomeMap);
+    for (let k = 0; k < keys.length; k++) normSet[normNomeVendaMenu(keys[k])] = 1;
+  }
+  for (let i = 0; i < lista.length; i++) {
+    const mesObj = meses[lista[i]];
+    if (!mesObj || !mesObj.celulas) continue;
+    const celulas = Object.values(mesObj.celulas);
+    for (let j = 0; j < celulas.length; j++) {
+      const c = celulas[j];
+      if (!c || c.empresa !== empresa || c.canal !== canal) continue;
+      if (normSet && !normSet[normNomeVendaMenu(c.vendedor)]) continue;
+      tem = true;
+      valor = somarValorQuadro(valor, c.valor);
+    }
+  }
+  return { valor: valor, tem: tem };
+}
+
+function metricasMenuCanal(quadro, periodo, empresa, canal, nomeMap) {
+  const p = periodo || {};
+  const n = somarQuadroMenuCanal(quadro, p.ym ? [p.ym] : [], empresa, canal, nomeMap);
+  const n1 = somarQuadroMenuCanal(quadro, p.ymN1 ? [p.ymN1] : [], empresa, canal, nomeMap);
+  const ac = somarQuadroMenuCanal(quadro, p.ymsN, empresa, canal, nomeMap);
+  const ac1 = somarQuadroMenuCanal(quadro, p.ymsN1, empresa, canal, nomeMap);
+  return {
+    n: n.valor,
+    nTem: n.tem,
+    n1: n1.valor,
+    n1Tem: n1.tem,
+    ac: ac.valor,
+    acTem: ac.tem,
+    ac1: ac1.valor,
+    ac1Tem: ac1.tem,
+    varN: variacaoQuadroPct(n.tem ? n.valor : 0, n1.valor, n1.tem),
+    varAc: variacaoQuadroPct(ac.tem ? ac.valor : 0, ac1.valor, ac1.tem),
+  };
+}
+
+function metricaVaziaQuadro() {
+  return { n: 0, nTem: false, n1: 0, n1Tem: false, ac: 0, acTem: false, ac1: 0, ac1Tem: false, varN: null, varAc: null };
+}
+
+function somarMetricasQuadro(a, b) {
+  const x = a || metricaVaziaQuadro();
+  const y = b || metricaVaziaQuadro();
+  const nTem = !!(x.nTem || y.nTem);
+  const n1Tem = !!(x.n1Tem || y.n1Tem);
+  const acTem = !!(x.acTem || y.acTem);
+  const ac1Tem = !!(x.ac1Tem || y.ac1Tem);
+  const n = somarValorQuadro(x.nTem ? x.n : 0, y.nTem ? y.n : 0);
+  const n1 = somarValorQuadro(x.n1Tem ? x.n1 : 0, y.n1Tem ? y.n1 : 0);
+  const ac = somarValorQuadro(x.acTem ? x.ac : 0, y.acTem ? y.ac : 0);
+  const ac1 = somarValorQuadro(x.ac1Tem ? x.ac1 : 0, y.ac1Tem ? y.ac1 : 0);
+  return {
+    n: n, nTem: nTem, n1: n1, n1Tem: n1Tem, ac: ac, acTem: acTem, ac1: ac1, ac1Tem: ac1Tem,
+    varN: variacaoQuadroPct(nTem ? n : 0, n1, n1Tem),
+    varAc: variacaoQuadroPct(acTem ? ac : 0, ac1, ac1Tem),
+  };
+}
+
+function vendedoresVisiveisMenu(quadro, periodo, empresa, canal, nomeMap) {
+  const todos = vendedoresCanalQuadro(quadro, periodo, empresa, canal);
+  if (!nomeMap) return todos;
+  const norms = {};
+  const keys = Object.keys(nomeMap);
+  for (let i = 0; i < keys.length; i++) norms[normNomeVendaMenu(keys[i])] = 1;
+  const out = [];
+  for (let i = 0; i < todos.length; i++) {
+    if (nomeMap[todos[i]] || norms[normNomeVendaMenu(todos[i])]) out.push(todos[i]);
+  }
+  return out;
+}
+
+function mapaUmNomeVenda(nome) {
+  const m = {};
+  m[nome] = 1;
+  return m;
+}
+
+function linhaMenuVisivel(filtro, empresa, canal, vendedor) {
+  if (!filtro || (!filtro.empresa && !filtro.canal && !filtro.vendedor)) return true;
+  if (filtro.empresa && filtro.empresa !== empresa) return false;
+  if (filtro.vendedor) return vendedor === filtro.vendedor && (!filtro.canal || filtro.canal === canal);
+  if (filtro.canal) return filtro.canal === canal;
+  return true;
+}
+
+function bannerFiltroVendasMenu(filtro, esc) {
+  if (!filtro || (!filtro.empresa && !filtro.canal && !filtro.vendedor)) return '';
+  const partes = [];
+  if (filtro.empresa) partes.push('Empresa: ' + filtro.empresa);
+  if (filtro.canal) partes.push('Canal: ' + filtro.canal);
+  if (filtro.vendedor) partes.push('Vendedor: ' + filtro.vendedor);
+  return `<div class="vq-banner"><span>Filtro: ${esc(partes.join(' · '))}</span><button type="button" class="btn btn-secondary btn-sm" onclick="limparFiltroVendasMenu()">Limpar</button></div>`;
+}
+
+function htmlLinhaVendasMenu(labelHtml, trCls, met, objetivoMes, objetivoAc, filtro, on) {
+  const m = met || {};
+  const varObj = variacaoObjectivoQuadro(m.n, m.nTem, objetivoMes);
+  const varObjAc = variacaoObjectivoQuadro(m.ac, m.acTem, objetivoAc);
+  const varN = classeVarPnL(m.varN);
+  const varA = classeVarPnL(m.varAc);
+  const cObj = classeVarPnL(varObj);
+  const cObjA = classeVarPnL(varObjAc);
+  const temObj = objetivoMes != null && Number.isFinite(+objetivoMes);
+  const temObjA = objetivoAc != null && Number.isFinite(+objetivoAc);
+  return `<tr class="${trCls}">
+    <td class="vq-linha">${labelHtml}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.n1, m.n1Tem, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.n, m.nTem, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaObjetivoPnL(temObj ? objetivoMes : null, filtro, on)}</td>
+    <td class="vq-num${cObj ? ' ' + cObj : ''}">${htmlCelulaPctPnL(varObj, filtro, on)}</td>
+    <td class="vq-num${varN ? ' ' + varN : ''}">${htmlCelulaPctPnL(m.varN, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.ac1, m.ac1Tem, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.ac, m.acTem, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaObjetivoPnL(temObjA ? objetivoAc : null, filtro, on)}</td>
+    <td class="vq-num${cObjA ? ' ' + cObjA : ''}">${htmlCelulaPctPnL(varObjAc, filtro, on)}</td>
+    <td class="vq-num${varA ? ' ' + varA : ''}">${htmlCelulaPctPnL(m.varAc, filtro, on)}</td>
+  </tr>`;
+}
+
+/** Uma tabela: linha do canal e, por baixo, cada vendedor. Só os canais deste menu. */
+function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn) {
+  const esc = typeof escFn === 'function' ? escFn : (s) => String(s == null ? '' : s);
+  const grupos = canaisVendaDoMenuApp(canalId);
+  if (!canalId || !grupos.length) {
+    return `<p class="vq-muted" style="padding:16px;">Este menu não tem canais de venda associados.</p>`;
+  }
+  const periodo = periodoComparacaoQuadro(mes, ano);
+  const abrevMes = (typeof VENDAS_MES_ABREV !== 'undefined' ? VENDAS_MES_ABREV[mes - 1] : '') || periodo.ym;
+  const nomeMes = abrevMes + '/' + ano;
+  const nomeN1 = abrevMes + '/' + (ano - 1);
+  const porEmp = {};
+  const ordemEmp = [];
+  for (let i = 0; i < grupos.length; i++) {
+    const g = grupos[i];
+    if (!porEmp[g.empresa]) {
+      porEmp[g.empresa] = [];
+      ordemEmp.push(g.empresa);
+    }
+    porEmp[g.empresa].push(g);
+  }
+  const f = filtro || null;
+  const filtrado = !!(f && (f.empresa || f.canal || f.vendedor));
+  let htmlRows = '';
+  let metTotal = metricaVaziaQuadro();
+  let objMesTotal = 0;
+  let objAcTotal = 0;
+  let totalObjOk = true;
+  let totalObjAcOk = true;
+  let algum = false;
+  for (let e = 0; e < ordemEmp.length; e++) {
+    const emp = ordemEmp[e];
+    const canais = ordenarGruposCanalMenu(emp, porEmp[emp]);
+    let metEmp = metricaVaziaQuadro();
+    let objMesEmp = 0;
+    let objAcEmp = 0;
+    let empObjOk = true;
+    let empObjAcOk = true;
+    let blocos = '';
+    for (let c = 0; c < canais.length; c++) {
+      const g = canais[c];
+      const nomeMap = g.inteiro ? null : nomesVendedorMenuNoCanal(canalId, g.empresa, g.canal);
+      const met = metricasMenuCanal(quadro, periodo, g.empresa, g.canal, nomeMap);
+      const objM = g.inteiro ? objetivoCanalMes(g.empresa, g.canal, periodo.ym) : null;
+      const objA = g.inteiro ? objetivoAcumuladoQuadro(g.empresa, g.canal, ano, mes) : null;
+      if (!g.inteiro || objM == null) empObjOk = false;
+      else objMesEmp += objM;
+      if (!g.inteiro || objA == null) empObjAcOk = false;
+      else objAcEmp += objA;
+      metEmp = somarMetricasQuadro(metEmp, met);
+      const fCanal = { empresa: g.empresa, canal: g.canal, vendedor: '' };
+      const onCanal = !!(f && filtroQuadroActivoIgual(f, g.empresa, g.canal, ''));
+      if (linhaMenuVisivel(f, g.empresa, g.canal, '')) {
+        blocos += htmlLinhaVendasMenu(
+          `<span class="vq-indent">${esc(g.canal)}</span>`,
+          'vq-can',
+          met,
+          objM,
+          objA,
+          fCanal,
+          onCanal
+        );
+      }
+      const vendedores = vendedoresVisiveisMenu(quadro, periodo, g.empresa, g.canal, nomeMap);
+      for (let v = 0; v < vendedores.length; v++) {
+        const ven = vendedores[v];
+        if (!linhaMenuVisivel(f, g.empresa, g.canal, ven)) continue;
+        const fv = { empresa: g.empresa, canal: g.canal, vendedor: ven };
+        const onV = !!(f && filtroQuadroActivoIgual(f, g.empresa, g.canal, ven));
+        const metV = metricasMenuCanal(quadro, periodo, g.empresa, g.canal, mapaUmNomeVenda(ven));
+        blocos += htmlLinhaVendasMenu(
+          `<span class="vq-indent-vend">${esc(ven)}</span>`,
+          'vq-vend',
+          metV,
+          null,
+          null,
+          fv,
+          onV
+        );
+      }
+    }
+    metTotal = somarMetricasQuadro(metTotal, metEmp);
+    if (!empObjOk) totalObjOk = false;
+    else objMesTotal += objMesEmp;
+    if (!empObjAcOk) totalObjAcOk = false;
+    else objAcTotal += objAcEmp;
+    const mostraEmp = !filtrado || (f.empresa === emp && !f.canal && !f.vendedor);
+    if (mostraEmp) {
+      const fEmp = { empresa: emp, canal: '', vendedor: '' };
+      const onEmp = !!(f && filtroQuadroActivoIgual(f, emp, '', ''));
+      htmlRows += htmlLinhaVendasMenu(
+        esc(emp),
+        'vq-emp',
+        metEmp,
+        empObjOk ? objMesEmp : null,
+        empObjAcOk ? objAcEmp : null,
+        fEmp,
+        onEmp
+      );
+      algum = true;
+    }
+    if (blocos) algum = true;
+    htmlRows += blocos;
+  }
+  if (!filtrado) {
+    htmlRows += htmlLinhaVendasMenu(
+      'Total',
+      'vq-total',
+      metTotal,
+      totalObjOk ? objMesTotal : null,
+      totalObjAcOk ? objAcTotal : null,
+      null,
+      false
+    );
+  }
+  const vazio = algum ? '' : `<tr><td colspan="11" class="vq-muted" style="padding:16px;">Sem linhas neste filtro.</td></tr>`;
+  return `
+    ${bannerFiltroVendasMenu(f, esc)}
+    <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget já gravado do mês. Var. obj. % = (N − Objetivo) / Objetivo. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo. Verde se positivo, vermelho se negativo. Sem objetivo, fica —.</div>
     <div class="vq-scroll vq-scroll-main">
-      <table class="vq-table">
+      <table class="vq-table vq-table-menu">
         <thead><tr>
           <th class="vq-linha">Canal / vendedor</th>
-          <th class="vq-num">N-1</th><th class="vq-num">N</th><th class="vq-num">N vs N-1 %</th>
-          <th class="vq-num">Acum. N-1</th><th class="vq-num">Acum. N</th><th class="vq-num">Acum. vs N-1 %</th>
+          <th class="vq-num">N-1</th>
+          <th class="vq-num">N</th>
+          <th class="vq-num" title="Budget do mês neste canal.">Objetivo</th>
+          <th class="vq-num" title="(N − Objetivo) / Objetivo">Var. obj. %</th>
+          <th class="vq-num">N vs N-1 %</th>
+          <th class="vq-num">Acum. N-1</th>
+          <th class="vq-num">Acum. N</th>
+          <th class="vq-num" title="Soma dos objectivos de Janeiro até este mês">Acum. objetivo</th>
+          <th class="vq-num" title="(Acum. N − Acum. objetivo) / Acum. objetivo">Acum. var. obj. %</th>
+          <th class="vq-num">Acum. vs N-1 %</th>
         </tr></thead>
-        <tbody>${linhasVol}</tbody>
+        <tbody>${htmlRows}${vazio}</tbody>
       </table>
     </div>
-    ${banner}
-    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px;">Detalhe por vendedor · ${esc(nomeMes)}</div>
-    <div class="vq-scroll vq-scroll-det">
-      <table class="vq-table">
-        <thead><tr>
-          ${htmlCabecalhoValorPnL('Vendedor')}
-        </tr></thead>
-        <tbody>${detRows}</tbody>
-      </table>
-    </div>
-    <div class="vcob-note">N e N-1 são as vendas líquidas do agregado. O objectivo é o Budget colado, em reais inteiros. Quantidade = QtFaturada (Jan/2025–Set/2026). Sem quantidade, fica —.</div>
+    <div class="vcob-note">N e N-1 vêm do agregado de vendas (Fatur.). O objectivo é o Budget gravado por mês e canal, incluindo Março. Não se soma quantidade.</div>
   `;
+}
+
+function preencherSelectsVendasMenu() {
+  const selM = document.getElementById('cvm-mes');
+  const selA = document.getElementById('cvm-ano');
+  if (!selM || !selA) return;
+  if (!selM.options.length) {
+    const mesHoje = new Date().getMonth() + 1;
+    selM.innerHTML = VENDAS_MES_ABREV.map((nome, i) => {
+      const marca = (i + 1) === mesHoje ? ' · actual' : '';
+      return `<option value="${i + 1}">${nome}${marca}</option>`;
+    }).join('');
+  }
+  if (!selA.options.length) {
+    const nowY = new Date().getFullYear();
+    const anos = [];
+    for (let y = VENDAS_COBERTURA_INICIO.y; y <= nowY; y++) anos.push(y);
+    selA.innerHTML = anos.map(y => `<option value="${y}">${y}</option>`).join('');
+  }
+  if (!selM.dataset.ready) {
+    const now = new Date();
+    selM.value = String(now.getMonth() + 1);
+    selA.value = String(now.getFullYear());
+    selM.dataset.ready = '1';
+  }
+}
+
+function periodoVendasMenuSelecionado() {
+  preencherSelectsVendasMenu();
+  const selM = document.getElementById('cvm-mes');
+  const selA = document.getElementById('cvm-ano');
+  const now = new Date();
+  const mes = parseInt(selM && selM.value, 10) || (now.getMonth() + 1);
+  const ano = parseInt(selA && selA.value, 10) || now.getFullYear();
+  return { mes: mes, ano: ano, ym: ano + '-' + String(mes).padStart(2, '0') };
+}
+
+function renderVendasMenuCanal(quadroOpt) {
+  const el = document.getElementById('canal-vendas-quadro');
+  if (!el) return;
+  let quadro = quadroOpt || (typeof window !== 'undefined' ? window._vendasQuadro : null);
+  if (!quadro || !quadro.meses) quadro = quadroVendasVazio();
+  else quadro = quadroComMarcioIdentificado(quadro);
+  const periodo = periodoVendasMenuSelecionado();
+  const canalId = (typeof resolveCanalActivoId === 'function') ? resolveCanalActivoId() : (typeof _canalActivo !== 'undefined' ? _canalActivo : null);
+  const titulo = document.getElementById('canal-vendas-titulo');
+  const canal = (typeof CANAIS_APP !== 'undefined' && canalId && CANAIS_APP[canalId]) ? CANAIS_APP[canalId] : null;
+  if (titulo) titulo.textContent = canal ? ('Vendas · ' + canal.nome) : 'Vendas';
+  const esc = (s) => (typeof escHtml === 'function' ? escHtml(s) : String(s || ''));
+  const filtro = (typeof window !== 'undefined' && window._cvmFiltro) ? window._cvmFiltro : null;
+  el.innerHTML = htmlQuadroVendasMenuCanal(quadro, periodo.mes, periodo.ano, canalId, filtro, esc);
+  if (!el.dataset.cvmBound) {
+    el.dataset.cvmBound = '1';
+    el.addEventListener('click', onClickVendasMenuCanal);
+  }
+}
+
+function onClickVendasMenuCanal(ev) {
+  const t = ev.target;
+  const btn = t && t.closest ? t.closest('[data-vq-filtro]') : null;
+  if (!btn) return;
+  const next = {
+    empresa: btn.getAttribute('data-vq-empresa') || '',
+    canal: btn.getAttribute('data-vq-canal') || '',
+    vendedor: btn.getAttribute('data-vq-vendedor') || '',
+  };
+  if (filtroQuadroActivoIgual(window._cvmFiltro, next.empresa, next.canal, next.vendedor)) window._cvmFiltro = null;
+  else window._cvmFiltro = next;
+  renderVendasMenuCanal();
+}
+
+function limparFiltroVendasMenu() {
+  window._cvmFiltro = null;
+  renderVendasMenuCanal();
+}
+
+function initVendasMenuCanal() {
+  window._cvmFiltro = null;
+  const el = document.getElementById('canal-vendas-quadro');
+  if (el && !el.dataset.cvmBound) {
+    el.dataset.cvmBound = '1';
+    el.addEventListener('click', onClickVendasMenuCanal);
+  }
+  loadVendasMenuCanal();
+}
+
+async function loadVendasMenuCanal() {
+  const el = document.getElementById('canal-vendas-quadro');
+  if (!el) return;
+  preencherSelectsVendasMenu();
+  try {
+    const q = await lerVendasQuadroPersistida();
+    renderVendasMenuCanal(q);
+  } catch (e) {
+    el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao ler o quadro: ${e.message || e}</div>`;
+  }
 }
 
 function htmlLinhaResumoPnL(row, filtro, escFn, periodo) {
@@ -19609,7 +20108,6 @@ function renderVendasQuadro(quadroOpt) {
         ? 'há meses com o quadro anterior (Ecommerce, Horeca, Varejo). Dados → Carregar Vendas com o Excel de 2026.'
         : 'mês, ano anterior (N-1) e acumulado até esse mês — vendas líquidas, como no Power BI');
   }
-  const anoTot = totalQuadroAno(quadro, ano);
   const filtro = window._vqFiltro || null;
   const esc = (s) => (typeof escHtml === 'function' ? escHtml(s) : String(s || ''));
   const pacote = linhasResumoQuadroPnL(quadro, mes, ano);
@@ -19618,12 +20116,8 @@ function renderVendasQuadro(quadroOpt) {
   const nomeN1 = abrevMes + '/' + (ano - 1);
 
   const notaValor = !quadro.valor_na_base
-    ? `<div class="vcob-note">O valor em R$ <strong>não estava</strong> na tabela de vendas (só cliente, data, tipo e peso). O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra. A contagem de linhas não é a cobertura.</div>`
-    : `<div class="vcob-note">Valores em R$ gravados na tabela de vendas. O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra. A contagem de linhas é só um detalhe (não é a cobertura).</div>`;
-
-  const anoNota = anoTot.linhas > anoTot.linhasComValor
-    ? ` <span class="vq-muted">· R$ só onde o valor foi gravado (${anoTot.linhasComValor.toLocaleString('pt-BR')} de ${anoTot.linhas.toLocaleString('pt-BR')} linhas)</span>`
-    : '';
+    ? `<div class="vcob-note">O valor em R$ <strong>não estava</strong> na tabela de vendas (só cliente, data, tipo e peso). O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.</div>`
+    : `<div class="vcob-note">Valores em R$ gravados na tabela de vendas. O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.</div>`;
 
   const ordemEmp = ['Delta Foods Brasil', 'Q Brasil', 'Por classificar'];
   const idxCanal = (emp, can) => {
@@ -19632,9 +20126,6 @@ function renderVendasQuadro(quadroOpt) {
     return i < 0 ? 50 : i;
   };
   const resumoRows = pacote.linhas.map(row => htmlLinhaResumoPnL(row, filtro, esc, pacote.periodo)).join('');
-  const volumeHtml = htmlResumoVolumeQuadro(quadro, pacote.periodo, filtro, esc);
-  const canalActivo = canalMenuVendasActivo();
-  const navCanais = htmlMenusCanalVendas(canalActivo, esc);
 
   const detalhe = celulas
     .filter(c => vendasQuadroPassaFiltro(c, filtro))
@@ -19694,20 +20185,12 @@ function renderVendasQuadro(quadroOpt) {
       el.addEventListener('click', onClickVendasQuadro);
     }
   };
-  if (canalActivo) {
-    el.innerHTML = navCanais + avisoQuadro + htmlVistaCanalVendas(quadro, mes, ano, canalActivo, filtro, esc);
-    bindQuadro();
-    return;
-  }
-
   el.innerHTML = `
-    ${navCanais}
     ${avisoQuadro}
     <div class="vq-cards">
       <div class="vq-card${ehActual ? ' vq-card-actual' : ''}">
         <div class="vq-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Mês ${esc(nomeMes)}${ehActual ? ' · actual' : ''}</div>
         <strong>${formatValorQuadroRs(celulas.reduce((s, c) => somarValorQuadro(s, c.valor), 0), celulas.length > 0)}</strong>
-        <div class="vq-linhas">${celulas.reduce((s, c) => s + (c.linhas || 0), 0).toLocaleString('pt-BR')} linhas (detalhe)</div>
       </div>
       <div class="vq-card">
         <div class="vq-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Acumulado Jan–${esc(abrevMes)}/${ano}</div>
@@ -19715,7 +20198,6 @@ function renderVendasQuadro(quadroOpt) {
         <div class="vq-linhas">Janeiro até ${esc(abrevMes)}/${ano}</div>
       </div>
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${anoNota}</div>
     <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget do mês, a seguir a N. Var. obj. % = (N − Objetivo) / Objetivo. Acum. objetivo = soma de Janeiro até este mês, Março inclusive. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo.</div>
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Resumo <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica num número para filtrar o detalhe)</span></div>
     <div class="vq-scroll vq-scroll-main">
@@ -19726,7 +20208,6 @@ function renderVendasQuadro(quadroOpt) {
         <tbody>${resumoRows}</tbody>
       </table>
     </div>
-    ${volumeHtml}
     ${banner}
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px;">Detalhe por vendedor · ${esc(nomeMes)}</div>
     <div class="vq-scroll vq-scroll-det">
