@@ -2895,10 +2895,11 @@ var _unused_placeholder = 1;
       <div id="vendas-pin-step" style="display:none"></div>
       <div id="vendas-upload-step" style="display:none">
         <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--muted);line-height:1.5">
-          <strong>Importação só de meses abertos:</strong><br>
-          • Meses fechados ficam intactos — essas linhas são ignoradas<br>
-          • Só meses pendentes, em curso ou em falta são lidos e actualizados<br>
-          • Dentro desses meses, só grava o que falta (dedup: cliente + data + tipo)<br>
+          <strong>Importação só do dia de hoje</strong> (data local deste computador):<br>
+          • Só grava linhas com a data de hoje. Outros dias são ignorados — não são relidos nem alterados<br>
+          • Se o resumo ainda disser o mês fechado, as linhas de hoje entram na mesma. O resto desse mês fica intacto<br>
+          • No próprio último dia útil o mês continua aberto: uma venda já gravada nesse dia não o fecha<br>
+          • Linhas de hoje já gravadas não duplicam (dedup: cliente + data + tipo)<br>
           • GRÃO → Peso líq. em Kg · CÁPSULAS → Peso ÷ 0,0055
         </div>
         <div id="vendas-status" style="margin-bottom:10px"></div>
@@ -3930,7 +3931,8 @@ var _unused_placeholder = 1;
             <div style="font-size:12px;color:var(--muted);line-height:1.5;">
               Excel SAP de vendas (podes escolher <strong>vários ficheiros</strong> ou carregar por partes — são grandes).<br>
               Acumula no Supabase sem duplicar (cliente + data + tipo). Cobre desde ~2019 para contratos e equipamento profissional.<br>
-              Ao carregar, só se lêem meses <strong>abertos</strong> (pendente, em curso ou em falta). Meses <strong>fechados</strong> ficam intactos — essas linhas não são lidas de novo nem alteradas.<br>
+              Ao carregar, só se gravam linhas do <strong>dia de hoje</strong> (data local deste computador). Outros dias não são relidos nem alterados.<br>
+              Se o resumo ainda disser o mês fechado, as linhas de hoje entram na mesma. O resto do mês fechado fica intacto.<br>
               «Nenhuma carga efectuada neste browser» só significa que <em>este</em> PC ainda não concluiu uma carga (o servidor pode já ter dados).
             </div>
           </div>
@@ -3953,8 +3955,8 @@ var _unused_placeholder = 1;
               <div style="font-weight:600;font-size:15px;">Cobertura temporal de vendas</div>
               <div style="font-size:12px;color:var(--muted);line-height:1.5;">
                 Resumo guardado (não relê as ~500k linhas a cada entrada).<br>
-                Ao carregar vendas, só meses abertos são lidos; meses fechados ficam intactos.<br>
-                Até Jun/2026 = fechado. De Jul/2026 em diante = <strong>pendente</strong> até haver vendas no <strong>último dia útil</strong> do mês.
+                Ao carregar vendas, só entram linhas do dia local de hoje; os outros dias ficam intactos.<br>
+                Até Jun/2026 = fechado. De Jul/2026 em diante o mês fica <strong>aberto no próprio último dia útil</strong> (a carga ainda junta linhas novas de hoje). No dia seguinte fecha se já houver venda nesse último dia útil. Se o resumo ainda disser fechado, as linhas de hoje entram na mesma.
               </div>
             </div>
           </div>
@@ -5704,15 +5706,16 @@ function renderUltimaVendasCarga() {
     const saved = localStorage.getItem('delta_vendas_ultima_carga');
     if (!saved) { el.textContent = 'Nenhuma carga efectuada neste browser.'; return; }
     const savedObj = JSON.parse(saved);
-    const { data, ficheiro, novos, ignorados, total, lidas, ignoradasFechado } = savedObj;
+    const { data, ficheiro, novos, ignorados, total, lidas, ignoradasFechado, ignoradasOutroDia, hoje } = savedObj;
     const d = new Date(data);
     const totalTxt = total != null ? ` &nbsp;·&nbsp; total servidor: <strong>${Number(total).toLocaleString('pt-BR')}</strong>` : '';
-    const lidasTxt = lidas != null ? ` &nbsp;·&nbsp; ${Number(lidas).toLocaleString('pt-BR')} lidas (meses abertos)` : '';
+    const lidasTxt = lidas != null ? ` &nbsp;·&nbsp; ${Number(lidas).toLocaleString('pt-BR')} lidas${hoje ? ` (dia ${hoje})` : ''}` : '';
+    const outroTxt = ignoradasOutroDia != null ? ` &nbsp;·&nbsp; <span style="color:var(--muted)">${Number(ignoradasOutroDia).toLocaleString('pt-BR')} de outros dias ignoradas</span>` : '';
     const fechadoTxt = ignoradasFechado != null ? ` &nbsp;·&nbsp; <span style="color:var(--muted)">${Number(ignoradasFechado).toLocaleString('pt-BR')} de meses fechados ignoradas</span>` : '';
     el.innerHTML = `<strong>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</strong>
       &nbsp;·&nbsp; ${ficheiro}
       &nbsp;·&nbsp; <span style="color:#16a34a">+${Number(novos||0).toLocaleString('pt-BR')} novos</span>
-      &nbsp;·&nbsp; <span style="color:var(--muted)">${Number(ignorados||0).toLocaleString('pt-BR')} já existentes</span>${lidasTxt}${fechadoTxt}${totalTxt}`;
+      &nbsp;·&nbsp; <span style="color:var(--muted)">${Number(ignorados||0).toLocaleString('pt-BR')} já existentes</span>${lidasTxt}${outroTxt}${fechadoTxt}${totalTxt}`;
   } catch(e) { el.textContent = '—'; }
 }
 
@@ -16288,7 +16291,7 @@ const VENDAS_COBERTURA_INICIO = { y: 2019, m: 9 }; // Set/2019
 const VENDAS_MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const VENDAS_COBERTURA_LS_KEY = 'delta_vendas_cobertura_v2';
 const VENDAS_COBERTURA_SUPA_ID = 'vendas_cobertura';
-/** A partir deste mês: pendente até vendas no último dia útil; o que está para trás = fechado. */
+/** A partir deste mês: aberto no próprio último dia útil; fecha no dia seguinte se já houver venda nesse dia. Antes = fechado com dados. */
 const VENDAS_COBERTURA_REGRA_DESDE = '2026-07';
 
 /** Lista YYYY-MM de Set/2019 até ao mês actual (inclusive). */
@@ -16350,8 +16353,12 @@ function ultimoDiaUtilMes(ym) {
 /**
  * Status do mês:
  * - falta: sem linhas
- * - ok: fechado (antes de Jul/26 com dados; ou Jul+ com vendas ≥ último dia útil)
- * - pendente: Jul+ sem chegar ao último dia útil (mês em curso ou carga incompleta)
+ * - ok: fechado (antes de Jul/26 com dados; ou Jul+ depois de o último dia útil
+ *   ter acabado e com venda nesse dia ou depois)
+ * - pendente: Jul+ em curso, no próprio último dia útil, ou carga incompleta
+ *
+ * No próprio último dia útil (hoje === esse dia) o mês fica aberto, mesmo que
+ * já exista uma venda com essa data. Só no dia civil seguinte é que fecha.
  */
 function statusVendasCoberturaMes(ym, info, hojeOpt) {
   const linhas = +(info?.linhas || 0);
@@ -16360,9 +16367,10 @@ function statusVendasCoberturaMes(ym, info, hojeOpt) {
   const ultimoUtil = ultimoDiaUtilMes(ym);
   const ultima = vendasISODateOnly(info?.ultima_data);
   const hoje = hojeOpt || vendasHojeISO();
-  // Ainda não chegou o último dia útil → mês em curso
-  if (hoje < ultimoUtil) return 'pendente';
-  // Já passou o último dia útil: precisa ter venda nesse dia (ou depois no mês)
+  // Antes do último dia útil, ou ainda nesse próprio dia civil → mês aberto.
+  // Uma venda já gravada no dia 30 não fecha Setembro a meio do dia.
+  if (hoje <= ultimoUtil) return 'pendente';
+  // O último dia útil já acabou (hoje é um dia posterior): fecha se houver venda nesse dia ou depois.
   if (ultima && ultima >= ultimoUtil) return 'ok';
   return 'pendente';
 }
@@ -16384,6 +16392,16 @@ function vendaDataCaiEmMesFechado(dataStr, mesesFechados) {
 }
 
 /**
+ * A carga só grava o dia local do browser (não o UTC do servidor).
+ * Essa data entra mesmo que o resumo ainda marque o mês como fechado.
+ */
+function vendaDataEntraNaCarga(dataStr, hojeOpt) {
+  const hoje = hojeOpt || vendasHojeISO();
+  const dia = String(dataStr || '').slice(0, 10);
+  return !!(hoje && dia === hoje);
+}
+
+/**
  * Meses com status ok no resumo guardado.
  * Sem resumo (primeira carga) nenhum mês está fechado — o histórico ainda tem de entrar.
  * Em falta / pendente / em curso ficam de fora deste conjunto.
@@ -16400,13 +16418,16 @@ function mesesFechadosFromCobertura(map, hojeOpt) {
 }
 
 /**
- * Separa linhas já com data ISO: meses fechados não vão para o modelo.
- * lidas = linhas de meses abertos; ignoradas = linhas de meses fechados.
+ * Separa linhas já com data ISO.
+ * Só entram linhas cuja data é o dia local de hoje — mesmo que o mês esteja fechado no resumo.
+ * O resto de um mês fechado conta como ignoradas. Outros dias (abertos ou não) não são relidos nem alterados.
  */
-function filtrarLinhasVendasMesesAbertos(rows, mesesFechados) {
+function filtrarLinhasVendasMesesAbertos(rows, mesesFechados, hojeOpt) {
   const fechados = mesesFechados instanceof Set ? mesesFechados : new Set(mesesFechados || []);
+  const hoje = hojeOpt || vendasHojeISO();
   const aceites = [];
   let ignoradas = 0;
+  let ignoradasOutroDia = 0;
   let semData = 0;
   const mesesAbertos = new Set();
   const mesesIgnorados = new Set();
@@ -16414,28 +16435,34 @@ function filtrarLinhasVendasMesesAbertos(rows, mesesFechados) {
   for (const row of list) {
     const ym = vendasYmFromISO(row && row.data);
     if (!ym) { semData++; continue; }
+    if (vendaDataEntraNaCarga(row.data, hoje)) {
+      aceites.push(row);
+      mesesAbertos.add(ym);
+      continue;
+    }
     if (vendaDataCaiEmMesFechado(row.data, fechados)) {
       ignoradas++;
       mesesIgnorados.add(ym);
       continue;
     }
-    aceites.push(row);
-    mesesAbertos.add(ym);
+    ignoradasOutroDia++;
   }
   return {
     aceites,
     lidas: aceites.length,
     ignoradas,
+    ignoradasOutroDia,
     semData,
+    hoje,
     mesesAbertos: [...mesesAbertos].sort(),
     mesesIgnorados: [...mesesIgnorados].sort(),
   };
 }
 
 /**
- * Depois da carga: meses fechados mantêm linhas/clientes/última data já guardados.
- * Meses abertos somam só as linhas novas (não duplica o que já estava).
- * Um agregado de mês fechado que chegue aqui é ignorado.
+ * Depois da carga: só o mês do dia local de hoje soma linhas novas.
+ * Esse mês actualiza mesmo que o resumo ainda o marque fechado (as linhas de hoje entraram).
+ * Qualquer outro mês — fechado ou não — fica com os números já guardados.
  */
 function mergeCoberturaVendasMesesAbertos(anterior, agregadoLinhasNovas, hojeOpt) {
   const out = new Map();
@@ -16447,12 +16474,14 @@ function mergeCoberturaVendasMesesAbertos(anterior, agregadoLinhasNovas, hojeOpt
       ultima_data: info?.ultima_data || null,
     });
   }
+  const hoje = hojeOpt || vendasHojeISO();
+  const hojeYm = vendasYmFromISO(hoje);
   const novos = agregadoLinhasNovas instanceof Map
     ? agregadoLinhasNovas
     : vendasCoberturaObjToMap(agregadoLinhasNovas || {});
   for (const [ym, info] of novos) {
+    if (!hojeYm || ym !== hojeYm) continue;
     const prevInfo = out.get(ym);
-    if (prevInfo && isVendasMesFechado(ym, prevInfo, hojeOpt)) continue;
     const base = prevInfo || { linhas: 0, clientes: 0, ultima_data: null };
     const ults = [base.ultima_data, info?.ultima_data].filter(Boolean).sort();
     out.set(ym, {
@@ -16793,8 +16822,11 @@ function renderVendasCobertura(map, opts = {}) {
         sub = 'em falta';
       } else if (st === 'pendente') {
         const ult = info.ultima_data ? ` · última venda ${info.ultima_data}` : '';
-        title = `${formatVendasMesLabel(ym)}: pendente até vendas no último dia útil (${ultimoUtil})${ult} · ${info.linhas.toLocaleString('pt-BR')} linha(s)`;
-        sub = isVendasMesActual(ym) ? 'em curso' : 'pendente';
+        const noProprioUltimo = !!(ultimoUtil && vendasHojeISO() === ultimoUtil);
+        title = noProprioUltimo
+          ? `${formatVendasMesLabel(ym)}: aberto no próprio último dia útil (${ultimoUtil})${ult} · ${info.linhas.toLocaleString('pt-BR')} linha(s)`
+          : `${formatVendasMesLabel(ym)}: pendente até vendas no último dia útil (${ultimoUtil})${ult} · ${info.linhas.toLocaleString('pt-BR')} linha(s)`;
+        sub = (isVendasMesActual(ym) || noProprioUltimo) ? 'em curso' : 'pendente';
       } else {
         title = `${formatVendasMesLabel(ym)}: fechado · ${info.linhas.toLocaleString('pt-BR')} linha(s), ${info.clientes.toLocaleString('pt-BR')} cliente(s)`
           + (info.ultima_data ? ` · até ${info.ultima_data}` : '');
@@ -16828,7 +16860,7 @@ function renderVendasCobertura(map, opts = {}) {
         const ult = map.get(ym)?.ultima_data || '—';
         return `${formatVendasMesLabel(ym)} (útil ${u.slice(8)}/${u.slice(5, 7)}, última ${ult})`;
       }).join('; ')}.`
-      + ` Fecha quando houver vendas no último dia útil.</div>`
+      + ` No próprio último dia útil continua aberto. No dia seguinte fecha se já houver venda nesse dia.</div>`
     );
   }
 
@@ -16850,8 +16882,9 @@ function renderVendasCobertura(map, opts = {}) {
     ${gridHtml}
     ${alertas.join('')}
     <div class="vcob-note">${fonteTxt}<br>
-      Ao carregar vendas, só meses abertos são lidos; meses fechados ficam intactos.<br>
-      Até Jun/2026 = fechado. De Jul/2026 em diante = pendente até vendas no último dia útil (seg–sex) do mês.</div>
+      Ao carregar vendas, só entram linhas do dia local de hoje; os outros dias ficam intactos.<br>
+      Se o resumo ainda disser o mês fechado, as linhas de hoje entram na mesma. O resto do mês fechado continua de fora.<br>
+      Até Jun/2026 = fechado. De Jul/2026 em diante = aberto até ao fim do último dia útil (seg–sex); no dia seguinte fecha se já houver venda nesse dia.</div>
   `;
 }
 
@@ -16948,6 +16981,7 @@ async function getVendas(forceRefresh = false) {
 
 /**
  * Chaves de dedup (cod+data+tipo).
+ * Com `dia` (YYYY-MM-DD), só lê esse dia — não relê o resto do mês.
  * Com `meses` (YYYY-MM), só lê esses meses — nunca o histórico fechado.
  * Sem meses, de/ate (YYYY-MM-DD) limita o intervalo.
  * onProgress(loaded) actualiza a UI.
@@ -16956,28 +16990,30 @@ async function getVendasDedupKeySet(opts) {
   const onProgress = typeof opts === 'function' ? opts : opts?.onProgress;
   const de = (opts && opts.de) || null;
   const ate = (opts && opts.ate) || null;
+  const dia = (opts && typeof opts.dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(opts.dia)) ? opts.dia : null;
   const meses = (opts && Array.isArray(opts.meses))
     ? opts.meses.filter(ym => /^\d{4}-\d{2}$/.test(String(ym)))
     : null;
   const mesesSet = meses && meses.length ? new Set(meses) : null;
 
-  if (meses && !meses.length) {
+  if (!dia && meses && !meses.length) {
     if (typeof onProgress === 'function') onProgress(0);
-    return { keys: new Set(), count: 0, de, ate, meses };
+    return { keys: new Set(), count: 0, de, ate, meses, dia };
   }
 
-  // Cache em memória: só entram chaves dos meses pedidos (ou do intervalo de/ate).
+  // Cache em memória: só entram chaves do dia / meses pedidos (ou do intervalo de/ate).
   if (window._vendasMemCache && Array.isArray(window._vendasMemCache) && window._vendasMemCache.length) {
     const keys = new Set();
     for (const v of window._vendasMemCache) {
       const d = String(v.data || '').slice(0, 10);
-      if (mesesSet && !mesesSet.has(d.slice(0, 7))) continue;
-      if (!mesesSet && de && d < de) continue;
-      if (!mesesSet && ate && d > ate) continue;
+      if (dia && d !== dia) continue;
+      if (!dia && mesesSet && !mesesSet.has(d.slice(0, 7))) continue;
+      if (!dia && !mesesSet && de && d < de) continue;
+      if (!dia && !mesesSet && ate && d > ate) continue;
       keys.add(vendaDedupKey(v.cod, v.data, v.tipo));
     }
     if (typeof onProgress === 'function') onProgress(keys.size);
-    return { keys, count: keys.size, de, ate, meses };
+    return { keys, count: keys.size, de, ate, meses, dia };
   }
 
   const keys = new Set();
@@ -16998,6 +17034,17 @@ async function getVendasDedupKeySet(opts) {
       if (page.length < pageSize) break;
       if (from > 500000) break;
     }
+  }
+
+  // Só o dia local de hoje: não pagina o resto do mês nem meses fechados.
+  if (dia) {
+    const qs = [
+      'select=cod,data,tipo',
+      'order=cod.asc,data.asc',
+      `data=eq.${encodeURIComponent(dia)}`,
+    ];
+    await pageKeys(`${SUPA_VENDAS}?${qs.join('&')}`);
+    return { keys, count: keys.size, de: dia, ate: dia, meses: null, dia };
   }
 
   // Um pedido por mês aberto — o intervalo não atravessa meses fechados.
@@ -17060,7 +17107,7 @@ async function showVendasImport() {
       ? `<div style="background:#e8f5e9;border-radius:6px;padding:8px 10px;font-size:12px;color:#2e7d32">
           ✅ ${vendas.length.toLocaleString('pt-BR')} registo(s) no servidor<br>
           Período: ${datas[0]} a ${datas[datas.length - 1]}<br>
-          <span style="color:var(--muted)">Podes carregar mais ficheiros — meses fechados não são relidos; só entram linhas novas de meses abertos.</span>
+          <span style="color:var(--muted)">Podes carregar mais ficheiros — só entram linhas novas do dia de hoje (data local). Outros dias ficam intactos.</span>
         </div>`
       : `<div style="background:#e3f2fd;border-radius:6px;padding:8px 10px;font-size:12px;color:#1565c0">
           Servidor vazio — carrega os Excel de vendas (desde ~2019, por partes se necessário).
@@ -17094,6 +17141,7 @@ async function processVendasFile(event) {
     const newVendas = [];
     let linhasValidas = 0;
     let linhasIgnoradasFechado = 0;
+    let linhasIgnoradasOutroDia = 0;
     let jaExistentes = 0;
     let ficheirosOk = 0;
     const nomesFicheiros = [];
@@ -17108,12 +17156,13 @@ async function processVendasFile(event) {
     } catch (e) {
       console.warn('cobertura antes da carga:', e.message || e);
     }
-    const mesesFechados = mesesFechadosFromCobertura(coberturaAntes && coberturaAntes.map);
+    const hoje = vendasHojeISO();
+    const mesesFechados = mesesFechadosFromCobertura(coberturaAntes && coberturaAntes.map, hoje);
 
     for (let fIdx = 0; fIdx < files.length; fIdx++) {
       const file = files[fIdx];
       nomesFicheiros.push(file.name);
-      setStatus(`<div style="color:var(--muted);font-size:12px">⏳ A ler ficheiro ${fIdx + 1}/${files.length}: <strong>${file.name}</strong> — só meses abertos (${mesesFechados.size} fechado(s) intactos)...</div>`);
+      setStatus(`<div style="color:var(--muted);font-size:12px">⏳ A ler ficheiro ${fIdx + 1}/${files.length}: <strong>${file.name}</strong> — só o dia de hoje (${hoje}; ${mesesFechados.size} mês(es) fechado(s) intactos)...</div>`);
 
       const buf = await file.arrayBuffer();
       const wb = window.XLSX.read(buf, { type: 'array' });
@@ -17156,10 +17205,15 @@ async function processVendasFile(event) {
         if (!dt) continue;
         const dataStr = formatDateISOLocal(dt);
         if (!dataStr) continue;
-        // Mês fechado: não parsear para o modelo nem gravar por cima.
-        if (vendaDataCaiEmMesFechado(dataStr, mesesFechados)) {
-          linhasIgnoradasFechado++;
-          mesesIgnoradosSet.add(dataStr.slice(0, 7));
+        // Só o dia local de hoje entra — mesmo que o resumo ainda diga o mês fechado.
+        // Outros dias não são parseados nem gravados (mês fechado ou não).
+        if (!vendaDataEntraNaCarga(dataStr, hoje)) {
+          if (vendaDataCaiEmMesFechado(dataStr, mesesFechados)) {
+            linhasIgnoradasFechado++;
+            mesesIgnoradosSet.add(dataStr.slice(0, 7));
+          } else {
+            linhasIgnoradasOutroDia++;
+          }
           continue;
         }
 
@@ -17192,16 +17246,16 @@ async function processVendasFile(event) {
 
     const mesesAbertosArr = [...mesesAbertosSet].sort();
     const mesesFechadosArr = [...mesesIgnoradosSet].sort();
-    const mesesAbertosTxt = mesesAbertosArr.map(formatVendasMesLabel).join(', ') || '—';
     const mesesFechadosTxt = mesesFechadosArr.map(formatVendasMesLabel).join(', ');
 
     if (!candidatos.length) {
-      if (linhasIgnoradasFechado > 0) {
+      if (linhasIgnoradasFechado > 0 || linhasIgnoradasOutroDia > 0) {
         setStatus(
           `<div style="background:#e8f5e9;border-radius:6px;padding:10px;font-size:12px;color:#166534;line-height:1.6">
-            Meses fechados intactos — nada para actualizar.<br>
-            • <strong>${linhasIgnoradasFechado.toLocaleString('pt-BR')}</strong> linha(s) ignoradas (${mesesFechadosTxt})<br>
-            • <strong>0</strong> linha(s) lidas de meses abertos
+            Nada do dia <strong>${hoje}</strong> para gravar — o resto ficou intacto.<br>
+            • <strong>${linhasIgnoradasOutroDia.toLocaleString('pt-BR')}</strong> linha(s) de outros dias ignoradas<br>
+            • <strong>${linhasIgnoradasFechado.toLocaleString('pt-BR')}</strong> linha(s) de meses fechados ignoradas${mesesFechadosTxt ? ` (${mesesFechadosTxt})` : ''}<br>
+            • <strong>0</strong> linha(s) do dia de hoje
           </div>`
         );
         localStorage.setItem('delta_vendas_ultima_carga', JSON.stringify({
@@ -17210,7 +17264,9 @@ async function processVendasFile(event) {
           novos: 0,
           ignorados: 0,
           lidas: 0,
+          hoje,
           ignoradasFechado: linhasIgnoradasFechado,
+          ignoradasOutroDia: linhasIgnoradasOutroDia,
           mesesAbertos: mesesAbertosArr,
           mesesFechados: mesesFechadosArr,
         }));
@@ -17222,23 +17278,23 @@ async function processVendasFile(event) {
       return;
     }
 
-    // 2) Validar no Supabase SÓ os meses abertos (pendente / em curso / em falta)
+    // 2) Validar no Supabase SÓ o dia local de hoje (não relê o resto do mês)
     const periodoTxt = dataMin === dataMax ? dataMin : `${dataMin} → ${dataMax}`;
     setStatus(
-      `<div style="color:var(--muted);font-size:12px">⏳ A validar no servidor só meses abertos: <strong>${mesesAbertosTxt}</strong>… (0)`
-      + `<br><span style="font-size:11px">${linhasIgnoradasFechado.toLocaleString('pt-BR')} linha(s) de meses fechados já ignoradas.</span></div>`
+      `<div style="color:var(--muted);font-size:12px">⏳ A validar no servidor só o dia <strong>${hoje}</strong>… (0)`
+      + `<br><span style="font-size:11px">${linhasIgnoradasOutroDia.toLocaleString('pt-BR')} de outros dias e ${linhasIgnoradasFechado.toLocaleString('pt-BR')} de meses fechados já ignoradas.</span></div>`
     );
     const { keys: existingKeys, count: existingInRange } = await getVendasDedupKeySet({
-      meses: mesesAbertosArr,
+      dia: hoje,
       onProgress: (loaded) => {
         setStatus(
-          `<div style="color:var(--muted);font-size:12px">⏳ A validar no servidor só meses abertos: <strong>${mesesAbertosTxt}</strong>… `
+          `<div style="color:var(--muted);font-size:12px">⏳ A validar no servidor só o dia <strong>${hoje}</strong>… `
           + `<strong>${loaded.toLocaleString('pt-BR')}</strong> linhas`
-          + `<br><span style="font-size:11px">Meses fechados não são lidos (${linhasIgnoradasFechado.toLocaleString('pt-BR')} linhas do ficheiro ignoradas).</span></div>`
+          + `<br><span style="font-size:11px">Outros dias não são lidos (${linhasIgnoradasOutroDia.toLocaleString('pt-BR')} no ficheiro; ${linhasIgnoradasFechado.toLocaleString('pt-BR')} de meses fechados).</span></div>`
         );
       }
     });
-    console.log('Dedup vendas meses abertos', mesesAbertosTxt, '→', existingInRange, 'chaves; ignoradas fechado', linhasIgnoradasFechado);
+    console.log('Dedup vendas dia', hoje, '→', existingInRange, 'chaves; ignoradas outro dia', linhasIgnoradasOutroDia, 'fechado', linhasIgnoradasFechado);
 
     // Dedup entre ficheiros desta carga + contra o servidor (só meses abertos)
     const seenLocal = new Set();
@@ -17257,11 +17313,12 @@ async function processVendasFile(event) {
     if (!newVendas.length) {
       setStatus(
         `<div style="background:#fff3e0;border-radius:6px;padding:10px;font-size:12px;color:#e65100;line-height:1.6">
-          ℹ️ Nenhum novo registo nos meses abertos — meses fechados ficaram intactos.<br>
-          • Meses abertos lidos: <strong>${mesesAbertosTxt}</strong> (${linhasValidas.toLocaleString('pt-BR')} linhas)<br>
+          ℹ️ Nenhum registo novo no dia <strong>${hoje}</strong> — o resto ficou intacto.<br>
+          • Dia lido: <strong>${hoje}</strong> (${linhasValidas.toLocaleString('pt-BR')} linhas)<br>
+          • ${linhasIgnoradasOutroDia.toLocaleString('pt-BR')} linha(s) de outros dias ignoradas<br>
           • ${linhasIgnoradasFechado.toLocaleString('pt-BR')} linha(s) de meses fechados ignoradas${mesesFechadosTxt ? ` (${mesesFechadosTxt})` : ''}<br>
-          • ${jaExistentes.toLocaleString('pt-BR')} linha(s) já existentes nos meses abertos<br>
-          • Já no servidor (meses abertos): <strong>${existingInRange.toLocaleString('pt-BR')}</strong>
+          • ${jaExistentes.toLocaleString('pt-BR')} linha(s) de hoje já existentes<br>
+          • Já no servidor nesse dia: <strong>${existingInRange.toLocaleString('pt-BR')}</strong>
         </div>`
       );
       localStorage.setItem('delta_vendas_ultima_carga', JSON.stringify({
@@ -17270,7 +17327,9 @@ async function processVendasFile(event) {
         novos: 0,
         ignorados: jaExistentes,
         lidas: linhasValidas,
+        hoje,
         ignoradasFechado: linhasIgnoradasFechado,
+        ignoradasOutroDia: linhasIgnoradasOutroDia,
         periodo: periodoTxt,
         noPeriodo: existingInRange,
         mesesAbertos: mesesAbertosArr,
@@ -17312,11 +17371,11 @@ async function processVendasFile(event) {
     window._vendasMemCache = null;
     sessionCacheInvalidate('vendasLinhas');
 
-    // Resumo: meses fechados ficam com os números já guardados; abertos somam só o que entrou.
+    // Resumo: só o mês do dia de hoje soma as linhas novas (mesmo que o resumo dissesse fechado).
     try {
       const agregadoNovos = aggregateVendasPorMes(newVendas);
       const baseMap = (coberturaAntes && coberturaAntes.map) ? coberturaAntes.map : new Map();
-      const coberturaMerged = mergeCoberturaVendasMesesAbertos(baseMap, agregadoNovos);
+      const coberturaMerged = mergeCoberturaVendasMesesAbertos(baseMap, agregadoNovos, hoje);
       const coberturaMeta = await salvarVendasCoberturaPersistida(coberturaMerged);
       renderVendasCobertura(coberturaMerged, {
         fromCache: false,
@@ -17340,13 +17399,13 @@ async function processVendasFile(event) {
 
     setStatus(
       `<div style="background:#e8f5e9;border-radius:6px;padding:10px;font-size:12px;color:#2e7d32;line-height:1.6">
-        ✅ Importação concluída (${ficheirosOk} ficheiro${ficheirosOk > 1 ? 's' : ''}) — meses fechados intactos.<br>
-        • Meses abertos: <strong>${mesesAbertosTxt}</strong> (${periodoTxt})<br>
-        • <strong>${linhasValidas.toLocaleString('pt-BR')}</strong> linha(s) lidas (meses abertos)<br>
+        ✅ Importação concluída (${ficheirosOk} ficheiro${ficheirosOk > 1 ? 's' : ''}) — só o dia <strong>${hoje}</strong>.<br>
+        • <strong>${linhasValidas.toLocaleString('pt-BR')}</strong> linha(s) lidas desse dia (${periodoTxt})<br>
+        • <strong>${linhasIgnoradasOutroDia.toLocaleString('pt-BR')}</strong> linha(s) de outros dias ignoradas<br>
         • <strong>${linhasIgnoradasFechado.toLocaleString('pt-BR')}</strong> linha(s) de meses fechados ignoradas${mesesFechadosTxt ? ` (${mesesFechadosTxt})` : ''}<br>
         • <strong>${inserted.toLocaleString('pt-BR')}</strong> novos registos adicionados<br>
-        • <strong>${jaExistentes.toLocaleString('pt-BR')}</strong> já existentes nos meses abertos<br>
-        • Nos meses abertos no servidor: <strong>${noPeriodoDepois.toLocaleString('pt-BR')}</strong>
+        • <strong>${jaExistentes.toLocaleString('pt-BR')}</strong> de hoje já existentes<br>
+        • Nesse dia no servidor: <strong>${noPeriodoDepois.toLocaleString('pt-BR')}</strong>
         ${histAtualizados ? `<br>• Histórico: ${histAtualizados} cliente(s) com última compra actualizada` : ''}
       </div>`
     );
@@ -17357,7 +17416,9 @@ async function processVendasFile(event) {
       novos: inserted,
       ignorados: jaExistentes,
       lidas: linhasValidas,
+      hoje,
       ignoradasFechado: linhasIgnoradasFechado,
+      ignoradasOutroDia: linhasIgnoradasOutroDia,
       periodo: periodoTxt,
       noPeriodo: noPeriodoDepois,
       mesesAbertos: mesesAbertosArr,
@@ -17367,7 +17428,7 @@ async function processVendasFile(event) {
     clearInput();
     try { if (typeof clearContratosCache === 'function') clearContratosCache(); } catch (e) {}
     try { loadContratosTab(true); } catch (e) {}
-    toast(`✅ ${inserted.toLocaleString('pt-BR')} novos · ${linhasIgnoradasFechado.toLocaleString('pt-BR')} de meses fechados ignoradas · ${jaExistentes.toLocaleString('pt-BR')} já existiam`);
+    toast(`✅ ${inserted.toLocaleString('pt-BR')} novos de ${hoje} · ${linhasIgnoradasOutroDia.toLocaleString('pt-BR')} de outros dias ignoradas · ${jaExistentes.toLocaleString('pt-BR')} já existiam`);
   } catch (e) {
     console.error('processVendasFile:', e);
     setStatus(`<div style="color:var(--danger);font-size:12px">Erro na importação: ${e.message || e}</div>`);
@@ -30847,7 +30908,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-09-30-vendas-fechado: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-so-hoje: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
