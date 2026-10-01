@@ -2898,6 +2898,7 @@ var _unused_placeholder = 1;
           <strong>Importação só de meses abertos:</strong><br>
           • Meses fechados ficam intactos — essas linhas são ignoradas<br>
           • Só meses pendentes, em curso ou em falta são lidos e actualizados<br>
+          • No próprio último dia útil o mês continua aberto: uma venda já gravada nesse dia não faz a carga seguinte ignorar o mês<br>
           • Dentro desses meses, só grava o que falta (dedup: cliente + data + tipo)<br>
           • GRÃO → Peso líq. em Kg · CÁPSULAS → Peso ÷ 0,0055
         </div>
@@ -3954,7 +3955,7 @@ var _unused_placeholder = 1;
               <div style="font-size:12px;color:var(--muted);line-height:1.5;">
                 Resumo guardado (não relê as ~500k linhas a cada entrada).<br>
                 Ao carregar vendas, só meses abertos são lidos; meses fechados ficam intactos.<br>
-                Até Jun/2026 = fechado. De Jul/2026 em diante = <strong>pendente</strong> até haver vendas no <strong>último dia útil</strong> do mês.
+                Até Jun/2026 = fechado. De Jul/2026 em diante o mês fica <strong>aberto no próprio último dia útil</strong> (a carga ainda junta linhas novas). No dia seguinte fecha se já houver venda nesse último dia útil.
               </div>
             </div>
           </div>
@@ -16288,7 +16289,7 @@ const VENDAS_COBERTURA_INICIO = { y: 2019, m: 9 }; // Set/2019
 const VENDAS_MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const VENDAS_COBERTURA_LS_KEY = 'delta_vendas_cobertura_v2';
 const VENDAS_COBERTURA_SUPA_ID = 'vendas_cobertura';
-/** A partir deste mês: pendente até vendas no último dia útil; o que está para trás = fechado. */
+/** A partir deste mês: aberto no próprio último dia útil; fecha no dia seguinte se já houver venda nesse dia. Antes = fechado com dados. */
 const VENDAS_COBERTURA_REGRA_DESDE = '2026-07';
 
 /** Lista YYYY-MM de Set/2019 até ao mês actual (inclusive). */
@@ -16350,8 +16351,12 @@ function ultimoDiaUtilMes(ym) {
 /**
  * Status do mês:
  * - falta: sem linhas
- * - ok: fechado (antes de Jul/26 com dados; ou Jul+ com vendas ≥ último dia útil)
- * - pendente: Jul+ sem chegar ao último dia útil (mês em curso ou carga incompleta)
+ * - ok: fechado (antes de Jul/26 com dados; ou Jul+ depois de o último dia útil
+ *   ter acabado e com venda nesse dia ou depois)
+ * - pendente: Jul+ em curso, no próprio último dia útil, ou carga incompleta
+ *
+ * No próprio último dia útil (hoje === esse dia) o mês fica aberto, mesmo que
+ * já exista uma venda com essa data. Só no dia civil seguinte é que fecha.
  */
 function statusVendasCoberturaMes(ym, info, hojeOpt) {
   const linhas = +(info?.linhas || 0);
@@ -16360,9 +16365,10 @@ function statusVendasCoberturaMes(ym, info, hojeOpt) {
   const ultimoUtil = ultimoDiaUtilMes(ym);
   const ultima = vendasISODateOnly(info?.ultima_data);
   const hoje = hojeOpt || vendasHojeISO();
-  // Ainda não chegou o último dia útil → mês em curso
-  if (hoje < ultimoUtil) return 'pendente';
-  // Já passou o último dia útil: precisa ter venda nesse dia (ou depois no mês)
+  // Antes do último dia útil, ou ainda nesse próprio dia civil → mês aberto.
+  // Uma venda já gravada no dia 30 não fecha Setembro a meio do dia.
+  if (hoje <= ultimoUtil) return 'pendente';
+  // O último dia útil já acabou (hoje é um dia posterior): fecha se houver venda nesse dia ou depois.
   if (ultima && ultima >= ultimoUtil) return 'ok';
   return 'pendente';
 }
@@ -16793,8 +16799,11 @@ function renderVendasCobertura(map, opts = {}) {
         sub = 'em falta';
       } else if (st === 'pendente') {
         const ult = info.ultima_data ? ` · última venda ${info.ultima_data}` : '';
-        title = `${formatVendasMesLabel(ym)}: pendente até vendas no último dia útil (${ultimoUtil})${ult} · ${info.linhas.toLocaleString('pt-BR')} linha(s)`;
-        sub = isVendasMesActual(ym) ? 'em curso' : 'pendente';
+        const noProprioUltimo = !!(ultimoUtil && vendasHojeISO() === ultimoUtil);
+        title = noProprioUltimo
+          ? `${formatVendasMesLabel(ym)}: aberto no próprio último dia útil (${ultimoUtil})${ult} · ${info.linhas.toLocaleString('pt-BR')} linha(s)`
+          : `${formatVendasMesLabel(ym)}: pendente até vendas no último dia útil (${ultimoUtil})${ult} · ${info.linhas.toLocaleString('pt-BR')} linha(s)`;
+        sub = (isVendasMesActual(ym) || noProprioUltimo) ? 'em curso' : 'pendente';
       } else {
         title = `${formatVendasMesLabel(ym)}: fechado · ${info.linhas.toLocaleString('pt-BR')} linha(s), ${info.clientes.toLocaleString('pt-BR')} cliente(s)`
           + (info.ultima_data ? ` · até ${info.ultima_data}` : '');
@@ -16828,7 +16837,7 @@ function renderVendasCobertura(map, opts = {}) {
         const ult = map.get(ym)?.ultima_data || '—';
         return `${formatVendasMesLabel(ym)} (útil ${u.slice(8)}/${u.slice(5, 7)}, última ${ult})`;
       }).join('; ')}.`
-      + ` Fecha quando houver vendas no último dia útil.</div>`
+      + ` No próprio último dia útil continua aberto. No dia seguinte fecha se já houver venda nesse dia.</div>`
     );
   }
 
@@ -16851,7 +16860,7 @@ function renderVendasCobertura(map, opts = {}) {
     ${alertas.join('')}
     <div class="vcob-note">${fonteTxt}<br>
       Ao carregar vendas, só meses abertos são lidos; meses fechados ficam intactos.<br>
-      Até Jun/2026 = fechado. De Jul/2026 em diante = pendente até vendas no último dia útil (seg–sex) do mês.</div>
+      Até Jun/2026 = fechado. De Jul/2026 em diante = aberto até ao fim do último dia útil (seg–sex); no dia seguinte fecha se já houver venda nesse dia.</div>
   `;
 }
 
@@ -30847,7 +30856,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-09-30-vendas-fechado: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-dia-util: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
