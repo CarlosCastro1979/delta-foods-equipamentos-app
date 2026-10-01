@@ -176,8 +176,16 @@ check('a coluna lida é Vendas líquidas, não peso, bruto, quantidade nem a pri
   assert.equal(ctx.indiceColunaValorVenda(['Data', 'Peso líq.', 'Vendas líq.', 'Valor bruto']), 2, 'texto curto do SAP');
   assert.equal(ctx.indiceColunaValorVenda(['Data', 'Val. líquido']), 1);
   assert.equal(ctx.indiceColunaValorVenda(['Vendas\nlíquidas']), 0, 'quebra de linha dentro da célula');
+  assert.equal(ctx.indiceColunaValorVenda(['Data', 'Peso líq.', 'QtFaturada', 'VendasBrut', 'Desc.Com.', 'Valor Boni', 'Fatur.', 'Fatur.']), 6, 'Fatur. exacto; não quantidade, bruto nem a 2.ª coluna BRL à frente');
+  assert.equal(ctx.indiceColunaValorVenda(['QtFaturada', 'VendasBrut', 'Peso líq.', 'Valor Boni', 'Montante']), -1);
+  assert.equal(ctx.indiceColunaValorVenda(['Vendas líquidas', 'Fatur.']), 0, 'vendas líquidas ganha a Fatur.');
   assert.equal(ctx.indiceColunaNpessVenda(['Data', 'Número pessoal']), 1);
   assert.equal(ctx.indiceColunaNpessVenda(['Núm. pessoal', 'Vendas líq.']), 0);
+  assert.equal(ctx.indiceColunaNpessVenda(['Emissor da ordem', 'Representante de vendas', 'Equipe de vendas']), 1);
+  assert.equal(ctx.indiceColunaNpessVenda(['Representante']), -1, 'só o cabeçalho completo');
+  const REAL = ['Organização vendas', 'Canal distribuição', 'Emissor da ordem', 'Doc.faturamento', 'Escritório de vendas', 'Equipe de vendas', 'Material', 'Representante de vendas', 'Hierarq.produtos', 'Data', 'Fatur.', 'Fatur.', 'QtFaturada', 'QtFaturada', 'VendasBrut', 'VendasBrut', 'Desc.Com.', 'Desc.Com.', 'Valor Boni', 'Valor Boni', 'Qtd Bonifi', 'Qtd Bonifi', 'Valor Doaç', 'Valor Doaç', 'Qtd Doação', 'Qtd Doação', 'Peso líq.', 'Peso líq.'];
+  assert.equal(ctx.indiceColunaValorVenda(REAL), 10);
+  assert.equal(ctx.indiceColunaNpessVenda(REAL), 7);
   const fn = extractFn(html, 'indiceColunaValorVenda');
   assert.ok(fn.includes('vendas líquidas') || fn.includes('vendas liquidas') || fn.includes('liquidas'));
   assert.ok(fn.includes('peso'));
@@ -439,8 +447,9 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   assert.ok(act.includes('decidirActualizarQuadroVendas'));
   assert.ok(act.indexOf('decidirActualizarQuadroVendas') < act.indexOf('somarQuadrosVendas'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-liq3'));
-  assert.ok(html.includes('v2026-10-01-vendas-liq3'));
+  assert.ok(sw.includes('v2026-10-01-vendas-liq4'));
+  assert.ok(html.includes('v2026-10-01-vendas-liq4'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-liq3'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq2'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq —'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));

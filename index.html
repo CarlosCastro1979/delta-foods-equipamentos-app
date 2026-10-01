@@ -17062,6 +17062,8 @@ function parseValorVendaSap(v) {
  * Se houver várias, ganha a que diz venda(s) líquida(s), à frente de valor/vlr/val líquido:
  *   1. «venda líquida», «vendas líquidas», «Vendas líq.» (texto curto do SAP)
  *   2. «vlr líquido», «vl líquido», «valor líquido», «vlr. líq.», «Valor líq.», «Val. líquido»
+ *   3. «Fatur.» — só este texto, como neste export (a coluna BRL ao lado).
+ *      Não é «QtFaturada» nem «VendasBrut».
  *
  * Ficam de fora — nunca são o R$ do quadro, mesmo sendo a primeira coluna
  * numérica do ficheiro:
@@ -17092,6 +17094,7 @@ function indiceColunaValorVenda(headers) {
     let score = 0;
     if (/\bvendas?\s*liq(?:uidas?|uida)?\b/.test(h) || /vendas?liq/.test(compact)) score = 4;
     else if (/\b(?:valor|vlr\.?|vl\.?|val\.?)\s*liq(?:uido)?\b/.test(h) || /(?:valor|vlr|val|vl)liq/.test(compact)) score = 3;
+    else if (compact === 'fatur') score = 2; // «Fatur.» deste export; não «QtFaturada»
     if (score > bestScore) { bestScore = score; best = i; }
   }
   return best;
@@ -17103,7 +17106,8 @@ function indiceColunaValorVenda(headers) {
  * Se o Excel tiver código e a lista de clientes outro, manda o Excel.
  *
  * Cabeçalhos (acentos, maiúsculas e quebra de linha ignorados). Se houver vários, ganha o mais específico:
- *   1. «Nº pessoal», «No. pessoal», «N.º pessoal», «Número pessoal», «NPess», pessoa responsável
+ *   1. «Nº pessoal», «No. pessoal», «N.º pessoal», «Número pessoal», «NPess», pessoa responsável,
+ *      «Representante de vendas» (código no início da célula, ex. «99520018 DIOGO OLIVEIRA»)
  *   2. «Código do vendedor», «Cod. vendedor», «Codigo vendedor»
  *   3. coluna exactamente «Vendedor»
  * «Nome do vendedor» não conta (é nome, não código).
@@ -17123,6 +17127,7 @@ function indiceColunaNpessVenda(headers) {
       || /pessresp|pessoaresp/.test(compact)
       || /^n[o.]*(?:pessoal|pess)$/.test(compact)
       || /^(?:numero|num|n)pessoal$/.test(compact)
+      || compact === 'representantedevendas'
     ) score = 3;
     else if (/^cod(?:igo)?(?:do)?vendedor$/.test(compact)) score = 2;
     else if (h === 'vendedor') score = 1;
@@ -32421,7 +32426,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-liq3: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-liq4: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
