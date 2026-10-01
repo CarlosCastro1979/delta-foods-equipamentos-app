@@ -95,6 +95,7 @@ for (const name of [
   'vendasYmFromISO',
   'parseValorVendaSap',
   'indiceColunaValorVenda',
+  'indiceColunaNpessVenda',
   'npessDeCelulaExcel',
   'dimensoesVendaQuadro',
   'npessDaLinhaVendaQuadro',
@@ -172,6 +173,11 @@ check('a coluna lida é Vendas líquidas, não peso, bruto, quantidade nem a pri
   assert.equal(ctx.indiceColunaValorVenda(['Valor líquido', 'Vendas líquidas']), 1, 'prefere a que diz vendas líquidas');
   assert.equal(ctx.indiceColunaValorVenda(['Data', 'Peso líquido', 'Vlr. líquido']), 2);
   assert.equal(ctx.indiceColunaValorVenda(['Valor líquido unitário', 'Venda líquida']), 1);
+  assert.equal(ctx.indiceColunaValorVenda(['Data', 'Peso líq.', 'Vendas líq.', 'Valor bruto']), 2, 'texto curto do SAP');
+  assert.equal(ctx.indiceColunaValorVenda(['Data', 'Val. líquido']), 1);
+  assert.equal(ctx.indiceColunaValorVenda(['Vendas\nlíquidas']), 0, 'quebra de linha dentro da célula');
+  assert.equal(ctx.indiceColunaNpessVenda(['Data', 'Número pessoal']), 1);
+  assert.equal(ctx.indiceColunaNpessVenda(['Núm. pessoal', 'Vendas líq.']), 0);
   const fn = extractFn(html, 'indiceColunaValorVenda');
   assert.ok(fn.includes('vendas líquidas') || fn.includes('vendas liquidas') || fn.includes('liquidas'));
   assert.ok(fn.includes('peso'));
@@ -433,11 +439,208 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   assert.ok(act.includes('decidirActualizarQuadroVendas'));
   assert.ok(act.indexOf('decidirActualizarQuadroVendas') < act.indexOf('somarQuadrosVendas'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-liq2'));
-  assert.ok(html.includes('v2026-10-01-vendas-liq2'));
+  assert.ok(sw.includes('v2026-10-01-vendas-liq3'));
+  assert.ok(html.includes('v2026-10-01-vendas-liq3'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-liq2'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq —'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
 });
+
+check('cabeçalho partido em duas linhas junta «Vendas» + «líquidas»', () => {
+  for (const name of [
+    'normCelulaCabecalhoVenda', 'pontuarCabecalhoVendasExcel',
+    'fundirCabecalhoVendasExcel', 'localizarFolhaVendasExcel',
+  ]) vm.runInContext(extractFn(html, name), ctx);
+  const aoa = [
+    ['Relatório de vendas 2026'],
+    ['Hierarq.produtos', 'Emissor da ordem', 'Data', 'Peso líq.', 'Vendas', 'Nº pessoal'],
+    ['', '', '', '', 'líquidas', ''],
+    ['GRÃO', '1001 LOJA', '15/09/2026', 2, 4321.55, 99520001],
+  ];
+  const folha = ctx.localizarFolhaVendasExcel(aoa);
+  assert.equal(ctx.indiceColunaValorVenda(folha.headers), 4);
+  assert.equal(folha.headers[4], 'Vendas líquidas');
+  assert.equal(folha.dataRows.length, 1);
+  assert.equal(folha.dataRows[0][1], '1001 LOJA');
+});
+
+const quadroAntigoSet = () => ({
+  atualizado_em: '2026-09-01T12:00:00.000Z',
+  valor_na_base: false,
+  base_completa: true,
+  origem_liquida: false,
+  meses: {
+    '2026-09': {
+      celulas: {
+        'Delta Foods Brasil\tEcommerce\tMARCIO GORGA': {
+          empresa: 'Delta Foods Brasil', canal: 'Ecommerce', vendedor: 'MARCIO GORGA',
+          valor: 96570.64, linhas: 618, linhasComValor: 618,
+        },
+        'Delta Foods Brasil\tHoreca\tHÉLCIO GRÉGIO': {
+          empresa: 'Delta Foods Brasil', canal: 'Horeca', vendedor: 'HÉLCIO GRÉGIO',
+          valor: 7760.7, linhas: 331, linhasComValor: 331,
+        },
+      },
+    },
+  },
+});
+
+function canaisMes(q, ym) {
+  const celulas = q && q.meses && q.meses[ym] && q.meses[ym].celulas ? q.meses[ym].celulas : {};
+  return Object.values(celulas).map(c => c.canal);
+}
+
+async function correrCarga(aoa, opts) {
+  const o = opts || {};
+  const fetches = [];
+  const toasts = [];
+  const mem = {};
+  let idbValor = o.idbInicial || null;
+  const statusEl = { innerHTML: '' };
+  ctx.localStorage = {
+    getItem(k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+    setItem(k, v) { mem[k] = String(v); },
+    removeItem(k) { delete mem[k]; },
+  };
+  ctx.idbGet = async () => idbValor;
+  ctx.idbSet = async (_k, v) => { idbValor = v; return true; };
+  ctx.HEADERS = { apikey: 'k', Authorization: 'Bearer k' };
+  ctx.SUPA_KEY = 'k';
+  ctx.LISTA_CLIENTES_SUPA_URL = 'https://example.test/lista_clientes';
+  ctx.VENDAS_QUADRO_LS_KEY = 'delta_vendas_quadro_v1';
+  ctx.VENDAS_QUADRO_SUPA_ID = 'vendas_quadro';
+  ctx.SUPA_VENDAS = 'https://example.test/vendas';
+  ctx.VENDAS_MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  ctx.window._vendasQuadro = o.memoriaInicial || null;
+  ctx.window._vendasQuadroGravado = null;
+  ctx.window._vendasQuadroRemotoErro = '';
+  ctx.window.XLSX = {
+    read: () => ({ SheetNames: ['Plan1'], Sheets: { Plan1: {} } }),
+    utils: { sheet_to_json: () => aoa },
+  };
+  ctx.document = {
+    getElementById(id) {
+      if (id === 'dados-vendas-status' || id === 'vendas-status') return statusEl;
+      if (id === 'dados-vendas-ultima') return { textContent: '', innerHTML: '' };
+      return null;
+    },
+  };
+  ctx.toast = (msg) => { toasts.push(String(msg)); };
+  ctx.renderVendasQuadro = () => {};
+  ctx.renderUltimaVendasCarga = () => {};
+  ctx.lerVendasCoberturaPersistida = async () => null;
+  ctx.sessionCacheTouch = () => {};
+  ctx.sessionCacheInvalidate = () => {};
+  const remoto = o.remoto || quadroAntigoSet();
+  ctx.fetch = async (url, req) => {
+    const method = (req && req.method) || 'GET';
+    fetches.push({ url: String(url), method, body: req && req.body });
+    const u = String(url);
+    if (method === 'GET' && u.includes('vendas_quadro')) {
+      return { ok: true, status: 200, json: async () => [{ data: remoto, atualizado_em: remoto.atualizado_em }], text: async () => '' };
+    }
+    if (method === 'POST') {
+      return { ok: o.postOk !== false, status: o.postOk === false ? 500 : 201, json: async () => [], text: async () => (o.postOk === false ? 'rls' : '') };
+    }
+    return { ok: true, status: 200, json: async () => [], text: async () => '' };
+  };
+  if (o.seedLocal) mem[ctx.VENDAS_QUADRO_LS_KEY] = JSON.stringify(remoto);
+  const event = {
+    target: {
+      files: [{ name: o.nome || 'vendas-2026.xlsx', arrayBuffer: async () => new ArrayBuffer(4) }],
+      value: 'x',
+    },
+  };
+  await ctx.processVendasFile(event);
+  return { fetches, toasts, statusEl, mem, get idb() { return idbValor; } };
+}
+
+for (const name of [
+  'normalizeVendaCod', 'formatDateISOLocal', 'parseDateSC', 'vendasHojeISO',
+  'mesesFechadosFromCobertura', 'linhaValorQuadroDeExcel', 'formatVendasMesLabel',
+  'npessPorCodDeLista', 'normalizarQuadroPersistido', 'instanteQuadroVendas',
+  'escolherQuadroVendasMaisRecente', 'salvarVendasQuadroPersistida',
+  'lerVendasQuadroPersistida', 'substituirValorHistoricoNoQuadro', 'processVendasFile',
+]) {
+  vm.runInContext(extractFn(html, name), ctx);
+}
+
+const asyncChecks = [];
+function checkAsync(title, fn) {
+  asyncChecks.push(async () => {
+    try {
+      await fn();
+      console.log('OK  ' + title);
+    } catch (e) {
+      console.error('FAIL ' + title);
+      console.error(e && e.stack ? e.stack : e);
+      process.exitCode = 1;
+    }
+  });
+}
+
+checkAsync('carga com «Vendas líq.» substitui Set/2026 e o Supabase antigo não volta', async () => {
+  const aoa = [
+    ['Hierarq.produtos', 'Emissor da ordem', 'Data', 'Peso líq.', 'Quantidade', 'Valor bruto', 'Vendas líq.', 'Nº pessoal'],
+    ['GRÃO', '1001 LOJA ONLINE', '15/09/2026', 2.5, 4, 99999, 4321.55, 99520001],
+  ];
+  const r = await correrCarga(aoa, { seedLocal: true, idbInicial: quadroAntigoSet() });
+  const q = ctx.window._vendasQuadro;
+  assert.ok(q && q.meses && q.meses['2026-09'], 'a carga gravou Set/2026');
+  const canais = canaisMes(q, '2026-09');
+  assert.ok(!canais.includes('Ecommerce'), 'Ecommerce saiu: ' + canais.join(','));
+  assert.ok(!canais.includes('Horeca'), 'Horeca saiu');
+  assert.ok(canais.includes('Lojas online'), '99520001 ficou em Lojas online: ' + canais.join(','));
+  const lojas = Object.values(q.meses['2026-09'].celulas).find(c => c.canal === 'Lojas online');
+  assert.equal(lojas.valor, 4321.55);
+  assert.notEqual(lojas.valor, 96570.64);
+  const postsVendas = r.fetches.filter(f => f.method === 'POST' && /\/vendas(\?|$)/.test(f.url));
+  assert.equal(postsVendas.length, 0, 'Set/2026 não entra na tabela vendas');
+  const postQuadro = r.fetches.filter(f => f.method === 'POST' && f.url.includes('lista_clientes'));
+  assert.ok(postQuadro.length >= 1, 'a carga grava o quadro no mesmo sítio que a vista lê');
+
+  // O Supabase e o IndexedDB devolvem o quadro antigo. A versão que a carga gravou fica.
+  ctx.window._vendasQuadro = null;
+  ctx.localStorage.removeItem(ctx.VENDAS_QUADRO_LS_KEY);
+  ctx.idbGet = async () => quadroAntigoSet();
+  const lido = await ctx.lerVendasQuadroPersistida();
+  const canais2 = canaisMes(lido, '2026-09');
+  assert.ok(canais2.includes('Lojas online'), 'versão da carga fica mesmo com o Supabase a devolver Ecommerce');
+  assert.ok(!canais2.includes('Ecommerce'));
+  assert.equal(Object.values(lido.meses['2026-09'].celulas).find(c => c.canal === 'Lojas online').valor, 4321.55);
+
+  // Recarregar a página: sem memória, o localStorage da carga ganha ao remoto antigo.
+  const gravadoJson = JSON.stringify(ctx.window._vendasQuadroGravado);
+  ctx.window._vendasQuadro = null;
+  ctx.window._vendasQuadroGravado = null;
+  ctx.localStorage.setItem(ctx.VENDAS_QUADRO_LS_KEY, gravadoJson);
+  ctx.idbGet = async () => quadroAntigoSet();
+  const depoisDeRefresh = await ctx.lerVendasQuadroPersistida();
+  const canais3 = canaisMes(depoisDeRefresh, '2026-09');
+  assert.ok(canais3.includes('Lojas online'));
+  assert.ok(!canais3.includes('Ecommerce'));
+});
+
+checkAsync('sem coluna de valor a carga mostra os cabeçalhos e não deixa os R$ 96 mil em silêncio', async () => {
+  const aoa = [
+    ['Hierarq.produtos', 'Emissor da ordem', 'Data', 'Peso líq.', 'Quantidade', 'Valor bruto', 'Montante', 'Nº pessoal'],
+    ['GRÃO', '1001 LOJA', '15/09/2026', 2, 1, 8000, 7000, 99520001],
+  ];
+  const inicial = quadroAntigoSet();
+  const r = await correrCarga(aoa, { memoriaInicial: inicial, seedLocal: true });
+  const texto = r.toasts.join('\n') + '\n' + r.statusEl.innerHTML;
+  assert.ok(/coluna de vendas líquidas não encontrada/i.test(texto), texto);
+  assert.ok(texto.includes('Cabeçalhos vistos'), texto);
+  assert.ok(texto.includes('Valor bruto'), texto);
+  assert.ok(texto.includes('Montante'), texto);
+  assert.ok(!/substituídos pelo Excel/.test(r.statusEl.innerHTML));
+  const posts = r.fetches.filter(f => f.method === 'POST' && f.url.includes('lista_clientes'));
+  assert.equal(posts.length, 0, 'não grava o quadro antigo outra vez');
+  const canais = canaisMes(ctx.window._vendasQuadro, '2026-09');
+  assert.ok(canais.includes('Ecommerce'), 'sem coluna, o mês antigo não é apagado à toa');
+});
+
+for (const run of asyncChecks) await run();
 
 if (process.exitCode) {
   console.error('\nFalhou.');

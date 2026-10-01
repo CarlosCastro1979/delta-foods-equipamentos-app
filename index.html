@@ -17058,10 +17058,10 @@ function parseValorVendaSap(v) {
 /**
  * Coluna de R$ do Excel de vendas = vendas líquidas (a mesma do Power BI).
  *
- * Cabeçalho que entra (acentos e maiúsculas ignorados). Se houver várias, ganha
- * a que diz venda(s) líquida(s), à frente de valor/vlr líquido:
- *   1. «venda líquida», «vendas líquidas»
- *   2. «vlr líquido», «vl líquido», «valor líquido» (também «vlr. líq.»)
+ * Cabeçalho que entra (acentos, maiúsculas e quebra de linha ignorados).
+ * Se houver várias, ganha a que diz venda(s) líquida(s), à frente de valor/vlr/val líquido:
+ *   1. «venda líquida», «vendas líquidas», «Vendas líq.» (texto curto do SAP)
+ *   2. «vlr líquido», «vl líquido», «valor líquido», «vlr. líq.», «Valor líq.», «Val. líquido»
  *
  * Ficam de fora — nunca são o R$ do quadro, mesmo sendo a primeira coluna
  * numérica do ficheiro:
@@ -17072,7 +17072,7 @@ function parseValorVendaSap(v) {
  */
 function indiceColunaValorVenda(headers) {
   const list = Array.isArray(headers) ? headers : [];
-  const norm = (raw) => String(raw || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  const norm = (raw) => String(raw || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
   const excluido = (h) => {
     if (!h) return true;
     if (/peso/.test(h)) return true;
@@ -17087,9 +17087,11 @@ function indiceColunaValorVenda(headers) {
   for (let i = 0; i < list.length; i++) {
     const h = norm(list[i]);
     if (excluido(h)) continue;
+    // vendas líquidas / vendas liquidas / «Vendas líq.» (o SAP corta a palavra)
+    const compact = h.replace(/[^a-z0-9]+/g, '');
     let score = 0;
-    if (/\bvendas?\s*liquidas?\b/.test(h)) score = 4;
-    else if (/\b(?:valor|vlr\.?|vl\.?)\s*liq(?:uido)?\b/.test(h)) score = 3;
+    if (/\bvendas?\s*liq(?:uidas?|uida)?\b/.test(h) || /vendas?liq/.test(compact)) score = 4;
+    else if (/\b(?:valor|vlr\.?|vl\.?|val\.?)\s*liq(?:uido)?\b/.test(h) || /(?:valor|vlr|val|vl)liq/.test(compact)) score = 3;
     if (score > bestScore) { bestScore = score; best = i; }
   }
   return best;
@@ -17100,15 +17102,15 @@ function indiceColunaValorVenda(headers) {
  * O nome não vem desta coluna — vem do mapa (VENDEDORES_DEFAULT).
  * Se o Excel tiver código e a lista de clientes outro, manda o Excel.
  *
- * Cabeçalhos (acentos e maiúsculas ignorados). Se houver vários, ganha o mais específico:
- *   1. «Nº pessoal», «No. pessoal», «N.º pessoal», «NPess», pessoa responsável
+ * Cabeçalhos (acentos, maiúsculas e quebra de linha ignorados). Se houver vários, ganha o mais específico:
+ *   1. «Nº pessoal», «No. pessoal», «N.º pessoal», «Número pessoal», «NPess», pessoa responsável
  *   2. «Código do vendedor», «Cod. vendedor», «Codigo vendedor»
  *   3. coluna exactamente «Vendedor»
  * «Nome do vendedor» não conta (é nome, não código).
  */
 function indiceColunaNpessVenda(headers) {
   const list = Array.isArray(headers) ? headers : [];
-  const norm = (raw) => String(raw || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  const norm = (raw) => String(raw || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
   let best = -1;
   let bestScore = 0;
   for (let i = 0; i < list.length; i++) {
@@ -17120,6 +17122,7 @@ function indiceColunaNpessVenda(headers) {
       /npess/.test(compact)
       || /pessresp|pessoaresp/.test(compact)
       || /^n[o.]*(?:pessoal|pess)$/.test(compact)
+      || /^(?:numero|num|n)pessoal$/.test(compact)
     ) score = 3;
     else if (/^cod(?:igo)?(?:do)?vendedor$/.test(compact)) score = 2;
     else if (h === 'vendedor') score = 1;
@@ -17709,61 +17712,109 @@ function normalizarQuadroPersistido(payload) {
 async function salvarVendasQuadroPersistida(quadro) {
   const payload = quadroVendasClone(quadro);
   payload.atualizado_em = new Date().toISOString();
+  // A vista lê esta versão. Um GET seguinte com o quadro antigo não a pisa.
   window._vendasQuadro = payload;
+  window._vendasQuadroGravado = payload;
+  window._vendasQuadroRemotoErro = '';
   try { localStorage.setItem(VENDAS_QUADRO_LS_KEY, JSON.stringify(payload)); } catch (_) {}
   try { if (typeof idbSet === 'function') await idbSet(VENDAS_QUADRO_LS_KEY, payload); } catch (_) {}
   try {
-    await fetch(LISTA_CLIENTES_SUPA_URL, {
+    const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
       method: 'POST',
       headers: { ...HEADERS, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({ id: VENDAS_QUADRO_SUPA_ID, data: payload, atualizado_em: payload.atualizado_em }),
     });
+    if (!res || !res.ok) {
+      let detalhe = 'HTTP ' + (res && res.status);
+      try { detalhe += ' ' + String(await res.text()).slice(0, 160); } catch (_) {}
+      window._vendasQuadroRemotoErro = detalhe.trim();
+      console.warn('salvarVendasQuadroPersistida:', window._vendasQuadroRemotoErro);
+    }
   } catch (e) {
-    console.warn('salvarVendasQuadroPersistida:', e.message || e);
+    window._vendasQuadroRemotoErro = e.message || String(e);
+    console.warn('salvarVendasQuadroPersistida:', window._vendasQuadroRemotoErro);
   }
+  // Reafirma a versão da carga: o POST pode ter corrido enquanto um GET antigo ainda estava no ar.
+  window._vendasQuadro = payload;
+  window._vendasQuadroGravado = payload;
   return payload;
 }
 
 async function lerVendasQuadroPersistida() {
-  if (window._vendasQuadro && window._vendasQuadro.meses) return window._vendasQuadro;
-  let payload = null;
+  const mem = window._vendasQuadro;
+  const grav = window._vendasQuadroGravado;
+  if (mem && mem.meses && (!grav || instanteQuadroVendas(mem) >= instanteQuadroVendas(grav))) {
+    return mem;
+  }
+  const candidatos = [];
+  const por = (q) => { if (q && q.meses) candidatos.push(q); };
+  por(mem);
+  por(window._vendasQuadroGravado);
   try {
-    if (typeof idbGet === 'function') {
-      payload = await idbGet(VENDAS_QUADRO_LS_KEY);
-      if (payload && !payload.meses) payload = null;
-    }
+    if (typeof idbGet === 'function') por(await idbGet(VENDAS_QUADRO_LS_KEY));
   } catch (_) {}
-  if (!payload) {
-    try { payload = JSON.parse(localStorage.getItem(VENDAS_QUADRO_LS_KEY) || 'null'); } catch (_) { payload = null; }
-    if (payload && !payload.meses) payload = null;
-  }
-  if (!payload) {
-    try {
-      const res = await fetch(
-        `${LISTA_CLIENTES_SUPA_URL}?id=eq.${VENDAS_QUADRO_SUPA_ID}&select=data,atualizado_em`,
-        { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
-      );
-      if (res.ok) {
-        const rows = await res.json();
-        if (rows?.[0]?.data?.meses) {
-          payload = rows[0].data;
-          if (!payload.atualizado_em && rows[0].atualizado_em) payload.atualizado_em = rows[0].atualizado_em;
-          try { localStorage.setItem(VENDAS_QUADRO_LS_KEY, JSON.stringify(payload)); } catch (_) {}
-          try { if (typeof idbSet === 'function') await idbSet(VENDAS_QUADRO_LS_KEY, payload); } catch (_) {}
-        }
+  por(window._vendasQuadroGravado);
+  try { por(JSON.parse(localStorage.getItem(VENDAS_QUADRO_LS_KEY) || 'null')); } catch (_) {}
+  por(window._vendasQuadroGravado);
+  let remoto = null;
+  try {
+    const res = await fetch(
+      `${LISTA_CLIENTES_SUPA_URL}?id=eq.${VENDAS_QUADRO_SUPA_ID}&select=data,atualizado_em`,
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      if (rows?.[0]?.data?.meses) {
+        remoto = rows[0].data;
+        if (!remoto.atualizado_em && rows[0].atualizado_em) remoto.atualizado_em = rows[0].atualizado_em;
       }
-    } catch (e) {
-      console.warn('lerVendasQuadroPersistida:', e.message || e);
     }
+  } catch (e) {
+    console.warn('lerVendasQuadroPersistida:', e.message || e);
   }
-  const q = normalizarQuadroPersistido(payload);
-  if (q) window._vendasQuadro = q;
+  por(remoto);
+  por(window._vendasQuadro);
+  por(window._vendasQuadroGravado);
+  let best = escolherQuadroVendasMaisRecente(candidatos);
+  if (window._vendasQuadroGravado && instanteQuadroVendas(window._vendasQuadroGravado) > instanteQuadroVendas(best)) {
+    best = window._vendasQuadroGravado;
+  }
+  const q = normalizarQuadroPersistido(best);
+  if (!q) return null;
+  window._vendasQuadro = q;
+  // Só cacheia o vencedor. Um remoto mais antigo não volta a ser a próxima leitura.
+  const remotoGanhou = !!(remoto && best === remoto);
+  if (!remoto || remotoGanhou || instanteQuadroVendas(q) >= instanteQuadroVendas(remoto)) {
+    try { localStorage.setItem(VENDAS_QUADRO_LS_KEY, JSON.stringify(q)); } catch (_) {}
+    try { if (typeof idbSet === 'function') await idbSet(VENDAS_QUADRO_LS_KEY, q); } catch (_) {}
+  }
   return q;
 }
 
 function invalidarVendasQuadroCache() {
   window._vendasQuadro = null;
+  window._vendasQuadroGravado = null;
+  window._vendasQuadroRemotoErro = '';
   window._vqFiltro = null;
+}
+
+function instanteQuadroVendas(q) {
+  const t = Date.parse(q && q.atualizado_em || '');
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** Entre memória, cache e Supabase fica o agregado com atualizado_em mais recente. */
+function escolherQuadroVendasMaisRecente(lista) {
+  let best = null;
+  let bestT = -1;
+  const arr = Array.isArray(lista) ? lista : [];
+  for (let i = 0; i < arr.length; i++) {
+    const q = arr[i];
+    if (!q || !q.meses) continue;
+    const t = instanteQuadroVendas(q);
+    if (!best || t >= bestT) { best = q; bestT = t; }
+  }
+  return best;
 }
 
 async function aplicarNovasLinhasAoQuadro(novasLinhas, hoje, mesesFechados) {
@@ -18397,6 +18448,79 @@ function closeVendasModal() {
   document.getElementById('vendas-modal').style.display = 'none';
 }
 
+/** Texto de cabeçalho SAP: acentos ficam, quebra de linha vira espaço. */
+function normCelulaCabecalhoVenda(raw) {
+  return String(raw ?? '').replace(/\u00a0/g, ' ').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function pontuarCabecalhoVendasExcel(headers) {
+  const h = (Array.isArray(headers) ? headers : []).map(normCelulaCabecalhoVenda);
+  let s = 0;
+  if (h.some(x => /hierarq/i.test(x) && /prod/i.test(x))) s += 2;
+  if (h.some(x => /emissor/i.test(x))) s += 2;
+  if (h.some(x => /^data$/i.test(x))) s += 2;
+  if (h.some(x => /peso\s*l[ií]q/i.test(x))) s += 2;
+  if (typeof indiceColunaValorVenda === 'function' && indiceColunaValorVenda(h) >= 0) s += 3;
+  if (typeof indiceColunaNpessVenda === 'function' && indiceColunaNpessVenda(h) >= 0) s += 1;
+  return s;
+}
+
+/** Junta a linha seguinte só quando ela completa o título («Vendas» + «líquidas»). */
+function fundirCabecalhoVendasExcel(rowA, rowB) {
+  const a = Array.isArray(rowA) ? rowA : [];
+  const b = Array.isArray(rowB) ? rowB : [];
+  const width = Math.max(a.length, b.length);
+  const headers = [];
+  for (let c = 0; c < width; c++) {
+    const p1 = normCelulaCabecalhoVenda(a[c]);
+    const p2 = normCelulaCabecalhoVenda(b[c]);
+    const p2Dado = !p2 || /^\d+([.,]\d+)?$/.test(p2) || p2.length > 40;
+    if (p1 && p2 && !p2Dado && p1.toLowerCase().indexOf(p2.toLowerCase()) < 0) {
+      headers.push((p1 + ' ' + p2).replace(/\s+/g, ' ').trim());
+    } else {
+      headers.push(p1);
+    }
+  }
+  return headers;
+}
+
+/**
+ * A primeira linha do Excel SAP nem sempre é o cabeçalho (título por cima,
+ * ou «Vendas» / «líquidas» partidos em duas linhas). Devolve os títulos e as linhas de dados.
+ */
+function localizarFolhaVendasExcel(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const limite = Math.min(list.length, 20);
+  let bestIdx = 0;
+  let bestScore = -1;
+  let bestHeaders = (list[0] || []).map(normCelulaCabecalhoVenda);
+  let bestExtra = 0;
+  for (let r = 0; r < limite; r++) {
+    const only = (list[r] || []).map(normCelulaCabecalhoVenda);
+    const scoreOnly = pontuarCabecalhoVendasExcel(only);
+    let headers = only;
+    let extra = 0;
+    let score = scoreOnly;
+    if (r + 1 < list.length) {
+      const merged = fundirCabecalhoVendasExcel(list[r], list[r + 1]);
+      const scoreM = pontuarCabecalhoVendasExcel(merged);
+      if (scoreM > scoreOnly) { headers = merged; score = scoreM; extra = 1; }
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = r;
+      bestHeaders = headers;
+      bestExtra = extra;
+    }
+  }
+  return {
+    headers: bestHeaders,
+    dataRows: list.slice(bestIdx + 1 + bestExtra),
+    headerIdx: bestIdx,
+    headerRows: 1 + bestExtra,
+  };
+}
+
 async function processVendasFile(event) {
   const files = Array.from(event.target.files || []);
   if (!files.length) return;
@@ -18427,6 +18551,7 @@ async function processVendasFile(event) {
     const mesesValorHistoricoSet = new Set();
     let jaExistentes = 0;
     let ficheirosOk = 0;
+    let erroCabecalho = '';
     const nomesFicheiros = [];
     let dataMin = null;
     let dataMax = null;
@@ -18450,26 +18575,31 @@ async function processVendasFile(event) {
       const buf = await file.arrayBuffer();
       const wb = window.XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1 });
+      const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
       if (!rows.length) {
         toast(`Ficheiro vazio: ${file.name}`, 'error');
         continue;
       }
 
-      const headers = rows[0].map(h => String(h || '').trim());
+      const folha = localizarFolhaVendasExcel(rows);
+      const headers = folha.headers;
+      const dataRows = folha.dataRows;
       const iHierarq = headers.findIndex(h => /hierarq/i.test(h) && /prod/i.test(h));
       const iEmissor = headers.findIndex(h => /emissor/i.test(h));
       const iData = headers.findIndex(h => /^data$/i.test(h));
       const iPeso = headers.findIndex(h => /peso\s*l[ií]q/i.test(h));
       const iValor = indiceColunaValorVenda(headers); // só vendas líquidas (não peso, qtd, bruto, unitário, imposto)
       const iNpessVenda = indiceColunaNpessVenda(headers);
+      const vistosCab = headers.map(h => String(h || '').trim()).filter(Boolean);
+      const txtVistos = vistosCab.length ? vistosCab.join(' | ') : '(nenhum cabeçalho)';
 
       if (iHierarq < 0 || iEmissor < 0 || iData < 0 || iPeso < 0) {
         const hasCliente = headers.some(h => /^cliente$/i.test(h));
         const hasNome = headers.some(h => /nome/i.test(h) && !/emissor/i.test(h));
         if (hasCliente && hasNome) {
-          toast(`"${file.name}" é Lista de Clientes SAP — usa «Carregar Lista SAP».`, 'error');
+          erroCabecalho = `"${file.name}" é Lista de Clientes SAP — usa «Carregar Lista SAP». Cabeçalhos vistos: ${txtVistos}`;
+          toast(erroCabecalho, 'error');
         } else {
           const faltam = [
             iHierarq < 0 ? 'Hierarq.produtos' : null,
@@ -18477,14 +18607,26 @@ async function processVendasFile(event) {
             iData < 0 ? 'Data' : null,
             iPeso < 0 ? 'Peso líq.' : null,
           ].filter(Boolean).join(', ');
-          toast(`"${file.name}": colunas não encontradas (${faltam}).`, 'error');
+          erroCabecalho = `Colunas não encontradas (${faltam}). Cabeçalhos vistos: ${txtVistos}`;
+          toast(`"${file.name}": ${erroCabecalho}`, 'error');
         }
+        continue;
+      }
+      // Sem a coluna de R$ a carga não substitui o mês — e antes saía em silêncio com os R$ antigos.
+      if (iValor < 0) {
+        erroCabecalho = `Coluna de vendas líquidas não encontrada. Cabeçalhos vistos: ${txtVistos}`;
+        toast(`"${file.name}": ${erroCabecalho}`, 'error');
+        continue;
+      }
+      if (iNpessVenda < 0) {
+        erroCabecalho = `Coluna de Nº pessoal não encontrada. Sem ela o mês não é substituído. Cabeçalhos vistos: ${txtVistos}`;
+        toast(`"${file.name}": ${erroCabecalho}`, 'error');
         continue;
       }
 
       ficheirosOk++;
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
+      for (let i = 0; i < dataRows.length; i++) {
+        const row = dataRows[i];
         if (!row) continue;
         const dt = parseDateSC(row[iData]);
         if (!dt) continue;
@@ -18546,7 +18688,9 @@ async function processVendasFile(event) {
     }
 
     if (!ficheirosOk) {
-      setStatus('<div style="color:var(--danger);font-size:12px">Nenhum ficheiro de vendas válido processado.</div>');
+      const escErro = (s) => String(s || '').replace(/[&<>]/g, c => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
+      const msgErro = erroCabecalho || 'Nenhum ficheiro de vendas válido processado.';
+      setStatus(`<div style="color:var(--danger);font-size:12px;line-height:1.5">${escErro(msgErro)}</div>`);
       clearInput();
       return;
     }
@@ -18562,7 +18706,10 @@ async function processVendasFile(event) {
       if (!linhasValorHistorico.length) return;
       await substituirValorHistoricoNoQuadro(linhasValorHistorico, hoje, mesesFechados);
       const mesesTxt = [...mesesValorHistoricoSet].sort().map(formatVendasMesLabel).join(', ');
-      quadroHistMsg = `<br>• Quadro: meses de 2025–2026 substituídos pelo Excel (canais antigos apagados, sem somar ao R$ anterior, ${linhasValorHistorico.length.toLocaleString('pt-BR')} linhas sem gravar outra vez)${mesesTxt ? ` — ${mesesTxt}` : ''}`;
+      const remotoErro = window._vendasQuadroRemotoErro ? String(window._vendasQuadroRemotoErro).slice(0, 180) : '';
+      quadroHistMsg = remotoErro
+        ? `<br>• Quadro substituído neste browser (canais antigos apagados)${mesesTxt ? ` — ${mesesTxt}` : ''}, mas o servidor não gravou (${remotoErro}). O ecrã mantém esta versão; o quadro antigo do servidor não volta por cima.`
+        : `<br>• Quadro: meses de 2025–2026 substituídos pelo Excel (canais antigos apagados, sem somar ao R$ anterior, ${linhasValorHistorico.length.toLocaleString('pt-BR')} linhas sem gravar outra vez)${mesesTxt ? ` — ${mesesTxt}` : ''}`;
     };
 
     if (!candidatos.length) {
@@ -32274,7 +32421,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-liq2: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-liq3: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
