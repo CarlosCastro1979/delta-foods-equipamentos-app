@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * Carga de vendas: meses fechados não se relêem nem se alteram.
- * Regra reutilizada: statusVendasCoberturaMes === 'ok'
+ * Carga de vendas: só grava o dia local de hoje.
+ * Esse dia entra mesmo que o resumo marque o mês como fechado.
+ * Outros dias (resto do mês fechado, meses anteriores, dias 1–29) não se relêem nem se alteram.
+ * Regra do mês: statusVendasCoberturaMes === 'ok'
  * (até Jun/2026 com dados = fechado; Jul/2026+ fica aberto no próprio último dia útil
  * e só fecha no dia seguinte, se já houver venda nesse dia).
  */
@@ -91,6 +93,7 @@ const fns = [
   'isVendasMesFechado',
   'vendasYmFromISO',
   'vendaDataCaiEmMesFechado',
+  'vendaDataEntraNaCarga',
   'mesesFechadosFromCobertura',
   'filtrarLinhasVendasMesesAbertos',
   'vendasCoberturaObjToMap',
@@ -152,40 +155,46 @@ check('Jul/2026+ no próprio último dia útil continua aberto; no dia seguinte 
   assert.equal(ctx.statusVendasCoberturaMes('2026-09', { linhas: 458, ultima_data: '2026-09-29' }, '2026-10-01'), 'pendente');
 });
 
-check('2.ª carga no próprio dia 30 junta linhas novas de Setembro e não mexe em Agosto', () => {
+check('2.ª carga no dia 30 com Setembro fechado no resumo ainda insere linhas novas desse dia', () => {
   const antes = new Map([
     ['2026-06', { linhas: 2100, clientes: 140, ultima_data: '2026-06-30' }],
     ['2026-08', { linhas: 501, clientes: 80, ultima_data: '2026-08-31' }],
-    // 1.ª carga do dia 30 já gravou algumas linhas com data 2026-09-30
+    // 1.ª carga do dia 30 já gravou venda em 2026-09-30 (produção antiga dizia «fechado / até 30»)
     ['2026-09', { linhas: 500, clientes: 70, ultima_data: '2026-09-30' }],
   ]);
   const agoAntes = snap(antes, '2026-08');
   const junAntes = snap(antes, '2026-06');
   const setAntes = snap(antes, '2026-09');
-  const fechados = ctx.mesesFechadosFromCobertura(antes, HOJE);
-  assert.ok(fechados.has('2026-08'));
-  assert.ok(fechados.has('2026-06'));
-  assert.ok(!fechados.has('2026-09'));
+  // A regra do último dia útil NÃO fecha Setembro no próprio dia 30.
+  assert.equal(ctx.isVendasMesFechado('2026-09', antes.get('2026-09'), HOJE), false);
+  const fechadosRegra = ctx.mesesFechadosFromCobertura(antes, HOJE);
+  assert.ok(fechadosRegra.has('2026-08'));
+  assert.ok(fechadosRegra.has('2026-06'));
+  assert.ok(!fechadosRegra.has('2026-09'));
+  // O resumo que o Carlos já vê pode continuar a tratar Setembro como fechado.
+  const fechados = new Set(fechadosRegra);
+  fechados.add('2026-09');
 
   const ficheiro = [
     linha('2026-08-31', '300'),
-    linha('2026-08-10', '301'),
-    linha('2026-06-30', '102'),
+    linha('2026-09-15', '400', 'GRÃO'),
+    linha('2026-09-29', '500', 'OUTRO'),
     linha('2026-09-30', '500', 'GRÃO'),
     linha('2026-09-30', '501', 'GRÃO'),
     linha('2026-09-30', '502', 'OUTRO'),
-    linha('2026-09-29', '500', 'OUTRO'),
   ];
-  const filtrado = ctx.filtrarLinhasVendasMesesAbertos(ficheiro, fechados);
+  const filtrado = ctx.filtrarLinhasVendasMesesAbertos(ficheiro, fechados, HOJE);
+  assert.equal(filtrado.hoje, HOJE);
   assert.equal(filtrado.ignoradas, 3);
-  assert.deepEqual(filtrado.mesesIgnorados, ['2026-06', '2026-08']);
+  assert.equal(filtrado.ignoradasOutroDia, 0);
+  assert.deepEqual(filtrado.mesesIgnorados, ['2026-08', '2026-09']);
   assert.deepEqual(filtrado.mesesAbertos, ['2026-09']);
-  assert.equal(filtrado.lidas, 4);
-  assert.ok(filtrado.aceites.every(r => r.data.startsWith('2026-09')));
+  assert.equal(filtrado.lidas, 3);
+  assert.ok(filtrado.aceites.every(r => r.data === '2026-09-30'));
+  assert.ok(!filtrado.aceites.some(r => r.data === '2026-09-15' || r.data === '2026-08-31'));
 
   const existentes = new Set([
     ctx.vendaDedupKey('500', '2026-09-30', 'GRÃO'),
-    ctx.vendaDedupKey('500', '2026-09-29', 'OUTRO'),
   ]);
   const novas = [];
   let jaExistentes = 0;
@@ -194,7 +203,7 @@ check('2.ª carga no próprio dia 30 junta linhas novas de Setembro e não mexe 
     if (existentes.has(key)) { jaExistentes++; continue; }
     novas.push(row);
   }
-  assert.equal(jaExistentes, 2);
+  assert.equal(jaExistentes, 1);
   assert.equal(novas.length, 2);
   assert.deepEqual(novas.map(r => r.cod).sort(), ['501', '502']);
 
@@ -208,6 +217,27 @@ check('2.ª carga no próprio dia 30 junta linhas novas de Setembro e não mexe 
   assert.deepEqual(snap(antes, '2026-09'), setAntes);
 });
 
+check('no próprio dia 30, com o mês aberto pela regra, Setembro 1–29 e Agosto ficam de fora', () => {
+  const antes = new Map([
+    ['2026-08', { linhas: 501, clientes: 80, ultima_data: '2026-08-31' }],
+    ['2026-09', { linhas: 500, clientes: 70, ultima_data: '2026-09-30' }],
+  ]);
+  const fechados = ctx.mesesFechadosFromCobertura(antes, HOJE);
+  assert.ok(!fechados.has('2026-09'));
+  const filtrado = ctx.filtrarLinhasVendasMesesAbertos([
+    linha('2026-09-15', '400'),
+    linha('2026-09-29', '401'),
+    linha('2026-08-31', '300'),
+    linha('2026-09-30', '501', 'GRÃO'),
+  ], fechados, HOJE);
+  assert.equal(filtrado.lidas, 1);
+  assert.equal(filtrado.aceites[0].data, '2026-09-30');
+  assert.equal(filtrado.aceites[0].cod, '501');
+  assert.equal(filtrado.ignoradas, 1);
+  assert.equal(filtrado.ignoradasOutroDia, 2);
+  assert.deepEqual(filtrado.mesesIgnorados, ['2026-08']);
+});
+
 check('no dia 1/10 Setembro com venda no dia 30 já está fechado e a carga não o reabre', () => {
   const antes = new Map([
     ['2026-08', { linhas: 501, clientes: 80, ultima_data: '2026-08-31' }],
@@ -219,10 +249,19 @@ check('no dia 1/10 Setembro com venda no dia 30 já está fechado e a carga não
   assert.ok(fechados.has('2026-09'));
   const filtrado = ctx.filtrarLinhasVendasMesesAbertos([
     linha('2026-09-30', '900'),
+    linha('2026-09-15', '400'),
     linha('2026-08-31', '300'),
-  ], fechados);
-  assert.equal(filtrado.lidas, 0);
-  assert.equal(filtrado.ignoradas, 2);
+    linha('2026-10-01', '901'),
+  ], fechados, hoje);
+  assert.equal(filtrado.lidas, 1);
+  assert.equal(filtrado.aceites[0].data, '2026-10-01');
+  assert.ok(filtrado.aceites.every(r => r.data !== '2026-09-30'));
+  const soSetembro = ctx.filtrarLinhasVendasMesesAbertos([
+    linha('2026-09-30', '900'),
+    linha('2026-08-31', '300'),
+  ], fechados, hoje);
+  assert.equal(soSetembro.lidas, 0);
+  assert.equal(soSetembro.ignoradas, 2);
   const depois = ctx.mergeCoberturaVendasMesesAbertos(
     antes,
     ctx.aggregateVendasPorMes([linha('2026-09-30', '900'), linha('2026-08-31', '300')]),
@@ -232,7 +271,7 @@ check('no dia 1/10 Setembro com venda no dia 30 já está fechado e a carga não
   assert.equal(depois.get('2026-08').linhas, 501);
 });
 
-check('ficheiro com fechados + aberto: fechados iguais, aberto muda, contagem lidas/ignoradas', () => {
+check('ficheiro misto: só o dia de hoje entra; fechados e outros dias ficam iguais', () => {
   const antes = coberturaInicial();
   const fechadosAntes = {
     jan: snap(antes, '2020-01'),
@@ -260,25 +299,15 @@ check('ficheiro com fechados + aberto: fechados iguais, aberto muda, contagem li
   assert.ok(!fechados.has('2026-09'));
   assert.ok(!fechados.has('2020-03'));
 
-  const filtrado = ctx.filtrarLinhasVendasMesesAbertos(ficheiro, fechados);
+  const filtrado = ctx.filtrarLinhasVendasMesesAbertos(ficheiro, fechados, HOJE);
   assert.equal(filtrado.ignoradas, 8);
-  assert.equal(filtrado.lidas, 5);
+  assert.equal(filtrado.ignoradasOutroDia, 3);
+  assert.equal(filtrado.lidas, 2);
   assert.deepEqual(filtrado.mesesIgnorados, ['2020-01', '2026-06', '2026-07', '2026-08']);
-  assert.deepEqual(filtrado.mesesAbertos, ['2020-03', '2026-09']);
-  assert.ok(filtrado.aceites.every(r => r.data.startsWith('2026-09') || r.data.startsWith('2020-03')));
+  assert.deepEqual(filtrado.mesesAbertos, ['2026-09']);
+  assert.ok(filtrado.aceites.every(r => r.data === HOJE));
 
-  const existentes = new Set(['500|2026-09-29|OUTRO']);
-  const novas = [];
-  let jaExistentes = 0;
-  for (const row of filtrado.aceites) {
-    const key = ctx.vendaDedupKey(row.cod, row.data, row.tipo);
-    if (existentes.has(key)) { jaExistentes++; continue; }
-    novas.push(row);
-  }
-  assert.equal(jaExistentes, 1);
-  assert.equal(novas.length, 4);
-
-  const depois = ctx.mergeCoberturaVendasMesesAbertos(antes, ctx.aggregateVendasPorMes(novas), HOJE);
+  const depois = ctx.mergeCoberturaVendasMesesAbertos(antes, ctx.aggregateVendasPorMes(filtrado.aceites), HOJE);
   assert.deepEqual(snap(depois, '2020-01'), fechadosAntes.jan);
   assert.deepEqual(snap(depois, '2026-06'), fechadosAntes.jun);
   assert.deepEqual(snap(depois, '2026-07'), fechadosAntes.jul);
@@ -286,9 +315,7 @@ check('ficheiro com fechados + aberto: fechados iguais, aberto muda, contagem li
   assert.equal(depois.get('2026-09').linhas, 458 + 2);
   assert.equal(depois.get('2026-09').ultima_data, '2026-09-30');
   assert.equal(depois.get('2026-09').clientes, 70);
-  assert.equal(depois.get('2020-03').linhas, 2);
-  assert.equal(depois.get('2020-03').clientes, 2);
-  assert.equal(depois.get('2020-03').ultima_data, '2020-03-03');
+  assert.equal(depois.has('2020-03'), false);
   assert.deepEqual(snap(antes, '2026-06'), fechadosAntes.jun);
 });
 
@@ -311,12 +338,14 @@ check('sem resumo nenhum mês está fechado (primeira carga)', () => {
   const filtrado = ctx.filtrarLinhasVendasMesesAbertos([
     linha('2020-01-01', '1'),
     linha('2026-09-30', '2'),
-  ], set);
-  assert.equal(filtrado.lidas, 2);
+  ], set, HOJE);
+  assert.equal(filtrado.lidas, 1);
   assert.equal(filtrado.ignoradas, 0);
+  assert.equal(filtrado.ignoradasOutroDia, 1);
+  assert.equal(filtrado.aceites[0].data, HOJE);
 });
 
-check('mês em falta anterior a Jul/2026 entra; com dados não entra', () => {
+check('dia que não é hoje não reabre mês em falta nem mês com dados', () => {
   const map = new Map([
     ['2024-05', { linhas: 0, clientes: 0, ultima_data: null }],
     ['2024-06', { linhas: 3800, clientes: 400, ultima_data: '2024-06-28' }],
@@ -327,10 +356,12 @@ check('mês em falta anterior a Jul/2026 entra; com dados não entra', () => {
   const filtrado = ctx.filtrarLinhasVendasMesesAbertos([
     linha('2024-05-02', '9'),
     linha('2024-06-02', '8'),
-  ], fechados);
+    linha('2026-09-30', '7'),
+  ], fechados, HOJE);
   assert.equal(filtrado.lidas, 1);
   assert.equal(filtrado.ignoradas, 1);
-  assert.equal(filtrado.aceites[0].data, '2024-05-02');
+  assert.equal(filtrado.ignoradasOutroDia, 1);
+  assert.equal(filtrado.aceites[0].data, HOJE);
 });
 
 check('processVendasFile não relê a base, não apaga fechados, não recalcula 500k', () => {
@@ -341,8 +372,16 @@ check('processVendasFile não relê a base, não apaga fechados, não recalcula 
   assert.ok(skipAt > 0 && pushAt > skipAt, 'salto do mês fechado antes de gravar o modelo');
   assert.ok(pesoAt > skipAt, 'peso/tipo só depois de saltar o mês fechado');
   assert.ok(proc.includes('mesesFechadosFromCobertura'));
-  assert.ok(proc.includes('mergeCoberturaVendasMesesAbertos'));
-  assert.ok(proc.includes('meses: mesesAbertosArr'));
+  assert.ok(proc.includes('vendaDataEntraNaCarga'));
+  assert.ok(proc.includes('vendasHojeISO()'));
+  assert.ok(proc.includes('mergeCoberturaVendasMesesAbertos(baseMap, agregadoNovos, hoje)'));
+  assert.ok(proc.includes('dia: hoje'));
+  assert.ok(!proc.includes('meses: mesesAbertosArr'));
+  const entraAt = proc.indexOf('vendaDataEntraNaCarga');
+  assert.ok(entraAt > 0 && entraAt < pesoAt, 'o dia de hoje é decidido antes de gravar o modelo');
+  const hojeFn = extractFn(html, 'vendasHojeISO');
+  assert.ok(hojeFn.includes('getFullYear') && hojeFn.includes('getDate'));
+  assert.ok(!hojeFn.includes('toISOString'));
   assert.ok(!proc.includes('scSyncHistoricoFromVendas'));
   assert.ok(!proc.includes('loadVendasCobertura(true)'));
   assert.ok(!proc.includes('getVendas('));
@@ -357,14 +396,17 @@ check('processVendasFile não relê a base, não apaga fechados, não recalcula 
   assert.ok(dedup.indexOf('if (mesesSet)') < dedup.indexOf('data=lte.'));
 });
 
-check('texto da cobertura alinha o carregamento com meses fechados intactos', () => {
-  assert.ok(html.includes('Ao carregar vendas, só meses abertos são lidos; meses fechados ficam intactos.'));
-  assert.ok(html.includes('Ao carregar, só se lêem meses <strong>abertos</strong>'));
-  assert.ok(html.includes('v2026-10-01-vendas-dia-util'));
+check('texto da cobertura alinha o carregamento com o dia de hoje', () => {
+  assert.ok(html.includes('Ao carregar vendas, só entram linhas do dia local de hoje; os outros dias ficam intactos.'));
+  assert.ok(html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
+  assert.ok(html.includes('as linhas de hoje entram na mesma'));
+  assert.ok(html.includes('v2026-10-01-vendas-so-hoje'));
+  assert.ok(!html.includes('v2026-10-01-vendas-dia-util'));
   assert.ok(html.includes('Até Jun/2026 = fechado. De Jul/2026 em diante'));
   assert.ok(html.includes('aberto no próprio último dia útil'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-dia-util'));
+  assert.ok(sw.includes('v2026-10-01-vendas-so-hoje'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-dia-util'));
   assert.ok(!sw.includes('v2026-09-30-vendas-fechado'));
 });
 
@@ -380,35 +422,35 @@ function checkAsync(title, fn) {
   ));
 }
 
-checkAsync('dedup no servidor só pede meses abertos', async () => {
+checkAsync('dedup no servidor só pede o dia local de hoje', async () => {
   ctx.fetchUrls = [];
   ctx.window._vendasMemCache = null;
   ctx.fetch = async (url) => {
     ctx.fetchUrls.push(String(url));
     const u = String(url);
-    if (u.includes('data=gte.2026-09-01')) {
-      return { ok: true, status: 200, json: async () => [{ cod: '500', data: '2026-09-29', tipo: 'OUTRO' }] };
+    if (u.includes('data=eq.2026-09-30')) {
+      return { ok: true, status: 200, json: async () => [{ cod: '500', data: '2026-09-30', tipo: 'GRÃO' }] };
     }
     return { ok: true, status: 200, json: async () => [] };
   };
-  const out = await ctx.getVendasDedupKeySet({ meses: ['2026-09', '2020-03'] });
-  assert.equal(ctx.fetchUrls.length, 2);
-  assert.ok(ctx.fetchUrls.some(u => u.includes('data=gte.2026-09-01') && u.includes('data=lt.2026-10-01')));
-  assert.ok(ctx.fetchUrls.some(u => u.includes('data=gte.2020-03-01') && u.includes('data=lt.2020-04-01')));
-  assert.ok(ctx.fetchUrls.every(u => !u.includes('2026-06') && !u.includes('2019-09') && !u.includes('2026-08')));
+  const out = await ctx.getVendasDedupKeySet({ dia: '2026-09-30' });
+  assert.equal(ctx.fetchUrls.length, 1);
+  assert.ok(ctx.fetchUrls[0].includes('data=eq.2026-09-30'));
+  assert.ok(!ctx.fetchUrls[0].includes('data=gte.2026-09-01'));
+  assert.ok(!ctx.fetchUrls[0].includes('2026-08') && !ctx.fetchUrls[0].includes('2026-09-15'));
   assert.equal(out.count, 1);
-  assert.ok(out.keys.has('500|2026-09-29|OUTRO'));
+  assert.ok(out.keys.has('500|2026-09-30|GRÃO'));
 
   ctx.window._vendasMemCache = [
     { cod: '1', data: '2026-06-30', tipo: 'OUTRO' },
-    { cod: '2', data: '2026-08-31', tipo: 'GRÃO' },
-    { cod: '3', data: '2026-09-29', tipo: 'OUTRO' },
+    { cod: '2', data: '2026-09-15', tipo: 'GRÃO' },
+    { cod: '3', data: '2026-09-30', tipo: 'OUTRO' },
   ];
   ctx.fetchUrls = [];
-  const mem = await ctx.getVendasDedupKeySet({ meses: ['2026-09'] });
+  const mem = await ctx.getVendasDedupKeySet({ dia: '2026-09-30' });
   assert.equal(ctx.fetchUrls.length, 0);
   assert.equal(mem.count, 1);
-  assert.ok(mem.keys.has('3|2026-09-29|OUTRO'));
+  assert.ok(mem.keys.has('3|2026-09-30|OUTRO'));
   ctx.window._vendasMemCache = null;
 });
 
