@@ -468,6 +468,8 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
   assert.ok(sw.includes('v2026-10-01-vendas-atualizado-ate'));
   assert.ok(html.includes('v2026-10-01-vendas-atualizado-ate'));
+  assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
+  assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));
   assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-marco'));

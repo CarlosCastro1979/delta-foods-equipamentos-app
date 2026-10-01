@@ -313,9 +313,218 @@ function testUiCarga() {
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
   assert(html.includes('v2026-10-01-vendas-atualizado-ate'), 'service worker referido no index');
   assert(sw.includes('v2026-10-01-vendas-atualizado-ate'), 'service worker actualizado');
+  assert(!html.includes('v2026-10-01-nfe-dados-canal'), 'service worker referido no index');
+  assert(!sw.includes('v2026-10-01-nfe-dados-canal'), 'service worker actualizado');
 
   const homeDados = html.slice(html.indexOf('class="home-dados-card"'), html.indexOf('class="home-dados-card"') + 700);
   assert(homeDados.includes('ZIP de XML da TTI'), 'o cartão Dados na home fala do ZIP de XML da TTI');
+}
+
+function loadNfeUi(notas, canalId, pvView) {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const start = html.indexOf('function nfeBucket(');
+  const end = html.indexOf('async function nfeMontarVista(');
+  const src = html.slice(start, end);
+  const els = {};
+  function el(id) {
+    if (!els[id]) {
+      els[id] = {
+        id,
+        style: { display: 'none' },
+        classList: { toggle() {}, contains() { return false; }, add() {}, remove() {} },
+        innerHTML: '',
+        textContent: '',
+        disabled: false,
+      };
+    }
+    return els[id];
+  }
+  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfeFiltro', '_nfeStatusMsg', '_nfeBusy'];
+  const vals = [
+    {
+      horeca: { id: 'horeca', nome: 'Horeca' },
+      ecommerce: { id: 'ecommerce', nome: 'Ecommerce' },
+      varejo: { id: 'varejo', nome: 'Varejo e Distr. Varejo' },
+      distribuidores: { id: 'distribuidores', nome: 'Distribuidores' },
+    },
+    (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])),
+    nfe.nfeNormNome,
+    nfe.nfeNotasDoCanal,
+    () => canalId || '',
+    { getElementById: el },
+    pvView || 'mapa',
+    notas,
+    '',
+    '',
+    false,
+  ];
+  const api = new Function(...names, src + '\nreturn { nfePaintCanal, nfeHtml, nfeSetFiltro, nfeFiltrarCanal, nfeLimparFiltroCanal, nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, el: null };')(...vals);
+  api.el = el;
+  return api;
+}
+
+function brl(v) {
+  return Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+/** Cruzamento já conhecido destas 17 NF (lista de clientes). Os valores vêm do XML. */
+const ATRIB_NFE_17 = {
+  '102239': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102241': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102242': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102244': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102245': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102246': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102248': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102251': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102252': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102253': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102254': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102255': ['horeca', 'Horeca', 'HÉLCIO GRÉGIO'],
+  '102243': ['horeca', 'Horeca', 'PAULO FONTES'],
+  '102250': ['horeca', 'Horeca', 'PAULO FONTES'],
+  '102240': ['ecommerce', 'Ecommerce', 'Marcio Gorga'],
+  '102249': ['ecommerce', 'Ecommerce', 'MARCIO GORGA'],
+  '102247': ['distribuidores', 'Distribuidores', 'MASSIMO BOTTELLO'],
+};
+
+function testFiltrosETotal(zipPath) {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  assert(html.includes('const NFE_FILTROS_MS = 1000'), 'autosave dos filtros espera 1000 ms');
+  assert(html.includes('setTimeout(nfeGravarFiltros, NFE_FILTROS_MS)'), 'a gravação dos filtros passa pelo debounce');
+  assert(html.includes('delta_nfe_filtros'), 'os filtros ficam no localStorage');
+  assert(!html.slice(html.indexOf('function nfeFiltrosHtml('), html.indexOf('function nfeListaHtml(')).includes('Guardar'), 'não há botão Guardar nos filtros');
+
+  const buf = fs.readFileSync(zipPath);
+  const xmls = nfe.nfeReadZipXmls(buf);
+  const notas = xmls.map(x => nfe.nfeParseXml(x.xml, x.name)).filter(Boolean).map(nota => {
+    const a = ATRIB_NFE_17[nota.numero];
+    assert(!!a, 'cada NF do zip entra no conjunto conhecido, veio ' + nota.numero);
+    return Object.assign({}, nota, { canalId: a[0], canalNome: a[1], vendedor: a[2], status: 'unico' });
+  });
+  assert(notas.length === 17, '17 notas');
+  assert(Object.keys(ATRIB_NFE_17).length === 17, 'o mapa conhecido tem 17 números');
+  const helcio = notas.filter(n => nfe.nfeNormNome(n.vendedor) === 'HELCIO GREGIO');
+  const paulo = notas.filter(n => nfe.nfeNormNome(n.vendedor) === 'PAULO FONTES');
+  assert(helcio.length === 12, 'Hélcio tem 12 notas, veio ' + helcio.length);
+  assert(paulo.length === 2, 'Paulo tem 2 notas');
+  const somaHelcio = helcio.reduce((s, n) => s + Math.round(Number(n.valor) * 100), 0) / 100;
+  assert(somaHelcio === 11176.36, 'a soma do Hélcio é a soma dos 12 valores, veio ' + somaHelcio);
+  const nota255 = helcio.find(n => n.numero === '102255');
+  assert(nota255 && nota255.valor === 417.8, 'a 102255 vale 417,80');
+
+  const mem = new Map();
+  global.localStorage = {
+    getItem(k) { return mem.has(k) ? mem.get(k) : null; },
+    setItem(k, v) { mem.set(k, String(v)); },
+  };
+
+  const horeca = loadNfeUi(notas, 'horeca');
+  horeca.nfePaintCanal();
+  let host = horeca.el('canal-nfe-host').innerHTML;
+  assert(host.includes('id="nfe-canal-vendedor"'), 'menu do canal filtra por vendedor');
+  assert(host.includes('id="nfe-canal-dia"'), 'menu do canal filtra por dia');
+  assert(host.includes('id="nfe-canal-numero"'), 'menu do canal filtra por número');
+  assert(!host.includes('id="nfe-canal-canal"') && !host.includes('id="nfe-geral-canal"'), 'o menu do canal não tem filtro de canal');
+  assert(!host.includes('Ecommerce') && !host.includes('Marcio') && !host.includes('102240'), 'Horeca não lista o Ecommerce');
+  assert(!host.includes('Massimo') && !host.includes('102247'), 'Horeca não lista Distribuidores');
+  assert(!host.includes('Linhas'), 'a lista de NF não repõe a coluna Linhas');
+  const iNum = host.indexOf('>Número<');
+  const depois = host.slice(iNum);
+  assert(iNum > 0 && depois.indexOf('>Cliente<') < depois.indexOf('>Valor<') && depois.indexOf('>Valor<') < depois.indexOf('>Data<'), 'a ordem das colunas da lista mantém-se');
+  assert(host.includes('>Valor<'), 'o resumo tem a coluna de valor');
+  assert(host.includes(brl(somaHelcio)), 'o resumo do Hélcio mostra a soma em R$');
+
+  const vendKey = 'vend:' + nfe.nfeNormNome('Hélcio Grégio');
+  horeca.nfeFiltrarCanal(encodeURIComponent(vendKey));
+  host = horeca.el('canal-nfe-host').innerHTML;
+  assert(host.includes('Limpar'), 'filtro do vendedor tem Limpar');
+  assert(host.includes('Total da lista: 12 notas'), 'a lista do Hélcio conta 12');
+  assert(host.includes(brl(somaHelcio)), 'a lista do Hélcio mostra o total em R$');
+  assert(!host.includes('102243') && !host.includes('102250'), 'a lista do Hélcio não inclui o Paulo');
+  horeca.nfeSetFiltro('canal', 'dia', '2026-10-01');
+  host = horeca.el('canal-nfe-host').innerHTML;
+  assert(host.includes('value="2026-10-01"'), 'o dia fica no filtro');
+  assert(host.includes('Total da lista: 12 notas') && host.includes(brl(somaHelcio)), 'Hélcio + 01/10/2026 continua a ser as 12 notas');
+  assert(host.includes('01/10/2026'), 'o banner junta o dia ao vendedor');
+  horeca.nfeSetFiltro('canal', 'numero', '102255');
+  host = horeca.el('canal-nfe-host').innerHTML;
+  assert(host.includes('Total da lista: 1 nota'), 'filtro de número deixa uma nota');
+  assert(host.includes(brl(nota255.valor)), 'o total dessa nota é o valor dela');
+  assert(host.includes('102255') && !host.includes('102241') && !host.includes('2.409,79'), 'as outras notas do Hélcio saem da lista');
+  horeca.nfeSetFiltro('canal', 'numero', '102243');
+  host = horeca.el('canal-nfe-host').innerHTML;
+  assert(host.includes('Nenhuma nota neste filtro.'), 'Hélcio + NF do Paulo não devolve notas');
+  horeca.nfeLimparFiltroCanal();
+  host = horeca.el('canal-nfe-host').innerHTML;
+  assert(!host.includes('Limpar</button>'), 'Limpar repõe vendedor, dia e número');
+  assert(host.includes('102243') && host.includes('102255'), 'sem filtro voltam as notas do canal');
+
+  const ecom = loadNfeUi(notas, 'ecommerce');
+  ecom.nfePaintCanal();
+  host = ecom.el('canal-nfe-host').innerHTML;
+  assert(host.includes('102240') && host.includes('102249'), 'Ecommerce lista as duas do Marcio');
+  assert(host.includes(brl(123.12 + 318.83)), 'a soma do Marcio no Ecommerce junta as duas notas');
+  assert(!host.includes('102255') && !host.includes('Horeca'), 'Ecommerce não mostra o Horeca');
+  assert(!host.includes('id="nfe-geral-canal"'), 'Ecommerce também não escolhe outro canal');
+
+  const dist = loadNfeUi(notas, 'distribuidores');
+  dist.nfePaintCanal();
+  host = dist.el('canal-nfe-host').innerHTML;
+  assert(host.includes('102247') && host.includes(brl(4574.48)), 'Distribuidores mostra a nota do Massimo e o total');
+  assert(!host.includes('102255') && !host.includes('102240'), 'Distribuidores não herda os outros canais');
+
+  const varejo = loadNfeUi(notas, 'varejo');
+  varejo.nfePaintCanal();
+  host = varejo.el('canal-nfe-host').innerHTML;
+  assert(host.includes('Ainda sem NF deste canal'), 'Varejo sem notas não herda as dos outros');
+
+  const geral = loadNfeUi(notas, '', 'nfe');
+  let g = geral.nfeHtml();
+  assert(g.includes('id="nfe-geral-canal"'), 'o quadro geral tem filtro de canal');
+  assert(g.includes('id="nfe-geral-vendedor"') && g.includes('id="nfe-geral-dia"') && g.includes('id="nfe-geral-numero"'), 'o quadro geral tem vendedor, dia e número');
+  geral.nfeSetFiltro('geral', 'canal', 'canal:ecommerce');
+  geral.nfeSetFiltro('geral', 'vendedor', 'vend:' + nfe.nfeNormNome('Marcio Gorga'));
+  g = geral.nfeHtml();
+  assert(g.includes('102240') && g.includes('102249') && !g.includes('102255'), 'canal Ecommerce + Marcio não mostra o Hélcio');
+  assert(g.includes('Total da lista: 2 notas') && g.includes(brl(441.95)), 'o total geral acompanha canal e vendedor');
+  geral.nfeSetFiltro('geral', 'vendedor', 'vend:' + nfe.nfeNormNome('Hélcio Grégio'));
+  geral.nfeSetFiltro('geral', 'dia', '2026-10-01');
+  g = geral.nfeHtml();
+  assert(g.includes('Nenhuma nota neste filtro.'), 'Ecommerce + Hélcio + dia não mistura canais');
+  geral.nfeLimparFiltro();
+  geral.nfeSetFiltro('geral', 'vendedor', 'vend:' + nfe.nfeNormNome('Hélcio Grégio'));
+  geral.nfeSetFiltro('geral', 'dia', '2026-10-01');
+  g = geral.nfeHtml();
+  assert(g.includes('Total da lista: 12 notas') && g.includes(brl(somaHelcio)), 'no geral, Hélcio + dia soma as 12');
+  assert(!g.includes('102240') && !g.includes('102243'), 'no geral o Hélcio não traz Paulo nem o CPF do Marcio');
+  geral.nfeLimparFiltro();
+
+  mem.clear();
+  const persist = loadNfeUi(notas, 'horeca');
+  const antes = mem.get('delta_nfe_filtros') || null;
+  persist.nfeSetFiltro('canal', 'dia', '2026-10-01');
+  persist.nfeSetFiltro('canal', 'numero', '102255');
+  assert((mem.get('delta_nfe_filtros') || null) === antes, 'vendedor/dia/número não gravam no próprio toque');
+  persist.nfeGravarFiltros();
+  const gravado = JSON.parse(mem.get('delta_nfe_filtros'));
+  assert(gravado.porCanal.horeca.dia === '2026-10-01' && gravado.porCanal.horeca.numero === '102255', 'o autosave guarda dia e número do canal');
+  assert(!gravado.porCanal.horeca.canal, 'o menu do canal não grava um canal à escolha');
+  const outra = loadNfeUi(notas, 'horeca');
+  outra.nfePaintCanal();
+  host = outra.el('canal-nfe-host').innerHTML;
+  assert(host.includes('value="2026-10-01"') && host.includes('value="102255"'), 'ao reabrir, os filtros do canal voltam');
+  assert(host.includes('Total da lista: 1 nota') && host.includes(brl(417.8)), 'os filtros restaurados continuam a filtrar a lista');
+  outra.nfeLimparFiltroCanal();
+  const limpo = JSON.parse(mem.get('delta_nfe_filtros'));
+  assert(limpo.porCanal.horeca.dia === '' && limpo.porCanal.horeca.numero === '' && limpo.porCanal.horeca.vendedor === '', 'Limpar grava os filtros vazios');
+
+  horeca.nfeLimparFiltroCanal();
+  ecom.nfeLimparFiltroCanal();
+  dist.nfeLimparFiltroCanal();
+  varejo.nfeLimparFiltroCanal();
+  geral.nfeLimparFiltro();
+  persist.nfeLimparFiltroCanal();
 }
 
 testAtribuicao();
@@ -329,6 +538,7 @@ if (!zipPath) {
   console.log('SKIP zip: ficheiro do cockpit não está no repo (dados de clientes).');
 } else {
   testZip(zipPath);
+  testFiltrosETotal(zipPath);
 }
 
 if (failed) {
