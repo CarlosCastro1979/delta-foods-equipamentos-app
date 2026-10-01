@@ -92,6 +92,8 @@ const fns = [
   'quadroVendasVazio',
   'quadroVendasClone',
   'somarValorQuadro',
+  'vendasISODateOnly',
+  'maxDataVendaISO',
   'agregarVendasQuadro',
   'nomeVendedorQuadroMarcio',
   'quadroComMarcioIdentificado',
@@ -724,6 +726,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));
+  assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-marco'));
   assert.ok(!sw.includes('v2026-10-01-vendas-ordem'));
   assert.ok(!sw.includes('v2026-10-01-nfe-zip'));
@@ -734,6 +737,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));
+  assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!html.includes('v2026-10-01-vendas-marco'));
   assert.ok(!html.includes('v2026-10-01-vendas-ordem'));
   assert.ok(!html.includes('v2026-10-01-nfe-zip'));
@@ -765,13 +769,26 @@ check('menu Vendas de cada canal: só os canais desse menu, vendedor na mesma ta
   if (!ctx.PV_OBJETIVOS_CANAL) {
     vm.runInContext('var PV_OBJETIVOS_CANAL = ' + extractConstObject(html, 'PV_OBJETIVOS_CANAL') + ';', ctx);
   }
-  for (const name of [
+  if (html.includes('const HORECA_BUDGET_ANUAL_NPESS')) {
+    vm.runInContext('var HORECA_BUDGET_ANUAL_NPESS = ' + extractConstObject(html, 'HORECA_BUDGET_ANUAL_NPESS') + ';', ctx);
+  }
+  const menuFns = [
     'normNomeVendaMenu', 'npessPorMenuApp', 'empresaDeNpessQuadro', 'canalPlDeNpess',
     'canaisVendaDoMenuApp', 'nomesVendedorMenuNoCanal', 'ordenarGruposCanalMenu',
     'variacaoObjectivoQuadro', 'somarQuadroMenuCanal', 'metricasMenuCanal',
     'metricaVaziaQuadro', 'somarMetricasQuadro', 'vendedoresVisiveisMenu', 'mapaUmNomeVenda',
     'linhaMenuVisivel', 'bannerFiltroVendasMenu', 'htmlLinhaVendasMenu', 'htmlQuadroVendasMenuCanal',
-  ]) {
+  ];
+  if (html.includes('function codsDoCanalHoreca(')) {
+    menuFns.push(
+      'nomePorNpessDefault', 'npessNaCelulaMenu', 'linhasParticaoHoreca', 'pesosPorNomeHoreca',
+      'codsDoCanalHoreca', 'codsDoNomeHoreca', 'canonizarNomeVendedorHoreca', 'repartirInteirosProporcao',
+      'particaoInstPreservadaMenu', 'linhasMapaInstMes', 'budgetHorecaInstitucionalMes',
+      'objetivoCanalHorecaMenu', 'objetivoAcumCanalHorecaMenu', 'objetivoVendedorHorecaMenu',
+      'objetivoAcumVendedorHorecaMenu', 'vendedoresMenuHoreca'
+    );
+  }
+  for (const name of menuFns) {
     vm.runInContext(extractFn(html, name), ctx);
   }
   ctx.VENDAS_MES_ABREV = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -992,6 +1009,198 @@ check('Set/2026: Objetivo da Delta fica a seguir a N e os Acum.* só depois das 
   assert.ok(out.includes('Restauração'), 'o quadro geral mantém os outros canais');
 });
 
+check('a frase usa o dia máximo real do agregado em Set/2026, não uma data fixa', () => {
+  ctx.VENDAS_COBERTURA_REGRA_DESDE = '2026-07';
+  for (const name of [
+    'vendasHojeISO', 'vendasMesActualYM', 'isVendasMesActual', 'isVendasMesRegraNova',
+    'ultimoDiaUtilMes', 'statusVendasCoberturaMes', 'isVendasMesFechado',
+    'ultimoDiaCivilMesISO', 'formatDataQuadroPt', 'diaDeCoberturaQuadro', 'diaMaxMesQuadro',
+    'textoAtualizacaoQuadroMes', 'coberturaParaFraseQuadro', 'fraseAtualizacaoQuadroVisivel',
+    'preencherSelectsVendasMenu', 'periodoVendasMenuSelecionado',
+    'onClickVendasMenuCanal', 'renderVendasMenuCanal',
+  ]) {
+    vm.runInContext(extractFn(html, name), ctx);
+  }
+  assert.ok(html.includes('id="canal-vendas-ate"'), 'frase junto do título do menu do canal');
+  assert.ok(html.includes('id="vq-atualizado-ate"'), 'frase junto do título do quadro geral');
+
+  function linha(data, valor) {
+    return { cod: '1', data, tipo: 'OUTRO', valor: valor == null ? 10 : valor, npess: 99520010 };
+  }
+  const hoje = '2026-10-01';
+  const datasSet = ['2026-09-02', '2026-09-11', '2026-09-30', '2026-09-18'];
+  const maxSet = datasSet.reduce((a, b) => (a > b ? a : b));
+  const q = ctx.agregarVendasQuadro(datasSet.map(d => linha(d, 100)), opts);
+  assert.equal(q.meses['2026-09'].ultima_data, maxSet, 'o agregado guarda o dia máximo da coluna Data');
+  const fraseSet = ctx.textoAtualizacaoQuadroMes(q, '2026-09', { hoje });
+  assert.equal(fraseSet, 'Atualizado até ' + ctx.formatDataQuadroPt(maxSet));
+  assert.equal(fraseSet, 'Atualizado até 30/09/2026');
+
+  const datasAgo = ['2026-08-03', '2026-08-31', '2026-08-12'];
+  const maxAgo = datasAgo.reduce((a, b) => (a > b ? a : b));
+  const qAgo = ctx.agregarVendasQuadro(datasAgo.map(d => linha(d)), opts);
+  q.meses['2026-08'] = qAgo.meses['2026-08'];
+  const fraseAgo = ctx.textoAtualizacaoQuadroMes(q, '2026-08', { hoje });
+  assert.equal(fraseAgo, 'Atualizado até ' + ctx.formatDataQuadroPt(maxAgo));
+  assert.notEqual(fraseAgo, fraseSet, 'ao mudar o mês a frase acompanha esse mês');
+
+  const datasAberto = ['2026-09-04', '2026-09-18', '2026-09-09'];
+  const maxAberto = datasAberto.reduce((a, b) => (a > b ? a : b));
+  const qAberto = ctx.agregarVendasQuadro(datasAberto.map(d => linha(d)), opts);
+  const fraseAberto = ctx.textoAtualizacaoQuadroMes(qAberto, '2026-09', { hoje });
+  assert.equal(qAberto.meses['2026-09'].ultima_data, maxAberto);
+  assert.equal(fraseAberto, 'Atualizado até ' + ctx.formatDataQuadroPt(maxAberto));
+  assert.ok(!fraseAberto.includes('30/09'), 'mês aberto não mostra o fim do mês se esse dia não entrou');
+
+  const qJun = ctx.agregarVendasQuadro([linha('2026-06-15', 50)], opts);
+  assert.equal(qJun.meses['2026-06'].ultima_data, '2026-06-15');
+  assert.equal(ctx.textoAtualizacaoQuadroMes(qJun, '2026-06', { hoje }), 'Atualizado até 30/06/2026');
+
+  assert.equal(
+    ctx.textoAtualizacaoQuadroMes(ctx.quadroVendasVazio(), '2026-10', { hoje }),
+    'sem vendas carregadas neste mês'
+  );
+  const semDia = { meses: { '2026-09': { celulas: { a: { valor: 10, linhas: 1 } } } } };
+  assert.equal(ctx.textoAtualizacaoQuadroMes(semDia, '2026-09', { hoje }), 'sem vendas carregadas neste mês');
+
+  const cob = { meses: { '2026-09': { linhas: 512, clientes: 261, ultima_data: maxSet } } };
+  assert.equal(
+    ctx.textoAtualizacaoQuadroMes(semDia, '2026-09', { hoje, cobertura: cob }),
+    'Atualizado até ' + ctx.formatDataQuadroPt(maxSet)
+  );
+  assert.equal(
+    ctx.textoAtualizacaoQuadroMes(semDia, '2026-09', { hoje, cobertura: { meses: { '2026-09': { linhas: 4, ultima_data: '2026-09-27' } } } }),
+    'Atualizado até 27/09/2026'
+  );
+  const q19 = ctx.agregarVendasQuadro([linha('2026-09-19')], opts);
+  assert.equal(ctx.textoAtualizacaoQuadroMes(q19, '2026-09', { hoje, cobertura: cob }), 'Atualizado até 19/09/2026');
+
+  const somado = ctx.somarQuadrosVendas(
+    ctx.agregarVendasQuadro([linha('2026-09-10')], opts),
+    ctx.agregarVendasQuadro([linha('2026-09-30')], opts)
+  );
+  assert.equal(somado.meses['2026-09'].ultima_data, '2026-09-30');
+  assert.equal(ctx.quadroComMarcioIdentificado(q).meses['2026-09'].ultima_data, maxSet);
+
+  const subst = ctx.substituirValorMesesFechadosNoQuadro(ctx.quadroVendasVazio(), [
+    linha('2026-09-01', 1),
+    linha('2026-09-30', 2),
+    linha('2026-09-14', 3),
+  ], { mapas: opts.mapas, hoje, mesesFechados: new Set(['2026-09']) });
+  assert.equal(subst.meses['2026-09'].ultima_data, '2026-09-30');
+
+  ctx.window._vendasCoberturaMeta = null;
+  ctx.window._vendasCoberturaCache = null;
+  ctx.window._vqFiltro = null;
+  ctx.window._vqCanal = null;
+  const mesEl = ctx.document.getElementById('vq-mes');
+  const anoEl = ctx.document.getElementById('vq-ano');
+  mesEl.dataset.ready = '1';
+  mesEl.value = '9';
+  anoEl.value = '2026';
+  ctx.renderVendasQuadro(q);
+  assert.equal(ctx.document.getElementById('vq-atualizado-ate').textContent, 'Atualizado até 30/09/2026');
+  mesEl.value = '8';
+  ctx.renderVendasQuadro(q);
+  assert.equal(ctx.document.getElementById('vq-atualizado-ate').textContent, 'Atualizado até 31/08/2026');
+  mesEl.value = '10';
+  ctx.renderVendasQuadro(q);
+  assert.equal(ctx.document.getElementById('vq-atualizado-ate').textContent, 'sem vendas carregadas neste mês');
+  const geralHtml = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
+  assert.ok(!geralHtml.includes('>Linhas<'));
+  assert.ok(!geralHtml.includes('Volumes'));
+
+  const cvmM = ctx.document.getElementById('cvm-mes');
+  const cvmA = ctx.document.getElementById('cvm-ano');
+  cvmM.dataset.ready = '1';
+  cvmM.value = '9';
+  cvmA.value = '2026';
+  ctx.window._cvmFiltro = null;
+  ctx.renderVendasMenuCanal(q);
+  assert.equal(ctx.document.getElementById('canal-vendas-ate').textContent, 'Atualizado até 30/09/2026');
+  ctx.renderVendasMenuCanal(qAberto);
+  assert.equal(ctx.document.getElementById('canal-vendas-ate').textContent, 'Atualizado até 18/09/2026');
+  cvmM.value = '10';
+  ctx.renderVendasMenuCanal(qAberto);
+  assert.equal(ctx.document.getElementById('canal-vendas-ate').textContent, 'sem vendas carregadas neste mês');
+
+  ctx.window._vendasCoberturaMeta = cob;
+  mesEl.value = '9';
+  ctx.renderVendasQuadro(semDia);
+  assert.equal(ctx.document.getElementById('vq-atualizado-ate').textContent, 'Atualizado até 30/09/2026');
+  ctx.window._vendasCoberturaMeta = null;
+});
+
+});
+
+check('Horeca: o NPess do Filipe entra na linha dele e o objectivo reparte o Budget do canal', () => {
+  assert.equal(ctx.nomePorNpessDefault(99520002), 'HÉLCIO GRÉGIO');
+  assert.equal(ctx.nomePorNpessDefault(99520006), 'DANIELA SANTOS');
+  assert.equal(ctx.nomePorNpessDefault(99520007), 'PAULO FONTES');
+  assert.equal(ctx.nomePorNpessDefault(99520010), 'FILIPE NEVES');
+  assert.equal(ctx.nomePorNpessDefault(99520015), 'HÉLCIO GRÉGIO');
+  assert.equal(ctx.nomePorNpessDefault(99520016), 'DANIELA SANTOS');
+  assert.equal(ctx.nomePorNpessDefault(99520017), 'PAULO FONTES');
+  assert.equal(ctx.nomePorNpessDefault(99520019), 'FILIPE NEVES');
+  const soma = (obj) => Object.keys(obj).reduce((s, k) => s + (+obj[k] || 0), 0);
+  assert.equal(soma(ctx.HORECA_BUDGET_ANUAL_NPESS['Restauração']), 5403223);
+  assert.equal(soma(ctx.HORECA_BUDGET_ANUAL_NPESS['Institucional']), 175277);
+  ctx.pvSeedLinhas = function (ano, mes) {
+    if (Number(ano) === 2026 && Number(mes) === 8) {
+      return [
+        { id: 'dfb_inst_balcao', budget: 10188 },
+        { id: 'dfb_inst_horeca', budget: 12302 },
+      ];
+    }
+    return [];
+  };
+  const mapas = ctx.mapasVendasQuadro();
+  assert.equal(mapas.canalPorNpess[99520010], 'Restauração');
+  assert.equal(mapas.vendedorPorNpess[99520010], 'FILIPE NEVES');
+  assert.equal(mapas.canalPorNpess[99520019], 'Institucional');
+  assert.equal(mapas.vendedorPorNpess[99520019], 'FILIPE NEVES');
+  const q = ctx.agregarVendasQuadro([
+    { cod: '1', data: '2026-09-10', tipo: 'OUTRO', valor: 174125, npess: 99520010 },
+    { cod: '2', data: '2026-09-11', tipo: 'OUTRO', valor: 50, npess: 99520010 },
+    { cod: '3', data: '2026-09-12', tipo: 'OUTRO', valor: 4251, npess: 99520019 },
+  ], { mapas });
+  q.meses['2026-09'].celulas['Delta Foods Brasil\tRestauração\t99520010'] = {
+    empresa: 'Delta Foods Brasil', canal: 'Restauração', vendedor: '99520010',
+    valor: 10, linhas: 1, linhasComValor: 1,
+  };
+  const htmlOut = ctx.htmlQuadroVendasMenuCanal(q, 9, 2026, 'horeca', null, ctx.escHtml);
+  const body = htmlOut.match(/<tbody>([\s\S]*?)<\/tbody>/);
+  const rows = [...body[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map(m =>
+    [...m[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/g)].map(td =>
+      td[1].replace(/<[^>]+>/g, '').replace(/\u00a0/g, ' ').trim()));
+  const num = (txt) => {
+    if (!txt || txt === '—') return null;
+    const n = Number(String(txt).replace(/\./g, '').replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  };
+  const restIdx = rows.findIndex(r => r[0] === 'Restauração');
+  const instIdx = rows.findIndex(r => r[0] === 'Institucional');
+  const totIdx = rows.findIndex(r => r[0] === 'Total');
+  assert.ok(restIdx >= 0 && instIdx > restIdx && totIdx > instIdx, rows.map(r => r[0]).join(' | '));
+  const restRows = rows.slice(restIdx, instIdx);
+  const instRows = rows.slice(instIdx, totIdx);
+  const filipeR = restRows.find(r => r[0] === 'FILIPE NEVES');
+  const filipeI = instRows.find(r => r[0] === 'FILIPE NEVES');
+  assert.equal(num(filipeR[2]), 174185);
+  assert.notEqual(filipeR[3], '—');
+  assert.equal(num(filipeI[2]), 4251);
+  assert.notEqual(filipeI[3], '—');
+  assert.ok(!rows.some(r => r[0] === '99520010'));
+  assert.equal(num(restRows[0][3]), 337827);
+  assert.equal(restRows.slice(1).reduce((s, r) => s + (num(r[3]) || 0), 0), 337827);
+  assert.equal(num(instRows[0][3]), 12302);
+  assert.equal(instRows.slice(1).reduce((s, r) => s + (num(r[3]) || 0), 0), 12302);
+  assert.ok(!htmlOut.includes(ctx.formatNumeroQuadroPnL(22490, true)));
+  assert.ok(!htmlOut.includes(ctx.formatNumeroQuadroPnL(5403223, true)));
+  assert.ok(!htmlOut.includes('>Linhas<'));
+  const ecom = ctx.htmlQuadroVendasMenuCanal(q, 9, 2026, 'ecommerce', null, ctx.escHtml);
+  assert.ok(!ecom.includes('FILIPE NEVES'));
+  assert.ok(ecom.includes('Lojas online'));
 });
 
 check('Fatur. com sinal à direita do SAP é negativo; Valor Boni não é a coluna', () => {
