@@ -311,8 +311,8 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-01-vendas-atualizado-ate'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-01-vendas-atualizado-ate'), 'service worker actualizado');
+  assert(html.includes('v2026-10-01-horeca-filipe'), 'service worker referido no index');
+  assert(sw.includes('v2026-10-01-horeca-filipe'), 'service worker actualizado');
   assert(!html.includes('v2026-10-01-nfe-dados-canal'), 'service worker referido no index');
   assert(!sw.includes('v2026-10-01-nfe-dados-canal'), 'service worker actualizado');
 
