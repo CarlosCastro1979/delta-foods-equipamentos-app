@@ -50,8 +50,8 @@ check('pesquisa de texto não redesenha a tabela em cada tecla', () => {
 });
 
 check('service worker sobe de versão com o index', () => {
-  assert.ok(sw.includes('v2026-10-01-vendas-liq'));
-  assert.ok(html.includes('v2026-10-01-vendas-liq'));
+  assert.ok(sw.includes('v2026-10-01-vendas-pnl'));
+  assert.ok(html.includes('v2026-10-01-vendas-pnl'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!html.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));

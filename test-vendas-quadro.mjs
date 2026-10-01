@@ -360,8 +360,13 @@ check('números do resumo filtram o detalhe; zero não é clicável', () => {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   ctx.window = { _vendasQuadro: null, _vqFiltro: null };
   for (const name of [
-    'formatValorQuadroRs', 'preencherSelectsQuadroVendas', 'periodoQuadroSelecionado',
+    'formatValorQuadroRs', 'formatNumeroQuadroPnL', 'formatPctQuadroPnL', 'classeVarPnL',
+    'htmlBotaoFiltroQuadro', 'htmlCelulaNumeroPnL', 'htmlCelulaPctPnL',
+    'preencherSelectsQuadroVendas', 'periodoQuadroSelecionado',
     'htmlValorQuadroClicavel', 'htmlContagemQuadroClicavel', 'filtroQuadroActivoIgual',
+    'ymQuadroAnoAnterior', 'listaYmAcumuladoQuadro', 'periodoComparacaoQuadro',
+    'somarQuadroNosMeses', 'variacaoQuadroPct', 'canaisFixosQuadroEmpresa',
+    'metricasLinhaQuadro', 'ordenarNomesQuadroPnL', 'linhasResumoQuadroPnL', 'htmlLinhaResumoPnL',
     'renderVendasQuadro', 'onClickVendasQuadro', 'limparFiltroVendasQuadro',
   ]) {
     vm.runInContext(extractFn(html, name), ctx);
@@ -389,12 +394,13 @@ check('números do resumo filtram o detalhe; zero não é clicável', () => {
   ctx.renderVendasQuadro(quadro);
   const htmlOut = els['pv-vendas-quadro'].innerHTML;
   assert.ok(htmlOut.includes('Período') || (els['vq-periodo'].textContent || '').includes('Out'), 'período visível');
-  assert.ok(htmlOut.includes('class="vq-link"'), 'valor com R$ é clicável');
-  assert.ok(htmlOut.includes('R$'), 'texto em reais');
+  assert.ok(htmlOut.includes('class="vq-link"'), 'valor com número é clicável');
+  assert.ok(htmlOut.includes('R$'), 'o cartão do mês continua em reais');
+  assert.ok(htmlOut.includes('N-1') && htmlOut.includes('Acum. N'), 'resumo no formato do mês e do acumulado');
   const buttons = [...htmlOut.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].map(m => m[1].replace(/\u00a0/g, ' ').trim());
   assert.ok(buttons.length >= 1, 'há pelo menos um valor clicável');
-  assert.ok(buttons.every(b => !/^R\$\s*0,00$/.test(b)), 'zero não é botão: ' + buttons.join(' | '));
-  assert.ok(htmlOut.includes('vq-muted">R$') || htmlOut.includes('vq-muted">R$\u00a0'), 'zero fica texto, sem link');
+  assert.ok(buttons.every(b => b !== '0' && b !== '—' && !/^R\$\s*0,00$/.test(b)), 'zero e travessão não são botão: ' + buttons.join(' | '));
+  assert.ok(htmlOut.includes('vq-muted">0') || htmlOut.includes('vq-muted">—'), 'zero fica texto, sem link');
   ctx.onClickVendasQuadro({
     target: {
       closest() {
@@ -590,10 +596,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(html.includes('Por classificar'));
   assert.ok(html.includes('O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-liq'));
+  assert.ok(sw.includes('v2026-10-01-vendas-pnl'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-01-vendas-liq'));
+  assert.ok(html.includes('v2026-10-01-vendas-pnl'));
   assert.ok(!html.includes('v2026-10-01-vendas-rs'));
   assert.ok(!html.includes('v2026-10-01-vendas-prev'));
 });

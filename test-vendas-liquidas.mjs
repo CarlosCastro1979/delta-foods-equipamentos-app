@@ -413,9 +413,14 @@ check('o ecrã avisa quando o agregado ainda tem canais antigos', () => {
   ctx.window = ctx.window || {};
   ctx.onClickVendasQuadro = function () {};
   for (const name of [
-    'formatValorQuadroRs', 'preencherSelectsQuadroVendas', 'periodoQuadroSelecionado',
+    'formatValorQuadroRs', 'formatNumeroQuadroPnL', 'formatPctQuadroPnL', 'classeVarPnL',
+    'htmlBotaoFiltroQuadro', 'htmlCelulaNumeroPnL', 'htmlCelulaPctPnL',
+    'preencherSelectsQuadroVendas', 'periodoQuadroSelecionado',
     'htmlValorQuadroClicavel', 'htmlContagemQuadroClicavel', 'filtroQuadroActivoIgual',
     'vendasQuadroPassaFiltro',
+    'ymQuadroAnoAnterior', 'listaYmAcumuladoQuadro', 'periodoComparacaoQuadro',
+    'somarQuadroNosMeses', 'variacaoQuadroPct', 'canaisFixosQuadroEmpresa',
+    'metricasLinhaQuadro', 'ordenarNomesQuadroPnL', 'linhasResumoQuadroPnL', 'htmlLinhaResumoPnL',
     'renderVendasQuadro',
   ]) {
     vm.runInContext(extractFn(html, name), ctx);
@@ -447,12 +452,126 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   assert.ok(act.includes('decidirActualizarQuadroVendas'));
   assert.ok(act.indexOf('decidirActualizarQuadroVendas') < act.indexOf('somarQuadrosVendas'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-liq4'));
-  assert.ok(html.includes('v2026-10-01-vendas-liq4'));
+  assert.ok(sw.includes('v2026-10-01-vendas-pnl'));
+  assert.ok(html.includes('v2026-10-01-vendas-pnl'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-liq4'));
+  assert.ok(!html.includes('v2026-10-01-vendas-liq4'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq3'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq2'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq —'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
+  const linkCss = html.slice(html.indexOf('.vq-link {'), html.indexOf('.vq-link {') + 420);
+  assert.ok(!linkCss.includes('var(--accent)'), 'o número clicável não é vermelho');
+  assert.ok(html.includes('.vq-var-pos'));
+  assert.ok(html.includes('.vq-var-neg'));
+  assert.ok(html.includes('position: sticky'));
+});
+
+check('Set/2026: N-1 é 2025-09, o acumulado soma Jan–Set e um canal sem mês não rebenta', () => {
+  function cel(empresa, canal, vendedor, valor) {
+    return { empresa, canal, vendedor, valor, linhas: 1, linhasComValor: 1 };
+  }
+  const q = ctx.quadroVendasVazio();
+  q.meses['2025-01'] = { celulas: { a: cel('Delta Foods Brasil', 'Lojas online', 'A', 50) } };
+  q.meses['2025-02'] = { celulas: { b: cel('Q Brasil', 'Restauração', 'B', 10) } };
+  q.meses['2025-09'] = {
+    celulas: {
+      c: cel('Delta Foods Brasil', 'Lojas online', 'A', 100),
+      d: cel('Delta Foods Brasil', 'Restauração', 'C', 10.5),
+    },
+  };
+  q.meses['2026-01'] = { celulas: { e: cel('Delta Foods Brasil', 'Lojas online', 'A', 40) } };
+  q.meses['2026-03'] = { celulas: { f: cel('Delta Foods Brasil', 'Lojas online', 'A', 20) } };
+  q.meses['2026-09'] = {
+    celulas: {
+      g: cel('Delta Foods Brasil', 'Lojas online', 'A', 80),
+      h: cel('Delta Foods Brasil', 'Restauração', 'C', 25),
+    },
+  };
+  // 2026-02, 2026-04…08 e o canal Q «Distribuidores regionais» não existem.
+
+  const p = ctx.periodoComparacaoQuadro(9, 2026);
+  assert.equal(p.ymN1, '2025-09');
+  assert.equal(p.ym, '2026-09');
+  assert.deepEqual(p.ymsN, ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09']);
+  assert.deepEqual(p.ymsN1, ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09']);
+
+  const lojas = ctx.metricasLinhaQuadro(q, p, { empresa: 'Delta Foods Brasil', canal: 'Lojas online' });
+  assert.equal(lojas.n1, 100, 'N-1 lê só 2025-09');
+  assert.equal(lojas.n, 80, 'N é Set/2026, com o mês inteiro');
+  assert.equal(lojas.ac, 140, 'Acum. N soma 2026-01..09 e ignora meses em falta');
+  assert.equal(lojas.ac1, 150, 'Acum. N-1 soma 2025-01..09');
+  assert.equal(Math.round(lojas.varN), -20);
+  assert.equal(Math.round(lojas.varAc), -7);
+
+  const reg = ctx.metricasLinhaQuadro(q, p, { empresa: 'Q Brasil', canal: 'Distribuidores regionais' });
+  assert.equal(reg.nTem, false);
+  assert.equal(reg.n1Tem, false);
+  assert.equal(reg.acTem, false);
+  assert.equal(reg.ac1Tem, false);
+  assert.equal(ctx.variacaoQuadroPct(reg.n, reg.n1, reg.n1Tem), null);
+  assert.equal(ctx.formatNumeroQuadroPnL(reg.n, reg.nTem), '—');
+  assert.equal(ctx.formatNumeroQuadroPnL(1941989, true), '1.941.989');
+  assert.equal(ctx.formatNumeroQuadroPnL(1941989.5, true), '1.941.989,50');
+  assert.equal(ctx.formatNumeroQuadroPnL(0, true), '0');
+  assert.equal(ctx.formatPctQuadroPnL(-35.6), '-36%');
+  assert.equal(ctx.formatPctQuadroPnL(-1308.6), '-1309%');
+  assert.equal(ctx.formatPctQuadroPnL(null), '—');
+
+  assert.doesNotThrow(() => ctx.linhasResumoQuadroPnL(null, 9, 2026));
+  assert.doesNotThrow(() => ctx.linhasResumoQuadroPnL({ meses: { '2026-09': null, '2025-09': { celulas: null }, '2026-02': undefined } }, 9, 2026));
+
+  const pacote = ctx.linhasResumoQuadroPnL(q, 9, 2026);
+  const nomes = pacote.linhas.map(r => (r.tipo === 'canal' ? r.empresa + ' / ' + r.canal : r.empresa));
+  const deltaCanais = pacote.linhas.filter(r => r.empresa === 'Delta Foods Brasil' && r.tipo === 'canal').map(r => r.canal);
+  const qCanais = pacote.linhas.filter(r => r.empresa === 'Q Brasil' && r.tipo === 'canal').map(r => r.canal);
+  assert.deepEqual(deltaCanais, ['Lojas online', 'Distribuidores regionais', 'Restauração', 'Distribuidores de retalho', 'Retalho moderno', 'Institucional', 'Site próprio']);
+  assert.deepEqual(qCanais, ['Distribuidores de retalho', 'Retalho moderno', 'Restauração', 'Distribuidores regionais']);
+  assert.ok(nomes.indexOf('Delta Foods Brasil') < nomes.indexOf('Q Brasil'));
+  assert.equal(nomes[nomes.length - 1], 'Total');
+  const regRow = pacote.linhas.find(r => r.empresa === 'Q Brasil' && r.canal === 'Distribuidores regionais');
+  assert.ok(regRow, 'Q Brasil / Distribuidores regionais fica na estrutura sem valor');
+  assert.equal(regRow.met.nTem, false);
+
+  const rest = ctx.metricasLinhaQuadro(q, p, { empresa: 'Delta Foods Brasil', canal: 'Restauração' });
+  assert.ok(rest.varN > 0, 'N acima de N-1 é variação positiva');
+  assert.equal(ctx.formatNumeroQuadroPnL(rest.n1, true), '10,50');
+
+  const els = {};
+  function makeEl() {
+    return { options: [], dataset: { ready: '1' }, value: '', style: {}, innerHTML: '', textContent: '', addEventListener() {} };
+  }
+  ctx.document = { getElementById(id) { if (!els[id]) els[id] = makeEl(); return els[id]; } };
+  ctx.window._vqFiltro = null;
+  els['vq-mes'] = makeEl();
+  els['vq-ano'] = makeEl();
+  els['vq-mes'].value = '9';
+  els['vq-ano'].value = '2026';
+  els['vq-mes'].dataset.ready = '1';
+  ctx.renderVendasQuadro(q);
+  const out = els['pv-vendas-quadro'].innerHTML;
+  assert.ok(out.includes('>N-1<') || out.includes('>N-1</th>'));
+  assert.ok(out.includes('N vs N-1 %'));
+  assert.ok(out.includes('Acum. N-1'));
+  assert.ok(out.includes('Acum. N'));
+  assert.ok(out.includes('Acum. vs N-1 %'));
+  assert.ok(out.includes('N-1 = Set/2025'), 'a legenda mostra o histórico de 2025');
+  assert.ok(out.includes('Distribuidores regionais'));
+  assert.ok(out.includes('vq-muted">—'), 'canal sem N-1 mostra travessão');
+  assert.ok(out.includes('vq-var-neg'));
+  assert.ok(out.includes('vq-var-pos'));
+  assert.ok(out.includes('-20%'));
+  assert.ok(!out.includes('Budget'));
+  assert.ok(!out.includes('Var Bud'));
+  assert.ok(!out.includes('Previsão Fecho'));
+  assert.ok(out.indexOf('Delta Foods Brasil') < out.indexOf('Q Brasil'));
+  assert.ok(out.indexOf('Q Brasil') < out.lastIndexOf('Distribuidores regionais'));
+  assert.ok(out.lastIndexOf('Distribuidores regionais') < out.indexOf('>Total<'));
+  const buttons = [...out.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].map(m => m[1].replace(/\u00a0/g, ' ').trim());
+  assert.ok(buttons.every(b => b !== '0' && b !== '—' && b !== '0%'), 'zero e travessão não são clicáveis: ' + buttons.join(' | '));
+  assert.ok(out.includes('class="vq-emp"'), 'linha de empresa');
+  assert.ok(out.includes('class="vq-total"'), 'total em linha própria');
+  assert.ok(out.includes('vq-indent'), 'canal indentado');
 });
 
 check('cabeçalho partido em duas linhas junta «Vendas» + «líquidas»', () => {
