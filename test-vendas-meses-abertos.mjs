@@ -375,7 +375,7 @@ check('processVendasFile não relê a base, não apaga fechados, não recalcula 
   assert.ok(proc.includes('vendaDataEntraNaCarga'));
   assert.ok(proc.includes('vendasHojeISO()'));
   assert.ok(proc.includes('mergeCoberturaVendasMesesAbertos(baseMap, agregadoNovos, hoje)'));
-  assert.ok(proc.includes('dia: hoje'));
+  assert.ok(proc.includes('dia: diaAlvo'));
   assert.ok(!proc.includes('meses: mesesAbertosArr'));
   const entraAt = proc.indexOf('vendaDataEntraNaCarga');
   assert.ok(entraAt > 0 && entraAt < pesoAt, 'o dia de hoje é decidido antes de gravar o modelo');
@@ -400,7 +400,7 @@ check('texto da cobertura alinha o carregamento com o dia de hoje', () => {
   assert.ok(html.includes('Ao carregar vendas, só entram linhas do dia local de hoje; os outros dias ficam intactos.'));
   assert.ok(html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   assert.ok(html.includes('as linhas de hoje entram na mesma'));
-  assert.ok(html.includes('v2026-10-01-vendas-1out'));
+  assert.ok(html.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));
@@ -416,7 +416,7 @@ check('texto da cobertura alinha o carregamento com o dia de hoje', () => {
   assert.ok(html.includes('Até Jun/2026 = fechado. De Jul/2026 em diante'));
   assert.ok(html.includes('aberto no próprio último dia útil'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-1out'));
+  assert.ok(sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));

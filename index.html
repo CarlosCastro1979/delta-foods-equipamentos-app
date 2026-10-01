@@ -2972,7 +2972,8 @@ var _unused_placeholder = 1;
           • O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra<br>
           • Se o resumo ainda disser o mês fechado, as linhas de hoje entram na mesma. O resto desse mês fica intacto<br>
           • No próprio último dia útil o mês continua aberto: uma venda já gravada nesse dia não o fecha<br>
-          • Linhas de hoje já gravadas não duplicam (cliente + data + tipo). O Fatur. de todas as linhas do dia entra no quadro; se o mês só tem esse dia, a segunda carga repõe o R$ em vez de o ignorar<br>
+          • Linhas de hoje já gravadas não duplicam (cliente + data + tipo). O Fatur. de todas as linhas do dia entra no quadro; se o mês só tem esse dia, a segunda carga repõe o R$ em vez de o ignorar — mesmo que o computador já esteja no dia seguinte<br>
+          • O código do cliente pode ser numérico ou alfanumérico (ex. BR00002). «Total» não entra<br>
           • GRÃO → Peso líq. em Kg · CÁPSULAS → Peso ÷ 0,0055
         </div>
         <div id="vendas-status" style="margin-bottom:10px"></div>
@@ -6373,6 +6374,18 @@ function normalizeVendaCod(cod) {
   const s = String(cod || '').trim();
   if (!s) return '';
   return s.replace(/^0+/, '') || s;
+}
+
+/**
+ * Código do emissor no Excel SAP.
+ * Numérico (395635) ou alfanumérico com dígito (BR00002, cliente CPF).
+ * «Total» e texto solto ficam de fora.
+ */
+function codEmissorVendaAceite(codRaw) {
+  const s = String(codRaw || '').trim();
+  if (!s || !/^[A-Za-z0-9]+$/.test(s)) return false;
+  if (/^\d+$/.test(s)) return true;
+  return /[A-Za-z]/.test(s) && /\d/.test(s);
 }
 
 /**
@@ -18843,7 +18856,10 @@ function linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpess, dataStr, iVolume
   const emissor = String((row && row[iEmissor]) || '').trim();
   const codRaw = emissor.split(/\s+/)[0].trim();
   let cod = '';
-  if (codRaw && /^\d+$/.test(codRaw)) {
+  const aceite = typeof codEmissorVendaAceite === 'function'
+    ? codEmissorVendaAceite(codRaw)
+    : !!(codRaw && /^\d+$/.test(codRaw));
+  if (aceite) {
     cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(codRaw) : codRaw;
   }
   const valorLinha = iValor >= 0 ? parseValorVendaSap(row[iValor]) : null;
@@ -19010,6 +19026,36 @@ async function vendasMesTemDiaAnterior(ym, hoje) {
   if (!res.ok) return true;
   const rows = await res.json();
   return Array.isArray(rows) && rows.length > 0;
+}
+
+/**
+ * true se no mês não há venda noutro dia que não seja `dia`.
+ * Mês vazio também é true. Em erro de rede, false (não se repõe o mês).
+ */
+async function vendasMesSoTemEsteDia(ym, dia) {
+  const de = String(ym || '') + '-01';
+  const diaIso = String(dia || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-01$/.test(de) || !/^\d{4}-\d{2}-\d{2}$/.test(diaIso) || diaIso.slice(0, 7) !== String(ym)) return false;
+  const y = parseInt(String(ym).slice(0, 4), 10);
+  const m = parseInt(String(ym).slice(5), 10);
+  let ny = y;
+  let nm = m + 1;
+  if (nm > 12) { nm = 1; ny++; }
+  const prox = `${ny}-${String(nm).padStart(2, '0')}-01`;
+  const antes = await fetch(
+    `${SUPA_VENDAS}?select=id&data=gte.${encodeURIComponent(de)}&data=lt.${encodeURIComponent(diaIso)}&limit=1`,
+    { headers: HEADERS }
+  );
+  if (!antes.ok) return false;
+  const a = await antes.json();
+  if (Array.isArray(a) && a.length) return false;
+  const depois = await fetch(
+    `${SUPA_VENDAS}?select=id&data=gt.${encodeURIComponent(diaIso)}&data=lt.${encodeURIComponent(prox)}&limit=1`,
+    { headers: HEADERS }
+  );
+  if (!depois.ok) return false;
+  const b = await depois.json();
+  return Array.isArray(b) && b.length === 0;
 }
 
 /**
@@ -21633,6 +21679,7 @@ async function processVendasFile(event) {
     let dataMin = null;
     let dataMax = null;
     const candidatos = []; // só meses abertos, antes do dedup contra o servidor
+    const linhasReservaMesActual = []; // outro dia do mês actual; só promove se o mês não tiver mais dias
     const mesesIgnoradosSet = new Set();
     const mesesAbertosSet = new Set();
     let coberturaAntes = null;
@@ -21728,7 +21775,9 @@ async function processVendasFile(event) {
           mesesValorHistoricoSet.add(ymLinha);
           continue;
         }
-        if (!vendaDataEntraNaCarga(dataStr, hoje)) {
+        const entraHoje = vendaDataEntraNaCarga(dataStr, hoje);
+        const reservaMesActual = !entraHoje && ymLinha === hoje.slice(0, 7);
+        if (!entraHoje && !reservaMesActual) {
           if (vendaDataCaiEmMesFechado(dataStr, mesesFechados)) {
             linhasIgnoradasFechado++;
             mesesIgnoradosSet.add(ymLinha);
@@ -21737,10 +21786,15 @@ async function processVendasFile(event) {
           }
           continue;
         }
+        if (reservaMesActual && vendaDataCaiEmMesFechado(dataStr, mesesFechados)) {
+          linhasIgnoradasFechado++;
+          mesesIgnoradosSet.add(ymLinha);
+          continue;
+        }
 
         const emissor = String(row[iEmissor] || '').trim();
         const codRaw = emissor.split(/\s+/)[0].trim();
-        if (!codRaw || !/^\d+$/.test(codRaw)) continue;
+        if (!codEmissorVendaAceite(codRaw)) continue;
         const cod = normalizeVendaCod(codRaw);
 
         const pesoRaw = row[iPeso];
@@ -21751,19 +21805,25 @@ async function processVendasFile(event) {
         const tipo = isGraoCaps ? (hierarqUp.includes('GRAO') ? 'GRÃO' : 'CAPSULAS') : 'OUTRO';
         const qty = isGraoCaps && !isNaN(peso) ? (tipo === 'GRÃO' ? peso : Math.round(peso / 0.0055)) : 0;
 
-        linhasValidas++;
         if (!dataMin || dataStr < dataMin) dataMin = dataStr;
         if (!dataMax || dataStr > dataMax) dataMax = dataStr;
-        mesesAbertosSet.add(dataStr.slice(0, 7));
         const valorLinha = iValor >= 0 ? parseValorVendaSap(row[iValor]) : null;
         const npessLinha = iNpessVenda >= 0 ? npessDeCelulaExcel(row[iNpessVenda]) : 0;
         const volLinha = iVolume >= 0 ? parseValorVendaSap(row[iVolume]) : null;
-        candidatos.push({
+        const linhaAberta = {
           cod, data: dataStr, tipo, qty, peso: isNaN(peso) ? 0 : peso,
           valor: valorLinha == null ? undefined : valorLinha,
           npess: npessLinha || undefined,
           volume: volLinha == null ? undefined : volLinha,
-        });
+        };
+        if (reservaMesActual) {
+          linhasReservaMesActual.push(linhaAberta);
+          linhasIgnoradasOutroDia++;
+          continue;
+        }
+        linhasValidas++;
+        mesesAbertosSet.add(dataStr.slice(0, 7));
+        candidatos.push(linhaAberta);
       }
     }
 
@@ -21775,12 +21835,32 @@ async function processVendasFile(event) {
       return;
     }
 
-    const mesesAbertosArr = [...mesesAbertosSet].sort();
+    let mesesAbertosArr = [...mesesAbertosSet].sort();
     const mesesFechadosArr = [...mesesIgnoradosSet].sort();
     const mesesFechadosTxt = mesesFechadosArr.map(formatVendasMesLabel).join(', ');
     const txtAntes2025 = linhasIgnoradasAntes2025
       ? `<br>• <strong>${linhasIgnoradasAntes2025.toLocaleString('pt-BR')}</strong> linha(s) antes de 2025 ignoradas (nem linhas nem R$)`
       : '';
+    let diaAlvo = hoje;
+    if (!candidatos.length && linhasReservaMesActual.length) {
+      const diasReserva = [...new Set(linhasReservaMesActual.map(r => String(r.data || '').slice(0, 10)))];
+      const ymReserva = diasReserva[0] ? diasReserva[0].slice(0, 7) : '';
+      let soEsteDia = false;
+      if (diasReserva.length === 1 && /^\d{4}-\d{2}$/.test(ymReserva)) {
+        try { soEsteDia = await vendasMesSoTemEsteDia(ymReserva, diasReserva[0]); }
+        catch (_) { soEsteDia = false; }
+      }
+      if (soEsteDia) {
+        candidatos.push(...linhasReservaMesActual);
+        diaAlvo = diasReserva[0];
+        linhasIgnoradasOutroDia -= linhasReservaMesActual.length;
+        if (linhasIgnoradasOutroDia < 0) linhasIgnoradasOutroDia = 0;
+        linhasValidas += linhasReservaMesActual.length;
+        mesesAbertosSet.add(ymReserva);
+        mesesAbertosArr = [...mesesAbertosSet].sort();
+      }
+    }
+
     let quadroHistMsg = '';
     const aplicarValorHistoricoDestaCarga = async () => {
       if (!linhasValorHistorico.length) return;
@@ -21837,20 +21917,20 @@ async function processVendasFile(event) {
     // 2) Validar no Supabase SÓ o dia local de hoje (não relê o resto do mês)
     const periodoTxt = dataMin === dataMax ? dataMin : `${dataMin} → ${dataMax}`;
     setStatus(
-      `<div style="color:var(--muted);font-size:12px">⏳ A validar no servidor só o dia <strong>${hoje}</strong>… (0)`
+      `<div style="color:var(--muted);font-size:12px">⏳ A validar no servidor só o dia <strong>${diaAlvo}</strong>… (0)`
       + `<br><span style="font-size:11px">${linhasIgnoradasOutroDia.toLocaleString('pt-BR')} de outros dias e ${linhasIgnoradasFechado.toLocaleString('pt-BR')} de meses fechados já ignoradas.</span></div>`
     );
     const { keys: existingKeys, count: existingInRange } = await getVendasDedupKeySet({
-      dia: hoje,
+      dia: diaAlvo,
       onProgress: (loaded) => {
         setStatus(
-          `<div style="color:var(--muted);font-size:12px">⏳ A validar no servidor só o dia <strong>${hoje}</strong>… `
+          `<div style="color:var(--muted);font-size:12px">⏳ A validar no servidor só o dia <strong>${diaAlvo}</strong>… `
           + `<strong>${loaded.toLocaleString('pt-BR')}</strong> linhas`
           + `<br><span style="font-size:11px">Outros dias não são lidos (${linhasIgnoradasOutroDia.toLocaleString('pt-BR')} no ficheiro; ${linhasIgnoradasFechado.toLocaleString('pt-BR')} de meses fechados).</span></div>`
         );
       }
     });
-    console.log('Dedup vendas dia', hoje, '→', existingInRange, 'chaves; ignoradas outro dia', linhasIgnoradasOutroDia, 'fechado', linhasIgnoradasFechado);
+    console.log('Dedup vendas dia', diaAlvo, '→', existingInRange, 'chaves; ignoradas outro dia', linhasIgnoradasOutroDia, 'fechado', linhasIgnoradasFechado);
 
     // O Fatur. de todas as linhas do dia soma, mesmo quando o cliente repete o tipo.
     // A tabela continua com uma chave (cliente + data + tipo) para não duplicar na segunda carga.
@@ -21876,7 +21956,7 @@ async function processVendasFile(event) {
       }
       let quadroDiaMsg = '';
       try {
-        const reposto = await aplicarFaturDoDiaAoQuadro(candidatos, [], hoje, mesesFechados);
+        const reposto = await aplicarFaturDoDiaAoQuadro(candidatos, [], diaAlvo, mesesFechados);
         if (reposto && reposto.substituiu) {
           quadroDiaMsg = '<br>• Quadro: R$ de hoje reposto com o Fatur. completo do ficheiro (não soma por cima, meses anteriores intactos)';
         }
@@ -21885,8 +21965,8 @@ async function processVendasFile(event) {
       }
       setStatus(
         `<div style="background:#fff3e0;border-radius:6px;padding:10px;font-size:12px;color:#e65100;line-height:1.6">
-          ℹ️ Nenhum registo novo no dia <strong>${hoje}</strong> — as linhas já na base ficam.<br>
-          • Dia lido: <strong>${hoje}</strong> (${linhasValidas.toLocaleString('pt-BR')} linhas)<br>
+          ℹ️ Nenhum registo novo no dia <strong>${diaAlvo}</strong> — as linhas já na base ficam.<br>
+          • Dia lido: <strong>${diaAlvo}</strong> (${linhasValidas.toLocaleString('pt-BR')} linhas)<br>
           • ${linhasIgnoradasOutroDia.toLocaleString('pt-BR')} linha(s) de outros dias ignoradas<br>
           • ${linhasIgnoradasFechado.toLocaleString('pt-BR')} linha(s) de meses fechados sem gravar outra vez${mesesFechadosTxt ? ` (${mesesFechadosTxt})` : ''}<br>
           • ${jaExistentes.toLocaleString('pt-BR')} linha(s) de hoje já existentes<br>
@@ -21970,7 +22050,7 @@ async function processVendasFile(event) {
     let quadroMsg = '';
     try {
       await aplicarValorHistoricoDestaCarga();
-      const reposto = await aplicarFaturDoDiaAoQuadro(candidatos, newVendas, hoje, mesesFechados);
+      const reposto = await aplicarFaturDoDiaAoQuadro(candidatos, newVendas, diaAlvo, mesesFechados);
       const temValorCol = !!(window._vendasColunasExtra && window._vendasColunasExtra.valor);
       quadroMsg = (reposto && reposto.substituiu)
         ? '<br>• Quadro de vendas: R$ de hoje reposto com o Fatur. completo do ficheiro'
@@ -21996,7 +22076,7 @@ async function processVendasFile(event) {
 
     setStatus(
       `<div style="background:#e8f5e9;border-radius:6px;padding:10px;font-size:12px;color:#2e7d32;line-height:1.6">
-        ✅ Importação concluída (${ficheirosOk} ficheiro${ficheirosOk > 1 ? 's' : ''}) — só o dia <strong>${hoje}</strong>.<br>
+        ✅ Importação concluída (${ficheirosOk} ficheiro${ficheirosOk > 1 ? 's' : ''}) — só o dia <strong>${diaAlvo}</strong>.<br>
         • <strong>${linhasValidas.toLocaleString('pt-BR')}</strong> linha(s) lidas desse dia (${periodoTxt})<br>
         • <strong>${linhasIgnoradasOutroDia.toLocaleString('pt-BR')}</strong> linha(s) de outros dias ignoradas<br>
         • <strong>${linhasIgnoradasFechado.toLocaleString('pt-BR')}</strong> linha(s) de meses fechados sem gravar outra vez${mesesFechadosTxt ? ` (${mesesFechadosTxt})` : ''}<br>
@@ -22027,7 +22107,7 @@ async function processVendasFile(event) {
     clearInput();
     try { if (typeof clearContratosCache === 'function') clearContratosCache(); } catch (e) {}
     try { loadContratosTab(true); } catch (e) {}
-    toast(`✅ ${inserted.toLocaleString('pt-BR')} novos de ${hoje} · ${linhasIgnoradasOutroDia.toLocaleString('pt-BR')} de outros dias ignoradas · ${jaExistentes.toLocaleString('pt-BR')} já existiam`);
+    toast(`✅ ${inserted.toLocaleString('pt-BR')} novos de ${diaAlvo} · ${linhasIgnoradasOutroDia.toLocaleString('pt-BR')} de outros dias ignoradas · ${jaExistentes.toLocaleString('pt-BR')} já existiam`);
   } catch (e) {
     console.error('processVendasFile:', e);
     setStatus(`<div style="color:var(--danger);font-size:12px">Erro na importação: ${e.message || e}</div>`);
@@ -35515,7 +35595,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-1out: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-emissor: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

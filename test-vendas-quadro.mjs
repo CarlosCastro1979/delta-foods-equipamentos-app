@@ -78,6 +78,7 @@ const fns = [
   'npessEmpresaGn',
   'vendasYmFromISO',
   'normalizeVendaCod',
+  'codEmissorVendaAceite',
   'formatDateISOLocal',
   'parseDateSC',
   'vendaDedupKey',
@@ -703,9 +704,11 @@ check('ficheiro só com o dia de hoje não zera o R$ do mês', () => {
 
 check('processVendasFile actualiza o quadro sem varrer a base', () => {
   const proc = extractFn(html, 'processVendasFile');
-  assert.ok(proc.includes('aplicarFaturDoDiaAoQuadro(candidatos, newVendas, hoje, mesesFechados)'));
+  assert.ok(proc.includes('aplicarFaturDoDiaAoQuadro(candidatos, newVendas, diaAlvo, mesesFechados)'));
   assert.ok(proc.includes('fundirLinhasVendaMesmoDia(candidatos)'));
-  assert.ok(proc.includes('aplicarFaturDoDiaAoQuadro(candidatos, [], hoje, mesesFechados)'), 'dia já gravado ainda repõe o Fatur.');
+  assert.ok(proc.includes('aplicarFaturDoDiaAoQuadro(candidatos, [], diaAlvo, mesesFechados)'), 'dia já gravado ainda repõe o Fatur.');
+  assert.ok(proc.includes('vendasMesSoTemEsteDia'), 'mês que só tem um dia volta a aceitar esse Excel');
+  assert.ok(proc.includes('codEmissorVendaAceite(codRaw)'));
   assert.ok(proc.includes('substituirValorHistoricoNoQuadro(linhasValorHistorico, hoje, mesesFechados)'));
   assert.ok(proc.includes('vendaDataAntesDe2025'));
   assert.ok(proc.includes('linhaValorQuadroDeExcel'));
@@ -722,7 +725,9 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(html.includes('Por classificar'));
   assert.ok(html.includes('O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-1out'));
+  assert.ok(sw.includes('v2026-10-01-vendas-emissor'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-1out'));
+  assert.ok(!html.includes('v2026-10-01-vendas-1out'));
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));
@@ -733,7 +738,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-01-vendas-1out'));
+  assert.ok(html.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));
@@ -1201,6 +1206,22 @@ check('Horeca: o NPess do Filipe entra na linha dele e o objectivo reparte o Bud
   const ecom = ctx.htmlQuadroVendasMenuCanal(q, 9, 2026, 'ecommerce', null, ctx.escHtml);
   assert.ok(!ecom.includes('FILIPE NEVES'));
   assert.ok(ecom.includes('Lojas online'));
+});
+
+check('emissor alfanumérico entra; Total não', () => {
+  assert.equal(ctx.codEmissorVendaAceite('395635'), true);
+  assert.equal(ctx.codEmissorVendaAceite('BR00002'), true);
+  assert.equal(ctx.codEmissorVendaAceite('br00002'), true);
+  assert.equal(ctx.codEmissorVendaAceite('Total'), false);
+  assert.equal(ctx.codEmissorVendaAceite(''), false);
+  assert.equal(ctx.codEmissorVendaAceite('CLI'), false);
+  assert.equal(ctx.normalizeVendaCod('BR00002'), 'BR00002');
+  const linha = ctx.linhaValorQuadroDeExcel(
+    ['BR00002 CLI GENÉRICO', '500,12', '99520001'],
+    0, 1, 2, '2026-10-01', -1
+  );
+  assert.equal(linha.cod, 'BR00002');
+  assert.equal(linha.valor, 500.12);
 });
 
 check('Fatur. com sinal à direita do SAP é negativo; Valor Boni não é a coluna', () => {
