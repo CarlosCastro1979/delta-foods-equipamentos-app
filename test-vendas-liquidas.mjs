@@ -428,6 +428,7 @@ check('o ecrã avisa quando o agregado ainda tem canais antigos', () => {
     'metricasLinhaQuadro', 'ordenarNomesQuadroPnL', 'linhasResumoQuadroPnL', 'htmlLinhaResumoPnL',
     'chaveObjetivoQuadro', 'objetivoCanalMes', 'objetivoAcumuladoQuadro',
     'htmlCelulaObjetivoPnL', 'htmlCelsObjetivoPnL',
+    'variacaoObjetivoPct', 'htmlCabecalhoValorPnL', 'htmlLinhaValorObjetivoPnL',
     'nomeVendedorQuadroMarcio', 'quadroComMarcioIdentificado',
     'menusCanalVendasQuadro', 'canalMenuVendasActivo', 'htmlMenusCanalVendas',
     'volumeEfetivoCelula', 'somarVolumeQuadroNosMeses', 'metricasVolumeLinhaQuadro',
@@ -467,6 +468,10 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   assert.ok(html.includes('v2026-10-01-vendas-menu-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-marco'));
   assert.ok(!html.includes('v2026-10-01-vendas-marco'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-ordem'));
+  assert.ok(!html.includes('v2026-10-01-vendas-ordem'));
+  assert.ok(!sw.includes('v2026-10-01-nfe-zip'));
+  assert.ok(!html.includes('v2026-10-01-nfe-zip'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq4'));
   assert.ok(!html.includes('v2026-10-01-vendas-liq4'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq3'));
