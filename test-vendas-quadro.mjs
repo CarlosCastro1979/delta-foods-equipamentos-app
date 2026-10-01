@@ -453,18 +453,37 @@ function extractConstObject(src, name) {
   throw new Error('object não fechou: ' + name);
 }
 
-check('objectivos de Julho e vazio em Março; 99520005 e 99530003 são o Marcio', () => {
+check('objectivos de Julho e Março oficial; 99520005 e 99530003 são o Marcio', () => {
   vm.runInContext('var PV_OBJETIVOS_CANAL = ' + extractConstObject(html, 'PV_OBJETIVOS_CANAL') + ';', ctx);
   assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-07'), 1028136);
   assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', '', '2026-07'), 2847193);
   assert.equal(ctx.objetivoCanalMes('Q Brasil', 'Restauração', '2026-07'), 22917);
   assert.equal(ctx.objetivoCanalMes('', '', '2026-07'), 3049124);
-  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-03'), null, 'Março sem objectivo');
-  assert.equal(ctx.objetivoCanalMes('Q Brasil', '', '2026-03'), null);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', '', '2026-03'), 3225965);
+  assert.equal(ctx.objetivoCanalMes('Q Brasil', '', '2026-03'), 280275);
+  assert.equal(ctx.objetivoCanalMes('', '', '2026-03'), 3506241);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-03'), 975087);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Distribuidores regionais', '2026-03'), 646114);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Restauração', '2026-03'), 447592);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Distribuidores de retalho', '2026-03'), 693263);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Retalho moderno', '2026-03'), 336303);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Site próprio', '2026-03'), 116041);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Institucional', '2026-03'), 11566);
+  assert.equal(ctx.objetivoCanalMes('Q Brasil', 'Retalho moderno', '2026-03'), 189415);
+  assert.equal(ctx.objetivoCanalMes('Q Brasil', 'Restauração', '2026-03'), 24499);
+  assert.equal(ctx.objetivoCanalMes('Q Brasil', 'Distribuidores regionais', '2026-03'), 1055);
+  assert.equal(ctx.objetivoCanalMes('Q Brasil', 'Distribuidores de retalho', '2026-03'), 65306);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-01'), 866445);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', '', '2026-02'), 2506589);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-04'), 1065629);
+  assert.equal(ctx.objetivoCanalMes('Q Brasil', '', '2026-04'), 187059);
+  assert.equal(ctx.objetivoCanalMes('', '', '2026-01'), 2488269);
   assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Institucional', '2026-10'), 23420);
   assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-12'), 1268936);
+  const acumAbr = ctx.objetivoAcumuladoQuadro('Delta Foods Brasil', 'Lojas online', 2026, 4);
+  assert.equal(acumAbr, 866445 + 729334 + 975087 + 1065629, 'Abril acumulado inclui Março');
   const acumJul = ctx.objetivoAcumuladoQuadro('Delta Foods Brasil', 'Lojas online', 2026, 7);
-  assert.equal(acumJul, 866445 + 729334 + 1065629 + 1144116 + 1176881 + 1028136);
+  assert.equal(acumJul, 866445 + 729334 + 975087 + 1065629 + 1144116 + 1176881 + 1028136);
   assert.equal(ctx.nomeVendedorQuadroMarcio('Delta Foods Brasil', 'Institucional', 'Por classificar'), 'MARCIO GORGA');
   assert.equal(ctx.nomeVendedorQuadroMarcio('Q Brasil', 'Restauração', 'Por classificar'), 'MARCIO GORGA');
   assert.equal(ctx.nomeVendedorQuadroMarcio('Q Brasil', 'Distribuidores regionais', 'Por classificar'), 'Por classificar');
@@ -680,10 +699,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(html.includes('Por classificar'));
   assert.ok(html.includes('O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-canal-vol'));
+  assert.ok(sw.includes('v2026-10-01-vendas-marco'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-01-vendas-canal-vol'));
+  assert.ok(html.includes('v2026-10-01-vendas-marco'));
   assert.ok(!html.includes('v2026-10-01-vendas-rs'));
   assert.ok(!html.includes('v2026-10-01-vendas-prev'));
 });
