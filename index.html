@@ -2931,6 +2931,7 @@ var _unused_placeholder = 1;
         <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--muted);line-height:1.5">
           <strong>Importação só do dia de hoje</strong> (data local deste computador):<br>
           • Só grava linhas com a data de hoje. Outros dias são ignorados — não são relidos nem alterados<br>
+          • O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra<br>
           • Se o resumo ainda disser o mês fechado, as linhas de hoje entram na mesma. O resto desse mês fica intacto<br>
           • No próprio último dia útil o mês continua aberto: uma venda já gravada nesse dia não o fecha<br>
           • Linhas de hoje já gravadas não duplicam (dedup: cliente + data + tipo)<br>
@@ -3967,6 +3968,7 @@ var _unused_placeholder = 1;
               Excel SAP de vendas (podes escolher <strong>vários ficheiros</strong> ou carregar por partes — são grandes).<br>
               Acumula no Supabase sem duplicar (cliente + data + tipo). Cobre desde ~2019 para contratos e equipamento profissional.<br>
               Ao carregar, só se gravam linhas do <strong>dia de hoje</strong> (data local deste computador). Outros dias não são relidos nem alterados.<br>
+              O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.<br>
               Se o resumo ainda disser o mês fechado, as linhas de hoje entram na mesma. O resto do mês fechado fica intacto.<br>
               «Nenhuma carga efectuada neste browser» só significa que <em>este</em> PC ainda não concluiu uma carga (o servidor pode já ter dados).
             </div>
@@ -12688,7 +12690,7 @@ function pvRender(opts) {
     if (excelBtnV) excelBtnV.style.display = 'none';
     const bannerV = document.getElementById('pv-banner');
     if (bannerV) {
-      bannerV.innerHTML = '<strong>Vendas</strong> — por empresa, canal e vendedor, em R$. Só consulta. A carga do Excel continua em Dados; este ecrã lê o agregado guardado e não relê as linhas de venda.';
+      bannerV.innerHTML = '<strong>Vendas</strong> — por empresa, canal e vendedor, em R$. O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra. Só consulta. Este ecrã lê o agregado guardado e não relê as linhas de venda.';
     }
     pvMontarVistaVendas();
     return;
@@ -17007,7 +17009,9 @@ async function loadVendasCobertura(forceRefresh = false) {
 
 // ─── QUADRO DE VENDAS (empresa × canal × vendedor, R$) ───
 // Agregados guardados. A abertura do ecrã não lê as ~500k linhas.
-// Meses que não são o dia local de hoje não são alterados pela carga.
+// O mês do dia de hoje só soma linhas novas.
+// Meses fechados de 2025 e 2026: o R$ do Excel substitui o mês no quadro, sem gravar linhas.
+// Antes de 2025 não entra (nem linhas nem R$).
 
 function quadroVendasVazio() {
   return { atualizado_em: null, valor_na_base: false, base_completa: false, meses: {} };
@@ -17216,6 +17220,140 @@ function somarQuadrosVendas(a, b) {
       dest[key].linhas += +c.linhas || 0;
       dest[key].linhasComValor += +c.linhasComValor || 0;
     }
+  }
+  return out;
+}
+
+/** 2025 e 2026: o Excel preenche o R$ de meses fechados. Outros anos não. */
+function vendaAnoRecebeValorQuadro(dataStr) {
+  const ym = vendasYmFromISO(dataStr);
+  if (!/^\d{4}-\d{2}$/.test(ym)) return false;
+  const y = parseInt(ym.slice(0, 4), 10);
+  return y === 2025 || y === 2026;
+}
+
+/** Antes de 2025 a carga ignora a linha por completo: nem grava nem soma R$. */
+function vendaDataAntesDe2025(dataStr) {
+  const ym = vendasYmFromISO(dataStr);
+  if (!/^\d{4}-\d{2}$/.test(ym)) return false;
+  const y = parseInt(ym.slice(0, 4), 10);
+  return y > 0 && y < 2025;
+}
+
+/**
+ * Linha de mês fechado em 2025 ou 2026, fora do mês do dia local de hoje.
+ * O R$ entra no quadro; a linha não é gravada na tabela vendas.
+ * O mês de hoje fica de fora: um ficheiro só com o dia de hoje não repõe o mês inteiro.
+ */
+function vendaLinhaEntraValorHistorico(dataStr, mesesFechados, hojeOpt) {
+  const hoje = String(hojeOpt || '').slice(0, 10);
+  const dia = String(dataStr || '').slice(0, 10);
+  if (!dia || (hoje && dia === hoje)) return false;
+  if (!vendaAnoRecebeValorQuadro(dia)) return false;
+  const ym = vendasYmFromISO(dia);
+  const hojeYm = vendasYmFromISO(hoje);
+  if (hojeYm && ym === hojeYm) return false;
+  return vendaDataCaiEmMesFechado(dia, mesesFechados);
+}
+
+/**
+ * Separa uma carga já com data ISO.
+ * inserir: só o dia local de hoje (a tabela).
+ * valorHistorico: meses fechados de 2025–2026 (só R$ no quadro).
+ * Antes de 2025 não vai para nenhum dos dois.
+ */
+function classificarLinhasCargaVendas(rows, mesesFechados, hojeOpt) {
+  const hoje = hojeOpt || (typeof vendasHojeISO === 'function' ? vendasHojeISO() : '');
+  const fechados = mesesFechados instanceof Set ? mesesFechados : new Set(mesesFechados || []);
+  const inserir = [];
+  const valorHistorico = [];
+  let ignoradasAntes2025 = 0;
+  let ignoradasFechado = 0;
+  let ignoradasOutroDia = 0;
+  const list = Array.isArray(rows) ? rows : [];
+  for (const row of list) {
+    const dataStr = String(row && row.data || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataStr)) continue;
+    if (vendaDataAntesDe2025(dataStr)) {
+      ignoradasAntes2025++;
+      continue;
+    }
+    if (vendaDataEntraNaCarga(dataStr, hoje)) {
+      inserir.push(row);
+      continue;
+    }
+    if (vendaDataCaiEmMesFechado(dataStr, fechados)) {
+      ignoradasFechado++;
+      if (vendaLinhaEntraValorHistorico(dataStr, fechados, hoje)) valorHistorico.push(row);
+      continue;
+    }
+    ignoradasOutroDia++;
+  }
+  return { inserir, valorHistorico, ignoradasAntes2025, ignoradasFechado, ignoradasOutroDia, hoje };
+}
+
+/** Valor e NPess de uma linha Excel, sem peso nem tipo — não entra na tabela. */
+function linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpess, dataStr) {
+  const emissor = String((row && row[iEmissor]) || '').trim();
+  const codRaw = emissor.split(/\s+/)[0].trim();
+  let cod = '';
+  if (codRaw && /^\d+$/.test(codRaw)) {
+    cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(codRaw) : codRaw;
+  }
+  const valorLinha = iValor >= 0 ? parseValorVendaSap(row[iValor]) : null;
+  const npessLinha = iNpess >= 0 ? parseInt(row[iNpess], 10) : 0;
+  return {
+    cod: cod || undefined,
+    data: dataStr,
+    tipo: 'OUTRO',
+    valor: valorLinha == null ? undefined : valorLinha,
+    npess: npessLinha || undefined,
+  };
+}
+
+/**
+ * Para cada mês fechado de 2025–2026 presente nas linhas, o R$ desse mês
+ * passa a ser o total do ficheiro (não soma por cima).
+ * A contagem de linhas já guardada fica. Meses que o ficheiro não traz ficam.
+ * O mês do dia de hoje não é reposto.
+ */
+function substituirValorMesesFechadosNoQuadro(quadro, linhas, opts) {
+  const o = opts || {};
+  const hoje = String(o.hoje || '').slice(0, 10);
+  const hojeYm = vendasYmFromISO(hoje);
+  const fechados = o.mesesFechados;
+  const historicas = (Array.isArray(linhas) ? linhas : []).filter(r =>
+    vendaLinhaEntraValorHistorico(r && r.data, fechados, hoje)
+  );
+  if (!historicas.length) return quadroVendasClone(quadro);
+  const delta = agregarVendasQuadro(historicas, o);
+  const out = quadroVendasClone(quadro);
+  for (const ym of Object.keys(delta.meses || {})) {
+    if (!vendaAnoRecebeValorQuadro(ym + '-01')) continue;
+    if (hojeYm && ym === hojeYm) continue;
+    if (!(fechados && typeof fechados.has === 'function' && fechados.has(ym))) continue;
+    const src = (delta.meses[ym] && delta.meses[ym].celulas) || {};
+    const prev = (out.meses[ym] && out.meses[ym].celulas) || {};
+    const celulas = {};
+    const keys = new Set([...Object.keys(prev), ...Object.keys(src)]);
+    for (const key of keys) {
+      const p = prev[key];
+      const s = src[key];
+      const base = s || p;
+      const linhasGuardadas = p ? (+p.linhas || 0) : 0;
+      const teveValor = !!(s && (+s.linhasComValor || 0) > 0);
+      celulas[key] = {
+        empresa: base.empresa,
+        canal: base.canal,
+        vendedor: base.vendedor,
+        linhas: linhasGuardadas,
+        valor: s ? (+s.valor || 0) : 0,
+        linhasComValor: teveValor
+          ? (linhasGuardadas > 0 ? linhasGuardadas : (+s.linhasComValor || 0))
+          : 0,
+      };
+    }
+    out.meses[ym] = { celulas };
   }
   return out;
 }
@@ -17448,6 +17586,29 @@ async function aplicarNovasLinhasAoQuadro(novasLinhas, hoje, mesesFechados) {
   return saved;
 }
 
+/** Meses fechados de 2025–2026: substitui o R$ pelo total do ficheiro. Não grava linhas. */
+async function substituirValorHistoricoNoQuadro(linhas, hoje, mesesFechados) {
+  const list = Array.isArray(linhas) ? linhas : [];
+  if (!list.length) return null;
+  const antes = (await lerVendasQuadroPersistida()) || quadroVendasVazio();
+  const mapas = mapasVendasQuadro();
+  let lista = [];
+  try { lista = typeof getListaClientesCompleta === 'function' ? getListaClientesCompleta() : []; } catch (_) {}
+  const merged = substituirValorMesesFechadosNoQuadro(antes, list, {
+    hoje,
+    mesesFechados,
+    mapas,
+    npessPorCod: npessPorCodDeLista(lista),
+  });
+  merged.valor_na_base = window._vendasColunasExtra
+    ? !!window._vendasColunasExtra.valor
+    : !!antes.valor_na_base;
+  merged.base_completa = !!antes.base_completa;
+  const saved = await salvarVendasQuadroPersistida(merged);
+  try { renderVendasQuadro(saved); } catch (_) {}
+  return saved;
+}
+
 function preencherSelectsQuadroVendas() {
   const selM = document.getElementById('vq-mes');
   const selA = document.getElementById('vq-ano');
@@ -17535,8 +17696,8 @@ function renderVendasQuadro(quadroOpt) {
   if (!quadro || !quadro.meses) {
     el.innerHTML = `<div style="font-size:13px;color:var(--muted);line-height:1.5;">
       Ainda não há agregado guardado.<br>
-      A carga do Excel em Dados (fim do dia, só o dia de hoje) actualiza este quadro.
-      Abrir esta vista não relê as linhas de venda.
+      O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.
+      O dia de hoje soma só as linhas novas. Abrir esta vista não relê as linhas de venda.
     </div>`;
     return;
   }
@@ -17548,8 +17709,8 @@ function renderVendasQuadro(quadroOpt) {
   const esc = (s) => (typeof escHtml === 'function' ? escHtml(s) : String(s || ''));
 
   const notaValor = !quadro.valor_na_base
-    ? `<div class="vcob-note">O valor em R$ <strong>não estava</strong> na tabela de vendas (só cliente, data, tipo e peso). O quadro soma R$ nas cargas novas do dia. Meses fechados não são reabertos para preencher o histórico — aí o R$ pode ficar em falta. A contagem de linhas não é a cobertura.</div>`
-    : `<div class="vcob-note">Valores em R$ gravados na tabela de vendas. A contagem de linhas é só um detalhe (não é a cobertura).</div>`;
+    ? `<div class="vcob-note">O valor em R$ <strong>não estava</strong> na tabela de vendas (só cliente, data, tipo e peso). O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra. A contagem de linhas não é a cobertura.</div>`
+    : `<div class="vcob-note">Valores em R$ gravados na tabela de vendas. O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra. A contagem de linhas é só um detalhe (não é a cobertura).</div>`;
 
   const anoNota = anoTot.linhas > anoTot.linhasComValor
     ? ` <span class="vq-muted">· R$ só onde o valor foi gravado (${anoTot.linhasComValor.toLocaleString('pt-BR')} de ${anoTot.linhas.toLocaleString('pt-BR')} linhas)</span>`
@@ -17679,7 +17840,8 @@ function renderVendasQuadro(quadroOpt) {
     </div>
     ${notaValor}
     <div class="vcob-note">${baseTxt}<br>
-      Ao carregar o SAP no fim do dia, só o dia local de hoje soma neste mês. Os outros meses não são relidos.</div>
+      O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.
+      O dia de hoje soma só as linhas novas.</div>
   `;
   if (!el.dataset.vqBound) {
     el.dataset.vqBound = '1';
@@ -18017,11 +18179,15 @@ async function processVendasFile(event) {
       });
     }
 
-    // 1) Resumo guardado → meses fechados são imutáveis (não se relêem nem se gravam por cima).
+    // 1) Linhas de meses fechados não são gravadas. Antes de 2025 nem o R$ entra.
+    //    2025–2026 fechado: o R$ do Excel substitui esse mês no quadro (sem somar por cima).
     const newVendas = [];
     let linhasValidas = 0;
     let linhasIgnoradasFechado = 0;
     let linhasIgnoradasOutroDia = 0;
+    let linhasIgnoradasAntes2025 = 0;
+    const linhasValorHistorico = [];
+    const mesesValorHistoricoSet = new Set();
     let jaExistentes = 0;
     let ficheirosOk = 0;
     const nomesFicheiros = [];
@@ -18042,7 +18208,7 @@ async function processVendasFile(event) {
     for (let fIdx = 0; fIdx < files.length; fIdx++) {
       const file = files[fIdx];
       nomesFicheiros.push(file.name);
-      setStatus(`<div style="color:var(--muted);font-size:12px">⏳ A ler ficheiro ${fIdx + 1}/${files.length}: <strong>${file.name}</strong> — só o dia de hoje (${hoje}; ${mesesFechados.size} mês(es) fechado(s) intactos)...</div>`);
+      setStatus(`<div style="color:var(--muted);font-size:12px">⏳ A ler ficheiro ${fIdx + 1}/${files.length}: <strong>${file.name}</strong> — linhas só do dia de hoje (${hoje}); R$ de meses fechados de 2025–2026 entra no quadro sem gravar linhas...</div>`);
 
       const buf = await file.arrayBuffer();
       const wb = window.XLSX.read(buf, { type: 'array' });
@@ -18087,12 +18253,21 @@ async function processVendasFile(event) {
         if (!dt) continue;
         const dataStr = formatDateISOLocal(dt);
         if (!dataStr) continue;
-        // Só o dia local de hoje entra — mesmo que o resumo ainda diga o mês fechado.
-        // Outros dias não são parseados nem gravados (mês fechado ou não).
+        // Antes de 2025: nem linha nem R$.
+        if (vendaDataAntesDe2025(dataStr)) {
+          linhasIgnoradasAntes2025++;
+          continue;
+        }
+        // Só o dia local de hoje é gravado — mesmo que o resumo ainda diga o mês fechado.
+        // Meses fechados de 2025–2026: não grava a linha; o R$ do Excel substitui esse mês no quadro.
         if (!vendaDataEntraNaCarga(dataStr, hoje)) {
           if (vendaDataCaiEmMesFechado(dataStr, mesesFechados)) {
             linhasIgnoradasFechado++;
             mesesIgnoradosSet.add(dataStr.slice(0, 7));
+            if (iValor >= 0 && vendaLinhaEntraValorHistorico(dataStr, mesesFechados, hoje)) {
+              linhasValorHistorico.push(linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpessVenda, dataStr));
+              mesesValorHistoricoSet.add(dataStr.slice(0, 7));
+            }
           } else {
             linhasIgnoradasOutroDia++;
           }
@@ -18135,15 +18310,32 @@ async function processVendasFile(event) {
     const mesesAbertosArr = [...mesesAbertosSet].sort();
     const mesesFechadosArr = [...mesesIgnoradosSet].sort();
     const mesesFechadosTxt = mesesFechadosArr.map(formatVendasMesLabel).join(', ');
+    const txtAntes2025 = linhasIgnoradasAntes2025
+      ? `<br>• <strong>${linhasIgnoradasAntes2025.toLocaleString('pt-BR')}</strong> linha(s) antes de 2025 ignoradas (nem linhas nem R$)`
+      : '';
+    let quadroHistMsg = '';
+    const aplicarValorHistoricoDestaCarga = async () => {
+      if (!linhasValorHistorico.length) return;
+      await substituirValorHistoricoNoQuadro(linhasValorHistorico, hoje, mesesFechados);
+      const mesesTxt = [...mesesValorHistoricoSet].sort().map(formatVendasMesLabel).join(', ');
+      quadroHistMsg = `<br>• Quadro: R$ de 2025–2026 substituído pelo total do Excel (${linhasValorHistorico.length.toLocaleString('pt-BR')} linhas, sem gravar outra vez)${mesesTxt ? ` — ${mesesTxt}` : ''}`;
+    };
 
     if (!candidatos.length) {
-      if (linhasIgnoradasFechado > 0 || linhasIgnoradasOutroDia > 0) {
+      try {
+        await aplicarValorHistoricoDestaCarga();
+      } catch (e) {
+        console.warn('quadro valor histórico:', e.message || e);
+      }
+      if (linhasIgnoradasFechado > 0 || linhasIgnoradasOutroDia > 0 || linhasIgnoradasAntes2025 > 0 || linhasValorHistorico.length) {
         setStatus(
           `<div style="background:#e8f5e9;border-radius:6px;padding:10px;font-size:12px;color:#166534;line-height:1.6">
-            Nada do dia <strong>${hoje}</strong> para gravar — o resto ficou intacto.<br>
+            Nada do dia <strong>${hoje}</strong> para gravar — as linhas já na base ficam.<br>
             • <strong>${linhasIgnoradasOutroDia.toLocaleString('pt-BR')}</strong> linha(s) de outros dias ignoradas<br>
-            • <strong>${linhasIgnoradasFechado.toLocaleString('pt-BR')}</strong> linha(s) de meses fechados ignoradas${mesesFechadosTxt ? ` (${mesesFechadosTxt})` : ''}<br>
+            • <strong>${linhasIgnoradasFechado.toLocaleString('pt-BR')}</strong> linha(s) de meses fechados sem gravar outra vez${mesesFechadosTxt ? ` (${mesesFechadosTxt})` : ''}<br>
             • <strong>0</strong> linha(s) do dia de hoje
+            ${txtAntes2025}
+            ${quadroHistMsg}
           </div>`
         );
         localStorage.setItem('delta_vendas_ultima_carga', JSON.stringify({
@@ -18155,10 +18347,15 @@ async function processVendasFile(event) {
           hoje,
           ignoradasFechado: linhasIgnoradasFechado,
           ignoradasOutroDia: linhasIgnoradasOutroDia,
+          ignoradasAntes2025: linhasIgnoradasAntes2025,
+          valorHistorico: linhasValorHistorico.length,
           mesesAbertos: mesesAbertosArr,
           mesesFechados: mesesFechadosArr,
         }));
         renderUltimaVendasCarga();
+        if (linhasValorHistorico.length && typeof toast === 'function') {
+          toast('Quadro: R$ de 2025–2026 actualizado com o Excel, sem gravar as linhas outra vez');
+        }
       } else {
         setStatus('<div style="color:var(--danger);font-size:12px">Nenhuma linha de venda válida nos ficheiros.</div>');
       }
@@ -18199,14 +18396,21 @@ async function processVendasFile(event) {
     }
 
     if (!newVendas.length) {
+      try {
+        await aplicarValorHistoricoDestaCarga();
+      } catch (e) {
+        console.warn('quadro valor histórico:', e.message || e);
+      }
       setStatus(
         `<div style="background:#fff3e0;border-radius:6px;padding:10px;font-size:12px;color:#e65100;line-height:1.6">
-          ℹ️ Nenhum registo novo no dia <strong>${hoje}</strong> — o resto ficou intacto.<br>
+          ℹ️ Nenhum registo novo no dia <strong>${hoje}</strong> — as linhas já na base ficam.<br>
           • Dia lido: <strong>${hoje}</strong> (${linhasValidas.toLocaleString('pt-BR')} linhas)<br>
           • ${linhasIgnoradasOutroDia.toLocaleString('pt-BR')} linha(s) de outros dias ignoradas<br>
-          • ${linhasIgnoradasFechado.toLocaleString('pt-BR')} linha(s) de meses fechados ignoradas${mesesFechadosTxt ? ` (${mesesFechadosTxt})` : ''}<br>
+          • ${linhasIgnoradasFechado.toLocaleString('pt-BR')} linha(s) de meses fechados sem gravar outra vez${mesesFechadosTxt ? ` (${mesesFechadosTxt})` : ''}<br>
           • ${jaExistentes.toLocaleString('pt-BR')} linha(s) de hoje já existentes<br>
           • Já no servidor nesse dia: <strong>${existingInRange.toLocaleString('pt-BR')}</strong>
+          ${txtAntes2025}
+          ${quadroHistMsg}
         </div>`
       );
       localStorage.setItem('delta_vendas_ultima_carga', JSON.stringify({
@@ -18218,6 +18422,8 @@ async function processVendasFile(event) {
         hoje,
         ignoradasFechado: linhasIgnoradasFechado,
         ignoradasOutroDia: linhasIgnoradasOutroDia,
+        ignoradasAntes2025: linhasIgnoradasAntes2025,
+        valorHistorico: linhasValorHistorico.length,
         periodo: periodoTxt,
         noPeriodo: existingInRange,
         mesesAbertos: mesesAbertosArr,
@@ -18225,6 +18431,9 @@ async function processVendasFile(event) {
       }));
       renderUltimaVendasCarga();
       clearInput();
+      if (linhasValorHistorico.length && typeof toast === 'function') {
+        toast('Quadro: R$ de 2025–2026 actualizado com o Excel, sem gravar as linhas outra vez');
+      }
       return;
     }
 
@@ -18274,14 +18483,16 @@ async function processVendasFile(event) {
       console.warn('cobertura após carga:', e.message || e);
     }
 
-    // Quadro: só as linhas novas do dia de hoje. Não relê meses fechados nem a base.
+    // Quadro: R$ de meses fechados 2025–2026 substituído pelo ficheiro; o dia de hoje só soma linhas novas.
     let quadroMsg = '';
     try {
+      await aplicarValorHistoricoDestaCarga();
       await aplicarNovasLinhasAoQuadro(newVendas, hoje, mesesFechados);
       const temValorCol = !!(window._vendasColunasExtra && window._vendasColunasExtra.valor);
       quadroMsg = temValorCol
         ? '<br>• Quadro de vendas: mês de hoje actualizado (R$ na tabela)'
         : '<br>• Quadro de vendas: mês de hoje actualizado com o R$ desta carga (a tabela ainda não tem coluna de valor — o agregado guarda o R$)';
+      quadroMsg += quadroHistMsg;
     } catch (e) {
       console.warn('quadro após carga:', e.message || e);
     }
@@ -18303,10 +18514,11 @@ async function processVendasFile(event) {
         ✅ Importação concluída (${ficheirosOk} ficheiro${ficheirosOk > 1 ? 's' : ''}) — só o dia <strong>${hoje}</strong>.<br>
         • <strong>${linhasValidas.toLocaleString('pt-BR')}</strong> linha(s) lidas desse dia (${periodoTxt})<br>
         • <strong>${linhasIgnoradasOutroDia.toLocaleString('pt-BR')}</strong> linha(s) de outros dias ignoradas<br>
-        • <strong>${linhasIgnoradasFechado.toLocaleString('pt-BR')}</strong> linha(s) de meses fechados ignoradas${mesesFechadosTxt ? ` (${mesesFechadosTxt})` : ''}<br>
+        • <strong>${linhasIgnoradasFechado.toLocaleString('pt-BR')}</strong> linha(s) de meses fechados sem gravar outra vez${mesesFechadosTxt ? ` (${mesesFechadosTxt})` : ''}<br>
         • <strong>${inserted.toLocaleString('pt-BR')}</strong> novos registos adicionados<br>
         • <strong>${jaExistentes.toLocaleString('pt-BR')}</strong> de hoje já existentes<br>
         • Nesse dia no servidor: <strong>${noPeriodoDepois.toLocaleString('pt-BR')}</strong>
+        ${txtAntes2025}
         ${histAtualizados ? `<br>• Histórico: ${histAtualizados} cliente(s) com última compra actualizada` : ''}
         ${quadroMsg}
       </div>`
@@ -31818,7 +32030,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-prev: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-rs: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
