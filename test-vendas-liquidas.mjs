@@ -463,8 +463,10 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   assert.ok(act.includes('decidirActualizarQuadroVendas'));
   assert.ok(act.indexOf('decidirActualizarQuadroVendas') < act.indexOf('somarQuadrosVendas'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-marco'));
-  assert.ok(html.includes('v2026-10-01-vendas-marco'));
+  assert.ok(sw.includes('v2026-10-01-vendas-menu-canal'));
+  assert.ok(html.includes('v2026-10-01-vendas-menu-canal'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-marco'));
+  assert.ok(!html.includes('v2026-10-01-vendas-marco'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq4'));
   assert.ok(!html.includes('v2026-10-01-vendas-liq4'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq3'));
@@ -576,7 +578,9 @@ check('Set/2026: N-1 é 2025-09, o acumulado soma Jan–Set e um canal sem mês 
   assert.ok(out.includes('Acum. objetivo'));
   assert.ok(!out.includes('Var Bud'));
   assert.ok(!out.includes('Previsão Fecho'));
-  const valorTbl = out.split('Volumes')[0];
+  const valorTbl = out.split('Detalhe por vendedor')[0];
+  assert.ok(!out.includes('Volumes'), 'sem bloco de volumes');
+  assert.ok(!out.includes('>Linhas<'), 'sem coluna Linhas');
   assert.ok(valorTbl.indexOf('Delta Foods Brasil') < valorTbl.indexOf('Q Brasil'));
   assert.ok(valorTbl.indexOf('Q Brasil') < valorTbl.lastIndexOf('Distribuidores regionais'));
   assert.ok(valorTbl.lastIndexOf('Distribuidores regionais') < valorTbl.indexOf('>Total<'));
