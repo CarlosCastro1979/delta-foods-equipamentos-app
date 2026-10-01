@@ -18472,6 +18472,54 @@ function htmlCelsObjetivoPnL(tipo, empresa, canal, periodo, filtro, activo) {
     + `<td class="vq-num">${htmlCelulaObjetivoPnL(acV, f, activo)}</td>`;
 }
 
+/** (real − objetivo) / objetivo × 100. Sem objetivo, ou objetivo a zero, não há percentagem. */
+function variacaoObjetivoPct(real, temReal, objetivo) {
+  if (!temReal) return null;
+  if (objetivo == null || objetivo === '') return null;
+  const o = +objetivo;
+  if (!Number.isFinite(o) || o === 0) return null;
+  const a = Number.isFinite(+real) ? +real : 0;
+  return ((a - o) / o) * 100;
+}
+
+/** Mês primeiro (N-1, N, Objetivo, as duas var %). Acumulados só depois. */
+function htmlCabecalhoValorPnL(primeiraColuna) {
+  return `<th class="vq-linha">${primeiraColuna}</th>`
+    + `<th class="vq-num">N-1</th>`
+    + `<th class="vq-num">N</th>`
+    + `<th class="vq-num" title="Budget do mês.">Objetivo</th>`
+    + `<th class="vq-num" title="(N − Objetivo) / Objetivo">Var. obj. %</th>`
+    + `<th class="vq-num">N vs N-1 %</th>`
+    + `<th class="vq-num">Acum. N-1</th>`
+    + `<th class="vq-num">Acum. N</th>`
+    + `<th class="vq-num" title="Soma dos objectivos de Janeiro até este mês, Março inclusive.">Acum. objetivo</th>`
+    + `<th class="vq-num" title="(Acum. N − Acum. objetivo) / Acum. objetivo">Acum. var. obj. %</th>`
+    + `<th class="vq-num">Acum. vs N-1 %</th>`;
+}
+
+function htmlLinhaValorObjetivoPnL(labelHtml, trCls, met, filtro, on, objMes, objAc) {
+  const m = met || {};
+  const varObj = variacaoObjetivoPct(m.n, m.nTem, objMes);
+  const varObjAc = variacaoObjetivoPct(m.ac, m.acTem, objAc);
+  const clsObj = classeVarPnL(varObj);
+  const clsN = classeVarPnL(m.varN);
+  const clsAcObj = classeVarPnL(varObjAc);
+  const clsA = classeVarPnL(m.varAc);
+  return `<tr class="${trCls}">
+    <td class="vq-linha">${labelHtml}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.n1, m.n1Tem, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.n, m.nTem, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaObjetivoPnL(objMes, filtro, on)}</td>
+    <td class="vq-num${clsObj ? ' ' + clsObj : ''}">${htmlCelulaPctPnL(varObj, filtro, on)}</td>
+    <td class="vq-num${clsN ? ' ' + clsN : ''}">${htmlCelulaPctPnL(m.varN, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.ac1, m.ac1Tem, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaNumeroPnL(m.ac, m.acTem, filtro, on)}</td>
+    <td class="vq-num">${htmlCelulaObjetivoPnL(objAc, filtro, on)}</td>
+    <td class="vq-num${clsAcObj ? ' ' + clsAcObj : ''}">${htmlCelulaPctPnL(varObjAc, filtro, on)}</td>
+    <td class="vq-num${clsA ? ' ' + clsA : ''}">${htmlCelulaPctPnL(m.varAc, filtro, on)}</td>
+  </tr>`;
+}
+
 /** 99520005 (Institucional) e 99530003 (Restauração Q Brasil) passam a Marcio. 99530002 fica. */
 function nomeVendedorQuadroMarcio(empresa, canal, vendedor) {
   const v = String(vendedor || '');
@@ -18710,9 +18758,9 @@ function htmlVistaCanalVendas(quadro, mes, ano, menu, filtro, escFn) {
   const metCanal = metricasLinhaQuadro(quadro, periodo, { empresa: empresa, canal: canal });
   const fCanal = { empresa: empresa, canal: canal, vendedor: '' };
   const onCanal = !!(filtro && filtroQuadroActivoIgual(filtro, empresa, canal, ''));
-  const objMes = htmlCelulaObjetivoPnL(objetivoCanalMes(empresa, canal, periodo.ym), fCanal, onCanal);
-  const objAc = htmlCelulaObjetivoPnL(objetivoAcumuladoQuadro(empresa, canal, ano, mes), fCanal, onCanal);
-  let linhasValor = htmlLinhaMetricasPnL(esc(canal), 'vq-emp', metCanal, fCanal, onCanal, `<td class="vq-num">${objMes}</td><td class="vq-num">${objAc}</td>`);
+  const objMesCanal = objetivoCanalMes(empresa, canal, periodo.ym);
+  const objAcCanal = objetivoAcumuladoQuadro(empresa, canal, ano, mes);
+  let linhasValor = htmlLinhaValorObjetivoPnL(esc(canal), 'vq-emp', metCanal, fCanal, onCanal, objMesCanal, objAcCanal);
   let linhasVol = htmlLinhaMetricasPnL(esc(canal), 'vq-emp', metricasVolumeLinhaQuadro(quadro, periodo, { empresa: empresa, canal: canal }), fCanal, onCanal, '');
   const vendedores = vendedoresCanalQuadro(quadro, periodo, empresa, canal);
   for (let i = 0; i < vendedores.length; i++) {
@@ -18722,7 +18770,7 @@ function htmlVistaCanalVendas(quadro, mes, ano, menu, filtro, escFn) {
     const label = `<span class="vq-indent">${esc(ven)}</span>`;
     const met = metricasLinhaQuadro(quadro, periodo, f);
     const metV = metricasVolumeLinhaQuadro(quadro, periodo, f);
-    linhasValor += htmlLinhaMetricasPnL(label, 'vq-can', met, f, on, '<td class="vq-num"><span class="vq-muted">—</span></td><td class="vq-num"><span class="vq-muted">—</span></td>');
+    linhasValor += htmlLinhaValorObjetivoPnL(label, 'vq-can', met, f, on, null, null);
     linhasVol += htmlLinhaMetricasPnL(label, 'vq-can', metV, f, on, '');
   }
   let banner = '';
@@ -18741,25 +18789,22 @@ function htmlVistaCanalVendas(quadro, mes, ano, menu, filtro, escFn) {
   let detRows = detalhe.map(c => {
     const on = filtroQuadroActivoIgual(filtro, c.empresa, c.canal, c.vendedor);
     const fdet = { empresa: c.empresa, canal: c.canal, vendedor: c.vendedor };
-    return `<tr class="vq-can"><td class="vq-linha">${esc(c.vendedor)}</td><td class="vq-num">${htmlValorQuadroClicavel(c.valor, c.linhas, fdet, on)}</td><td class="vq-num">${htmlContagemQuadroClicavel(c.linhas, fdet, on)}</td></tr>`;
+    const met = metricasLinhaQuadro(quadro, periodo, fdet);
+    return htmlLinhaValorObjetivoPnL(esc(c.vendedor), 'vq-can', met, fdet, on, null, null);
   }).join('');
-  if (!detRows) detRows = `<tr><td colspan="3" class="vq-muted" style="padding:16px;">Sem vendedores neste mês${filtro && filtro.vendedor ? ' com este filtro' : ''}.</td></tr>`;
+  if (!detRows) detRows = `<tr><td colspan="11" class="vq-muted" style="padding:16px;">Sem vendedores neste mês${filtro && filtro.vendedor ? ' com este filtro' : ''}.</td></tr>`;
   const notaInst = (empresa === 'Delta Foods Brasil' && canal === 'Institucional')
     ? `<div class="vcob-note">Institucional Balcão é o Marcio Gorga (99520011, 99520012 e 99520005). Institucional Horeca continua no Filipe e na equipa (99520019, 99520015, 99520016, 99520017).</div>`
     : '';
   return `
     <div style="font-size:16px;font-weight:700;margin-bottom:4px;">${esc(canal)}</div>
-    <div class="vq-legenda">${esc(empresa)} · N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objectivo é o Budget do mês; Acum. objectivo soma Janeiro até este mês, Março inclusive.</div>
+    <div class="vq-legenda">${esc(empresa)} · N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget do mês, a seguir a N. Var. obj. % = (N − Objetivo) / Objetivo. Acum. objetivo = soma de Janeiro até este mês, Março inclusive. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo. Vendedor sem budget fica —.</div>
     ${notaInst}
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Vendas <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica num número para filtrar o detalhe)</span></div>
     <div class="vq-scroll vq-scroll-main">
       <table class="vq-table">
         <thead><tr>
-          <th class="vq-linha">Canal / vendedor</th>
-          <th class="vq-num">N-1</th><th class="vq-num">N</th><th class="vq-num">N vs N-1 %</th>
-          <th class="vq-num">Acum. N-1</th><th class="vq-num">Acum. N</th><th class="vq-num">Acum. vs N-1 %</th>
-          <th class="vq-num" title="Budget do mês neste canal.">Objetivo</th>
-          <th class="vq-num" title="Soma dos objectivos de Janeiro até este mês">Acum. objetivo</th>
+          ${htmlCabecalhoValorPnL('Canal / vendedor')}
         </tr></thead>
         <tbody>${linhasValor}</tbody>
       </table>
@@ -18779,7 +18824,9 @@ function htmlVistaCanalVendas(quadro, mes, ano, menu, filtro, escFn) {
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px;">Detalhe por vendedor · ${esc(nomeMes)}</div>
     <div class="vq-scroll vq-scroll-det">
       <table class="vq-table">
-        <thead><tr><th class="vq-linha">Vendedor</th><th class="vq-num">N</th><th class="vq-num">Linhas</th></tr></thead>
+        <thead><tr>
+          ${htmlCabecalhoValorPnL('Vendedor')}
+        </tr></thead>
         <tbody>${detRows}</tbody>
       </table>
     </div>
@@ -18796,19 +18843,11 @@ function htmlLinhaResumoPnL(row, filtro, escFn, periodo) {
   let nome = 'Total';
   if (row.tipo === 'canal') nome = `<span class="vq-indent">${esc(row.canal)}</span>`;
   else if (row.tipo === 'empresa') nome = esc(row.empresa);
-  const varN = classeVarPnL(m.varN);
-  const varA = classeVarPnL(m.varAc);
-  const obj = htmlCelsObjetivoPnL(row.tipo, row.empresa, row.canal, periodo, f, on);
-  return `<tr class="${trCls}">
-    <td class="vq-linha">${nome}</td>
-    <td class="vq-num">${htmlCelulaNumeroPnL(m.n1, m.n1Tem, f, on)}</td>
-    <td class="vq-num">${htmlCelulaNumeroPnL(m.n, m.nTem, f, on)}</td>
-    <td class="vq-num${varN ? ' ' + varN : ''}">${htmlCelulaPctPnL(m.varN, f, on)}</td>
-    <td class="vq-num">${htmlCelulaNumeroPnL(m.ac1, m.ac1Tem, f, on)}</td>
-    <td class="vq-num">${htmlCelulaNumeroPnL(m.ac, m.acTem, f, on)}</td>
-    <td class="vq-num${varA ? ' ' + varA : ''}">${htmlCelulaPctPnL(m.varAc, f, on)}</td>
-    ${obj}
-  </tr>`;
+  const emp = row.tipo === 'total' ? '' : (row.empresa || '');
+  const can = row.tipo === 'canal' ? (row.canal || '') : '';
+  const objMes = periodo ? objetivoCanalMes(emp, can, periodo.ym) : null;
+  const objAc = periodo ? objetivoAcumuladoQuadro(emp, can, periodo.ano, periodo.mes) : null;
+  return htmlLinhaValorObjetivoPnL(nome, trCls, m, f, on, objMes, objAc);
 }
 
 function renderVendasQuadro(quadroOpt) {
@@ -18912,16 +18951,12 @@ function renderVendasQuadro(quadroOpt) {
   let detRows = detalhe.map(c => {
     const on = filtroQuadroActivoIgual(filtro, c.empresa, c.canal, c.vendedor);
     const fdet = { empresa: c.empresa, canal: c.canal, vendedor: c.vendedor };
-    return `<tr class="vq-can">
-      <td class="vq-linha">${esc(c.empresa)}</td>
-      <td>${esc(c.canal)}</td>
-      <td>${esc(c.vendedor)}</td>
-      <td class="vq-num">${htmlValorQuadroClicavel(c.valor, c.linhas, fdet, on)}</td>
-      <td class="vq-num">${htmlContagemQuadroClicavel(c.linhas, fdet, on)}</td>
-    </tr>`;
+    const met = metricasLinhaQuadro(quadro, pacote.periodo, fdet);
+    const label = `${esc(c.vendedor)}<span class="vq-muted" style="font-weight:400;"> · ${esc(c.empresa)} · ${esc(c.canal)}</span>`;
+    return htmlLinhaValorObjetivoPnL(label, 'vq-can', met, fdet, on, null, null);
   }).join('');
   if (!detRows) {
-    detRows = `<tr><td colspan="5" class="vq-muted" style="padding:16px;">Sem vendedores neste mês${filtro ? ' com este filtro' : ''}.</td></tr>`;
+    detRows = `<tr><td colspan="11" class="vq-muted" style="padding:16px;">Sem vendedores neste mês${filtro ? ' com este filtro' : ''}.</td></tr>`;
   }
 
   const ts = quadro.atualizado_em
@@ -18966,20 +19001,12 @@ function renderVendasQuadro(quadroOpt) {
       </div>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${anoNota}</div>
-    <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget do mês. Acum. objetivo = soma de Janeiro até este mês, Março inclusive.</div>
+    <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget do mês, a seguir a N. Var. obj. % = (N − Objetivo) / Objetivo. Acum. objetivo = soma de Janeiro até este mês, Março inclusive. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo.</div>
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Resumo <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica num número para filtrar o detalhe)</span></div>
     <div class="vq-scroll vq-scroll-main">
       <table class="vq-table">
         <thead><tr>
-          <th class="vq-linha">Empresa</th>
-          <th class="vq-num">N-1</th>
-          <th class="vq-num">N</th>
-          <th class="vq-num">N vs N-1 %</th>
-          <th class="vq-num">Acum. N-1</th>
-          <th class="vq-num">Acum. N</th>
-          <th class="vq-num">Acum. vs N-1 %</th>
-          <th class="vq-num" title="Budget do mês.">Objetivo</th>
-          <th class="vq-num" title="Soma dos objectivos de Janeiro até este mês">Acum. objetivo</th>
+          ${htmlCabecalhoValorPnL('Empresa')}
         </tr></thead>
         <tbody>${resumoRows}</tbody>
       </table>
@@ -18990,9 +19017,7 @@ function renderVendasQuadro(quadroOpt) {
     <div class="vq-scroll vq-scroll-det">
       <table class="vq-table">
         <thead><tr>
-          <th class="vq-linha">Empresa</th><th>Canal</th><th>Vendedor</th>
-          <th class="vq-num">N</th>
-          <th class="vq-num">Linhas</th>
+          ${htmlCabecalhoValorPnL('Vendedor')}
         </tr></thead>
         <tbody>${detRows}</tbody>
       </table>
@@ -33308,7 +33333,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-marco: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-ordem: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

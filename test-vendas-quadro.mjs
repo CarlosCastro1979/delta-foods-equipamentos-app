@@ -371,6 +371,7 @@ check('números do resumo filtram o detalhe; zero não é clicável', () => {
     'metricasLinhaQuadro', 'ordenarNomesQuadroPnL', 'linhasResumoQuadroPnL', 'htmlLinhaResumoPnL',
     'chaveObjetivoQuadro', 'objetivoCanalMes', 'objetivoAcumuladoQuadro',
     'htmlCelulaObjetivoPnL', 'htmlCelsObjetivoPnL',
+    'variacaoObjetivoPct', 'htmlCabecalhoValorPnL', 'htmlLinhaValorObjetivoPnL',
     'nomeVendedorQuadroMarcio', 'quadroComMarcioIdentificado',
     'menusCanalVendasQuadro', 'canalMenuVendasActivo', 'htmlMenusCanalVendas',
     'volumeEfetivoCelula', 'somarVolumeQuadroNosMeses', 'metricasVolumeLinhaQuadro',
@@ -699,12 +700,137 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(html.includes('Por classificar'));
   assert.ok(html.includes('O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-marco'));
+  assert.ok(sw.includes('v2026-10-01-vendas-ordem'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-01-vendas-marco'));
+  assert.ok(html.includes('v2026-10-01-vendas-ordem'));
   assert.ok(!html.includes('v2026-10-01-vendas-rs'));
   assert.ok(!html.includes('v2026-10-01-vendas-prev'));
+});
+
+function tabelasVq(htmlOut) {
+  return [...String(htmlOut).matchAll(/<table class="vq-table">([\s\S]*?)<\/table>/g)].map(m => m[1]);
+}
+
+function cabecalhosVq(table) {
+  const head = table.match(/<thead>[\s\S]*?<\/thead>/);
+  if (!head) return [];
+  return [...head[0].matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/g)].map(m => m[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
+}
+
+function linhasVq(table) {
+  const body = table.match(/<tbody>([\s\S]*?)<\/tbody>/);
+  if (!body) return [];
+  return [...body[1].matchAll(/<tr\b([^>]*)>([\s\S]*?)<\/tr>/g)].map(m => ({
+    attrs: m[1],
+    cells: [...m[2].matchAll(/<td\b([^>]*)>([\s\S]*?)<\/td>/g)].map(td => ({
+      attrs: td[1],
+      html: td[2],
+      text: td[2].replace(/<[^>]+>/g, '').replace(/\u00a0/g, ' ').trim(),
+    })),
+  }));
+}
+
+const ORDEM_VALOR = ['N-1', 'N', 'Objetivo', 'Var. obj. %', 'N vs N-1 %', 'Acum. N-1', 'Acum. N', 'Acum. objetivo', 'Acum. var. obj. %', 'Acum. vs N-1 %'];
+
+check('Set/2026: Objetivo da Delta fica a seguir a N e os Acum.* só depois das var % do mês', () => {
+  vm.runInContext('var PV_OBJETIVOS_CANAL = ' + extractConstObject(html, 'PV_OBJETIVOS_CANAL') + ';', ctx);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', '', '2026-03'), 3225965);
+  assert.equal(ctx.objetivoCanalMes('Q Brasil', '', '2026-03'), 280275);
+  assert.equal(ctx.objetivoCanalMes('', '', '2026-03'), 3506241);
+  assert.equal(ctx.objetivoCanalMes('Delta Foods Brasil', '', '2026-09'), 3317777);
+
+  const abaixo = ctx.variacaoObjetivoPct(2230077.91, true, 3317777);
+  assert.equal(ctx.formatPctQuadroPnL(abaixo), '-33%');
+  assert.equal(ctx.classeVarPnL(abaixo), 'vq-var-neg');
+  const acima = ctx.variacaoObjetivoPct(150, true, 100);
+  assert.equal(ctx.formatPctQuadroPnL(acima), '50%');
+  assert.equal(ctx.classeVarPnL(acima), 'vq-var-pos');
+  assert.equal(ctx.variacaoObjetivoPct(100, true, null), null);
+  assert.equal(ctx.variacaoObjetivoPct(100, false, 50), null);
+  assert.equal(ctx.variacaoObjetivoPct(10, true, 0), null);
+  assert.ok(!ctx.htmlCelulaPctPnL(null, { empresa: 'Delta Foods Brasil' }, false).includes('<button'));
+  assert.ok(!ctx.htmlCelulaPctPnL(0, { empresa: 'Delta Foods Brasil' }, false).includes('<button'));
+
+  function cel(empresa, canal, vendedor, valor) {
+    return { empresa, canal, vendedor, valor, linhas: 1, linhasComValor: 1 };
+  }
+  const q = ctx.quadroVendasVazio();
+  q.meses['2025-09'] = { celulas: { a: cel('Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA', 1000000) } };
+  q.meses['2026-09'] = { celulas: { b: cel('Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA', 2000000) } };
+
+  const mesEl = ctx.document.getElementById('vq-mes');
+  const anoEl = ctx.document.getElementById('vq-ano');
+  mesEl.value = '9';
+  anoEl.value = '2026';
+  mesEl.dataset.ready = '1';
+  ctx.window._vqCanal = null;
+  ctx.window._vqFiltro = null;
+  ctx.renderVendasQuadro(q);
+  const out = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
+  assert.ok(!out.includes('Var Bud'));
+
+  const tabs = tabelasVq(out.split('Volumes')[0]);
+  assert.ok(tabs.length >= 1, 'quadro geral tem a tabela de valor');
+  const heads = cabecalhosVq(tabs[0]);
+  assert.deepEqual(heads, ['Empresa'].concat(ORDEM_VALOR));
+  assert.equal(heads.indexOf('Objetivo'), heads.indexOf('N') + 1);
+  const fimMes = heads.indexOf('N vs N-1 %');
+  heads.forEach((h, i) => {
+    if (h.startsWith('Acum.')) assert.ok(i > fimMes, h + ' aparece antes das var % do mês');
+  });
+
+  const delta = linhasVq(tabs[0]).find(r => r.cells[0] && r.cells[0].text === 'Delta Foods Brasil');
+  assert.ok(delta, 'linha da Delta');
+  assert.equal(delta.cells.length, 11);
+  assert.equal(delta.cells[3].text, ctx.formatNumeroQuadroPnL(3317777, true), 'Objetivo 3317777 na coluna a seguir a N');
+  assert.ok(delta.cells[3].html.includes('<button'), 'objetivo com número é clicável');
+  assert.ok(!/vq-var-/.test(delta.cells[3].attrs), 'objetivo não leva cor de variação');
+  assert.equal(delta.cells[4].text, '-40%');
+  assert.ok(delta.cells[4].attrs.includes('vq-var-neg'));
+  const lojas = linhasVq(tabs[0]).find(r => r.cells[0] && r.cells[0].text === 'Lojas online');
+  assert.ok(lojas);
+  assert.equal(lojas.cells[3].text, ctx.formatNumeroQuadroPnL(1256087, true));
+  assert.equal(lojas.cells[4].text, '59%');
+  assert.ok(lojas.cells[4].attrs.includes('vq-var-pos'));
+
+  const volTabs = tabelasVq(out.split('Volumes')[1] || '');
+  assert.deepEqual(cabecalhosVq(volTabs[0]), ['Empresa', 'N-1', 'N', 'N vs N-1 %', 'Acum. N-1', 'Acum. N', 'Acum. vs N-1 %']);
+
+  const det = tabelasVq(out.split('Detalhe por vendedor')[1] || '');
+  assert.deepEqual(cabecalhosVq(det[0]), ['Vendedor'].concat(ORDEM_VALOR));
+  const marcioDet = linhasVq(det[0]).find(r => r.cells[0] && r.cells[0].text.includes('MARCIO GORGA'));
+  assert.ok(marcioDet, 'detalhe lista o vendedor');
+  assert.equal(marcioDet.cells[3].text, '—');
+  assert.ok(!marcioDet.cells[3].html.includes('<button'), 'sem objetivo não é clicável');
+  assert.equal(marcioDet.cells[4].text, '—');
+  assert.ok(!marcioDet.cells[4].html.includes('<button'));
+
+  ctx.window._vqCanal = { empresa: 'Delta Foods Brasil', canal: 'Lojas online' };
+  ctx.window._vqFiltro = null;
+  ctx.renderVendasQuadro(q);
+  const canalHtml = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
+  const cTabs = tabelasVq(canalHtml.split('Volumes')[0]);
+  assert.deepEqual(cabecalhosVq(cTabs[0]), ['Canal / vendedor'].concat(ORDEM_VALOR));
+  const canalRow = linhasVq(cTabs[0]).find(r => r.cells[0] && r.cells[0].text === 'Lojas online');
+  assert.equal(canalRow.cells[3].text, ctx.formatNumeroQuadroPnL(1256087, true));
+  assert.equal(canalRow.cells[2].text, ctx.formatNumeroQuadroPnL(2000000, true));
+  const venRow = linhasVq(cTabs[0]).find(r => r.cells[0] && r.cells[0].text === 'MARCIO GORGA');
+  assert.ok(venRow, 'mapa do canal lista o vendedor');
+  assert.equal(venRow.cells[3].text, '—');
+  assert.ok(!venRow.cells[3].html.includes('<button'));
+  assert.equal(venRow.cells[4].text, '—');
+  assert.equal(venRow.cells[5].text, '100%');
+  assert.ok(venRow.cells[5].attrs.includes('vq-var-pos'));
+  const cDet = tabelasVq(canalHtml.split('Detalhe por vendedor')[1] || '');
+  assert.deepEqual(cabecalhosVq(cDet[0]), ['Vendedor'].concat(ORDEM_VALOR));
+  const venDet = linhasVq(cDet[0]).find(r => r.cells[0] && r.cells[0].text === 'MARCIO GORGA');
+  assert.equal(venDet.cells[3].text, '—');
+  assert.ok(!venDet.cells[3].html.includes('<button'));
+  cabecalhosVq(cTabs[0]).forEach((h, i) => {
+    if (h.startsWith('Acum.')) assert.ok(i > cabecalhosVq(cTabs[0]).indexOf('N vs N-1 %'), h);
+  });
+  ctx.window._vqCanal = null;
 });
 
 if (process.exitCode) {
