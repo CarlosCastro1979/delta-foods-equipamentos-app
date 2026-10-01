@@ -2138,14 +2138,14 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal, Accuracy de fecho, o quadro geral de Vendas e NF emitidas (zip do cockpit). Cada canal tem o menu Vendas no topo. Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
+          <div class="hd-desc">Mapa mensal, Accuracy de fecho, o quadro geral de Vendas e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
         <span class="hd-icon">⚙</span>
         <span>
           <div class="hd-title">Dados</div>
-          <div class="hd-desc">Carregar Lista SAP, Vendas, Dívidas e códigos relacionados — para todos os canais. Acesso: admins (Carlos, Christian, Andrea, Daniela K.).</div>
+          <div class="hd-desc">Carregar Lista SAP, Vendas, Dívidas, ZIP de XML da TTI e códigos relacionados — para todos os canais. Acesso: admins (Carlos, Christian, Andrea, Daniela K.).</div>
         </span>
       </button>
     </div>
@@ -3552,6 +3552,11 @@ var _unused_placeholder = 1;
 
   <!-- VENDAS do menu do canal (Horeca, Ecommerce, Varejo, Distribuidores) -->
   <div class="panel" id="panel-vendas-canal">
+    <div class="sub-nav" style="margin-bottom:12px;">
+      <button type="button" class="sub-tab active" id="cvm-sub-quadro" onclick="cvmShowSub('quadro')">Quadro</button>
+      <button type="button" class="sub-tab" id="cvm-sub-notas" onclick="cvmShowSub('notas')">Notas fiscais</button>
+    </div>
+    <div id="cvm-pane-quadro">
     <div style="margin-bottom:12px;">
       <div id="canal-vendas-titulo" style="font-size:16px;font-weight:700;">Vendas</div>
       <div style="font-size:12px;color:var(--muted);margin-top:2px;">Vendas líquidas só dos canais deste menu. O vendedor fica na mesma tabela.</div>
@@ -3565,6 +3570,14 @@ var _unused_placeholder = 1;
       </label>
     </div>
     <div id="canal-vendas-quadro"><div style="color:var(--muted);font-size:13px;">A ler o agregado guardado…</div></div>
+    </div>
+    <div id="cvm-pane-notas" style="display:none;">
+      <div style="margin-bottom:12px;">
+        <div id="canal-nfe-titulo" style="font-size:16px;font-weight:700;">Notas fiscais</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;">Só as NF deste canal. A carga do ZIP de XML da TTI faz-se em Dados.</div>
+      </div>
+      <div id="canal-nfe-host"><div style="color:var(--muted);font-size:13px;">Abre este separador para ver as notas.</div></div>
+    </div>
   </div>
 
   <!-- PANEL: VISITAS DO DIA (Horeca) -->
@@ -4098,6 +4111,25 @@ var _unused_placeholder = 1;
         <div id="dividas-result" style="display:none;font-size:13px;padding:10px 14px;border-radius:8px;margin-bottom:10px;"></div>
         <button class="btn btn-primary btn-sm" id="dividas-select-btn" onclick="document.getElementById('dados-dividas-input').click()">📂 Selecionar ficheiro</button>
         <div id="dividas-ultima-carga" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+      </div>
+
+      <!-- ZIP DE XML DA TTI (NF-e do cockpit TTIN) -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="font-size:22px;">🧾</span>
+          <div>
+            <div style="font-weight:600;font-size:15px;">ZIP de XML da TTI</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5;">
+              Ficheiro que sai do cockpit TTIN: vários XML de NF-e dentro de um zip. Um XML avulso também entra.<br>
+              Cruza o CNPJ/CPF do destinatário com a lista de clientes. CPF sem vendedor fica no Marcio Gorga (Ecommerce, 99520001). CNPJ que já têm vendedor não mudam.<br>
+              A mesma chave de NF não duplica. A gravação é só no fim da carga.<br>
+              Consulta na Previsão de vendas e no menu Vendas de cada canal. Acesso: os mesmos admins deste ecrã.
+            </div>
+          </div>
+        </div>
+        <input type="file" id="dados-nfe-input" accept=".zip,.xml,application/zip,application/xml,text/xml" multiple style="display:none" onchange="nfeOnFiles(event)">
+        <button type="button" class="btn btn-primary btn-sm" id="dados-nfe-btn" onclick="document.getElementById('dados-nfe-input').click()">📂 Selecionar ZIP de XML da TTI</button>
+        <div id="dados-nfe-status" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
       </div>
 
       <!-- CÓDIGOS RELACIONADOS -->
@@ -5824,6 +5856,7 @@ async function desbloquearDadosContent() {
   loadCodRelacionados();
   loadVendasCobertura(false);
   try { if (typeof distCargaEquipRefreshStats === 'function') distCargaEquipRefreshStats(); } catch (_) {}
+  try { if (typeof nfeAoAbrirDados === 'function') nfeAoAbrirDados(); } catch (_) {}
   try {
     if (typeof carregarDividasMetaRemoto === 'function') {
       const meta = await carregarDividasMetaRemoto();
@@ -11008,7 +11041,10 @@ async function abrirDadosHome() {
     if (panel) panel.classList.add('active');
     const gate = document.getElementById('dados-pin-gate');
     const content = document.getElementById('dados-content');
-    if (content && content.style.display === 'block') return;
+    if (content && content.style.display === 'block') {
+      try { if (typeof nfeAoAbrirDados === 'function') nfeAoAbrirDados(); } catch (_) {}
+      return;
+    }
     if (gate) gate.style.display = '';
     if (content) content.style.display = 'none';
     const ok = await pedirPinUtilizador({
@@ -11030,7 +11066,7 @@ const AT_AREA_ACESSO = ['Fernando', 'Ricardo Vicente Silva', 'Marcelo'];
 /** Área Financeira: admins (Carlos, Christian, Andrea, Daniela K.). PIN à entrada. */
 const FIN_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski'];
 
-/** Área Dados (carregamentos SAP/Vendas/Dívidas): admins. */
+/** Área Dados (carregamentos SAP, Vendas, Dívidas e ZIP de XML da TTI): admins. */
 const DADOS_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski'];
 
 /**
@@ -12757,7 +12793,7 @@ function nfePrepararChrome() {
   if (excel) excel.style.display = 'none';
   const banner = document.getElementById('pv-banner');
   if (banner) {
-    banner.innerHTML = '<strong>NF emitidas</strong> — zip do cockpit (ou um XML avulso). Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. CPF sem vendedor fica no Marcio Gorga, no Ecommerce. A mesma chave não duplica. A gravação é no fim da carga.';
+    banner.innerHTML = '<strong>NF emitidas</strong> — consulta. A carga do ZIP de XML da TTI faz-se em Dados. Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. CPF sem vendedor fica no Marcio Gorga, no Ecommerce. A mesma chave não duplica. A gravação é no fim da carga.';
   }
 }
 
@@ -12882,7 +12918,7 @@ async function nfeFicheiroParaXmls(file) {
       zip = await JSZip.loadAsync(await file.arrayBuffer());
     } catch (e) {
       const msg = String((e && e.message) || e);
-      if (/encrypt|password|senha/i.test(msg)) throw new Error('Este zip tem senha. Exporta o cockpit sem senha.');
+      if (/encrypt|password|senha/i.test(msg)) throw new Error('Este ZIP está protegido. No cockpit TTIN, exporta o ZIP de XML da TTI sem senha.');
       throw new Error('Não consegui abrir o zip.');
     }
     const jobs = [];
@@ -12892,7 +12928,7 @@ async function nfeFicheiroParaXmls(file) {
     });
     return Promise.all(jobs);
   }
-  throw new Error('Escolhe um zip do cockpit ou um XML de NF-e.');
+  throw new Error('Escolhe o ZIP de XML da TTI ou um XML de NF-e.');
 }
 
 async function nfeOnFiles(ev) {
@@ -12902,7 +12938,7 @@ async function nfeOnFiles(ev) {
   if (!files.length || _nfeBusy) return;
   _nfeBusy = true;
   _nfeStatusMsg = 'A ler o ficheiro… a gravação é só no fim.';
-  nfePaint();
+  nfeSyncVistas();
   try {
     await nfeHidrate();
     const parsed = [];
@@ -12947,7 +12983,7 @@ async function nfeOnFiles(ev) {
     if (typeof toast === 'function') toast(_nfeStatusMsg, 'error');
   } finally {
     _nfeBusy = false;
-    if (_pvView === 'nfe') nfePaint();
+    nfeSyncVistas();
   }
 }
 
@@ -12976,15 +13012,24 @@ function nfeResumoRows(notas) {
   return rows;
 }
 
-function nfeCountHtml(n, key) {
-  const num = Number(n) || 0;
+function nfeCountHtml(n, key, fnName) {
+  if (n == null || n === '—') return '—';
+  const num = Number(n);
+  if (!Number.isFinite(num)) return '—';
   if (!num) return '0';
-  return `<button type="button" class="nfe-click" onclick="nfeFiltrar('${String(key).replace(/'/g, '')}')">${num}</button>`;
+  const fn = fnName === 'nfeFiltrarCanal' ? 'nfeFiltrarCanal' : 'nfeFiltrar';
+  const safe = encodeURIComponent(String(key || '')).replace(/'/g, '%27');
+  return `<button type="button" class="nfe-click" onclick="${fn}('${safe}')">${num}</button>`;
+}
+
+function nfeChaveFiltro(key) {
+  try { return decodeURIComponent(String(key || '')); } catch (_) { return String(key || ''); }
 }
 
 function nfeFiltrar(key) {
-  if (!key || key === 'total') _nfeFiltro = '';
-  else _nfeFiltro = (_nfeFiltro === key) ? '' : key;
+  const k = nfeChaveFiltro(key);
+  if (!k || k === 'total') _nfeFiltro = '';
+  else _nfeFiltro = (_nfeFiltro === k) ? '' : k;
   nfePaint();
 }
 
@@ -13042,10 +13087,16 @@ function nfeBannerHtml() {
   </div>`;
 }
 
-function nfeListaHtml(notas) {
-  const vis = (notas || []).filter(nfePassaFiltro).slice().sort(nfeCmpNota);
+function nfeListaHtml(notas, passa) {
+  const pred = typeof passa === 'function' ? passa : nfePassaFiltro;
+  const vis = (notas || []).filter(pred).slice().sort(nfeCmpNota);
   if (!vis.length) {
-    const vazio = (_nfeNotas && _nfeNotas.length) ? 'Nenhuma nota neste filtro.' : 'Ainda sem NF. Larga o zip do cockpit.';
+    const temAlguma = Array.isArray(notas) && notas.length;
+    const vazio = temAlguma
+      ? 'Nenhuma nota neste filtro.'
+      : (passa
+        ? 'Ainda sem NF deste canal. A carga do ZIP de XML da TTI faz-se em Dados.'
+        : 'Ainda sem NF. A carga do ZIP de XML da TTI faz-se em Dados.');
     return `<p style="color:var(--muted);font-size:13px;">${vazio}</p>`;
   }
   const grupos = [];
@@ -13096,36 +13147,173 @@ function nfeListaHtml(notas) {
 function nfeHtml() {
   const notas = _nfeNotas || [];
   const rows = nfeResumoRows(notas);
-  const resumo = `<table style="border-collapse:collapse;font-size:13px;margin:0 0 8px;min-width:320px;">
+  const resumo = nfeTabelaResumo(rows, 'nfeFiltrar');
+  const estado = escHtml(_nfeStatusMsg || (notas.length ? (notas.length + ' notas guardadas.') : 'Ainda sem carga. O ZIP de XML da TTI carrega-se em Dados.'));
+  return `<p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;">
+      Consulta das NF já carregadas. O ZIP de XML da TTI carrega-se em <strong>Dados</strong>. CPF sem vendedor fica no Marcio Gorga (Ecommerce). A mesma chave não duplica.
+    </p>
+    <div style="font-size:12px;color:var(--muted);margin:0 0 12px;">${estado}</div>
+    ${resumo}
+    ${nfeBannerHtml()}
+    ${nfeListaHtml(notas)}`;
+}
+
+function nfeTabelaResumo(rows, fnName) {
+  return `<table style="border-collapse:collapse;font-size:13px;margin:0 0 8px;min-width:320px;">
     <thead><tr>
       <th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);"></th>
       <th style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);">Notas</th>
     </tr></thead>
-    <tbody>${rows.map(r => `<tr>
-      <td style="padding:6px 10px;border-bottom:1px solid var(--border);">${escHtml(r.label)}</td>
-      <td style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);${r.n ? 'font-weight:600;' : 'color:var(--muted);'}">${nfeCountHtml(r.n, r.key)}</td>
-    </tr>`).join('')}</tbody>
+    <tbody>${(rows || []).map(r => {
+      const rotulo = r.label === '—' ? '—' : escHtml(r.label);
+      const clicavel = r.label !== '—' && r.label !== '-';
+      const conta = clicavel ? nfeCountHtml(r.n, r.key, fnName) : (Number(r.n) ? String(r.n) : '0');
+      return `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border);">${rotulo}</td>
+      <td style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);${r.n ? 'font-weight:600;' : 'color:var(--muted);'}">${conta}</td>
+    </tr>`;
+    }).join('')}</tbody>
   </table>
-  <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">Clique numa contagem para ver só essas notas. Zero não filtra.</p>`;
-  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;">
-      <div style="font-weight:600;margin-bottom:4px;">Zip do cockpit de NF-e</div>
-      <p style="font-size:12px;color:var(--muted);margin:0 0 10px;line-height:1.45;">
-        Larga o zip novo (ou um XML avulso). A app lê as NF-e, cruza o documento do destinatário com a lista de clientes
-        e mostra número, cliente, valor e data por canal e por vendedor. CPF sem vendedor na lista fica sempre no Marcio Gorga (Ecommerce). Notas já guardadas não duplicam.
-      </p>
-      <input type="file" id="nfe-file-input" accept=".zip,.xml,application/zip,application/xml,text/xml" multiple style="display:none" onchange="nfeOnFiles(event)">
-      <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('nfe-file-input').click()" ${_nfeBusy ? 'disabled' : ''}>📂 Selecionar zip ou XML</button>
-      <div style="font-size:12px;color:var(--muted);margin-top:8px;">${escHtml(_nfeStatusMsg || (notas.length ? (notas.length + ' notas guardadas.') : 'Ainda sem carga neste ecrã.'))}</div>
-    </div>
-    ${resumo}
-    ${nfeBannerHtml()}
-    ${nfeListaHtml(notas)}`;
+  <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">Clique numa contagem para ver só essas notas. Zero e «—» não filtram.</p>`;
 }
 
 function nfePaint() {
   const host = document.getElementById('pv-canal-panels');
   if (!host || _pvView !== 'nfe') return;
   host.innerHTML = nfeHtml();
+}
+
+function nfeSyncVistas() {
+  const st = document.getElementById('dados-nfe-status');
+  if (st) {
+    st.textContent = _nfeStatusMsg || ((_nfeNotas && _nfeNotas.length) ? (_nfeNotas.length + ' notas guardadas.') : 'Ainda sem carga.');
+  }
+  const btn = document.getElementById('dados-nfe-btn');
+  if (btn) btn.disabled = !!_nfeBusy;
+  if (_pvView === 'nfe') nfePaint();
+  const pane = document.getElementById('cvm-pane-notas');
+  const panel = document.getElementById('panel-vendas-canal');
+  if (pane && panel && panel.classList.contains('active') && pane.style.display !== 'none') nfePaintCanal();
+}
+
+async function nfeAoAbrirDados() {
+  try { await nfeHidrate(); } catch (_) {}
+  if (!_nfeBusy && !_nfeStatusMsg && _nfeNotas && _nfeNotas.length) {
+    _nfeStatusMsg = _nfeNotas.length + ' notas guardadas.';
+  }
+  nfeSyncVistas();
+}
+
+let _nfeFiltroCanal = '';
+let _nfeFiltroCanalId = '';
+let _nfeCanalGen = 0;
+
+function nfeNotasMenuCanal() {
+  const canalId = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : '') || '';
+  if (typeof nfeNotasDoCanal === 'function') return nfeNotasDoCanal(_nfeNotas, canalId);
+  return (_nfeNotas || []).filter(n => n && String(n.canalId || '') === String(canalId || ''));
+}
+
+function nfeBucketVend(n) {
+  const raw = String((n && n.vendedor) || '').trim();
+  if (!raw || raw === '—') return 'sem_vendedor';
+  const norm = typeof nfeNormNome === 'function' ? nfeNormNome(raw) : raw;
+  return 'vend:' + norm;
+}
+
+function nfeResumoCanalRows(notas) {
+  const by = new Map();
+  (notas || []).forEach(n => {
+    const key = nfeBucketVend(n);
+    const raw = String((n && n.vendedor) || '').trim();
+    if (!by.has(key)) {
+      by.set(key, { key, label: key === 'sem_vendedor' ? 'Sem vendedor' : (raw || 'Sem vendedor'), n: 0 });
+    }
+    by.get(key).n++;
+  });
+  const rest = [...by.values()].sort((a, b) => {
+    if (a.key === 'sem_vendedor') return 1;
+    if (b.key === 'sem_vendedor') return -1;
+    return String(a.label).localeCompare(String(b.label), 'pt');
+  });
+  return [{ key: 'total', label: 'Total', n: (notas || []).length }].concat(rest);
+}
+
+function nfePassaFiltroCanal(n) {
+  if (!_nfeFiltroCanal || _nfeFiltroCanal === 'total') return true;
+  return nfeBucketVend(n) === _nfeFiltroCanal;
+}
+
+function nfeFiltrarCanal(key) {
+  const k = nfeChaveFiltro(key);
+  const canalId = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : '') || '';
+  if (_nfeFiltroCanalId !== canalId) _nfeFiltroCanal = '';
+  if (!k || k === 'total') _nfeFiltroCanal = '';
+  else _nfeFiltroCanal = (_nfeFiltroCanal === k) ? '' : k;
+  _nfeFiltroCanalId = canalId;
+  nfePaintCanal();
+}
+
+function nfeLimparFiltroCanal() {
+  _nfeFiltroCanal = '';
+  nfePaintCanal();
+}
+
+function nfeBannerCanalHtml(notas) {
+  if (!_nfeFiltroCanal) return '';
+  const hit = nfeResumoCanalRows(notas).find(r => r.key === _nfeFiltroCanal);
+  const label = hit ? hit.label : _nfeFiltroCanal;
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px;padding:8px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:13px;">
+    <span>Filtro: <strong>${escHtml(label)}</strong></span>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="nfeLimparFiltroCanal()">Limpar</button>
+  </div>`;
+}
+
+function nfeHtmlCanal(notas) {
+  return `${nfeTabelaResumo(nfeResumoCanalRows(notas), 'nfeFiltrarCanal')}
+    ${nfeBannerCanalHtml(notas)}
+    ${nfeListaHtml(notas, nfePassaFiltroCanal)}`;
+}
+
+function nfePaintCanal() {
+  const host = document.getElementById('canal-nfe-host');
+  const titulo = document.getElementById('canal-nfe-titulo');
+  if (!host) return;
+  const canalId = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : '') || '';
+  if (_nfeFiltroCanalId !== canalId) {
+    _nfeFiltroCanal = '';
+    _nfeFiltroCanalId = canalId;
+  }
+  const canal = (typeof CANAIS_APP !== 'undefined' && canalId && CANAIS_APP[canalId]) ? CANAIS_APP[canalId] : null;
+  if (titulo) titulo.textContent = canal ? ('Notas fiscais · ' + canal.nome) : 'Notas fiscais';
+  host.innerHTML = nfeHtmlCanal(nfeNotasMenuCanal());
+}
+
+async function nfeMontarCanal() {
+  const gen = ++_nfeCanalGen;
+  const host = document.getElementById('canal-nfe-host');
+  if (host) host.innerHTML = '<p style="color:var(--muted);font-size:13px;">A carregar notas deste canal…</p>';
+  try {
+    await nfeHidrate();
+  } catch (e) {
+    console.warn(e);
+    _nfeStatusMsg = 'Não foi possível ler as NF guardadas.';
+  }
+  if (gen !== _nfeCanalGen) return;
+  nfePaintCanal();
+}
+
+function cvmShowSub(sub) {
+  const notas = sub === 'notas';
+  const quadro = document.getElementById('cvm-pane-quadro');
+  const pane = document.getElementById('cvm-pane-notas');
+  const tabQ = document.getElementById('cvm-sub-quadro');
+  const tabN = document.getElementById('cvm-sub-notas');
+  if (quadro) quadro.style.display = notas ? 'none' : '';
+  if (pane) pane.style.display = notas ? '' : 'none';
+  if (tabQ) tabQ.classList.toggle('active', !notas);
+  if (tabN) tabN.classList.toggle('active', notas);
+  if (notas) nfeMontarCanal();
 }
 
 async function nfeMontarVista() {
@@ -20034,6 +20222,8 @@ function initVendasMenuCanal() {
     el.addEventListener('click', onClickVendasMenuCanal);
   }
   loadVendasMenuCanal();
+  const pane = document.getElementById('cvm-pane-notas');
+  if (pane && pane.style.display !== 'none') nfeMontarCanal();
 }
 
 async function loadVendasMenuCanal() {
@@ -34529,7 +34719,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-nfe-cpf-marcio: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-nfe-dados-canal: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

@@ -264,6 +264,15 @@
     return { notas: notas, novas: novas, repetidas: repetidas };
   }
 
+  /** Notas de um menu de canal. Outro canal e notas sem canal ficam de fora. */
+  function nfeNotasDoCanal(notas, canalId) {
+    var id = String(canalId || '');
+    if (!id) return [];
+    return (notas || []).filter(function (n) {
+      return !!(n && String(n.canalId || '') === id);
+    });
+  }
+
   function nfeU32(buf, off) { return buf.readUInt32LE(off); }
   function nfeU16(buf, off) { return buf.readUInt16LE(off); }
 
@@ -329,6 +338,7 @@
     nfeReaplicarCpfSemVendedor: nfeReaplicarCpfSemVendedor,
     nfeAtribDifere: nfeAtribDifere,
     nfeMergeNotas: nfeMergeNotas,
+    nfeNotasDoCanal: nfeNotasDoCanal,
     nfeReadZipXmls: nfeReadZipXmls,
   };
 });

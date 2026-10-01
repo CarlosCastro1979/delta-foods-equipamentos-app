@@ -200,9 +200,130 @@ function testZip(zipPath) {
   }));
 }
 
+function testMenuCanal() {
+  const notas = [
+    { chave: 'H1', canalId: 'horeca', vendedor: 'Hélcio Grégio', numero: '1' },
+    { chave: 'E1', canalId: 'ecommerce', vendedor: 'Marcio Gorga', numero: '102240', npess: '99520001' },
+    { chave: 'S1', canalId: '', status: 'sem_cliente', vendedor: '' },
+  ];
+  const h = nfe.nfeNotasDoCanal(notas, 'horeca');
+  assert(h.length === 1 && h[0].chave === 'H1', 'Horeca só lista notas do Horeca');
+  assert(!h.some(n => n.canalId === 'ecommerce'), 'o menu Horeca não lista notas do Ecommerce');
+  const e = nfe.nfeNotasDoCanal(notas, 'ecommerce');
+  assert(e.length === 1 && e[0].vendedor === 'Marcio Gorga' && e[0].npess === '99520001', 'Ecommerce fica com o Marcio');
+  assert(nfe.nfeNotasDoCanal(notas, '').length === 0, 'sem canal activo não mostra a lista inteira');
+  assert(nfe.nfeNotasDoCanal(notas, 'varejo').length === 0, 'varejo sem notas não herda as dos outros');
+}
+
+function testHorecaNaoListaEcommerce() {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const start = html.indexOf('function nfeBucket(');
+  const end = html.indexOf('async function nfeMontarVista(');
+  assert(start > 0 && end > start, 'bloco de render das NF');
+  const src = html.slice(start, end);
+  const els = {};
+  function el(id) {
+    if (!els[id]) {
+      els[id] = {
+        id,
+        style: { display: 'none' },
+        classList: { toggle() {}, contains() { return false; }, add() {}, remove() {} },
+        innerHTML: '',
+        textContent: '',
+        disabled: false,
+      };
+    }
+    return els[id];
+  }
+  const notas = [
+    { chave: 'H1', canalId: 'horeca', canalNome: 'Horeca', vendedor: 'Hélcio Grégio', numero: '10', cliente: 'Cliente Horeca', valor: 10, data: '2026-10-01', status: 'unico' },
+    { chave: 'E1', canalId: 'ecommerce', canalNome: 'Ecommerce', vendedor: 'Marcio Gorga', numero: '102240', cliente: 'Leandro Falcone', valor: 123.12, data: '2026-10-01', status: 'unico', npess: '99520001' },
+  ];
+  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfeFiltro', '_nfeStatusMsg', '_nfeBusy'];
+  const vals = [
+    { horeca: { id: 'horeca', nome: 'Horeca' }, ecommerce: { id: 'ecommerce', nome: 'Ecommerce' } },
+    (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])),
+    nfe.nfeNormNome,
+    nfe.nfeNotasDoCanal,
+    () => 'horeca',
+    { getElementById: el },
+    'mapa',
+    notas,
+    '',
+    '',
+    false,
+  ];
+  const api = new Function(...names, src + '\nreturn { nfePaintCanal, nfeCountHtml, nfeTabelaResumo, nfeFiltrarCanal, nfeLimparFiltroCanal };')(...vals);
+  api.nfePaintCanal();
+  const host = el('canal-nfe-host');
+  const titulo = el('canal-nfe-titulo');
+  assert(titulo.textContent.includes('Horeca'), 'título do menu é o canal Horeca');
+  assert(host.innerHTML.includes('Cliente Horeca'), 'Horeca mostra a nota do Horeca');
+  assert(!host.innerHTML.includes('Marcio'), 'o menu Horeca não lista o vendedor do Ecommerce');
+  assert(!host.innerHTML.includes('102240'), 'o menu Horeca não lista a NF do Ecommerce');
+  assert(!host.innerHTML.includes('Ecommerce'), 'o menu Horeca não lista o canal Ecommerce');
+  assert(!host.innerHTML.includes('Leandro'), 'o menu Horeca não lista o cliente do Ecommerce');
+  assert(host.innerHTML.includes('Limpar') === false, 'sem filtro ainda não há banner');
+  api.nfeFiltrarCanal(encodeURIComponent('vend:' + nfe.nfeNormNome('Hélcio Grégio')));
+  assert(host.innerHTML.includes('Limpar'), 'filtro activo tem botão Limpar');
+  assert(host.innerHTML.includes('Cliente Horeca'), 'o filtro do vendedor mantém a nota do Horeca');
+  assert(!host.innerHTML.includes('102240'), 'mesmo filtrado, a NF do Ecommerce não entra');
+  api.nfeLimparFiltroCanal();
+  assert(!host.innerHTML.includes('>Limpar<') && !host.innerHTML.includes('Limpar</button>'), 'Limpar tira o banner');
+  const zero = api.nfeTabelaResumo([
+    { key: 'total', label: 'Total', n: 0 },
+    { key: 'x', label: '—', n: 4 },
+  ], 'nfeFiltrar');
+  assert(!zero.includes('<button'), 'zero e «—» não são clicáveis');
+  assert(zero.includes('>0<'), 'zero aparece como texto');
+  const um = api.nfeCountHtml(1, 'canal:horeca');
+  assert(um.includes('<button') && um.includes('nfeFiltrar'), 'contagem positiva é clicável');
+  assert(api.nfeCountHtml(0, 'total') === '0', 'zero não é botão');
+  assert(api.nfeCountHtml(null, 'total') === '—', 'vazio é travessão');
+}
+
+function testUiCarga() {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const sw = fs.readFileSync(path.join(__dirname, '../sw.js'), 'utf8');
+  const dadosIni = html.indexOf('id="panel-dados"');
+  const dadosFim = html.indexOf('id="panel-historico-at"');
+  const dados = html.slice(dadosIni, dadosFim);
+  assert(dados.includes('ZIP de XML da TTI'), 'Dados descreve o ZIP de XML da TTI');
+  assert(dados.includes('cockpit TTIN'), 'explica que o ficheiro sai do cockpit TTIN');
+  assert(dados.includes('id="dados-nfe-input"'), 'o botão de carregar está no Dados');
+  assert(dados.includes('Selecionar ZIP de XML da TTI'), 'o texto do botão é o ZIP de XML da TTI');
+  assert(!dados.includes('type="password"'), 'Dados não pede senha para o zip');
+  assert(!html.includes('delta.local'), 'não liga ao host delta.local');
+
+  const fnIni = html.indexOf('function nfeHtml(');
+  const fnFim = html.indexOf('function nfeTabelaResumo(');
+  const fn = html.slice(fnIni, fnFim);
+  assert(fnIni > 0 && fnFim > fnIni, 'função de consulta das NF encontrada');
+  assert(!fn.includes('type="file"') && !fn.includes('nfe-file-input'), 'a previsão não é o sítio de upload');
+  assert(!fn.includes('Selecionar zip') && !fn.includes('Selecionar ZIP'), 'a previsão não tem botão de carregar');
+  assert(fn.includes('Dados'), 'a consulta aponta a carga para Dados');
+  assert(!html.includes('id="nfe-file-input"'), 'não ficou input de upload na previsão');
+
+  const canalIni = html.indexOf('id="panel-vendas-canal"');
+  const canalFim = html.indexOf('id="panel-visitas"');
+  const canal = html.slice(canalIni, canalFim);
+  assert(canal.includes('id="cvm-sub-notas"'), 'Notas fiscais dentro do menu Vendas do canal');
+  assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
+  assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
+  assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
+  assert(html.includes('v2026-10-01-nfe-dados-canal'), 'service worker referido no index');
+  assert(sw.includes('v2026-10-01-nfe-dados-canal'), 'service worker actualizado');
+
+  const homeDados = html.slice(html.indexOf('class="home-dados-card"'), html.indexOf('class="home-dados-card"') + 700);
+  assert(homeDados.includes('ZIP de XML da TTI'), 'o cartão Dados na home fala do ZIP de XML da TTI');
+}
+
 testAtribuicao();
 testCpfMarcio();
+testMenuCanal();
+testHorecaNaoListaEcommerce();
 testXmlAvulso();
+testUiCarga();
 const zipPath = findZip();
 if (!zipPath) {
   console.log('SKIP zip: ficheiro do cockpit não está no repo (dados de clientes).');
