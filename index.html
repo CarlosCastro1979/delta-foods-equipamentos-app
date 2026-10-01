@@ -20215,7 +20215,7 @@ function variacaoObjectivoQuadro(atual, temAtual, objetivo) {
   return ((a - (+objetivo)) / (+objetivo)) * 100;
 }
 
-function somarQuadroMenuCanal(quadro, yms, empresa, canal, nomeMap) {
+function somarQuadroMenuCanal(quadro, yms, empresa, canal, nomeMap, codsAceites) {
   let valor = 0;
   let tem = false;
   const lista = Array.isArray(yms) ? yms : [];
@@ -20233,7 +20233,10 @@ function somarQuadroMenuCanal(quadro, yms, empresa, canal, nomeMap) {
     for (let j = 0; j < celulas.length; j++) {
       const c = celulas[j];
       if (!c || c.empresa !== empresa || c.canal !== canal) continue;
-      if (normSet && !normSet[normNomeVendaMenu(c.vendedor)]) continue;
+      if (normSet && !normSet[normNomeVendaMenu(c.vendedor)]) {
+        const np = npessNaCelulaMenu(c);
+        if (!(codsAceites && np && codsAceites[np])) continue;
+      }
       tem = true;
       valor = somarValorQuadro(valor, c.valor);
     }
@@ -20241,12 +20244,12 @@ function somarQuadroMenuCanal(quadro, yms, empresa, canal, nomeMap) {
   return { valor: valor, tem: tem };
 }
 
-function metricasMenuCanal(quadro, periodo, empresa, canal, nomeMap) {
+function metricasMenuCanal(quadro, periodo, empresa, canal, nomeMap, codsAceites) {
   const p = periodo || {};
-  const n = somarQuadroMenuCanal(quadro, p.ym ? [p.ym] : [], empresa, canal, nomeMap);
-  const n1 = somarQuadroMenuCanal(quadro, p.ymN1 ? [p.ymN1] : [], empresa, canal, nomeMap);
-  const ac = somarQuadroMenuCanal(quadro, p.ymsN, empresa, canal, nomeMap);
-  const ac1 = somarQuadroMenuCanal(quadro, p.ymsN1, empresa, canal, nomeMap);
+  const n = somarQuadroMenuCanal(quadro, p.ym ? [p.ym] : [], empresa, canal, nomeMap, codsAceites);
+  const n1 = somarQuadroMenuCanal(quadro, p.ymN1 ? [p.ymN1] : [], empresa, canal, nomeMap, codsAceites);
+  const ac = somarQuadroMenuCanal(quadro, p.ymsN, empresa, canal, nomeMap, codsAceites);
+  const ac1 = somarQuadroMenuCanal(quadro, p.ymsN1, empresa, canal, nomeMap, codsAceites);
   return {
     n: n.valor,
     nTem: n.tem,
@@ -20344,6 +20347,204 @@ function htmlLinhaVendasMenu(labelHtml, trCls, met, objetivoMes, objetivoAc, fil
   </tr>`;
 }
 
+const HORECA_BUDGET_ANUAL_NPESS = {
+  'Restauração': { 99520002: 2020611, 99520007: 1905593, 99520006: 1361439, 99520010: 115580 },
+  'Institucional': { 99520016: 83866, 99520017: 42930, 99520015: 47774, 99520019: 707 },
+};
+
+function nomePorNpessDefault(npess) {
+  const n = parseInt(npess, 10);
+  if (!n) return '';
+  const defs = (typeof VENDEDORES_DEFAULT !== 'undefined') ? VENDEDORES_DEFAULT : [];
+  for (let i = 0; i < defs.length; i++) {
+    if (parseInt(defs[i].cod, 10) === n && defs[i].nome) return String(defs[i].nome);
+  }
+  return '';
+}
+function npessNaCelulaMenu(cell) {
+  if (!cell) return 0;
+  const direto = parseInt(cell.npess, 10);
+  if (direto) return direto;
+  const m = String(cell.vendedor || '').match(/(\d{6,})/);
+  if (!m) return 0;
+  const n = parseInt(m[1], 10);
+  return n || 0;
+}
+function linhasParticaoHoreca(canal) {
+  const part = (typeof HORECA_BUDGET_ANUAL_NPESS !== 'undefined') ? HORECA_BUDGET_ANUAL_NPESS[canal] : null;
+  if (!part) return [];
+  const out = [];
+  const cods = Object.keys(part);
+  for (let i = 0; i < cods.length; i++) {
+    const npess = parseInt(cods[i], 10);
+    const anual = +part[cods[i]];
+    if (!npess || !(anual > 0)) continue;
+    const nome = nomePorNpessDefault(npess);
+    if (!nome) continue;
+    out.push({ npess: npess, nome: nome, anual: anual });
+  }
+  return out;
+}
+function pesosPorNomeHoreca(canal) {
+  const linhas = linhasParticaoHoreca(canal);
+  const map = {};
+  for (let i = 0; i < linhas.length; i++) {
+    if (!map[linhas[i].nome]) map[linhas[i].nome] = 0;
+    map[linhas[i].nome] += linhas[i].anual;
+  }
+  return ordenarNomesQuadroPnL(Object.keys(map)).map(nome => ({ nome: nome, anual: map[nome] }));
+}
+function codsDoCanalHoreca(canal) {
+  const set = {};
+  linhasParticaoHoreca(canal).forEach(l => { set[l.npess] = 1; });
+  return set;
+}
+function codsDoNomeHoreca(canal, nome) {
+  const want = normNomeVendaMenu(nome);
+  const set = {};
+  linhasParticaoHoreca(canal).forEach(l => {
+    if (normNomeVendaMenu(l.nome) === want) set[l.npess] = 1;
+  });
+  return set;
+}
+function canonizarNomeVendedorHoreca(canal, nome) {
+  const n = npessNaCelulaMenu({ vendedor: nome });
+  if (!n) return String(nome || '');
+  const part = HORECA_BUDGET_ANUAL_NPESS[canal];
+  if (!part || part[n] == null) return String(nome || '');
+  return nomePorNpessDefault(n) || String(nome || '');
+}
+function repartirInteirosProporcao(total, pesos) {
+  const lista = Array.isArray(pesos) ? pesos : [];
+  const t = Math.round(+total);
+  const soma = lista.reduce((s, p) => s + (+p || 0), 0);
+  if (!Number.isFinite(t) || soma <= 0) return lista.map(() => 0);
+  const partes = lista.map(p => {
+    const num = t * (+p || 0);
+    return { base: Math.floor(num / soma), rem: num % soma };
+  });
+  let resto = t - partes.reduce((s, x) => s + x.base, 0);
+  const ordem = partes.map((x, i) => ({ i: i, rem: x.rem })).sort((a, b) => b.rem - a.rem || a.i - b.i);
+  let k = 0;
+  while (resto > 0 && ordem.length) {
+    partes[ordem[k % ordem.length].i].base += 1;
+    resto -= 1;
+    k += 1;
+  }
+  return partes.map(x => x.base);
+}
+function particaoInstPreservadaMenu(balcao, horeca, objetivo) {
+  if (typeof pvParticaoInstPreservada === 'function') return pvParticaoInstPreservada(balcao, horeca, objetivo);
+  if (balcao == null || horeca == null || objetivo == null) return false;
+  const sa = +balcao, sb = +horeca, o = +objetivo;
+  if (!Number.isFinite(sa) || !Number.isFinite(sb) || !Number.isFinite(o)) return false;
+  return Math.abs((sa + sb) - o) <= 1;
+}
+function linhasMapaInstMes(ano, mes) {
+  const y = parseInt(ano, 10), m = parseInt(mes, 10);
+  if (!y || !m) return [];
+  const mes0 = m - 1;
+  let linhas = null;
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage && typeof pvStoreKey === 'function') {
+      const raw = localStorage.getItem(pvStoreKey(y, mes0));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.linhas) && parsed.linhas.length) linhas = parsed.linhas;
+      }
+    }
+  } catch (_) {}
+  if (!linhas && typeof _pvCloudCache !== 'undefined' && _pvCloudCache && _pvCloudCache.maps && typeof pvStoreKey === 'function') {
+    const doc = _pvCloudCache.maps[pvStoreKey(y, mes0)];
+    if (doc && Array.isArray(doc.linhas) && doc.linhas.length) linhas = doc.linhas;
+  }
+  if (!linhas && typeof pvSeedLinhas === 'function') {
+    try { linhas = pvSeedLinhas(y, mes0); } catch (_) { linhas = null; }
+  }
+  return Array.isArray(linhas) ? linhas : [];
+}
+function budgetHorecaInstitucionalMes(ano, mes) {
+  const y = parseInt(ano, 10), m = parseInt(mes, 10);
+  if (!y || !m) return null;
+  const ym = y + '-' + String(m).padStart(2, '0');
+  const objInst = (typeof objetivoCanalMes === 'function') ? objetivoCanalMes('Delta Foods Brasil', 'Institucional', ym) : null;
+  const linhas = linhasMapaInstMes(y, m);
+  let balcao = null, horeca = null;
+  for (let i = 0; i < linhas.length; i++) {
+    if (!linhas[i]) continue;
+    if (linhas[i].id === 'dfb_inst_balcao') balcao = linhas[i].budget;
+    if (linhas[i].id === 'dfb_inst_horeca') horeca = linhas[i].budget;
+  }
+  const sa = (balcao == null || balcao === '') ? null : +balcao;
+  const sb = (horeca == null || horeca === '') ? null : +horeca;
+  if (!particaoInstPreservadaMenu(sa, sb, objInst)) return null;
+  return sb;
+}
+function objetivoCanalHorecaMenu(empresa, canal, ym) {
+  if (empresa !== 'Delta Foods Brasil') return null;
+  if (canal === 'Restauração') return objetivoCanalMes(empresa, canal, ym);
+  if (canal === 'Institucional') {
+    const parts = String(ym || '').split('-');
+    return budgetHorecaInstitucionalMes(parts[0], parts[1]);
+  }
+  return null;
+}
+function objetivoAcumCanalHorecaMenu(empresa, canal, ano, mes) {
+  const y = parseInt(ano, 10), m = parseInt(mes, 10);
+  if (!y || !m) return null;
+  let soma = 0, tem = false;
+  for (let i = 1; i <= m; i++) {
+    const v = objetivoCanalHorecaMenu(empresa, canal, y + '-' + String(i).padStart(2, '0'));
+    if (v == null) continue;
+    soma += v; tem = true;
+  }
+  return tem ? soma : null;
+}
+function objetivoVendedorHorecaMenu(empresa, canal, nome, ym) {
+  const canalObj = objetivoCanalHorecaMenu(empresa, canal, ym);
+  if (canalObj == null) return null;
+  const pesos = pesosPorNomeHoreca(canal);
+  const want = normNomeVendaMenu(nome);
+  let idx = -1;
+  for (let i = 0; i < pesos.length; i++) {
+    if (normNomeVendaMenu(pesos[i].nome) === want) { idx = i; break; }
+  }
+  if (idx < 0) return null;
+  return repartirInteirosProporcao(canalObj, pesos.map(p => p.anual))[idx];
+}
+function objetivoAcumVendedorHorecaMenu(empresa, canal, nome, ano, mes) {
+  const y = parseInt(ano, 10), m = parseInt(mes, 10);
+  if (!y || !m) return null;
+  let soma = 0, tem = false;
+  for (let i = 1; i <= m; i++) {
+    const v = objetivoVendedorHorecaMenu(empresa, canal, nome, y + '-' + String(i).padStart(2, '0'));
+    if (v == null) continue;
+    soma += v; tem = true;
+  }
+  return tem ? soma : null;
+}
+function vendedoresMenuHoreca(quadro, periodo, empresa, canal, nomeMap) {
+  const base = vendedoresVisiveisMenu(quadro, periodo, empresa, canal, null);
+  const nomes = {};
+  function add(nome) {
+    const canon = canonizarNomeVendedorHoreca(canal, nome);
+    if (!canon || canon === 'Por classificar') return;
+    if (nomeMap) {
+      let ok = !!nomeMap[canon];
+      if (!ok) {
+        const keys = Object.keys(nomeMap);
+        const want = normNomeVendaMenu(canon);
+        for (let i = 0; i < keys.length; i++) if (normNomeVendaMenu(keys[i]) === want) { ok = true; break; }
+      }
+      if (!ok) return;
+    }
+    nomes[canon] = 1;
+  }
+  for (let i = 0; i < base.length; i++) add(base[i]);
+  pesosPorNomeHoreca(canal).forEach(p => add(p.nome));
+  return ordenarNomesQuadroPnL(Object.keys(nomes));
+}
+
 /** Uma tabela: linha do canal e, por baixo, cada vendedor. Só os canais deste menu. */
 function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn) {
   const esc = typeof escFn === 'function' ? escFn : (s) => String(s == null ? '' : s);
@@ -20367,6 +20568,7 @@ function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn) {
   }
   const f = filtro || null;
   const filtrado = !!(f && (f.empresa || f.canal || f.vendedor));
+  const ehHoreca = canalId === 'horeca';
   let htmlRows = '';
   let metTotal = metricaVaziaQuadro();
   let objMesTotal = 0;
@@ -20386,12 +20588,13 @@ function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn) {
     for (let c = 0; c < canais.length; c++) {
       const g = canais[c];
       const nomeMap = g.inteiro ? null : nomesVendedorMenuNoCanal(canalId, g.empresa, g.canal);
-      const met = metricasMenuCanal(quadro, periodo, g.empresa, g.canal, nomeMap);
-      const objM = g.inteiro ? objetivoCanalMes(g.empresa, g.canal, periodo.ym) : null;
-      const objA = g.inteiro ? objetivoAcumuladoQuadro(g.empresa, g.canal, ano, mes) : null;
-      if (!g.inteiro || objM == null) empObjOk = false;
+      const codsCanal = ehHoreca ? codsDoCanalHoreca(g.canal) : null;
+      const met = metricasMenuCanal(quadro, periodo, g.empresa, g.canal, nomeMap, codsCanal);
+      const objM = ehHoreca ? objetivoCanalHorecaMenu(g.empresa, g.canal, periodo.ym) : (g.inteiro ? objetivoCanalMes(g.empresa, g.canal, periodo.ym) : null);
+      const objA = ehHoreca ? objetivoAcumCanalHorecaMenu(g.empresa, g.canal, ano, mes) : (g.inteiro ? objetivoAcumuladoQuadro(g.empresa, g.canal, ano, mes) : null);
+      if (objM == null) empObjOk = false;
       else objMesEmp += objM;
-      if (!g.inteiro || objA == null) empObjAcOk = false;
+      if (objA == null) empObjAcOk = false;
       else objAcEmp += objA;
       metEmp = somarMetricasQuadro(metEmp, met);
       const fCanal = { empresa: g.empresa, canal: g.canal, vendedor: '' };
@@ -20407,19 +20610,22 @@ function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn) {
           onCanal
         );
       }
-      const vendedores = vendedoresVisiveisMenu(quadro, periodo, g.empresa, g.canal, nomeMap);
+      const vendedores = ehHoreca ? vendedoresMenuHoreca(quadro, periodo, g.empresa, g.canal, nomeMap) : vendedoresVisiveisMenu(quadro, periodo, g.empresa, g.canal, nomeMap);
       for (let v = 0; v < vendedores.length; v++) {
         const ven = vendedores[v];
         if (!linhaMenuVisivel(f, g.empresa, g.canal, ven)) continue;
         const fv = { empresa: g.empresa, canal: g.canal, vendedor: ven };
         const onV = !!(f && filtroQuadroActivoIgual(f, g.empresa, g.canal, ven));
-        const metV = metricasMenuCanal(quadro, periodo, g.empresa, g.canal, mapaUmNomeVenda(ven));
+        const codsVen = ehHoreca ? codsDoNomeHoreca(g.canal, ven) : null;
+        const metV = metricasMenuCanal(quadro, periodo, g.empresa, g.canal, mapaUmNomeVenda(ven), codsVen);
+        const objV = ehHoreca ? objetivoVendedorHorecaMenu(g.empresa, g.canal, ven, periodo.ym) : null;
+        const objVA = ehHoreca ? objetivoAcumVendedorHorecaMenu(g.empresa, g.canal, ven, ano, mes) : null;
         blocos += htmlLinhaVendasMenu(
           `<span class="vq-indent-vend">${esc(ven)}</span>`,
           'vq-vend',
           metV,
-          null,
-          null,
+          objV,
+          objVA,
           fv,
           onV
         );
@@ -20462,7 +20668,7 @@ function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn) {
   const vazio = algum ? '' : `<tr><td colspan="11" class="vq-muted" style="padding:16px;">Sem linhas neste filtro.</td></tr>`;
   return `
     ${bannerFiltroVendasMenu(f, esc)}
-    <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget já gravado do mês. Var. obj. % = (N − Objetivo) / Objetivo. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo. Verde se positivo, vermelho se negativo. Sem objetivo, fica —.</div>
+    <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget já gravado do mês. Var. obj. % = (N − Objetivo) / Objetivo. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo. Verde se positivo, vermelho se negativo. Sem objetivo, fica —.${ehHoreca ? ' No Horeca, o objectivo de cada vendedor é a parte desse Budget, na proporção do budget anual do código. No Institucional entra só a parte Horeca do mapa (sem o Balcão).' : ''}</div>
     <div class="vq-scroll vq-scroll-main">
       <table class="vq-table vq-table-menu">
         <thead><tr>
@@ -35155,7 +35361,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-atualizado-ate: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-horeca-filipe: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

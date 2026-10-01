@@ -705,7 +705,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(html.includes('Por classificar'));
   assert.ok(html.includes('O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-atualizado-ate'));
+  assert.ok(sw.includes('v2026-10-01-horeca-filipe'));
   assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));
   assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-marco'));
@@ -714,7 +714,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-01-vendas-atualizado-ate'));
+  assert.ok(html.includes('v2026-10-01-horeca-filipe'));
   assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!html.includes('v2026-10-01-vendas-marco'));
@@ -1110,6 +1110,76 @@ check('a frase usa o dia máximo real do agregado em Set/2026, não uma data fix
   ctx.window._vendasCoberturaMeta = null;
 });
 
+});
+
+check('Horeca: o NPess do Filipe entra na linha dele e o objectivo reparte o Budget do canal', () => {
+  assert.equal(ctx.nomePorNpessDefault(99520002), 'HÉLCIO GRÉGIO');
+  assert.equal(ctx.nomePorNpessDefault(99520006), 'DANIELA SANTOS');
+  assert.equal(ctx.nomePorNpessDefault(99520007), 'PAULO FONTES');
+  assert.equal(ctx.nomePorNpessDefault(99520010), 'FILIPE NEVES');
+  assert.equal(ctx.nomePorNpessDefault(99520015), 'HÉLCIO GRÉGIO');
+  assert.equal(ctx.nomePorNpessDefault(99520016), 'DANIELA SANTOS');
+  assert.equal(ctx.nomePorNpessDefault(99520017), 'PAULO FONTES');
+  assert.equal(ctx.nomePorNpessDefault(99520019), 'FILIPE NEVES');
+  const soma = (obj) => Object.keys(obj).reduce((s, k) => s + (+obj[k] || 0), 0);
+  assert.equal(soma(ctx.HORECA_BUDGET_ANUAL_NPESS['Restauração']), 5403223);
+  assert.equal(soma(ctx.HORECA_BUDGET_ANUAL_NPESS['Institucional']), 175277);
+  ctx.pvSeedLinhas = function (ano, mes) {
+    if (Number(ano) === 2026 && Number(mes) === 8) {
+      return [
+        { id: 'dfb_inst_balcao', budget: 10188 },
+        { id: 'dfb_inst_horeca', budget: 12302 },
+      ];
+    }
+    return [];
+  };
+  const mapas = ctx.mapasVendasQuadro();
+  assert.equal(mapas.canalPorNpess[99520010], 'Restauração');
+  assert.equal(mapas.vendedorPorNpess[99520010], 'FILIPE NEVES');
+  assert.equal(mapas.canalPorNpess[99520019], 'Institucional');
+  assert.equal(mapas.vendedorPorNpess[99520019], 'FILIPE NEVES');
+  const q = ctx.agregarVendasQuadro([
+    { cod: '1', data: '2026-09-10', tipo: 'OUTRO', valor: 174125, npess: 99520010 },
+    { cod: '2', data: '2026-09-11', tipo: 'OUTRO', valor: 50, npess: 99520010 },
+    { cod: '3', data: '2026-09-12', tipo: 'OUTRO', valor: 4251, npess: 99520019 },
+  ], { mapas });
+  q.meses['2026-09'].celulas['Delta Foods Brasil\tRestauração\t99520010'] = {
+    empresa: 'Delta Foods Brasil', canal: 'Restauração', vendedor: '99520010',
+    valor: 10, linhas: 1, linhasComValor: 1,
+  };
+  const htmlOut = ctx.htmlQuadroVendasMenuCanal(q, 9, 2026, 'horeca', null, ctx.escHtml);
+  const body = htmlOut.match(/<tbody>([\s\S]*?)<\/tbody>/);
+  const rows = [...body[1].matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map(m =>
+    [...m[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/g)].map(td =>
+      td[1].replace(/<[^>]+>/g, '').replace(/\u00a0/g, ' ').trim()));
+  const num = (txt) => {
+    if (!txt || txt === '—') return null;
+    const n = Number(String(txt).replace(/\./g, '').replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  };
+  const restIdx = rows.findIndex(r => r[0] === 'Restauração');
+  const instIdx = rows.findIndex(r => r[0] === 'Institucional');
+  const totIdx = rows.findIndex(r => r[0] === 'Total');
+  assert.ok(restIdx >= 0 && instIdx > restIdx && totIdx > instIdx, rows.map(r => r[0]).join(' | '));
+  const restRows = rows.slice(restIdx, instIdx);
+  const instRows = rows.slice(instIdx, totIdx);
+  const filipeR = restRows.find(r => r[0] === 'FILIPE NEVES');
+  const filipeI = instRows.find(r => r[0] === 'FILIPE NEVES');
+  assert.equal(num(filipeR[2]), 174185);
+  assert.notEqual(filipeR[3], '—');
+  assert.equal(num(filipeI[2]), 4251);
+  assert.notEqual(filipeI[3], '—');
+  assert.ok(!rows.some(r => r[0] === '99520010'));
+  assert.equal(num(restRows[0][3]), 337827);
+  assert.equal(restRows.slice(1).reduce((s, r) => s + (num(r[3]) || 0), 0), 337827);
+  assert.equal(num(instRows[0][3]), 12302);
+  assert.equal(instRows.slice(1).reduce((s, r) => s + (num(r[3]) || 0), 0), 12302);
+  assert.ok(!htmlOut.includes(ctx.formatNumeroQuadroPnL(22490, true)));
+  assert.ok(!htmlOut.includes(ctx.formatNumeroQuadroPnL(5403223, true)));
+  assert.ok(!htmlOut.includes('>Linhas<'));
+  const ecom = ctx.htmlQuadroVendasMenuCanal(q, 9, 2026, 'ecommerce', null, ctx.escHtml);
+  assert.ok(!ecom.includes('FILIPE NEVES'));
+  assert.ok(ecom.includes('Lojas online'));
 });
 
 if (process.exitCode) {
