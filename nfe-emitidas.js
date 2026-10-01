@@ -15,6 +15,11 @@
   var NFE_STATUS_SEM = 'sem_cliente';
   var NFE_STATUS_UNICO = 'unico';
   var NFE_ROTULO_MULTI = 'CNPJ em mais do que um código';
+  /** CPF (11 dígitos) sem vendedor na lista → Marcio Gorga / Ecommerce. Código habitual 99520001. */
+  var NFE_CPF_CANAL = 'ecommerce';
+  var NFE_CPF_CANAL_NOME = 'Ecommerce';
+  var NFE_CPF_VENDEDOR = 'Marcio Gorga';
+  var NFE_CPF_NPESS = '99520001';
 
   function nfeNormDoc(v) {
     return String(v == null ? '' : v).replace(/\D/g, '');
@@ -181,11 +186,62 @@
     };
   }
 
+  function nfeDocEhCpf(doc) {
+    return nfeNormDoc(doc).length === 11;
+  }
+
+  /**
+   * CPF sem vendedor: não está na lista, ou o código não tem vendedor.
+   * CPF que já tem vendedor fica na lista. CNPJ não entra nesta regra.
+   * Vários códigos com vendedores diferentes também não — não se escolhe ao acaso.
+   */
+  function nfeCpfPrecisaMarcio(nota) {
+    if (!nota || !nfeDocEhCpf(nota.destDoc)) return false;
+    if (nota.status === NFE_STATUS_MULTI) return false;
+    return !String(nota.vendedor || '').trim();
+  }
+
+  function nfeComMarcioEcommerce(nota) {
+    return Object.assign({}, nota, {
+      status: NFE_STATUS_UNICO,
+      canalId: NFE_CPF_CANAL,
+      canalNome: NFE_CPF_CANAL_NOME,
+      vendedor: NFE_CPF_VENDEDOR,
+      npess: NFE_CPF_NPESS,
+      rotulo: '',
+    });
+  }
+
   function nfeCruzarNota(nota, index, canalDeNpess) {
     var dest = nfeNormDoc(nota && nota.destDoc);
     var hits = (index && dest && index.get(dest)) || [];
     var a = nfeAtribuirDestinatario(hits, canalDeNpess);
-    return Object.assign({}, nota, a);
+    var out = Object.assign({}, nota, a);
+    if (nfeCpfPrecisaMarcio(out)) return nfeComMarcioEcommerce(out);
+    return out;
+  }
+
+  /** Notas já gravadas «sem cliente»: o CPF sem vendedor passa a Marcio / Ecommerce. O resto fica. */
+  function nfeReaplicarCpfSemVendedor(notas) {
+    var alteradas = 0;
+    var out = (notas || []).map(function (n) {
+      if (!nfeCpfPrecisaMarcio(n)) return n;
+      alteradas++;
+      return nfeComMarcioEcommerce(n);
+    });
+    return { notas: out, alteradas: alteradas };
+  }
+
+  function nfeCampo(v) {
+    return v == null ? '' : String(v);
+  }
+
+  function nfeAtribDifere(a, b) {
+    if (!a || !b) return true;
+    return nfeCampo(a.status) !== nfeCampo(b.status)
+      || nfeCampo(a.canalId) !== nfeCampo(b.canalId)
+      || nfeNormNome(a.vendedor) !== nfeNormNome(b.vendedor)
+      || nfeCampo(a.npess) !== nfeCampo(b.npess);
   }
 
   function nfeMergeNotas(existing, incoming) {
@@ -265,8 +321,13 @@
     nfeNormNome: nfeNormNome,
     nfeParseXml: nfeParseXml,
     nfeIndexClientes: nfeIndexClientes,
+    NFE_CPF_CANAL: NFE_CPF_CANAL,
+    NFE_CPF_VENDEDOR: NFE_CPF_VENDEDOR,
+    NFE_CPF_NPESS: NFE_CPF_NPESS,
     nfeAtribuirDestinatario: nfeAtribuirDestinatario,
     nfeCruzarNota: nfeCruzarNota,
+    nfeReaplicarCpfSemVendedor: nfeReaplicarCpfSemVendedor,
+    nfeAtribDifere: nfeAtribDifere,
     nfeMergeNotas: nfeMergeNotas,
     nfeReadZipXmls: nfeReadZipXmls,
   };

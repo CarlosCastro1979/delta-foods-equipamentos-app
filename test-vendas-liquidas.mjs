@@ -464,8 +464,8 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   assert.ok(act.includes('decidirActualizarQuadroVendas'));
   assert.ok(act.indexOf('decidirActualizarQuadroVendas') < act.indexOf('somarQuadrosVendas'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-mapa-n'));
-  assert.ok(html.includes('v2026-10-01-mapa-n'));
+  assert.ok(sw.includes('v2026-10-01-nfe-cpf-marcio'));
+  assert.ok(html.includes('v2026-10-01-nfe-cpf-marcio'));
   assert.ok(!sw.includes('v2026-10-01-vendas-ordem'));
   assert.ok(!html.includes('v2026-10-01-vendas-ordem'));
   assert.ok(!sw.includes('v2026-10-01-vendas-liq4'));

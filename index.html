@@ -12735,7 +12735,7 @@ function nfePrepararChrome() {
   if (excel) excel.style.display = 'none';
   const banner = document.getElementById('pv-banner');
   if (banner) {
-    banner.innerHTML = '<strong>NF emitidas</strong> — zip do cockpit (ou um XML avulso). Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. A mesma chave não duplica. A gravação é no fim da carga.';
+    banner.innerHTML = '<strong>NF emitidas</strong> — zip do cockpit (ou um XML avulso). Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. CPF sem vendedor fica no Marcio Gorga, no Ecommerce. A mesma chave não duplica. A gravação é no fim da carga.';
   }
 }
 
@@ -12776,6 +12776,12 @@ async function nfePersistir(notas) {
 }
 
 /** Junta local + cloud. Não grava a meio de um parse — só reconcilia o que já estava guardado. */
+function nfeAplicarRegraGuardada(notas) {
+  if (typeof nfeReaplicarCpfSemVendedor !== 'function') return { notas: notas || [], alteradas: 0 };
+  return nfeReaplicarCpfSemVendedor(notas);
+}
+
+/** A regra do CPF sem vendedor também vale para notas já gravadas «sem cliente». Não apaga as outras. */
 async function nfeHidrate() {
   let local = [];
   try {
@@ -12785,19 +12791,31 @@ async function nfeHidrate() {
   let remote = null;
   try { remote = await nfeLoadRemote(); } catch (_) { remote = null; }
   if (remote == null) {
-    _nfeNotas = local;
+    const reap = nfeAplicarRegraGuardada(local);
+    _nfeNotas = reap.notas;
+    if (reap.alteradas > 0) {
+      try { await idbSet(NFE_IDB_KEY, { notas: reap.notas, ts: new Date().toISOString() }); } catch (_) {}
+    }
     return;
   }
   const merged = nfeMergeNotas(local, remote);
-  _nfeNotas = merged.notas;
+  const reap = nfeAplicarRegraGuardada(merged.notas);
+  _nfeNotas = reap.notas;
   const localSet = new Set(local.map(n => n && n.chave).filter(Boolean));
-  const remoteSet = new Set(remote.map(n => n && n.chave).filter(Boolean));
-  const faltaLocal = merged.notas.some(n => n && n.chave && !localSet.has(n.chave));
-  const faltaRemoto = merged.notas.some(n => n && n.chave && !remoteSet.has(n.chave));
-  if (faltaLocal && !faltaRemoto) {
-    try { await idbSet(NFE_IDB_KEY, { notas: merged.notas, ts: new Date().toISOString() }); } catch (_) {}
+  const remoteBy = new Map();
+  remote.forEach(n => { if (n && n.chave && !remoteBy.has(n.chave)) remoteBy.set(n.chave, n); });
+  const faltaLocal = reap.notas.some(n => n && n.chave && !localSet.has(n.chave));
+  const remotoDesatualizado = reap.notas.some(n => {
+    if (!n || !n.chave) return false;
+    const r = remoteBy.get(n.chave);
+    if (!r) return true;
+    return typeof nfeAtribDifere === 'function' ? nfeAtribDifere(r, n) : false;
+  });
+  if (remotoDesatualizado && reap.notas.length) {
+    await nfePersistir(reap.notas);
+  } else if (faltaLocal || reap.alteradas > 0) {
+    try { await idbSet(NFE_IDB_KEY, { notas: reap.notas, ts: new Date().toISOString() }); } catch (_) {}
   }
-  if (faltaRemoto && merged.notas.length) await nfePersistir(merged.notas);
 }
 
 async function nfeGarantirClientes() {
@@ -12886,8 +12904,9 @@ async function nfeOnFiles(ev) {
     const index = nfeIndexClientes(clientes);
     const atrib = parsed.map(n => nfeComCanal(nfeCruzarNota(n, index, nfeCanalDeNpess)));
     const merged = nfeMergeNotas(_nfeNotas, atrib);
-    _nfeNotas = merged.notas;
-    if (merged.novas > 0) await nfePersistir(_nfeNotas);
+    const reap = nfeAplicarRegraGuardada(merged.notas);
+    _nfeNotas = reap.notas;
+    if (merged.novas > 0 || reap.alteradas > 0) await nfePersistir(_nfeNotas);
     const com = atrib.filter(n => n.status === 'unico').length;
     const sem = atrib.filter(n => n.status === 'sem_cliente').length;
     const multi = atrib.filter(n => n.status === 'cnpj_multiplos').length;
@@ -12896,7 +12915,9 @@ async function nfeOnFiles(ev) {
     if (typeof toast === 'function') {
       toast(merged.novas > 0
         ? ('NF guardadas. ' + merged.novas + ' novas.')
-        : 'Nenhuma nota nova — estas chaves já estavam guardadas.');
+        : (reap.alteradas > 0
+          ? 'CPF sem vendedor ficou no Marcio Gorga (Ecommerce).'
+          : 'Nenhuma nota nova — estas chaves já estavam guardadas.'));
     }
   } catch (e) {
     console.error(e);
@@ -13068,7 +13089,7 @@ function nfeHtml() {
       <div style="font-weight:600;margin-bottom:4px;">Zip do cockpit de NF-e</div>
       <p style="font-size:12px;color:var(--muted);margin:0 0 10px;line-height:1.45;">
         Larga o zip novo (ou um XML avulso). A app lê as NF-e, cruza o documento do destinatário com a lista de clientes
-        e mostra número, cliente, valor e data por canal e por vendedor. Notas já guardadas não duplicam.
+        e mostra número, cliente, valor e data por canal e por vendedor. CPF sem vendedor na lista fica sempre no Marcio Gorga (Ecommerce). Notas já guardadas não duplicam.
       </p>
       <input type="file" id="nfe-file-input" accept=".zip,.xml,application/zip,application/xml,text/xml" multiple style="display:none" onchange="nfeOnFiles(event)">
       <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('nfe-file-input').click()" ${_nfeBusy ? 'disabled' : ''}>📂 Selecionar zip ou XML</button>
@@ -34027,7 +34048,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-mapa-n: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-nfe-cpf-marcio: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

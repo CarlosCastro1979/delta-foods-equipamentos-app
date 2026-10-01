@@ -66,6 +66,61 @@ function testAtribuicao() {
   assert(m2.notas[0].numero === '1', 'a nota já guardada mantém-se');
 }
 
+function testCpfMarcio() {
+  const semLista = nfe.nfeCruzarNota({
+    chave: 'CPF1', numero: '102240', destDoc: '31499205821', cliente: 'Leandro Falcone', valor: 123.12,
+  }, new Map(), canalDeNpess);
+  assert(semLista.status === 'unico', 'CPF sem cliente na lista fica atribuído');
+  assert(semLista.vendedor === 'Marcio Gorga', 'CPF sem vendedor → Marcio Gorga, veio ' + semLista.vendedor);
+  assert(semLista.canalId === 'ecommerce', 'canal Ecommerce, veio ' + semLista.canalId);
+  assert(semLista.canalNome === 'Ecommerce', 'nome do canal Ecommerce');
+  assert(semLista.npess === '99520001', 'código habitual 99520001, veio ' + semLista.npess);
+  assert(semLista.npess === nfe.NFE_CPF_NPESS, 'constante do código do Marcio');
+
+  const idxHelcio = nfe.nfeIndexClientes([
+    { cod: '1', cnpj: '03.852.638/0001-49', npess: '99520002', vendedor: 'HÉLCIO GRÉGIO' },
+  ]);
+  const cnpj = nfe.nfeCruzarNota({ chave: 'CNPJ1', destDoc: '03852638000149' }, idxHelcio, canalDeNpess);
+  assert(cnpj.status === 'unico' && cnpj.canalId === 'horeca', 'CNPJ casado com Hélcio mantém Horeca');
+  assert(cnpj.npess === '99520002', 'CNPJ não passa para o código do Marcio');
+  assert(/HELCIO/.test(nfe.nfeNormNome(cnpj.vendedor)), 'vendedor do CNPJ continua o Hélcio');
+  assert(nfe.nfeReaplicarCpfSemVendedor([cnpj]).alteradas === 0, 'reler não mexe no CNPJ do Hélcio');
+
+  const idxCpf = nfe.nfeIndexClientes([
+    { cod: '77', cnpj: '314.992.058-21', npess: '99520002', vendedor: 'HÉLCIO GRÉGIO' },
+  ]);
+  const cpfCom = nfe.nfeCruzarNota({ chave: 'CPFHEL', destDoc: '31499205821' }, idxCpf, canalDeNpess);
+  assert(cpfCom.canalId === 'horeca' && cpfCom.npess === '99520002', 'CPF que já tem vendedor respeita a lista');
+  assert(nfe.nfeNormNome(cpfCom.vendedor) === 'HELCIO GREGIO', 'não manda esse CPF para o Marcio');
+
+  const idxMulti = nfe.nfeIndexClientes([
+    { cod: '10', cnpj: '11111111111', npess: '99520002', vendedor: 'HÉLCIO GRÉGIO' },
+    { cod: '30', cnpj: '111.111.111-11', npess: '99520018', vendedor: 'DIOGO OLIVEIRA' },
+  ]);
+  const multi = nfe.nfeCruzarNota({ chave: 'MULTI', destDoc: '11111111111' }, idxMulti, canalDeNpess);
+  assert(multi.status === 'cnpj_multiplos' && !multi.vendedor, 'CPF em códigos divergentes não vai para o Marcio');
+
+  const antiga = {
+    chave: 'CPF1', numero: '102240', destDoc: '31499205821', cliente: 'Leandro Falcone',
+    valor: 123.12, status: 'sem_cliente', canalId: '', vendedor: '', data: '2026-10-01',
+  };
+  const helcioGuardado = {
+    chave: 'H1', numero: '102239', destDoc: '03852638000149', status: 'unico',
+    canalId: 'horeca', vendedor: 'HÉLCIO GRÉGIO', npess: '99520002',
+  };
+  const merged = nfe.nfeMergeNotas([antiga, helcioGuardado], [semLista, helcioGuardado]);
+  assert(merged.notas.length === 2 && merged.novas === 0 && merged.repetidas === 2, 'a chave da 102240 não duplica');
+  const reap = nfe.nfeReaplicarCpfSemVendedor(merged.notas);
+  assert(reap.notas.length === 2 && reap.alteradas === 1, 'só a nota sem vendedor muda; as outras ficam');
+  const fix = reap.notas.find(n => n.numero === '102240');
+  const h = reap.notas.find(n => n.chave === 'H1');
+  assert(fix && fix.vendedor === 'Marcio Gorga' && fix.canalId === 'ecommerce', '102240 gravada sem cliente passa ao Marcio');
+  assert(h && h.vendedor === 'HÉLCIO GRÉGIO' && h.canalId === 'horeca' && h.npess === '99520002', 'a nota do Hélcio não se apaga nem muda');
+  assert(new Set(reap.notas.map(n => n.chave)).size === reap.notas.length, 'chaves únicas depois de reaplicar');
+  assert(nfe.nfeAtribDifere(antiga, fix) === true, 'o registo antigo difere da atribuição nova');
+  assert(nfe.nfeAtribDifere(fix, nfe.nfeReaplicarCpfSemVendedor([fix]).notas[0]) === false, 'segunda leitura já está estável');
+}
+
 function testXmlAvulso() {
   const xml = `<?xml version="1.0"?><nfeProc><NFe><infNFe Id="NFe35261014830817000100550020000000010000000000"><ide><serie>2</serie><nNF>1</nNF><dhEmi>2026-10-01T10:00:00-03:00</dhEmi></ide><emit><CNPJ>14830817000100</CNPJ></emit><dest><CNPJ>03.852.638/0001-49</CNPJ><xNome>CLIENTE &amp; TESTE</xNome></dest><total><ICMSTot><vNF>10.50</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
   const n = nfe.nfeParseXml(xml, 'avulso.xml');
@@ -107,6 +162,31 @@ function testZip(zipPath) {
   }
   const chaves = new Set(notas.map(n => n.chave));
   assert(chaves.size === 17, 'chaves únicas no zip');
+  const cruzadas = notas.map(n => nfe.nfeCruzarNota(n, new Map(), canalDeNpess));
+  const leandro = cruzadas.find(n => n.numero === '102240');
+  assert(!!leandro, 'nota 102240 presente no zip');
+  if (leandro) {
+    assert(leandro.destDoc === '31499205821', '102240 é CPF, veio ' + leandro.destDoc);
+    assert(leandro.destDoc.length === 11, 'CPF com 11 dígitos');
+    assert(leandro.valor === 123.12, 'valor 123.12');
+    assert(/^2026-10-01/.test(leandro.data), 'data 2026-10-01');
+    assert(/Leandro Falcone/.test(leandro.cliente), 'cliente Leandro Falcone');
+    assert(leandro.vendedor === 'Marcio Gorga' && leandro.canalId === 'ecommerce', '102240 sem cliente na lista → Marcio / Ecommerce');
+    assert(leandro.npess === '99520001', 'npess do Marcio');
+  }
+  const outras = cruzadas.filter(n => n.numero !== '102240');
+  assert(outras.length === 16, 'as outras 16 notas mantêm-se');
+  assert(outras.every(n => n.destDoc.length === 14 && n.status === 'sem_cliente' && !n.vendedor), 'CNPJ sem lista não vai para o Marcio');
+  const guardadas = cruzadas.map(n => n.numero === '102240'
+    ? Object.assign({}, n, { status: 'sem_cliente', canalId: '', canalNome: '', vendedor: '', npess: '' })
+    : n);
+  const outraVez = nfe.nfeMergeNotas(guardadas, cruzadas);
+  assert(outraVez.notas.length === 17 && outraVez.novas === 0, 'recarregar não duplica a 102240');
+  const relidas = nfe.nfeReaplicarCpfSemVendedor(outraVez.notas);
+  assert(relidas.notas.length === 17 && relidas.alteradas === 1, 'reler só corrige a 102240');
+  const fix = relidas.notas.find(n => n.numero === '102240');
+  assert(fix && fix.vendedor === 'Marcio Gorga' && fix.canalId === 'ecommerce', '102240 gravada sem cliente aparece no Marcio');
+  assert(relidas.notas.filter(n => n.numero !== '102240').every(n => n.status === 'sem_cliente'), 'as outras 16 não são apagadas nem reatribuídas');
   const outra = nfe.nfeMergeNotas(notas, notas);
   assert(outra.notas.length === 17 && outra.novas === 0 && outra.repetidas === 17, 'recarregar o mesmo zip não duplica');
   console.log('exemplo', JSON.stringify({
@@ -121,6 +201,7 @@ function testZip(zipPath) {
 }
 
 testAtribuicao();
+testCpfMarcio();
 testXmlAvulso();
 const zipPath = findZip();
 if (!zipPath) {

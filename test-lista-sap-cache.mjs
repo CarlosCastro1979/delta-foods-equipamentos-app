@@ -50,8 +50,10 @@ check('pesquisa de texto não redesenha a tabela em cada tecla', () => {
 });
 
 check('service worker sobe de versão com o index', () => {
-  assert.ok(sw.includes('v2026-10-01-mapa-n'));
-  assert.ok(html.includes('v2026-10-01-mapa-n'));
+  assert.ok(sw.includes('v2026-10-01-nfe-cpf-marcio'));
+  assert.ok(html.includes('v2026-10-01-nfe-cpf-marcio'));
+  assert.ok(!sw.includes('v2026-10-01-mapa-n'));
+  assert.ok(!html.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-ordem'));
   assert.ok(!html.includes('v2026-10-01-vendas-ordem'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
