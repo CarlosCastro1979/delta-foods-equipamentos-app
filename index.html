@@ -3559,6 +3559,7 @@ var _unused_placeholder = 1;
     <div id="cvm-pane-quadro">
     <div style="margin-bottom:12px;">
       <div id="canal-vendas-titulo" style="font-size:16px;font-weight:700;">Vendas</div>
+      <div id="canal-vendas-ate" style="font-size:14px;font-weight:700;color:#1e40af;margin-top:4px;"></div>
       <div style="font-size:12px;color:var(--muted);margin-top:2px;">Vendas líquidas só dos canais deste menu. O vendedor fica na mesma tabela.</div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
@@ -18228,10 +18229,22 @@ function npessPorCodDeLista(lista) {
   return m;
 }
 
+/** Maior data ISO (YYYY-MM-DD). Data inválida não conta. */
+function maxDataVendaISO(a, b) {
+  const da = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(a) : String(a || '').slice(0, 10);
+  const db = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(b) : String(b || '').slice(0, 10);
+  const okA = /^\d{4}-\d{2}-\d{2}$/.test(da);
+  const okB = /^\d{4}-\d{2}-\d{2}$/.test(db);
+  if (!okA) return okB ? db : '';
+  if (!okB) return da;
+  return da > db ? da : db;
+}
+
 /**
  * Soma valor e linhas por empresa × canal × vendedor × mês.
  * Linha sem canal conhecido fica em «Por classificar» (não é omitida).
  * Valor em falta não entra na soma de R$ (linhasComValor não sobe).
+ * Cada mês guarda ultima_data = dia máximo da coluna Data que entrou nesse mês.
  */
 function agregarVendasQuadro(rows, opts) {
   const out = quadroVendasVazio();
@@ -18240,10 +18253,14 @@ function agregarVendasQuadro(rows, opts) {
   for (const row of list) {
     const ym = typeof vendasYmFromISO === 'function' ? vendasYmFromISO(row && row.data) : String(row && row.data || '').slice(0, 7);
     if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+    const isoDia = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(row && row.data) : String(row && row.data || '').slice(0, 10);
     const npess = npessDaLinhaVendaQuadro(row, o.npessPorCod);
     const dim = dimensoesVendaQuadro(npess, o.mapas);
     const key = chaveCelulaQuadro(dim);
     if (!out.meses[ym]) out.meses[ym] = { celulas: {} };
+    if (/^\d{4}-\d{2}-\d{2}$/.test(isoDia) && isoDia.slice(0, 7) === ym) {
+      out.meses[ym].ultima_data = maxDataVendaISO(out.meses[ym].ultima_data, isoDia);
+    }
     const celulas = out.meses[ym].celulas;
     if (!celulas[key]) {
       celulas[key] = {
@@ -18304,6 +18321,8 @@ function somarQuadrosVendas(a, b) {
         dest[key].temVolume = true;
       }
     }
+    const dia = maxDataVendaISO(out.meses[ym].ultima_data, meses[ym].ultima_data);
+    if (dia) out.meses[ym].ultima_data = dia;
   }
   return out;
 }
@@ -18558,7 +18577,10 @@ function substituirValorMesesFechadosNoQuadro(quadro, linhas, opts) {
       };
     }
     // Apaga o mês inteiro (não deixa Ecommerce/Horeca/Varejo ao lado do Power BI).
+    // O dia máximo vem das linhas deste ficheiro — não se inventa outra data.
+    const diaMes = delta.meses[ym] && delta.meses[ym].ultima_data;
     out.meses[ym] = { celulas };
+    if (diaMes) out.meses[ym].ultima_data = diaMes;
     substituiu = true;
   }
   if (substituiu) out.origem_liquida = true;
@@ -18633,7 +18655,9 @@ function completarQuadroDesdeBase(anterior, dbQuadro, opts) {
         temVolume: !!((p && p.temVolume) || (d && d.temVolume)),
       };
     }
+    const diaMes = maxDataVendaISO(prev && prev.ultima_data, dbMes && dbMes.ultima_data);
     out.meses[ym] = { celulas };
+    if (diaMes) out.meses[ym].ultima_data = diaMes;
   }
   return out;
 }
@@ -19461,6 +19485,7 @@ function quadroComMarcioIdentificado(quadro) {
   const meses = out.meses || {};
   for (const ym of Object.keys(meses)) {
     const src = (meses[ym] && meses[ym].celulas) || {};
+    const ultimaData = meses[ym] && meses[ym].ultima_data ? meses[ym].ultima_data : '';
     const celulas = {};
     for (const key of Object.keys(src)) {
       const c = src[key];
@@ -19489,6 +19514,7 @@ function quadroComMarcioIdentificado(quadro) {
       }
     }
     meses[ym] = { celulas: celulas };
+    if (ultimaData) meses[ym].ultima_data = ultimaData;
   }
   return out;
 }
@@ -20175,6 +20201,86 @@ function periodoVendasMenuSelecionado() {
   return { mes: mes, ano: ano, ym: ano + '-' + String(mes).padStart(2, '0') };
 }
 
+/** Último dia civil do mês YYYY-MM. */
+function ultimoDiaCivilMesISO(ym) {
+  const parts = String(ym || '').split('-');
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  if (!y || !m) return '';
+  const d = new Date(y, m, 0);
+  return y + '-' + String(m).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+/** 2026-09-30 → 30/09/2026. Sem data válida → ''. */
+function formatDataQuadroPt(iso) {
+  const s = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(iso) : String(iso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  return s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(0, 4);
+}
+
+/**
+ * ultima_data gravada pela cobertura (o que a carga guarda por mês).
+ * Aceita Map, { map }, { meses } ou o objecto YYYY-MM → info.
+ */
+function diaDeCoberturaQuadro(cobertura, ym) {
+  if (!cobertura || !/^\d{4}-\d{2}$/.test(String(ym || ''))) return '';
+  let info = null;
+  if (typeof Map !== 'undefined' && cobertura instanceof Map) info = cobertura.get(ym);
+  else if (cobertura.map instanceof Map) info = cobertura.map.get(ym);
+  else if (cobertura.meses && typeof cobertura.meses === 'object') info = cobertura.meses[ym];
+  else if (typeof cobertura === 'object') info = cobertura[ym];
+  const dia = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(info && info.ultima_data) : '';
+  return dia && dia.slice(0, 7) === ym ? dia : '';
+}
+
+/** Dia máximo do mês: primeiro o agregado vendas_quadro; senão a cobertura já gravada. */
+function diaMaxMesQuadro(quadro, ym, cobertura) {
+  const mes = quadro && quadro.meses ? quadro.meses[ym] : null;
+  let dia = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(mes && mes.ultima_data) : '';
+  if (!dia || dia.slice(0, 7) !== ym) dia = '';
+  if (!dia) dia = diaDeCoberturaQuadro(cobertura, ym);
+  return dia || '';
+}
+
+/**
+ * Frase junto do título.
+ * Mês completo (último dia civil presente, ou mês fechado) → até ao último dia desse mês.
+ * Mês aberto → último dia que entrou.
+ * Sem dia no agregado nem na cobertura → não se inventa data.
+ */
+function textoAtualizacaoQuadroMes(quadro, ym, opts) {
+  const o = opts || {};
+  if (!/^\d{4}-\d{2}$/.test(String(ym || ''))) return 'sem vendas carregadas neste mês';
+  const dia = diaMaxMesQuadro(quadro, ym, o.cobertura);
+  if (!dia) return 'sem vendas carregadas neste mês';
+  const ultimo = ultimoDiaCivilMesISO(ym);
+  const hoje = o.hoje || (typeof vendasHojeISO === 'function' ? vendasHojeISO() : '');
+  const ultimoPresente = !!(ultimo && dia >= ultimo);
+  let fechado = false;
+  if (typeof isVendasMesFechado === 'function') {
+    fechado = isVendasMesFechado(ym, { linhas: 1, ultima_data: dia }, hoje || undefined);
+  }
+  const mostrar = (ultimoPresente || fechado) ? (ultimo || dia) : dia;
+  const fmt = formatDataQuadroPt(mostrar);
+  if (!fmt) return 'sem vendas carregadas neste mês';
+  return 'Atualizado até ' + fmt;
+}
+
+/** Cobertura já em memória (a carga grava ultima_data por mês). */
+function coberturaParaFraseQuadro() {
+  if (typeof window === 'undefined') return null;
+  if (window._vendasCoberturaMeta && window._vendasCoberturaMeta.meses) return window._vendasCoberturaMeta;
+  if (window._vendasCoberturaCache instanceof Map && window._vendasCoberturaCache.size) return window._vendasCoberturaCache;
+  return null;
+}
+
+function fraseAtualizacaoQuadroVisivel(quadro, ym) {
+  return textoAtualizacaoQuadroMes(quadro, ym, {
+    hoje: typeof vendasHojeISO === 'function' ? vendasHojeISO() : '',
+    cobertura: coberturaParaFraseQuadro(),
+  });
+}
+
 function renderVendasMenuCanal(quadroOpt) {
   const el = document.getElementById('canal-vendas-quadro');
   if (!el) return;
@@ -20186,6 +20292,10 @@ function renderVendasMenuCanal(quadroOpt) {
   const titulo = document.getElementById('canal-vendas-titulo');
   const canal = (typeof CANAIS_APP !== 'undefined' && canalId && CANAIS_APP[canalId]) ? CANAIS_APP[canalId] : null;
   if (titulo) titulo.textContent = canal ? ('Vendas · ' + canal.nome) : 'Vendas';
+  const ateCanal = document.getElementById('canal-vendas-ate');
+  if (ateCanal && typeof fraseAtualizacaoQuadroVisivel === 'function') {
+    ateCanal.textContent = fraseAtualizacaoQuadroVisivel(quadro, periodo.ym);
+  }
   const esc = (s) => (typeof escHtml === 'function' ? escHtml(s) : String(s || ''));
   const filtro = (typeof window !== 'undefined' && window._cvmFiltro) ? window._cvmFiltro : null;
   el.innerHTML = htmlQuadroVendasMenuCanal(quadro, periodo.mes, periodo.ano, canalId, filtro, esc);
@@ -20232,6 +20342,7 @@ async function loadVendasMenuCanal() {
   preencherSelectsVendasMenu();
   try {
     const q = await lerVendasQuadroPersistida();
+    try { if (typeof lerVendasCoberturaPersistida === 'function') await lerVendasCoberturaPersistida(); } catch (_) {}
     renderVendasMenuCanal(q);
   } catch (e) {
     el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao ler o quadro: ${e.message || e}</div>`;
@@ -20278,6 +20389,10 @@ function renderVendasQuadro(quadroOpt) {
   if (selMesEl && selMesEl.style) {
     selMesEl.style.outline = ehActual ? '2px solid #2563eb' : '';
     selMesEl.style.background = ehActual ? '#eff6ff' : '';
+  }
+  const ateGeral = document.getElementById('vq-atualizado-ate');
+  if (ateGeral && typeof fraseAtualizacaoQuadroVisivel === 'function') {
+    ateGeral.textContent = fraseAtualizacaoQuadroVisivel(quadro, ym);
   }
 
   const mesAgg = quadro.meses[ym];
@@ -20458,6 +20573,7 @@ function pvMontarVistaVendas() {
       <div style="margin-bottom:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;">
         <div>
           <div style="font-size:16px;font-weight:700;">Vendas</div>
+          <div id="vq-atualizado-ate" style="font-size:14px;font-weight:700;color:#1e40af;margin-top:4px;"></div>
           <div id="vq-subtitulo" style="font-size:12px;color:var(--muted);margin-top:2px;">mês, ano anterior (N-1) e acumulado até esse mês — vendas líquidas, como no Power BI</div>
         </div>
         ${adminBtn}
@@ -20484,6 +20600,7 @@ async function loadVendasQuadro() {
   preencherSelectsQuadroVendas();
   try {
     const q = await lerVendasQuadroPersistida();
+    try { if (typeof lerVendasCoberturaPersistida === 'function') await lerVendasCoberturaPersistida(); } catch (_) {}
     renderVendasQuadro(q);
   } catch (e) {
     el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao ler o quadro: ${e.message || e}</div>`;
@@ -34719,7 +34836,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-nfe-dados-canal: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-atualizado-ate: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
