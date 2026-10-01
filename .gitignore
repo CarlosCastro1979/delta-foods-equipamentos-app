@@ -1,4 +1,6 @@
 delta-foods-equipamentos-app/
 _quebra_samples/
+_nfe_samples/
+.cursor/zfact-fix-sapxunilog/
 __pycache__/
 *.pyc
