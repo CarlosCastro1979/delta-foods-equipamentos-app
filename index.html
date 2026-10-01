@@ -17092,14 +17092,50 @@ function indiceColunaValorVenda(headers) {
   return best;
 }
 
-/** NPess no Excel de vendas, se a coluna existir. -1 se não houver. */
+/**
+ * Coluna do código de vendedor (NPess) no Excel de vendas. -1 se não houver.
+ * O nome não vem desta coluna — vem do mapa (VENDEDORES_DEFAULT).
+ * Se o Excel tiver código e a lista de clientes outro, manda o Excel.
+ *
+ * Cabeçalhos (acentos e maiúsculas ignorados). Se houver vários, ganha o mais específico:
+ *   1. «Nº pessoal», «No. pessoal», «N.º pessoal», «NPess», pessoa responsável
+ *   2. «Código do vendedor», «Cod. vendedor», «Codigo vendedor»
+ *   3. coluna exactamente «Vendedor»
+ * «Nome do vendedor» não conta (é nome, não código).
+ */
 function indiceColunaNpessVenda(headers) {
   const list = Array.isArray(headers) ? headers : [];
+  const norm = (raw) => String(raw || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  let best = -1;
+  let bestScore = 0;
   for (let i = 0; i < list.length; i++) {
-    const h = String(list[i] || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (/n[ºo°]?\s*pess|pess\.?\s*resp|pessoa\s*resp|^npess|cod\.?\s*vend/.test(h)) return i;
+    const h = norm(list[i]);
+    if (!h) continue;
+    const compact = h.replace(/[^a-z0-9]+/g, '');
+    let score = 0;
+    if (
+      /npess/.test(compact)
+      || /pessresp|pessoaresp/.test(compact)
+      || /^n[o.]*(?:pessoal|pess)$/.test(compact)
+    ) score = 3;
+    else if (/^cod(?:igo)?(?:do)?vendedor$/.test(compact)) score = 2;
+    else if (h === 'vendedor') score = 1;
+    if (score > bestScore) { bestScore = score; best = i; }
   }
-  return -1;
+  return best;
+}
+
+/** Código NPess numa célula (99520020 ou «99520020 - MOREIRA»). 0 se não for código. */
+function npessDeCelulaExcel(v) {
+  if (v == null || v === '') return 0;
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    const n = Math.trunc(v);
+    return n > 0 ? n : 0;
+  }
+  const m = String(v).replace(/\u00a0/g, ' ').trim().match(/(\d{6,})/);
+  if (!m) return 0;
+  const n = parseInt(m[1], 10);
+  return n && !isNaN(n) ? n : 0;
 }
 
 /**
@@ -17126,9 +17162,10 @@ function dimensoesVendaQuadro(npess, mapas) {
   return { empresa, canal, vendedor, npess: conhecido ? n : 0 };
 }
 
+/** NPess da linha: o código lido no Excel ganha à lista de clientes. Sem código no Excel, usa a lista. */
 function npessDaLinhaVendaQuadro(row, npessPorCod) {
-  const direto = parseInt(row && row.npess, 10);
-  if (direto && !isNaN(direto)) return direto;
+  const direto = npessDeCelulaExcel(row && row.npess);
+  if (direto) return direto;
   if (!npessPorCod || !row) return 0;
   const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row.cod) : String(row.cod || '').trim();
   if (!cod) return 0;
@@ -17340,7 +17377,7 @@ function linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpess, dataStr) {
     cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(codRaw) : codRaw;
   }
   const valorLinha = iValor >= 0 ? parseValorVendaSap(row[iValor]) : null;
-  const npessLinha = iNpess >= 0 ? parseInt(row[iNpess], 10) : 0;
+  const npessLinha = iNpess >= 0 ? npessDeCelulaExcel(row[iNpess]) : 0;
   return {
     cod: cod || undefined,
     data: dataStr,
@@ -18350,7 +18387,7 @@ async function processVendasFile(event) {
         if (!dataMax || dataStr > dataMax) dataMax = dataStr;
         mesesAbertosSet.add(dataStr.slice(0, 7));
         const valorLinha = iValor >= 0 ? parseValorVendaSap(row[iValor]) : null;
-        const npessLinha = iNpessVenda >= 0 ? parseInt(row[iNpessVenda], 10) : 0;
+        const npessLinha = iNpessVenda >= 0 ? npessDeCelulaExcel(row[iNpessVenda]) : 0;
         candidatos.push({
           cod, data: dataStr, tipo, qty, peso: isNaN(peso) ? 0 : peso,
           valor: valorLinha == null ? undefined : valorLinha,

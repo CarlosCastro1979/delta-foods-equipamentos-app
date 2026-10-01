@@ -82,6 +82,9 @@ const fns = [
   'vendaDedupKey',
   'parseValorVendaSap',
   'indiceColunaValorVenda',
+  'indiceColunaNpessVenda',
+  'npessDeCelulaExcel',
+  'linhaValorQuadroDeExcel',
   'dimensoesVendaQuadro',
   'npessDaLinhaVendaQuadro',
   'chaveCelulaQuadro',
@@ -281,6 +284,49 @@ check('mapasVendasQuadro não inventa vendedores', () => {
   assert.notEqual(m.canalPorNpess[99520018], 'Varejo e Distr. Varejo');
   assert.equal(m.vendedorPorNpess[99529999], undefined);
   assert.equal(m.canalPorNpess[99529999], undefined);
+});
+
+check('Nº pessoal do Excel ganha à lista: 99520020 é Delta / Distribuidores regionais', () => {
+  assert.equal(ctx.indiceColunaNpessVenda(['Data', 'Vendas líquidas', 'Nº pessoal']), 2);
+  assert.equal(ctx.indiceColunaNpessVenda(['Data', 'Vendas líquidas', 'No. pessoal']), 2);
+  assert.equal(ctx.indiceColunaNpessVenda(['N.º pessoal', 'Vendas líquidas']), 0);
+  assert.equal(ctx.indiceColunaNpessVenda(['NPess', 'Vendas líquidas']), 0);
+  assert.equal(ctx.indiceColunaNpessVenda(['Código do vendedor', 'Vendas líquidas']), 0);
+  assert.equal(ctx.indiceColunaNpessVenda(['Cod. vendedor']), 0);
+  assert.equal(ctx.indiceColunaNpessVenda(['Vendedor', 'Nº pessoal']), 1);
+  assert.equal(ctx.indiceColunaNpessVenda(['Vendedor']), 0);
+  assert.equal(ctx.indiceColunaNpessVenda(['Nome do vendedor', 'Peso líq.']), -1);
+  assert.equal(ctx.npessDeCelulaExcel(99520020), 99520020);
+  assert.equal(ctx.npessDeCelulaExcel('99520020 - MOREIRA EDUARDO'), 99520020);
+  assert.equal(ctx.npessDeCelulaExcel('EDUARDO MOREIRA'), 0);
+
+  const headers = ['Emissor da ordem', 'Vendas líquidas', 'Nº pessoal'];
+  const iValor = ctx.indiceColunaValorVenda(headers);
+  const iNpess = ctx.indiceColunaNpessVenda(headers);
+  assert.equal(iValor, 1, 'Vendas líquidas é a coluna de R$');
+  assert.equal(iNpess, 2);
+  const linha = ctx.linhaValorQuadroDeExcel(
+    ['427238 CLIENTE X', 1500.5, '99520020'],
+    0, iValor, iNpess, HOJE
+  );
+  assert.equal(linha.npess, 99520020);
+  assert.equal(linha.valor, 1500.5);
+  assert.equal(linha.cod, '427238');
+
+  ctx.VENDEDORES_DEFAULT = [
+    { cod: 99520020, nome: 'EDUARDO MOREIRA' },
+    { cod: 99520001, nome: 'MARCIO GORGA' },
+  ];
+  const mapasExcel = ctx.mapasVendasQuadro();
+  const q = ctx.agregarVendasQuadro([linha], {
+    mapas: mapasExcel,
+    npessPorCod: { '427238': 99520001 },
+  });
+  const cell = celula(q, '2026-10', 'Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MOREIRA');
+  assert.ok(cell, 'Excel 99520020 classifica Delta / Distribuidores regionais / EDUARDO MOREIRA');
+  assert.equal(cell.valor, 1500.5);
+  const pelaLista = celula(q, '2026-10', 'Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA');
+  assert.equal(pelaLista, null, 'a lista de clientes não substitui o NPess do Excel');
 });
 
 check('números do resumo filtram o detalhe; zero não é clicável', () => {

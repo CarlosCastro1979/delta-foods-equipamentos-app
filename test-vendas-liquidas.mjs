@@ -95,6 +95,7 @@ for (const name of [
   'vendasYmFromISO',
   'parseValorVendaSap',
   'indiceColunaValorVenda',
+  'npessDeCelulaExcel',
   'dimensoesVendaQuadro',
   'npessDaLinhaVendaQuadro',
   'chaveCelulaQuadro',
