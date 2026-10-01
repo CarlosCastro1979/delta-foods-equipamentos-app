@@ -2107,7 +2107,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">⚙</span>
         <span>
           <div class="hd-title">Dados</div>
-          <div class="hd-desc">Carregar Lista SAP, Vendas, Dívidas e códigos relacionados — para todos os canais. O quadro de vendas (empresa, canal, vendedor) fica nesta área. Acesso: admins (Carlos, Christian, Andrea, Daniela K.).</div>
+          <div class="hd-desc">Carregar Lista SAP, Vendas, Dívidas e códigos relacionados — para todos os canais. Acesso: admins (Carlos, Christian, Andrea, Daniela K.).</div>
         </span>
       </button>
     </div>
@@ -3932,6 +3932,7 @@ var _unused_placeholder = 1;
       <div class="sub-nav" style="margin-bottom:12px;flex-wrap:wrap;">
         <button type="button" class="sub-tab active" id="pv-tab-mapa" onclick="pvShowView('mapa')">Mapa mensal</button>
         <button type="button" class="sub-tab" id="pv-tab-accuracy" onclick="pvShowView('accuracy')">Accuracy de fecho</button>
+        <button type="button" class="sub-tab" id="pv-tab-vendas" onclick="pvShowView('vendas')">Vendas</button>
       </div>
 
       <div id="pv-readonly-banner" style="display:none;padding:10px 14px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:12px;color:#9a3412;margin-bottom:12px;">
@@ -3998,37 +3999,6 @@ var _unused_placeholder = 1;
         </div>
         <div id="dados-vendas-cobertura">
           <div style="color:var(--muted);font-size:13px;">A carregar cobertura…</div>
-        </div>
-      </div>
-
-      <!-- QUADRO DE VENDAS (empresa × canal × vendedor) -->
-      <div id="dados-vendas-quadro-card" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:22px;">📊</span>
-            <div>
-              <div style="font-weight:600;font-size:15px;">Quadro de vendas</div>
-              <div style="font-size:12px;color:var(--muted);line-height:1.5;">
-                Empresa, canal e vendedor — <strong>valores em R$</strong> (a contagem de linhas é só um detalhe, não é a cobertura).<br>
-                Lê agregados já guardados. Não abre as ~500 mil linhas ao entrar.<br>
-                «Carregar Vendas» no fim do dia soma só o dia de hoje. Meses fechados ficam congelados.
-              </div>
-            </div>
-          </div>
-          <button type="button" class="btn btn-secondary btn-sm" id="dados-vendas-quadro-btn" onclick="actualizarQuadroVendas()">Actualizar quadro</button>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
-          <label style="font-size:12px;color:var(--muted);">Mês
-            <select id="vq-mes" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasQuadro()"></select>
-          </label>
-          <label style="font-size:12px;color:var(--muted);">Ano
-            <select id="vq-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasQuadro()"></select>
-          </label>
-          <span id="vq-mes-actual" class="vq-mes-actual" style="display:none;">Mês actual</span>
-          <span id="vq-periodo" style="font-size:13px;font-weight:600;"></span>
-        </div>
-        <div id="dados-vendas-quadro">
-          <div style="color:var(--muted);font-size:13px;">A carregar quadro…</div>
         </div>
       </div>
 
@@ -5791,7 +5761,6 @@ async function desbloquearDadosContent() {
   renderUltimaVendasCarga();
   loadCodRelacionados();
   loadVendasCobertura(false);
-  try { loadVendasQuadro(); } catch (_) {}
   try { if (typeof distCargaEquipRefreshStats === 'function') distCargaEquipRefreshStats(); } catch (_) {}
   try {
     if (typeof carregarDividasMetaRemoto === 'function') {
@@ -12640,8 +12609,10 @@ async function abrirPrevisaoVendasHome() {
     _pvView = 'mapa';
     const tabM = document.getElementById('pv-tab-mapa');
     const tabA = document.getElementById('pv-tab-accuracy');
+    const tabV = document.getElementById('pv-tab-vendas');
     if (tabM) tabM.classList.add('active');
     if (tabA) tabA.classList.remove('active');
+    if (tabV) tabV.classList.remove('active');
     const mesWrap = document.getElementById('pv-mes-wrap');
     if (mesWrap) mesWrap.style.display = '';
     const anoWrap = document.getElementById('pv-ano-wrap');
@@ -12674,27 +12645,54 @@ function pvPct(a, b) {
 }
 
 function pvShowView(view) {
-  _pvView = view === 'accuracy' ? 'accuracy' : 'mapa';
+  _pvView = view === 'accuracy' ? 'accuracy' : (view === 'vendas' ? 'vendas' : 'mapa');
   if (_pvView !== 'accuracy') _pvAccFiltro = '';
   const tabM = document.getElementById('pv-tab-mapa');
   const tabA = document.getElementById('pv-tab-accuracy');
+  const tabV = document.getElementById('pv-tab-vendas');
   if (tabM) tabM.classList.toggle('active', _pvView === 'mapa');
   if (tabA) tabA.classList.toggle('active', _pvView === 'accuracy');
+  if (tabV) tabV.classList.toggle('active', _pvView === 'vendas');
   const mesWrap = document.getElementById('pv-mes-wrap');
-  if (mesWrap) mesWrap.style.display = _pvView === 'accuracy' ? 'none' : '';
+  if (mesWrap) mesWrap.style.display = _pvView === 'mapa' ? '' : 'none';
+  const anoWrap = document.getElementById('pv-ano-wrap');
+  if (anoWrap) anoWrap.style.display = _pvView === 'vendas' ? 'none' : '';
+  const excelBtn = document.getElementById('pv-btn-excel');
+  if (excelBtn) excelBtn.style.display = _pvView === 'vendas' ? 'none' : '';
   pvEnsureCloudThenRender();
 }
 
 async function pvEnsureCloudThenRender(opts) {
   pvBindAutosaveLifecycle();
   if (opts && opts.reload) pvFlushAutosave();
-  try { await pvFetchCloudMaps(false); } catch (_) {}
+  if (_pvView !== 'vendas') {
+    try { await pvFetchCloudMaps(false); } catch (_) {}
+  }
   pvRender(opts);
 }
 
 function pvRender(opts) {
   const host = document.getElementById('pv-canal-panels');
   if (!host) return;
+  if (_pvView === 'vendas') {
+    const modoV = document.getElementById('pv-modo-label');
+    if (modoV) {
+      modoV.textContent = '· Só consulta';
+      modoV.style.color = '#9a3412';
+    }
+    const roBannerV = document.getElementById('pv-readonly-banner');
+    if (roBannerV) roBannerV.style.display = 'none';
+    const btnPubV = document.getElementById('pv-btn-publicar');
+    if (btnPubV) btnPubV.style.display = 'none';
+    const excelBtnV = document.getElementById('pv-btn-excel');
+    if (excelBtnV) excelBtnV.style.display = 'none';
+    const bannerV = document.getElementById('pv-banner');
+    if (bannerV) {
+      bannerV.innerHTML = '<strong>Vendas</strong> — por empresa, canal e vendedor, em R$. Só consulta. A carga do Excel continua em Dados; este ecrã lê o agregado guardado e não relê as linhas de venda.';
+    }
+    pvMontarVistaVendas();
+    return;
+  }
   const ano = document.getElementById('pv-ano')?.value || '2026';
   const mes = document.getElementById('pv-mes')?.value ?? '7';
   const y = Number(ano);
@@ -17516,7 +17514,7 @@ function filtroQuadroActivoIgual(f, empresa, canal, vendedor) {
 }
 
 function renderVendasQuadro(quadroOpt) {
-  const el = document.getElementById('dados-vendas-quadro');
+  const el = document.getElementById('pv-vendas-quadro');
   if (!el) return;
   const quadro = quadroOpt || window._vendasQuadro;
   preencherSelectsQuadroVendas();
@@ -17710,8 +17708,39 @@ function limparFiltroVendasQuadro() {
   renderVendasQuadro();
 }
 
+function pvMontarVistaVendas() {
+  const host = document.getElementById('pv-canal-panels');
+  if (!host) return;
+  if (!document.getElementById('pv-vendas-quadro')) {
+    const adminBtn = (typeof isAdmin === 'function' && isAdmin())
+      ? '<button type="button" class="btn btn-secondary btn-sm" id="pv-vendas-quadro-btn" onclick="actualizarQuadroVendas()">Actualizar quadro</button>'
+      : '';
+    host.innerHTML = `
+      <div style="margin-bottom:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;">
+        <div>
+          <div style="font-size:16px;font-weight:700;">Vendas</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;">por empresa, canal e vendedor — valores em R$</div>
+        </div>
+        ${adminBtn}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+        <label style="font-size:12px;color:var(--muted);">Mês
+          <select id="vq-mes" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasQuadro()"></select>
+        </label>
+        <label style="font-size:12px;color:var(--muted);">Ano
+          <select id="vq-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasQuadro()"></select>
+        </label>
+        <span id="vq-mes-actual" class="vq-mes-actual" style="display:none;">Mês actual</span>
+        <span id="vq-periodo" style="font-size:13px;font-weight:600;"></span>
+      </div>
+      <div id="pv-vendas-quadro"><div style="color:var(--muted);font-size:13px;">A ler o agregado guardado…</div></div>
+    `;
+  }
+  loadVendasQuadro();
+}
+
 async function loadVendasQuadro() {
-  const el = document.getElementById('dados-vendas-quadro');
+  const el = document.getElementById('pv-vendas-quadro');
   if (!el) return;
   preencherSelectsQuadroVendas();
   try {
@@ -17723,8 +17752,8 @@ async function loadVendasQuadro() {
 }
 
 async function actualizarQuadroVendas() {
-  const el = document.getElementById('dados-vendas-quadro');
-  const btn = document.getElementById('dados-vendas-quadro-btn');
+  const el = document.getElementById('pv-vendas-quadro');
+  const btn = document.getElementById('pv-vendas-quadro-btn');
   if (!el) return;
   if (btn) btn.disabled = true;
   try {
@@ -31789,7 +31818,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-quadro: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-01-vendas-prev: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

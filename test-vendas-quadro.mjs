@@ -323,7 +323,7 @@ check('números do resumo filtram o detalhe; zero não é clicável', () => {
   };
   ctx.window._vendasQuadro = quadro;
   ctx.renderVendasQuadro(quadro);
-  const htmlOut = els['dados-vendas-quadro'].innerHTML;
+  const htmlOut = els['pv-vendas-quadro'].innerHTML;
   assert.ok(htmlOut.includes('Período') || (els['vq-periodo'].textContent || '').includes('Out'), 'período visível');
   assert.ok(htmlOut.includes('class="vq-link"'), 'valor com R$ é clicável');
   assert.ok(htmlOut.includes('R$'), 'texto em reais');
@@ -344,13 +344,13 @@ check('números do resumo filtram o detalhe; zero não é clicável', () => {
       },
     },
   });
-  const filtrado = els['dados-vendas-quadro'].innerHTML;
+  const filtrado = els['pv-vendas-quadro'].innerHTML;
   assert.ok(filtrado.includes('Filtro:'), 'banner do filtro');
   assert.ok(filtrado.includes('Limpar'), 'botão Limpar');
   assert.ok(filtrado.includes('FILIPE NEVES'));
   assert.ok(!filtrado.includes('DIOGO OLIVEIRA'), 'detalhe fica só no filtro');
   ctx.limparFiltroVendasQuadro();
-  const limpo = els['dados-vendas-quadro'].innerHTML;
+  const limpo = els['pv-vendas-quadro'].innerHTML;
   assert.ok(!limpo.includes('Filtro:'), 'Limpar tira o banner');
   assert.ok(limpo.includes('DIOGO OLIVEIRA'));
 });
@@ -362,12 +362,13 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!proc.includes('actualizarQuadroVendas'));
   assert.ok(!proc.includes('getVendas('));
   assert.ok(!proc.includes('fetchVendasCoberturaRows'));
-  assert.ok(html.includes('id="dados-vendas-quadro"'));
+  assert.ok(html.includes('id="pv-vendas-quadro"'));
+  assert.ok(html.includes('id="pv-tab-vendas"'));
   assert.ok(html.includes('onclick="actualizarQuadroVendas()"'));
-  assert.ok(!html.includes('id="pv-tab-vendas"'));
+  assert.ok(!html.includes('id="dados-vendas-quadro"'));
   assert.ok(html.includes('Por classificar'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-01-vendas-quadro'));
+  assert.ok(sw.includes('v2026-10-01-vendas-prev'));
 });
 
 if (process.exitCode) {
