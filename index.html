@@ -1940,6 +1940,8 @@
   .ct-table tr:hover{background:#fafafa;}
   .pv-acc-click{cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
   .pv-acc-click:hover{color:var(--accent);}
+  button.nfe-click{background:none;border:none;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
+  button.nfe-click:hover{color:var(--accent);}
   .pv-acc-rank-active{background:#fff7ed;}
   .ct-review-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
   .ct-review-item strong{display:block;font-size:10px;text-transform:uppercase;color:var(--muted);margin-bottom:2px;}
@@ -1973,6 +1975,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 var _unused_placeholder = 1;
 </script>
 <script src="simulador-template.js"></script>
+<script src="nfe-emitidas.js"></script>
 </head>
 <body class="view-home">
 
@@ -2130,7 +2133,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal, Accuracy de fecho, Vendas por canal e volumes. Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
+          <div class="hd-desc">Mapa mensal, Accuracy de fecho, Vendas por canal, volumes e NF emitidas (zip do cockpit). Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -3928,7 +3931,7 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR — autosave local + cloud (só direcção).
+            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR · NF emitidas — autosave local + cloud (só direcção).
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
@@ -3964,6 +3967,7 @@ var _unused_placeholder = 1;
         <button type="button" class="sub-tab active" id="pv-tab-mapa" onclick="pvShowView('mapa')">Mapa mensal</button>
         <button type="button" class="sub-tab" id="pv-tab-accuracy" onclick="pvShowView('accuracy')">Accuracy de fecho</button>
         <button type="button" class="sub-tab" id="pv-tab-vendas" onclick="pvShowView('vendas')">Vendas</button>
+        <button type="button" class="sub-tab" id="pv-tab-nfe" onclick="pvShowView('nfe')">NF emitidas</button>
       </div>
 
       <div id="pv-readonly-banner" style="display:none;padding:10px 14px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:12px;color:#9a3412;margin-bottom:12px;">
@@ -12645,9 +12649,11 @@ async function abrirPrevisaoVendasHome() {
     const tabM = document.getElementById('pv-tab-mapa');
     const tabA = document.getElementById('pv-tab-accuracy');
     const tabV = document.getElementById('pv-tab-vendas');
+    const tabN = document.getElementById('pv-tab-nfe');
     if (tabM) tabM.classList.add('active');
     if (tabA) tabA.classList.remove('active');
     if (tabV) tabV.classList.remove('active');
+    if (tabN) tabN.classList.remove('active');
     const mesWrap = document.getElementById('pv-mes-wrap');
     if (mesWrap) mesWrap.style.display = '';
     const anoWrap = document.getElementById('pv-ano-wrap');
@@ -12680,27 +12686,423 @@ function pvPct(a, b) {
 }
 
 function pvShowView(view) {
-  _pvView = view === 'accuracy' ? 'accuracy' : (view === 'vendas' ? 'vendas' : 'mapa');
+  _pvView = view === 'accuracy' ? 'accuracy' : (view === 'vendas' ? 'vendas' : (view === 'nfe' ? 'nfe' : 'mapa'));
   if (_pvView !== 'accuracy') _pvAccFiltro = '';
   const tabM = document.getElementById('pv-tab-mapa');
   const tabA = document.getElementById('pv-tab-accuracy');
   const tabV = document.getElementById('pv-tab-vendas');
+  const tabN = document.getElementById('pv-tab-nfe');
   if (tabM) tabM.classList.toggle('active', _pvView === 'mapa');
   if (tabA) tabA.classList.toggle('active', _pvView === 'accuracy');
   if (tabV) tabV.classList.toggle('active', _pvView === 'vendas');
+  if (tabN) tabN.classList.toggle('active', _pvView === 'nfe');
   const mesWrap = document.getElementById('pv-mes-wrap');
   if (mesWrap) mesWrap.style.display = _pvView === 'mapa' ? '' : 'none';
   const anoWrap = document.getElementById('pv-ano-wrap');
-  if (anoWrap) anoWrap.style.display = _pvView === 'vendas' ? 'none' : '';
+  if (anoWrap) anoWrap.style.display = (_pvView === 'vendas' || _pvView === 'nfe') ? 'none' : '';
   const excelBtn = document.getElementById('pv-btn-excel');
-  if (excelBtn) excelBtn.style.display = _pvView === 'vendas' ? 'none' : '';
+  if (excelBtn) excelBtn.style.display = (_pvView === 'vendas' || _pvView === 'nfe') ? 'none' : '';
   pvEnsureCloudThenRender();
+}
+
+const NFE_STORE_ID = 'nfe_emitidas';
+const NFE_IDB_KEY = 'delta_nfe_emitidas';
+let _nfeNotas = [];
+let _nfeFiltro = '';
+let _nfeStatusMsg = '';
+let _nfeGen = 0;
+let _nfeBusy = false;
+
+function nfeListaTemDocs(lista) {
+  for (const c of lista || []) {
+    const d = typeof nfeNormDoc === 'function' ? nfeNormDoc(c && c.cnpj) : '';
+    if (d.length === 11 || d.length === 14) return true;
+  }
+  return false;
+}
+
+function nfePrepararChrome() {
+  const modo = document.getElementById('pv-modo-label');
+  if (modo) {
+    modo.textContent = '· NF emitidas';
+    modo.style.color = '#1e3a5f';
+  }
+  const ro = document.getElementById('pv-readonly-banner');
+  if (ro) ro.style.display = 'none';
+  const pub = document.getElementById('pv-btn-publicar');
+  if (pub) pub.style.display = 'none';
+  const excel = document.getElementById('pv-btn-excel');
+  if (excel) excel.style.display = 'none';
+  const banner = document.getElementById('pv-banner');
+  if (banner) {
+    banner.innerHTML = '<strong>NF emitidas</strong> — zip do cockpit (ou um XML avulso). Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. A mesma chave não duplica. A gravação é no fim da carga.';
+  }
+}
+
+async function nfeLoadRemote() {
+  const res = await fetch(
+    `${LISTA_CLIENTES_SUPA_URL}?id=eq.${NFE_STORE_ID}&select=data`,
+    { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+  );
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const rows = await res.json();
+  const data = rows && rows[0] && rows[0].data;
+  if (data && Array.isArray(data.notas)) return data.notas;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
+async function nfePersistir(notas) {
+  const arr = Array.isArray(notas) ? notas : [];
+  const ts = new Date().toISOString();
+  try {
+    await idbSet(NFE_IDB_KEY, { notas: arr, ts });
+  } catch (e) {
+    console.warn('nfe idb', e);
+  }
+  const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
+    method: 'POST',
+    headers: Object.assign({}, HEADERS, { Prefer: 'resolution=merge-duplicates' }),
+    body: JSON.stringify({
+      id: NFE_STORE_ID,
+      data: { __format: 'nfe_emitidas', __total: arr.length, notas: arr },
+      atualizado_em: ts,
+    }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error('Supabase HTTP ' + res.status + (t ? ' ' + t.slice(0, 140) : ''));
+  }
+}
+
+/** Junta local + cloud. Não grava a meio de um parse — só reconcilia o que já estava guardado. */
+async function nfeHidrate() {
+  let local = [];
+  try {
+    const packed = await idbGet(NFE_IDB_KEY);
+    if (packed && Array.isArray(packed.notas)) local = packed.notas;
+  } catch (_) {}
+  let remote = null;
+  try { remote = await nfeLoadRemote(); } catch (_) { remote = null; }
+  if (remote == null) {
+    _nfeNotas = local;
+    return;
+  }
+  const merged = nfeMergeNotas(local, remote);
+  _nfeNotas = merged.notas;
+  const localSet = new Set(local.map(n => n && n.chave).filter(Boolean));
+  const remoteSet = new Set(remote.map(n => n && n.chave).filter(Boolean));
+  const faltaLocal = merged.notas.some(n => n && n.chave && !localSet.has(n.chave));
+  const faltaRemoto = merged.notas.some(n => n && n.chave && !remoteSet.has(n.chave));
+  if (faltaLocal && !faltaRemoto) {
+    try { await idbSet(NFE_IDB_KEY, { notas: merged.notas, ts: new Date().toISOString() }); } catch (_) {}
+  }
+  if (faltaRemoto && merged.notas.length) await nfePersistir(merged.notas);
+}
+
+async function nfeGarantirClientes() {
+  let lista = Array.isArray(_listaClientesMem) ? _listaClientesMem : [];
+  if (!nfeListaTemDocs(lista) && typeof carregarListaClientesLocalAsync === 'function') {
+    try { await carregarListaClientesLocalAsync(); } catch (_) {}
+    lista = Array.isArray(_listaClientesMem) ? _listaClientesMem : lista;
+  }
+  if (!nfeListaTemDocs(lista) && typeof fetchListaClientesRemota === 'function') {
+    try {
+      const pack = await fetchListaClientesRemota();
+      if (pack && Array.isArray(pack.lista) && nfeListaTemDocs(pack.lista)) return pack.lista;
+    } catch (e) { console.warn('nfe clientes', e); }
+  }
+  return lista;
+}
+
+function nfeCanalDeNpess(np) {
+  try {
+    return (typeof getCanalIdPorVendedorCod === 'function' ? getCanalIdPorVendedorCod(np) : '') || '';
+  } catch (_) { return ''; }
+}
+
+function nfeComCanal(nota) {
+  const nome = nota && nota.canalId && typeof CANAIS_APP !== 'undefined' && CANAIS_APP[nota.canalId]
+    ? CANAIS_APP[nota.canalId].nome
+    : '';
+  return Object.assign({}, nota, { canalNome: nome || (nota && nota.canalNome) || '' });
+}
+
+async function nfeFicheiroParaXmls(file) {
+  const name = String((file && file.name) || '');
+  const low = name.toLowerCase();
+  const type = String((file && file.type) || '').toLowerCase();
+  if (low.endsWith('.xml') || type.includes('xml')) {
+    return [{ name: name, xml: await file.text() }];
+  }
+  if (low.endsWith('.zip') || type.includes('zip')) {
+    if (typeof JSZip === 'undefined') throw new Error('JSZip indisponível neste browser.');
+    let zip;
+    try {
+      zip = await JSZip.loadAsync(await file.arrayBuffer());
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      if (/encrypt|password|senha/i.test(msg)) throw new Error('Este zip tem senha. Exporta o cockpit sem senha.');
+      throw new Error('Não consegui abrir o zip.');
+    }
+    const jobs = [];
+    zip.forEach((rel, entry) => {
+      if (!entry || entry.dir || !/\.xml$/i.test(rel)) return;
+      jobs.push(entry.async('string').then(xml => ({ name: rel, xml: xml })));
+    });
+    return Promise.all(jobs);
+  }
+  throw new Error('Escolhe um zip do cockpit ou um XML de NF-e.');
+}
+
+async function nfeOnFiles(ev) {
+  const input = ev && ev.target;
+  const files = Array.from((input && input.files) || []);
+  if (input) input.value = '';
+  if (!files.length || _nfeBusy) return;
+  _nfeBusy = true;
+  _nfeStatusMsg = 'A ler o ficheiro… a gravação é só no fim.';
+  nfePaint();
+  try {
+    await nfeHidrate();
+    const parsed = [];
+    let xmls = 0;
+    let ignorados = 0;
+    for (const file of files) {
+      const parts = await nfeFicheiroParaXmls(file);
+      for (const part of parts) {
+        xmls++;
+        const nota = nfeParseXml(part.xml, part.name);
+        if (!nota) { ignorados++; continue; }
+        parsed.push(nota);
+      }
+    }
+    if (!parsed.length) {
+      _nfeStatusMsg = xmls ? 'Nenhum XML de NF-e válido.' : 'O ficheiro não tem XML.';
+      if (typeof toast === 'function') toast(_nfeStatusMsg, 'error');
+      return;
+    }
+    const clientes = await nfeGarantirClientes();
+    const index = nfeIndexClientes(clientes);
+    const atrib = parsed.map(n => nfeComCanal(nfeCruzarNota(n, index, nfeCanalDeNpess)));
+    const merged = nfeMergeNotas(_nfeNotas, atrib);
+    _nfeNotas = merged.notas;
+    if (merged.novas > 0) await nfePersistir(_nfeNotas);
+    const com = atrib.filter(n => n.status === 'unico').length;
+    const sem = atrib.filter(n => n.status === 'sem_cliente').length;
+    const multi = atrib.filter(n => n.status === 'cnpj_multiplos').length;
+    _nfeStatusMsg = `${parsed.length} NF · ${merged.novas} novas · ${merged.repetidas} já guardadas · ${com} com cliente · ${sem} sem cliente · ${multi} com CNPJ em mais do que um código`
+      + (ignorados ? ` · ${ignorados} XML ignorados` : '');
+    if (typeof toast === 'function') {
+      toast(merged.novas > 0
+        ? ('NF guardadas. ' + merged.novas + ' novas.')
+        : 'Nenhuma nota nova — estas chaves já estavam guardadas.');
+    }
+  } catch (e) {
+    console.error(e);
+    _nfeStatusMsg = 'Erro ao ler: ' + ((e && e.message) ? e.message : e);
+    if (typeof toast === 'function') toast(_nfeStatusMsg, 'error');
+  } finally {
+    _nfeBusy = false;
+    if (_pvView === 'nfe') nfePaint();
+  }
+}
+
+function nfeBucket(n) {
+  if (!n || n.status === 'sem_cliente' || (n.status !== 'unico' && n.status !== 'cnpj_multiplos')) return 'sem_cliente';
+  if (n.status === 'cnpj_multiplos') return 'cnpj_multiplos';
+  if (!n.canalId) return 'sem_canal';
+  return 'canal:' + n.canalId;
+}
+
+function nfeResumoRows(notas) {
+  const counts = {};
+  (notas || []).forEach(n => {
+    const b = nfeBucket(n);
+    counts[b] = (counts[b] || 0) + 1;
+  });
+  const rows = [{ key: 'total', label: 'Total', n: (notas || []).length }];
+  if (typeof CANAIS_APP !== 'undefined') {
+    Object.values(CANAIS_APP).forEach(c => {
+      rows.push({ key: 'canal:' + c.id, label: c.nome, n: counts['canal:' + c.id] || 0 });
+    });
+  }
+  if (counts.sem_canal) rows.push({ key: 'sem_canal', label: 'Cliente sem canal', n: counts.sem_canal });
+  rows.push({ key: 'sem_cliente', label: 'Sem cliente na lista', n: counts.sem_cliente || 0 });
+  rows.push({ key: 'cnpj_multiplos', label: 'CNPJ em mais do que um código', n: counts.cnpj_multiplos || 0 });
+  return rows;
+}
+
+function nfeCountHtml(n, key) {
+  const num = Number(n) || 0;
+  if (!num) return '0';
+  return `<button type="button" class="nfe-click" onclick="nfeFiltrar('${String(key).replace(/'/g, '')}')">${num}</button>`;
+}
+
+function nfeFiltrar(key) {
+  if (!key || key === 'total') _nfeFiltro = '';
+  else _nfeFiltro = (_nfeFiltro === key) ? '' : key;
+  nfePaint();
+}
+
+function nfeLimparFiltro() {
+  _nfeFiltro = '';
+  nfePaint();
+}
+
+function nfeFmtData(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '—';
+  return m[3] + '/' + m[2] + '/' + m[1];
+}
+
+function nfeFmtValor(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function nfePassaFiltro(n) {
+  if (!_nfeFiltro) return true;
+  return nfeBucket(n) === _nfeFiltro;
+}
+
+function nfeCmpNota(a, b) {
+  const da = String((a && a.data) || '');
+  const db = String((b && b.data) || '');
+  if (da !== db) return db.localeCompare(da);
+  return String((b && b.numero) || '').localeCompare(String((a && a.numero) || ''), 'pt', { numeric: true });
+}
+
+function nfeGrupoDe(n) {
+  const b = nfeBucket(n);
+  if (b === 'cnpj_multiplos') return { canal: 'CNPJ em mais do que um código', vend: '' };
+  if (b === 'sem_cliente') return { canal: 'Sem cliente na lista', vend: '' };
+  if (b === 'sem_canal') return { canal: 'Cliente sem canal', vend: (n && n.vendedor) || '—' };
+  return { canal: (n && (n.canalNome || n.canalId)) || 'Canal', vend: (n && n.vendedor) || '—' };
+}
+
+function nfeOrdemCanal(nome) {
+  const ids = typeof CANAIS_APP !== 'undefined' ? Object.values(CANAIS_APP).map(c => c.nome) : [];
+  const all = ids.concat(['Cliente sem canal', 'Sem cliente na lista', 'CNPJ em mais do que um código']);
+  const i = all.indexOf(nome);
+  return i < 0 ? 99 : i;
+}
+
+function nfeBannerHtml() {
+  if (!_nfeFiltro) return '';
+  const hit = nfeResumoRows(_nfeNotas).find(r => r.key === _nfeFiltro);
+  const label = hit ? hit.label : _nfeFiltro;
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px;padding:8px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:13px;">
+    <span>Filtro: <strong>${escHtml(label)}</strong></span>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="nfeLimparFiltro()">Limpar</button>
+  </div>`;
+}
+
+function nfeListaHtml(notas) {
+  const vis = (notas || []).filter(nfePassaFiltro).slice().sort(nfeCmpNota);
+  if (!vis.length) {
+    const vazio = (_nfeNotas && _nfeNotas.length) ? 'Nenhuma nota neste filtro.' : 'Ainda sem NF. Larga o zip do cockpit.';
+    return `<p style="color:var(--muted);font-size:13px;">${vazio}</p>`;
+  }
+  const grupos = [];
+  const map = new Map();
+  vis.forEach(n => {
+    const g = nfeGrupoDe(n);
+    const k = g.canal + '\0' + g.vend;
+    if (!map.has(k)) {
+      const o = { canal: g.canal, vend: g.vend, notas: [] };
+      map.set(k, o);
+      grupos.push(o);
+    }
+    map.get(k).notas.push(n);
+  });
+  grupos.sort((a, b) => {
+    const d = nfeOrdemCanal(a.canal) - nfeOrdemCanal(b.canal);
+    if (d) return d;
+    return String(a.vend).localeCompare(String(b.vend), 'pt');
+  });
+  return grupos.map(g => {
+    const vend = g.vend
+      ? `<div style="font-size:13px;font-weight:600;margin:8px 0 6px;">${escHtml(g.vend)} <span style="color:var(--muted);font-weight:500;">· ${g.notas.length}</span></div>`
+      : '';
+    const linhas = g.notas.map(n => `<tr>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;">${escHtml(n.numero || '—')}${n.serie ? ` <span style="color:var(--muted);">sér. ${escHtml(n.serie)}</span>` : ''}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border);">${escHtml(n.cliente || '—')}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;">${nfeFmtValor(n.valor)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;">${escHtml(nfeFmtData(n.data))}</td>
+    </tr>`).join('');
+    return `<section style="margin:0 0 16px;">
+      <div style="font-size:15px;font-weight:700;margin:0 0 2px;">${escHtml(g.canal)}</div>
+      ${vend}
+      <div style="overflow:auto;">
+        <table style="border-collapse:collapse;font-size:13px;width:100%;min-width:520px;">
+          <thead><tr>
+            <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);">Número</th>
+            <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);">Cliente</th>
+            <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);">Valor</th>
+            <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);">Data</th>
+          </tr></thead>
+          <tbody>${linhas}</tbody>
+        </table>
+      </div>
+    </section>`;
+  }).join('');
+}
+
+function nfeHtml() {
+  const notas = _nfeNotas || [];
+  const rows = nfeResumoRows(notas);
+  const resumo = `<table style="border-collapse:collapse;font-size:13px;margin:0 0 8px;min-width:320px;">
+    <thead><tr>
+      <th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);"></th>
+      <th style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);">Notas</th>
+    </tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border);">${escHtml(r.label)}</td>
+      <td style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);${r.n ? 'font-weight:600;' : 'color:var(--muted);'}">${nfeCountHtml(r.n, r.key)}</td>
+    </tr>`).join('')}</tbody>
+  </table>
+  <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">Clique numa contagem para ver só essas notas. Zero não filtra.</p>`;
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;">
+      <div style="font-weight:600;margin-bottom:4px;">Zip do cockpit de NF-e</div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 10px;line-height:1.45;">
+        Larga o zip novo (ou um XML avulso). A app lê as NF-e, cruza o documento do destinatário com a lista de clientes
+        e mostra número, cliente, valor e data por canal e por vendedor. Notas já guardadas não duplicam.
+      </p>
+      <input type="file" id="nfe-file-input" accept=".zip,.xml,application/zip,application/xml,text/xml" multiple style="display:none" onchange="nfeOnFiles(event)">
+      <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('nfe-file-input').click()" ${_nfeBusy ? 'disabled' : ''}>📂 Selecionar zip ou XML</button>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px;">${escHtml(_nfeStatusMsg || (notas.length ? (notas.length + ' notas guardadas.') : 'Ainda sem carga neste ecrã.'))}</div>
+    </div>
+    ${resumo}
+    ${nfeBannerHtml()}
+    ${nfeListaHtml(notas)}`;
+}
+
+function nfePaint() {
+  const host = document.getElementById('pv-canal-panels');
+  if (!host || _pvView !== 'nfe') return;
+  host.innerHTML = nfeHtml();
+}
+
+async function nfeMontarVista() {
+  const gen = ++_nfeGen;
+  const host = document.getElementById('pv-canal-panels');
+  if (host) host.innerHTML = '<p style="color:var(--muted);font-size:13px;">A carregar NF emitidas…</p>';
+  try {
+    await nfeHidrate();
+  } catch (e) {
+    console.warn(e);
+    _nfeStatusMsg = 'Não foi possível ler as NF guardadas.';
+  }
+  if (gen !== _nfeGen || _pvView !== 'nfe') return;
+  nfePaint();
 }
 
 async function pvEnsureCloudThenRender(opts) {
   pvBindAutosaveLifecycle();
   if (opts && opts.reload) pvFlushAutosave();
-  if (_pvView !== 'vendas') {
+  if (_pvView !== 'vendas' && _pvView !== 'nfe') {
     try { await pvFetchCloudMaps(false); } catch (_) {}
     try { if (typeof lerVendasQuadroPersistida === 'function') await lerVendasQuadroPersistida(); } catch (_) {}
   }
@@ -12710,6 +13112,11 @@ async function pvEnsureCloudThenRender(opts) {
 function pvRender(opts) {
   const host = document.getElementById('pv-canal-panels');
   if (!host) return;
+  if (_pvView === 'nfe') {
+    nfePrepararChrome();
+    nfeMontarVista();
+    return;
+  }
   if (_pvView === 'vendas') {
     const modoV = document.getElementById('pv-modo-label');
     if (modoV) {
