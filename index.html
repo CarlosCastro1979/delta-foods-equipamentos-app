@@ -21407,8 +21407,8 @@ async function loadVendasMenuCanal() {
 
 /**
  * Maiores perdas do mês: Top 20 clientes por vendedor.
- * Fonte = linhas da tabela vendas (cod + Fatur.), cruzadas com o NPess do canal.
- * O agregado vendas_quadro é por canal/vendedor e não chega.
+ * Fonte = Fatur. e NPess gravados por cliente na carga (mês corrente e anterior).
+ * A tabela vendas não tem essas colunas; o vendas_quadro é por vendedor e não chega.
  * Perda = max(0, N-1 − N). Sem N-1 por cliente, a perda é o Fatur. negativo do mês.
  */
 const PERDAS_FILTRO_LS = 'delta_vendas_perdas_filtro';
@@ -21640,6 +21640,7 @@ function maioresPerdasMes(linhas, opts) {
 function textoCriterioPerdas(modelo) {
   const m = modelo || {};
   if (m.criterio === 'sem-fatur') {
+    if (m.motivo === 'por-gravar') return 'O Fatur. por cliente deste mês ainda não foi gravado. A próxima carga em Dados (mês corrente e o anterior) grava o Fatur. e o Nº pessoal por cliente e passa a encher esta lista. Não se inventam clientes. Meses mais antigos não são regravados.';
     if (m.motivo === 'coluna') return 'A tabela de vendas não tem Fatur. por cliente. A lista não inventa clientes.';
     return 'Não há Fatur. por cliente neste mês nem no mesmo mês do ano anterior. A lista não inventa clientes.';
   }
@@ -21803,6 +21804,174 @@ function htmlPerdasMes(modelo, opts) {
     + '</tr></thead><tbody>' + body + '</tbody></table></div>';
 }
 
+const VENDAS_CLIENTE_LS_KEY = 'delta_vendas_cliente_v1';
+const VENDAS_CLIENTE_SUPA_ID = 'vendas_cliente';
+
+function vendasClienteVazio() {
+  return { atualizado_em: null, meses: {} };
+}
+
+function mesClienteTem(mes) {
+  return !!(mes && mes.clientes && Object.keys(mes.clientes).length);
+}
+
+/** Soma Fatur. por cliente e NPess, mês a mês. Não grava meses fora da janela. */
+function agregarFaturClienteMes(linhas) {
+  const meses = {};
+  const list = Array.isArray(linhas) ? linhas : [];
+  for (let i = 0; i < list.length; i++) {
+    const row = list[i];
+    if (!row) continue;
+    const ym = ymLinhaPerdas(row.data);
+    if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+    const valor = typeof parseValorVendaSap === 'function' ? parseValorVendaSap(row.valor) : (Number.isFinite(+row.valor) ? +row.valor : null);
+    if (valor == null) continue;
+    const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row.cod) : String(row.cod || '').trim();
+    if (!cod) continue;
+    const npess = typeof npessDeCelulaExcel === 'function' ? (npessDeCelulaExcel(row.npess) || 0) : (parseInt(row.npess, 10) || 0);
+    const key = cod + '\t' + String(npess || 0);
+    if (!meses[ym]) meses[ym] = { clientes: {} };
+    if (!meses[ym].clientes[key]) {
+      meses[ym].clientes[key] = {
+        cod: cod,
+        npess: npess || 0,
+        valor: 0,
+        negativo: 0,
+        nome: String(row.nome || '').trim(),
+      };
+    }
+    const c = meses[ym].clientes[key];
+    if (!c.nome && row.nome) c.nome = String(row.nome).trim();
+    c.valor = arredondarRsPerdas(c.valor + valor);
+    if (valor < 0) c.negativo = arredondarRsPerdas(c.negativo + valor);
+  }
+  return meses;
+}
+
+/**
+ * Substitui só os meses da janela (corrente e anterior) que vieram nestas linhas.
+ * 2025-01 até ao mês anterior à janela fica como estava. Linha fora da janela não entra.
+ */
+function substituirClientesMesesJanela(antes, linhas, hoje) {
+  const janela = typeof mesesJanelaCargaVendas === 'function' ? mesesJanelaCargaVendas(hoje) : { set: new Set() };
+  const delta = agregarFaturClienteMes(linhas);
+  const out = vendasClienteVazio();
+  out.atualizado_em = (antes && antes.atualizado_em) || null;
+  const prev = (antes && antes.meses) || {};
+  const prevKeys = Object.keys(prev);
+  for (let i = 0; i < prevKeys.length; i++) {
+    const ym = prevKeys[i];
+    if (prev[ym] && prev[ym].clientes) out.meses[ym] = prev[ym];
+  }
+  const deltaKeys = Object.keys(delta);
+  for (let i = 0; i < deltaKeys.length; i++) {
+    const ym = deltaKeys[i];
+    if (!janela.set || !janela.set.has(ym)) continue;
+    out.meses[ym] = delta[ym];
+  }
+  return out;
+}
+
+function linhasDeMesCliente(mes, ym) {
+  const out = [];
+  const clientes = (mes && mes.clientes) || {};
+  const keys = Object.keys(clientes);
+  for (let i = 0; i < keys.length; i++) {
+    const c = clientes[keys[i]];
+    if (!c || !c.cod) continue;
+    const neg = Number(c.negativo) || 0;
+    const valor = Number(c.valor) || 0;
+    const pos = arredondarRsPerdas(valor - neg);
+    const base = { cod: c.cod, data: ym + '-01', npess: c.npess || 0 };
+    if (neg < 0) out.push({ cod: base.cod, data: base.data, npess: base.npess, valor: neg });
+    if (pos !== 0) out.push({ cod: base.cod, data: base.data, npess: base.npess, valor: pos });
+    else if (!(neg < 0) && valor !== 0) out.push({ cod: base.cod, data: base.data, npess: base.npess, valor: valor });
+  }
+  return out;
+}
+
+function nomesDoMesCliente(mes) {
+  const m = {};
+  const clientes = (mes && mes.clientes) || {};
+  const keys = Object.keys(clientes);
+  for (let i = 0; i < keys.length; i++) {
+    const c = clientes[keys[i]];
+    if (c && c.cod && c.nome && !m[c.cod]) m[c.cod] = String(c.nome);
+  }
+  return m;
+}
+
+async function salvarVendasClientePersistida(payload) {
+  const body = {
+    atualizado_em: new Date().toISOString(),
+    meses: (payload && payload.meses) || {},
+  };
+  window._vendasCliente = body;
+  window._vendasClienteLeituraFalhou = false;
+  _perdasLinhasCache = { key: '', linhas: null, temColunaValor: false };
+  try { localStorage.setItem(VENDAS_CLIENTE_LS_KEY, JSON.stringify(body)); } catch (_) {}
+  try { if (typeof idbSet === 'function') await idbSet(VENDAS_CLIENTE_LS_KEY, body); } catch (_) {}
+  const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
+    method: 'POST',
+    headers: { ...HEADERS, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ id: VENDAS_CLIENTE_SUPA_ID, data: body, atualizado_em: body.atualizado_em }),
+  });
+  if (!res || !res.ok) {
+    let detalhe = 'HTTP ' + (res && res.status);
+    try { detalhe += ' ' + String(await res.text()).slice(0, 160); } catch (_) {}
+    throw new Error(detalhe.trim());
+  }
+  return body;
+}
+
+async function lerVendasClientePersistida() {
+  if (window._vendasCliente && window._vendasCliente.meses) return window._vendasCliente;
+  let local = null;
+  try {
+    if (typeof idbGet === 'function') {
+      const idbV = await idbGet(VENDAS_CLIENTE_LS_KEY);
+      if (idbV && idbV.meses) local = idbV;
+    }
+  } catch (_) {}
+  if (!local) {
+    try { local = JSON.parse(localStorage.getItem(VENDAS_CLIENTE_LS_KEY) || 'null'); } catch (_) { local = null; }
+  }
+  try {
+    const res = await fetch(
+      LISTA_CLIENTES_SUPA_URL + '?id=eq.' + VENDAS_CLIENTE_SUPA_ID + '&select=data,atualizado_em',
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const rows = await res.json();
+    const remoto = rows && rows[0] && rows[0].data;
+    if (remoto && remoto.meses) {
+      window._vendasCliente = remoto;
+      window._vendasClienteLeituraFalhou = false;
+      return remoto;
+    }
+    const vazio = vendasClienteVazio();
+    window._vendasCliente = vazio;
+    window._vendasClienteLeituraFalhou = false;
+    return vazio;
+  } catch (e) {
+    if (local && local.meses) {
+      window._vendasCliente = local;
+      window._vendasClienteLeituraFalhou = false;
+      return local;
+    }
+    window._vendasClienteLeituraFalhou = true;
+    console.warn('lerVendasClientePersistida:', e.message || e);
+    return null;
+  }
+}
+
+async function substituirClientesMesesJanelaNoStore(linhas, hoje) {
+  const antes = await lerVendasClientePersistida();
+  if (!antes) throw new Error('Não foi possível ler o Fatur. por cliente já gravado.');
+  const merged = substituirClientesMesesJanela(antes, linhas, hoje);
+  return salvarVendasClientePersistida(merged);
+}
+
 function nomesClientePorCod(lista) {
   const m = {};
   const arr = Array.isArray(lista) ? lista : [];
@@ -21865,11 +22034,56 @@ async function lerLinhasVendaPorMeses(yms) {
   return { linhas: out, temColunaValor: true };
 }
 
+function modeloPerdasDoPack(pack, ctx) {
+  if (pack && pack.porGravar && !pack.temColunaValor) {
+    return {
+      ym: ctx && ctx.ym, ymN1: ctx && ctx.ymN1,
+      criterio: 'sem-fatur', motivo: 'por-gravar', grupos: [], vendedores: [],
+    };
+  }
+  return maioresPerdasMes((pack && pack.linhas) || [], ctx);
+}
+
 async function perdasLinhasDoPeriodo(ym, ymN1) {
   const key = String(ym || '') + '|' + String(ymN1 || '');
   if (_perdasLinhasCache.key === key && Array.isArray(_perdasLinhasCache.linhas)) return _perdasLinhasCache;
-  const pack = await lerLinhasVendaPorMeses([ym, ymN1]);
-  _perdasLinhasCache = { key: key, linhas: pack.linhas, temColunaValor: !!pack.temColunaValor };
+  const store = typeof lerVendasClientePersistida === 'function' ? await lerVendasClientePersistida() : null;
+  const meses = (store && store.meses) || {};
+  const temN = mesClienteTem(meses[ym]);
+  const temN1 = mesClienteTem(meses[ymN1]);
+  if (temN || temN1) {
+    const linhas = [];
+    const nomes = {};
+    if (temN) {
+      const parte = linhasDeMesCliente(meses[ym], ym);
+      for (let i = 0; i < parte.length; i++) linhas.push(parte[i]);
+      const nn = nomesDoMesCliente(meses[ym]);
+      const nk = Object.keys(nn);
+      for (let i = 0; i < nk.length; i++) nomes[nk[i]] = nn[nk[i]];
+    }
+    if (temN1) {
+      const parte = linhasDeMesCliente(meses[ymN1], ymN1);
+      for (let i = 0; i < parte.length; i++) linhas.push(parte[i]);
+      const nn = nomesDoMesCliente(meses[ymN1]);
+      const nk = Object.keys(nn);
+      for (let i = 0; i < nk.length; i++) if (!nomes[nk[i]]) nomes[nk[i]] = nn[nk[i]];
+    }
+    _perdasLinhasCache = {
+      key: key, linhas: linhas, temColunaValor: !!temN, porGravar: !temN, nomesExtra: nomes,
+    };
+    return _perdasLinhasCache;
+  }
+  let pack = { linhas: [], temColunaValor: false };
+  try {
+    pack = await lerLinhasVendaPorMeses([ym, ymN1]);
+  } catch (e) {
+    console.warn('perdas linhas:', e.message || e);
+  }
+  if (pack.temColunaValor && pack.linhas && pack.linhas.length) {
+    _perdasLinhasCache = { key: key, linhas: pack.linhas, temColunaValor: true, porGravar: false, nomesExtra: {} };
+    return _perdasLinhasCache;
+  }
+  _perdasLinhasCache = { key: key, linhas: [], temColunaValor: false, porGravar: true, nomesExtra: {} };
   return _perdasLinhasCache;
 }
 
@@ -21881,7 +22095,15 @@ function perdasContexto(canalId, ym, ymN1, pack) {
     ymN1: ymN1,
     canalId: canalId || '',
     npessPorCod: typeof npessPorCodDeLista === 'function' ? npessPorCodDeLista(lista) : {},
-    nomesPorCod: nomesClientePorCod(lista),
+    nomesPorCod: (function () {
+      const nomes = nomesClientePorCod(lista);
+      const extra = (pack && pack.nomesExtra) || {};
+      const ek = Object.keys(extra);
+      for (let i = 0; i < ek.length; i++) {
+        if (!nomes[ek[i]] && extra[ek[i]]) nomes[ek[i]] = extra[ek[i]];
+      }
+      return nomes;
+    })(),
     mapas: typeof mapasVendasQuadro === 'function' ? mapasVendasQuadro() : null,
     temColunaValor: !!(pack && pack.temColunaValor),
     vendedor: perdasFiltroDe(canalId ? canalId : 'geral'),
@@ -21909,7 +22131,7 @@ async function montarVendasPerdasCanal() {
     if (gen !== _perdasCanalGen) return;
     const ctx = perdasContexto(canalId === 'canal' ? '' : canalId, periodo.ym, ymN1, pack);
     ctx.vendedor = perdasFiltroDe(canalId);
-    const modelo = maioresPerdasMes(pack.linhas, ctx);
+    const modelo = modeloPerdasDoPack(pack, ctx);
     if (gen !== _perdasCanalGen) return;
     pintarHostPerdas(host, modelo, { geral: false, scope: canalId });
   } catch (e) {
@@ -21930,7 +22152,7 @@ function renderVendasPerdasCanal() {
   const canalId = perdasScopeCanal();
   const ctx = perdasContexto(canalId === 'canal' ? '' : canalId, periodo.ym, ymN1, _perdasLinhasCache);
   ctx.vendedor = perdasFiltroDe(canalId);
-  pintarHostPerdas(host, maioresPerdasMes(_perdasLinhasCache.linhas, ctx), { geral: false, scope: canalId });
+  pintarHostPerdas(host, modeloPerdasDoPack(_perdasLinhasCache, ctx), { geral: false, scope: canalId });
 }
 
 function pvMontarVistaPerdas() {
@@ -21968,7 +22190,7 @@ async function montarVendasPerdasGeral() {
     if (gen !== _perdasGeralGen) return;
     const ctx = perdasContexto('', periodo.ym, ymN1, pack);
     ctx.vendedor = perdasFiltroDe('geral');
-    const modelo = maioresPerdasMes(pack.linhas, ctx);
+    const modelo = modeloPerdasDoPack(pack, ctx);
     if (gen !== _perdasGeralGen) return;
     pintarHostPerdas(host, modelo, { geral: true, scope: 'geral' });
   } catch (e) {
@@ -21988,7 +22210,7 @@ function renderVendasPerdasGeral() {
   }
   const ctx = perdasContexto('', periodo.ym, ymN1, _perdasLinhasCache);
   ctx.vendedor = perdasFiltroDe('geral');
-  pintarHostPerdas(host, maioresPerdasMes(_perdasLinhasCache.linhas, ctx), { geral: true, scope: 'geral' });
+  pintarHostPerdas(host, modeloPerdasDoPack(_perdasLinhasCache, ctx), { geral: true, scope: 'geral' });
 }
 
 function htmlLinhaResumoPnL(row, filtro, escFn, periodo) {
@@ -22702,10 +22924,12 @@ async function processVendasFile(event) {
         const valorLinha = iValor >= 0 ? parseValorVendaSap(row[iValor]) : null;
         const npessLinha = iNpessVenda >= 0 ? npessDeCelulaExcel(row[iNpessVenda]) : 0;
         const volLinha = iVolume >= 0 ? parseValorVendaSap(row[iVolume]) : null;
+        const nomeEmissor = emissor.slice(codRaw.length).replace(/\s+/g, ' ').trim().slice(0, 80);
         const linhaAberta = {
           cod, data: dataStr, tipo, qty, peso: isNaN(peso) ? 0 : peso,
           valor: valorLinha == null ? undefined : valorLinha,
           npess: npessLinha || undefined,
+          nome: nomeEmissor || undefined,
           volume: volLinha == null ? undefined : volLinha,
         };
         linhasValidas++;
@@ -22771,6 +22995,16 @@ async function processVendasFile(event) {
     } catch (e) {
       console.warn('quadro janela:', e.message || e);
       quadroMsg = `<br>• Vendas não actualizadas: ${String(e.message || e).slice(0, 160)}`;
+    }
+
+    try {
+      if (typeof substituirClientesMesesJanelaNoStore === 'function') {
+        await substituirClientesMesesJanelaNoStore(linhasJanela, hoje);
+        quadroMsg += `<br>• Fatur. e Nº pessoal por cliente gravados em ${janelaTxt} (maiores perdas lê isto; meses fora destes dois ficam como estão)`;
+      }
+    } catch (e) {
+      console.warn('clientes janela:', e.message || e);
+      quadroMsg += `<br>• Fatur. por cliente não gravado: ${String(e.message || e).slice(0, 160)}`;
     }
 
     setStatus(
@@ -36457,7 +36691,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-vendas-perdas-mes: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-perdas-dados-cliente: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

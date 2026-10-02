@@ -120,6 +120,13 @@ vm.createContext(ctx);
   'mapasVendasQuadro',
   'normNomeVendaMenu',
   'getCanalIdPorVendedorCod',
+  'vendasYmAnterior',
+  'mesesJanelaCargaVendas',
+  'agregarFaturClienteMes',
+  'vendasClienteVazio',
+  'substituirClientesMesesJanela',
+  'linhasDeMesCliente',
+  'mesClienteTem',
   'arredondarRsPerdas',
   'ymLinhaPerdas',
   'nomeExibicaoVendedorPerdas',
@@ -314,6 +321,53 @@ check('sem N-1 usa o Fatur. negativo e não inventa clientes', () => {
   assert.equal(semCol.motivo, 'coluna');
 });
 
+check('a carga grava Fatur. por cliente só no mês corrente e no anterior', () => {
+  const antes = {
+    meses: {
+      '2026-08': { clientes: { '1\t1': { cod: '1', npess: 1, valor: 9, negativo: 0, nome: 'Antigo' } } },
+    },
+  };
+  const linhas = [
+    { cod: '010', data: '2026-09-02', valor: 100, npess: 99520002, nome: 'Cliente Alfa' },
+    { cod: '010', data: '2026-09-03', valor: -30, npess: 99520002 },
+    { cod: '010', data: '2026-09-04', valor: 10, npess: 99520015, nome: 'Cliente Alfa' },
+    { cod: '011', data: '2026-08-01', valor: 999, npess: 99520002, nome: 'Fora' },
+    { cod: '012', data: '2025-09-01', valor: 50, npess: 99520002, nome: 'Ano' },
+  ];
+  const out = ctx.substituirClientesMesesJanela(antes, linhas, '2026-10-02');
+  assert.equal(out.meses['2026-08'].clientes['1\t1'].valor, 9);
+  assert.equal(out.meses['2025-09'], undefined);
+  assert.equal(out.meses['2026-10'], undefined);
+  const gravado = out.meses['2026-09'].clientes['10\t99520002'];
+  assert.equal(gravado.valor, 70);
+  assert.equal(gravado.negativo, -30);
+  assert.equal(gravado.nome, 'Cliente Alfa');
+  assert.equal(out.meses['2026-09'].clientes['10\t99520015'].valor, 10);
+  ctx._canalPorNpess = null;
+  const modelo = ctx.maioresPerdasMes(ctx.linhasDeMesCliente(out.meses['2026-09'], '2026-09'), {
+    ym: '2026-09',
+    ymN1: '2025-09',
+    canalId: 'horeca',
+    mapas: ctx.mapasVendasQuadro(),
+    temColunaValor: true,
+    nomesPorCod: { '10': 'Cliente Alfa' },
+  });
+  assert.equal(modelo.criterio, 'devolucao');
+  assert.equal(modelo.grupos.length, 1);
+  assert.equal(modelo.grupos[0].vendedor, 'Hélcio Grégio');
+  assert.equal(modelo.grupos[0].linhas.length, 1);
+  assert.equal(modelo.grupos[0].linhas[0].nome, 'Cliente Alfa');
+  assert.equal(modelo.grupos[0].linhas[0].perda, 30);
+  const proc = extractFn(html, 'processVendasFile');
+  assert.ok(proc.includes('substituirClientesMesesJanelaNoStore(linhasJanela, hoje)'));
+  assert.ok(proc.indexOf('substituirClientesMesesJanelaNoStore(linhasJanela, hoje)') < proc.indexOf('getVendasDedupKeySet'));
+  assert.ok(!proc.includes('getVendas('));
+  const aviso = ctx.textoCriterioPerdas({ criterio: 'sem-fatur', motivo: 'por-gravar' });
+  assert.ok(aviso.includes('próxima carga'));
+  assert.ok(aviso.includes('Não se inventam clientes'));
+  assert.ok(!html.includes('>Quadro</button>'));
+});
+
 check('o filtro do vendedor grava no localStorage', () => {
   ctx._perdasFiltroUi = null;
   store.delta_vendas_perdas_filtro = JSON.stringify({
@@ -328,8 +382,8 @@ check('o filtro do vendedor grava no localStorage', () => {
   assert.equal(saved.porCanal.horeca, '');
   assert.equal(saved.geral, 'Filipe Neves');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-02-vendas-perdas-mes'));
-  assert.ok(html.includes('v2026-10-02-vendas-perdas-mes'));
+  assert.ok(sw.includes('v2026-10-02-perdas-dados-cliente'));
+  assert.ok(html.includes('v2026-10-02-perdas-dados-cliente'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);
