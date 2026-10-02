@@ -20,6 +20,16 @@
   var NFE_CPF_CANAL_NOME = 'Ecommerce';
   var NFE_CPF_VENDEDOR = 'Marcio Gorga';
   var NFE_CPF_NPESS = '99520001';
+  /**
+   * Transferência intragrupo Delta Espírito Santo ↔ Delta São Paulo.
+   * Confirmado nas NF 4555, 4557, 4558 e 4559 (série 1, 02/10/2026):
+   * emitente ES 14.830.817/0003-63, destinatário SP 14.830.817/0001-00.
+   * Os dois sentidos entre estes CNPJ. Não é o nome «Delta».
+   */
+  var NFE_DELTA_CNPJ_ES = '14830817000363';
+  var NFE_DELTA_CNPJ_SP = '14830817000100';
+  var NFE_TRANSF_CANAL = 'transferencias';
+  var NFE_TRANSF_CANAL_NOME = 'Transferências internas';
 
   function nfeNormDoc(v) {
     return String(v == null ? '' : v).replace(/\D/g, '');
@@ -213,13 +223,39 @@
   }
 
   /**
-   * CNPJ que não está na lista: o nome da NF cruza com o catálogo
-   * (vendas_cliente / Excel, já com o NPess atual de 2026).
-   * Um código, ou vários com o mesmo NPess atual, atribuem esse vendedor e o canal dele.
-   * Códigos com NPess diferentes ficam sem cliente — não se junta o de 2025 se 2026 tiver outro.
-   * CPF não entra aqui.
+   * Par emitente/destinatário entre os dois CNPJ da Delta (ES ↔ SP).
+   * Qualquer outro CNPJ, mesmo com «Delta» no nome, não é transferência.
+   */
+  function nfeEhTransferenciaInterna(nota) {
+    if (!nota) return false;
+    var emit = nfeNormDoc(nota.emitCnpj);
+    var dest = nfeNormDoc(nota.destDoc);
+    if (!emit || !dest || emit === dest) return false;
+    var es = emit === NFE_DELTA_CNPJ_ES || dest === NFE_DELTA_CNPJ_ES;
+    var sp = emit === NFE_DELTA_CNPJ_SP || dest === NFE_DELTA_CNPJ_SP;
+    return es && sp;
+  }
+
+  function nfeComTransferenciaInterna(nota) {
+    return Object.assign({}, nota, {
+      status: NFE_STATUS_UNICO,
+      canalId: NFE_TRANSF_CANAL,
+      canalNome: NFE_TRANSF_CANAL_NOME,
+      vendedor: '',
+      npess: '',
+      cod: '',
+      codigos: [],
+      rotulo: '',
+    });
+  }
+
+  /**
+   * Transferência Delta ES ↔ SP fica nesse canal, sem vendedor.
+   * O resto: CNPJ na lista, ou nome no catálogo com o NPess atual de 2026.
+   * CPF sem vendedor vai para o Marcio / Ecommerce.
    */
   function nfeCruzarNota(nota, index, canalDeNpess, catalogo) {
+    if (nfeEhTransferenciaInterna(nota)) return nfeComTransferenciaInterna(nota);
     var dest = nfeNormDoc(nota && nota.destDoc);
     var hits = (index && dest && index.get(dest)) || [];
     var a = nfeAtribuirDestinatario(hits, canalDeNpess);
@@ -424,6 +460,22 @@
       if (!porNome) return n;
       alteradas++;
       return Object.assign({}, n, porNome);
+    });
+    return { notas: out, alteradas: alteradas };
+  }
+
+  /**
+   * Notas já gravadas: o par Delta ES ↔ Delta SP passa a Transferências internas,
+   * mesmo que já estivesse no Marcio. Outro CNPJ não muda.
+   */
+  function nfeReaplicarTransferenciasInternas(notas) {
+    var alteradas = 0;
+    var out = (notas || []).map(function (n) {
+      if (!nfeEhTransferenciaInterna(n)) return n;
+      var next = nfeComTransferenciaInterna(n);
+      if (!nfeAtribDifere(n, next)) return n;
+      alteradas++;
+      return next;
     });
     return { notas: out, alteradas: alteradas };
   }
@@ -707,6 +759,12 @@
     NFE_CPF_CANAL: NFE_CPF_CANAL,
     NFE_CPF_VENDEDOR: NFE_CPF_VENDEDOR,
     NFE_CPF_NPESS: NFE_CPF_NPESS,
+    NFE_DELTA_CNPJ_ES: NFE_DELTA_CNPJ_ES,
+    NFE_DELTA_CNPJ_SP: NFE_DELTA_CNPJ_SP,
+    NFE_TRANSF_CANAL: NFE_TRANSF_CANAL,
+    NFE_TRANSF_CANAL_NOME: NFE_TRANSF_CANAL_NOME,
+    nfeEhTransferenciaInterna: nfeEhTransferenciaInterna,
+    nfeReaplicarTransferenciasInternas: nfeReaplicarTransferenciasInternas,
     nfeAtribuirDestinatario: nfeAtribuirDestinatario,
     nfeCruzarNota: nfeCruzarNota,
     nfeNormChaveNome: nfeNormChaveNome,

@@ -12917,7 +12917,7 @@ function nfePrepararChrome() {
   if (excel) excel.style.display = 'none';
   const banner = document.getElementById('pv-banner');
   if (banner) {
-    banner.innerHTML = '<strong>NF emitidas</strong> — consulta. A carga do ZIP de XML e PDF da TTI faz-se em Dados. Clique no número da NF para abrir o PDF. Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. CPF sem vendedor fica no Marcio Gorga, no Ecommerce. A mesma chave não duplica. A gravação é no fim da carga.';
+    banner.innerHTML = '<strong>NF emitidas</strong> — consulta. A carga do ZIP de XML e PDF da TTI faz-se em Dados. Clique no número da NF para abrir o PDF. Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. CPF sem vendedor fica no Marcio Gorga, no Ecommerce. Transferência entre os CNPJ da Delta ES e da Delta SP fica em Transferências internas, sem vendedor. A mesma chave não duplica. A gravação é no fim da carga.';
   }
 }
 
@@ -12988,19 +12988,30 @@ async function nfePersistir(notas) {
 
 /**
  * Junta local + cloud. Não grava a meio de um parse — só reconcilia o que já estava guardado.
- * Nome no vendas_cliente com o mesmo NPess atual (um código ou vários do mesmo vendedor) e, a seguir, CPF sem vendedor → Marcio.
+ * Nome no vendas_cliente com o mesmo NPess atual (um código ou vários do mesmo vendedor),
+ * CPF sem vendedor → Marcio, e por fim o par Delta ES ↔ SP → Transferências internas (sai do Marcio).
  */
 function nfeAplicarRegraGuardada(notas, catalogo) {
   let base = notas || [];
   let alteradas = 0;
+  let transferencias = 0;
   if (typeof nfeReaplicarVendedorPorNome === 'function' && catalogo && catalogo.length) {
     const nome = nfeReaplicarVendedorPorNome(base, catalogo, nfeCanalDeNpess);
     base = (nome.notas || []).map(n => (typeof nfeComCanal === 'function' ? nfeComCanal(n) : n));
     alteradas += nome.alteradas || 0;
   }
-  if (typeof nfeReaplicarCpfSemVendedor !== 'function') return { notas: base, alteradas: alteradas };
-  const cpf = nfeReaplicarCpfSemVendedor(base);
-  return { notas: cpf.notas, alteradas: alteradas + (cpf.alteradas || 0) };
+  if (typeof nfeReaplicarCpfSemVendedor === 'function') {
+    const cpf = nfeReaplicarCpfSemVendedor(base);
+    base = cpf.notas;
+    alteradas += cpf.alteradas || 0;
+  }
+  if (typeof nfeReaplicarTransferenciasInternas === 'function') {
+    const tr = nfeReaplicarTransferenciasInternas(base);
+    base = (tr.notas || []).map(n => (typeof nfeComCanal === 'function' ? nfeComCanal(n) : n));
+    transferencias = tr.alteradas || 0;
+    alteradas += transferencias;
+  }
+  return { notas: base, alteradas: alteradas, transferencias: transferencias };
 }
 
 /** Catálogo cod → nome + NPess atual (mês mais recente de 2026) a partir do vendas_cliente. */
@@ -13098,7 +13109,10 @@ function nfeComCanal(nota) {
   const nome = nota && nota.canalId && typeof CANAIS_APP !== 'undefined' && CANAIS_APP[nota.canalId]
     ? CANAIS_APP[nota.canalId].nome
     : '';
-  return Object.assign({}, nota, { canalNome: nome || (nota && nota.canalNome) || '' });
+  const transf = nota && nota.canalId === 'transferencias'
+    ? ((typeof NFE_TRANSF_CANAL_NOME !== 'undefined' && NFE_TRANSF_CANAL_NOME) || 'Transferências internas')
+    : '';
+  return Object.assign({}, nota, { canalNome: nome || transf || (nota && nota.canalNome) || '' });
 }
 
 function nfeBytesParaBase64(bytes) {
@@ -13210,8 +13224,10 @@ async function nfeOnFiles(ev) {
         ? ('NF guardadas. ' + merged.novas + ' novas' + (associado.ligados ? (', ' + associado.ligados + ' com PDF.') : '.'))
         : (associado.ligados > 0
           ? ('PDF associado a ' + associado.ligados + (associado.ligados === 1 ? ' nota.' : ' notas.'))
-          : (reap.alteradas > 0
-            ? 'CPF sem vendedor ficou no Marcio Gorga (Ecommerce).'
+            : (reap.alteradas > 0
+            ? (reap.transferencias > 0 && reap.transferencias === reap.alteradas
+              ? 'Transferência interna saiu do vendedor.'
+              : 'CPF sem vendedor ficou no Marcio Gorga (Ecommerce).')
             : (pdfs.length && !parsed.length
               ? 'O PDF não corresponde a nenhuma nota já carregada.'
               : 'Nenhuma nota nova — estas chaves já estavam guardadas.'))));
@@ -13266,6 +13282,7 @@ function nfeResumoRows(notas) {
       rows.push(linha('canal:' + c.id, c.nome, counts['canal:' + c.id] || 0));
     });
   }
+  rows.push(linha('canal:transferencias', 'Transferências internas', counts['canal:transferencias'] || 0));
   if (counts.sem_canal) rows.push(linha('sem_canal', 'Cliente sem canal', counts.sem_canal));
   rows.push(linha('sem_cliente', 'Sem cliente na lista', counts.sem_cliente || 0));
   rows.push(linha('cnpj_multiplos', 'CNPJ em mais do que um código', counts.cnpj_multiplos || 0));
@@ -13494,12 +13511,13 @@ function nfeGrupoDe(n) {
   if (b === 'cnpj_multiplos') return { canal: 'CNPJ em mais do que um código', vend: '' };
   if (b === 'sem_cliente') return { canal: 'Sem cliente na lista', vend: '' };
   if (b === 'sem_canal') return { canal: 'Cliente sem canal', vend: (n && n.vendedor) || '—' };
+  if (b === 'canal:transferencias') return { canal: (n && n.canalNome) || 'Transferências internas', vend: '' };
   return { canal: (n && (n.canalNome || n.canalId)) || 'Canal', vend: (n && n.vendedor) || '—' };
 }
 
 function nfeOrdemCanal(nome) {
   const ids = typeof CANAIS_APP !== 'undefined' ? Object.values(CANAIS_APP).map(c => c.nome) : [];
-  const all = ids.concat(['Cliente sem canal', 'Sem cliente na lista', 'CNPJ em mais do que um código']);
+  const all = ids.concat(['Transferências internas', 'Cliente sem canal', 'Sem cliente na lista', 'CNPJ em mais do que um código']);
   const i = all.indexOf(nome);
   return i < 0 ? 99 : i;
 }
@@ -13565,6 +13583,7 @@ function nfeOpcoesCanal(notas, actual) {
   if (typeof CANAIS_APP !== 'undefined') {
     Object.values(CANAIS_APP).forEach(c => opts.push({ value: 'canal:' + c.id, label: c.nome }));
   }
+  opts.push({ value: 'canal:transferencias', label: 'Transferências internas' });
   [
     { value: 'sem_canal', label: 'Cliente sem canal' },
     { value: 'sem_cliente', label: 'Sem cliente na lista' },
@@ -13676,7 +13695,7 @@ function nfeHtml() {
   const resumo = nfeTabelaResumo(rows, 'nfeFiltrar');
   const estado = escHtml(_nfeStatusMsg || (notas.length ? (notas.length + ' notas guardadas.') : 'Ainda sem carga. O ZIP de XML da TTI carrega-se em Dados.'));
   return `<p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;">
-      Consulta das NF já carregadas. O ZIP de XML e PDF da TTI carrega-se em <strong>Dados</strong>. Clique no número da NF para abrir o PDF. CPF sem vendedor fica no Marcio Gorga (Ecommerce). A mesma chave não duplica.
+      Consulta das NF já carregadas. O ZIP de XML e PDF da TTI carrega-se em <strong>Dados</strong>. Clique no número da NF para abrir o PDF. CPF sem vendedor fica no Marcio Gorga (Ecommerce). Transferência entre os CNPJ da Delta ES e da Delta SP fica em Transferências internas, sem vendedor. A mesma chave não duplica.
     </p>
     <div style="font-size:12px;color:var(--muted);margin:0 0 12px;">${estado}</div>
     ${nfeFiltrosHtml('geral', notas)}
@@ -36811,7 +36830,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-nf-mesmo-vendedor: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-nf-transferencias: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
