@@ -12988,7 +12988,7 @@ async function nfePersistir(notas) {
 
 /**
  * Junta local + cloud. Não grava a meio de um parse — só reconcilia o que já estava guardado.
- * Nome unívoco no vendas_cliente (vendedor atual) e, a seguir, CPF sem vendedor → Marcio.
+ * Nome no vendas_cliente com o mesmo NPess atual (um código ou vários do mesmo vendedor) e, a seguir, CPF sem vendedor → Marcio.
  */
 function nfeAplicarRegraGuardada(notas, catalogo) {
   let base = notas || [];
@@ -36811,7 +36811,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-vendedor-atual: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-nf-mesmo-vendedor: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

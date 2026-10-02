@@ -213,9 +213,10 @@
   }
 
   /**
-   * CNPJ que não está na lista: se o nome da NF corresponde a um só código
-   * do catálogo (vendas_cliente / Excel, já com o NPess atual), atribui esse vendedor.
-   * Dois códigos com o mesmo nome (Creative, Beer Bev) ficam sem cliente.
+   * CNPJ que não está na lista: o nome da NF cruza com o catálogo
+   * (vendas_cliente / Excel, já com o NPess atual de 2026).
+   * Um código, ou vários com o mesmo NPess atual, atribuem esse vendedor e o canal dele.
+   * Códigos com NPess diferentes ficam sem cliente — não se junta o de 2025 se 2026 tiver outro.
    * CPF não entra aqui.
    */
   function nfeCruzarNota(nota, index, canalDeNpess, catalogo) {
@@ -352,27 +353,66 @@
     return Object.keys(hits).map(function (cod) { return hits[cod]; });
   }
 
-  function nfeAtribuirPorNome(nomeNf, catalogo, canalDeNpess) {
-    var hits = nfeCodigosPorNome(nomeNf, catalogo);
-    if (hits.length !== 1) return null;
-    var c = hits[0];
-    var npess = parseInt(c.npess, 10) || 0;
+  /**
+   * Um código: fica esse código, o NPess atual e o canal.
+   * Vários códigos com o mesmo NPess atual (e o mesmo vendedor): a nota vai para esse
+   * vendedor e para o canal dele. O código SAP não é escolhido ao acaso — fica em branco
+   * e os códigos vão em `codigos`. NPess ou vendedores diferentes não se atribuem.
+   */
+  function nfeCanalDoNpess(npess, canalDeNpess) {
     var canalId = '';
     try {
       canalId = (typeof canalDeNpess === 'function' ? canalDeNpess(npess) : '') || '';
     } catch (_) { canalId = ''; }
+    return String(canalId || '');
+  }
+
+  function nfeAtribuirPorNome(nomeNf, catalogo, canalDeNpess) {
+    var hits = nfeCodigosPorNome(nomeNf, catalogo);
+    if (!hits.length) return null;
+    if (hits.length === 1) {
+      var c = hits[0];
+      var npess = parseInt(c.npess, 10) || 0;
+      var cod = String(c.cod).trim();
+      return {
+        status: NFE_STATUS_UNICO,
+        canalId: nfeCanalDoNpess(npess, canalDeNpess),
+        vendedor: String(c.vendedor || '').trim(),
+        cod: cod,
+        npess: npess ? String(npess) : '',
+        codigos: cod ? [cod] : [],
+        rotulo: '',
+      };
+    }
+    var npSet = {};
+    var vendPorNorm = {};
+    var semNpess = false;
+    hits.forEach(function (h) {
+      var np = parseInt(h.npess, 10) || 0;
+      if (!np) { semNpess = true; return; }
+      npSet[String(np)] = np;
+      var bruto = String(h.vendedor || '').trim();
+      var norm = nfeNormNome(bruto);
+      if (norm && !vendPorNorm[norm]) vendPorNorm[norm] = bruto;
+    });
+    var npKeys = Object.keys(npSet);
+    var vendKeys = Object.keys(vendPorNorm);
+    if (semNpess || npKeys.length !== 1 || vendKeys.length !== 1) return null;
+    var npessM = npSet[npKeys[0]];
+    var codigos = hits.map(function (h) { return String(h.cod).trim(); }).filter(Boolean);
+    codigos.sort(function (a, b) { return a.localeCompare(b, 'pt', { numeric: true }); });
     return {
       status: NFE_STATUS_UNICO,
-      canalId: String(canalId || ''),
-      vendedor: String(c.vendedor || '').trim(),
-      cod: String(c.cod).trim(),
-      npess: npess ? String(npess) : '',
-      codigos: [String(c.cod).trim()],
+      canalId: nfeCanalDoNpess(npessM, canalDeNpess),
+      vendedor: vendPorNorm[vendKeys[0]],
+      cod: '',
+      npess: String(npessM),
+      codigos: codigos,
       rotulo: '',
     };
   }
 
-  /** Notas já «sem cliente»: CNPJ cujo nome é unívoco passa ao vendedor atual. O resto fica. */
+  /** Notas já «sem cliente»: CNPJ cujo nome casa com o NPess atual (um código, ou vários do mesmo vendedor) passa a esse vendedor. O resto fica. */
   function nfeReaplicarVendedorPorNome(notas, catalogo, canalDeNpess) {
     var alteradas = 0;
     if (!catalogo || !catalogo.length) return { notas: notas || [], alteradas: 0 };

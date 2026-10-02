@@ -312,9 +312,11 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
+  assert(html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
+  assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
+  assert(!sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
 
   const homeDados = html.slice(html.indexOf('class="home-dados-card"'), html.indexOf('class="home-dados-card"') + 700);
@@ -676,7 +678,7 @@ function testVendedorAtual() {
   assert(mapa['447886'].npess === 99520004 && mapa['447886'].ym === '2026-08', 'Nutri Mais fica no Diogo do mês mais recente');
   assert(mapa['449064'].npess === 99520008 && mapa['778577'].npess === 99520008, 'Creative são dois códigos, cada um com o NPess atual');
   assert(mapa['778577'].npess !== 99520001, '778577 não usa o NPess de 2025');
-  assert(mapa['453756'].npess === 99520004 && mapa['455724'].npess === 99520004, 'Beer Bev não junta os dois códigos');
+  assert(mapa['453756'].npess === 99520004 && mapa['455724'].npess === 99520004, 'Beer Bev: cada código fica com o NPess atual do Diogo');
   const recente = nfe.npessAtualDeLinhas([
     { cod: '406016', ym: '2026-01', npess: 99520003, valor: 999999, nome: 'F. J. RIBEIRO CAFÉ-ME' },
     { cod: '406016', ym: '2026-09', npess: 99520020, valor: 10, nome: 'F. J. RIBEIRO CAFÉ-ME' },
@@ -711,13 +713,39 @@ function testVendedorAtual() {
   assert(difri.status === 'unico' && difri.cod === '444540' && difri.npess === '99520004', 'NF 102272 Difrisul vai para o Diogo, veio ' + difri.npess + ' ' + difri.cod);
   assert(difri.vendedor === 'DIOGO OLIVEIRA' && difri.canalId === 'varejo', '102272 canal varejo');
   const creative = nfe.nfeCruzarNota({
-    chave: 'CRE', numero: '1', destDoc: '00000000000191', cliente: 'CREATIVE VARIEDADES LTDA',
+    chave: 'CRE', numero: '102278', destDoc: '00000000000191', cliente: 'CREATIVE VARIEDADES LTDA',
   }, vazio, canal, catalogo);
-  assert(creative.status === 'sem_cliente' && !creative.vendedor, 'nome em dois códigos Creative não se atribui');
+  assert(creative.status === 'unico' && creative.vendedor === 'MARCIO GORGA' && creative.npess === '99520008', '102278 Creative vai para o Márcio, veio ' + creative.vendedor + ' ' + creative.npess);
+  assert(creative.canalId === 'ecommerce', 'Creative fica no canal do Márcio');
+  assert(!creative.cod, 'Creative não grava um código SAP ao acaso');
+  assert(creative.codigos.slice().sort().join(',') === '449064,778577', 'Creative guarda os dois códigos, veio ' + creative.codigos.join(','));
+  const creative2 = nfe.nfeCruzarNota({
+    chave: 'CRE2', numero: '102281', destDoc: '00000000000195', cliente: 'CREATIVE VARIEDADES LTDA',
+  }, vazio, canal, catalogo);
+  assert(creative2.vendedor === 'MARCIO GORGA' && creative2.npess === '99520008' && !creative2.cod, '102281 Creative também vai para o Márcio');
   const beer = nfe.nfeCruzarNota({
-    chave: 'BB', numero: '2', destDoc: '00000000000192', cliente: 'BEER BEV COM.IMP.E DIST.ALIMENTOS,',
+    chave: 'BB', numero: '102276', destDoc: '13140521000439', cliente: 'BEER BEV COM.IMP.E DIST.ALIMENTOS,',
+    valor: 107460,
   }, vazio, canal, catalogo);
-  assert(beer.status === 'sem_cliente' && !beer.vendedor, 'nome em dois códigos Beer Bev não se atribui');
+  assert(beer.status === 'unico' && beer.vendedor === 'DIOGO OLIVEIRA' && beer.npess === '99520004', '102276 Beer Bev vai para o Diogo, veio ' + beer.vendedor + ' ' + beer.npess);
+  assert(beer.canalId === 'varejo', '102276 fica no canal do Diogo');
+  assert(!beer.cod, 'Beer Bev não escolhe um código SAP');
+  assert(beer.codigos.slice().sort().join(',') === '453756,455724', 'Beer Bev guarda os dois códigos, veio ' + beer.codigos.join(','));
+  const divergente = nfe.nfeCruzarNota({
+    chave: 'DIV', numero: '9', destDoc: '00000000000193', cliente: 'CASA DUPLA LTDA',
+  }, vazio, canal, catalogo.concat([
+    { cod: '111', npess: 99520004, nome: 'CASA DUPLA LTDA', vendedor: 'DIOGO OLIVEIRA' },
+    { cod: '222', npess: 99520020, nome: 'CASA DUPLA LTDA', vendedor: 'EDUARDO MOREIRA' },
+  ]));
+  assert(divergente.status === 'sem_cliente' && !divergente.vendedor && !divergente.cod, 'dois códigos com vendedores diferentes não se atribuem');
+  const so2025 = nfe.catalogoVendedorAtual([
+    { cod: '449064', ym: '2026-08', npess: 99520008, valor: 1, nome: 'CREATIVE VARIEDADES LTDA' },
+    { cod: '778577', ym: '2025-01', npess: 99520001, valor: 1, nome: 'CREATIVE VARIEDADES LTDA' },
+  ]).map(c => Object.assign({}, c, { vendedor: nomes[c.npess] || '' }));
+  const creativeMisto = nfe.nfeCruzarNota({
+    chave: 'CREM', numero: '8', destDoc: '00000000000196', cliente: 'CREATIVE VARIEDADES LTDA',
+  }, vazio, canal, so2025);
+  assert(creativeMisto.status === 'sem_cliente' && !creativeMisto.vendedor, 'não junta o NPess de 2025 com o de 2026');
   const idxLista = nfe.nfeIndexClientes([
     { cod: '9', cnpj: '11.239.661/0001-90', npess: '99520002', vendedor: 'HÉLCIO GRÉGIO' },
   ]);
@@ -729,11 +757,24 @@ function testVendedorAtual() {
     { chave: 'NF102282', numero: '102282', destDoc: '11239661000190', cliente: 'F. J. RIBEIRO CAFÉ-ME RIBER COFFEE', status: 'sem_cliente', vendedor: '' },
     { chave: 'H1', status: 'unico', vendedor: 'HÉLCIO GRÉGIO', npess: '99520002', canalId: 'horeca', destDoc: '03852638000149' },
     { chave: 'CPF1', destDoc: '31499205821', cliente: 'Leandro Falcone', status: 'sem_cliente', vendedor: '' },
-  ], catalogo, canal);
-  assert(reap.alteradas === 1, 'só o CNPJ sem cliente e com nome unívoco muda');
+    { chave: 'BB', numero: '102276', destDoc: '13140521000439', cliente: 'BEER BEV COM.IMP.E DIST.ALIMENTOS,', status: 'sem_cliente', vendedor: '', valor: 107460 },
+    { chave: 'DIV', numero: '9', destDoc: '00000000000193', cliente: 'CASA DUPLA LTDA', status: 'sem_cliente', vendedor: '' },
+  ], catalogo.concat([
+    { cod: '111', npess: 99520004, nome: 'CASA DUPLA LTDA', vendedor: 'DIOGO OLIVEIRA' },
+    { cod: '222', npess: 99520020, nome: 'CASA DUPLA LTDA', vendedor: 'EDUARDO MOREIRA' },
+  ]), canal);
+  assert(reap.alteradas === 2, 'o nome unívoco e a Beer Bev já gravada sem cliente mudam, veio ' + reap.alteradas);
   assert(reap.notas[0].npess === '99520020' && reap.notas[0].cod === '406016', '102282 já gravada passa ao Eduardo');
   assert(reap.notas[1].vendedor === 'HÉLCIO GRÉGIO' && reap.notas[1].npess === '99520002', 'a nota do Hélcio não muda');
   assert(!reap.notas[2].vendedor, 'CPF sem vendedor não entra na regra do nome');
+  assert(reap.notas[3].vendedor === 'DIOGO OLIVEIRA' && reap.notas[3].npess === '99520004' && reap.notas[3].canalId === 'varejo' && !reap.notas[3].cod, '102276 gravada sem cliente aparece no Diogo');
+  assert(reap.notas[4].status === 'sem_cliente' && !reap.notas[4].vendedor, 'códigos com vendedores diferentes continuam sem cliente');
+  const uiDiogo = loadNfeUi([Object.assign({}, reap.notas[3], { canalNome: 'Varejo e Distr. Varejo', data: '2026-10-01' })], 'varejo');
+  uiDiogo.nfePaintCanal();
+  uiDiogo.nfeFiltrarCanal(encodeURIComponent('vend:' + nfe.nfeNormNome('DIOGO OLIVEIRA')));
+  const listaDiogo = uiDiogo.el('canal-nfe-host').innerHTML;
+  assert(listaDiogo.includes('102276'), 'a lista do Diogo mostra a nota 102276');
+  assert(listaDiogo.includes('Limpar'), 'o filtro do Diogo tem Limpar');
   const cpf = nfe.nfeCruzarNota({ chave: 'CPF1', destDoc: '31499205821', cliente: 'Leandro Falcone' }, vazio, canal, catalogo);
   assert(cpf.vendedor === 'Marcio Gorga' && cpf.npess === '99520001', 'CPF sem lista continua no Marcio');
 }
