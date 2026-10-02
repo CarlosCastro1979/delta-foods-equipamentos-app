@@ -2145,7 +2145,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">⚙</span>
         <span>
           <div class="hd-title">Dados</div>
-          <div class="hd-desc">Carregar Lista SAP, Vendas, Dívidas, ZIP de XML da TTI e códigos relacionados — para todos os canais. Acesso: admins (Carlos, Christian, Andrea, Daniela K.).</div>
+          <div class="hd-desc">Carregar Lista SAP, Vendas, Dívidas, ZIP de XML e PDF da TTI e códigos relacionados — para todos os canais. Acesso: admins (Carlos, Christian, Andrea, Daniela K.).</div>
         </span>
       </button>
     </div>
@@ -3576,7 +3576,7 @@ var _unused_placeholder = 1;
     <div id="cvm-pane-notas" style="display:none;">
       <div style="margin-bottom:12px;">
         <div id="canal-nfe-titulo" style="font-size:16px;font-weight:700;">Notas fiscais</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:2px;">Só as NF deste canal. A carga do ZIP de XML da TTI faz-se em Dados.</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;">Só as NF deste canal. A carga do ZIP de XML e PDF da TTI faz-se em Dados. Clique no número da NF para abrir o PDF.</div>
       </div>
       <div id="canal-nfe-host"><div style="color:var(--muted);font-size:13px;">Abre este separador para ver as notas.</div></div>
     </div>
@@ -4115,22 +4115,23 @@ var _unused_placeholder = 1;
         <div id="dividas-ultima-carga" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
       </div>
 
-      <!-- ZIP DE XML DA TTI (NF-e do cockpit TTIN) -->
+      <!-- ZIP DE XML E PDF DA TTI (NF-e do cockpit TTIN) -->
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
           <span style="font-size:22px;">🧾</span>
           <div>
-            <div style="font-weight:600;font-size:15px;">ZIP de XML da TTI</div>
+            <div style="font-weight:600;font-size:15px;">ZIP de XML e PDF da TTI</div>
             <div style="font-size:12px;color:var(--muted);line-height:1.5;">
-              Ficheiro que sai do cockpit TTIN: vários XML de NF-e dentro de um zip. Um XML avulso também entra.<br>
+              Ficheiro que sai do cockpit TTIN: XML de NF-e e o PDF de cada nota, dentro de um zip. Um XML ou um PDF avulso também entra.<br>
+              O PDF liga-se à nota pelo nome: primeiro a chave de 44 dígitos, depois o número da NF. Um PDF sem par não aparece como nota nova.<br>
               Cruza o CNPJ/CPF do destinatário com a lista de clientes. CPF sem vendedor fica no Marcio Gorga (Ecommerce, 99520001). CNPJ que já têm vendedor não mudam.<br>
-              A mesma chave de NF não duplica. A gravação é só no fim da carga.<br>
-              Consulta na Previsão de vendas e no menu Vendas de cada canal. Acesso: os mesmos admins deste ecrã.
+              A mesma chave de NF não duplica. A gravação (nota e PDF) é só no fim da carga.<br>
+              Consulta na Previsão de vendas e no menu Vendas de cada canal: clique no número da NF para abrir o PDF. Acesso: os mesmos admins deste ecrã.
             </div>
           </div>
         </div>
-        <input type="file" id="dados-nfe-input" accept=".zip,.xml,application/zip,application/xml,text/xml" multiple style="display:none" onchange="nfeOnFiles(event)">
-        <button type="button" class="btn btn-primary btn-sm" id="dados-nfe-btn" onclick="document.getElementById('dados-nfe-input').click()">📂 Selecionar ZIP de XML da TTI</button>
+        <input type="file" id="dados-nfe-input" accept=".zip,.xml,.pdf,application/zip,application/xml,text/xml,application/pdf" multiple style="display:none" onchange="nfeOnFiles(event)">
+        <button type="button" class="btn btn-primary btn-sm" id="dados-nfe-btn" onclick="document.getElementById('dados-nfe-input').click()">📂 Selecionar ZIP de XML e PDF da TTI</button>
         <div id="dados-nfe-status" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
       </div>
 
@@ -11080,7 +11081,7 @@ const AT_AREA_ACESSO = ['Fernando', 'Ricardo Vicente Silva', 'Marcelo'];
 /** Área Financeira: admins (Carlos, Christian, Andrea, Daniela K.). PIN à entrada. */
 const FIN_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski'];
 
-/** Área Dados (carregamentos SAP, Vendas, Dívidas e ZIP de XML da TTI): admins. */
+/** Área Dados (carregamentos SAP, Vendas, Dívidas e ZIP de XML e PDF da TTI): admins. */
 const DADOS_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski'];
 
 /**
@@ -12779,6 +12780,7 @@ function pvShowView(view) {
 
 const NFE_STORE_ID = 'nfe_emitidas';
 const NFE_IDB_KEY = 'delta_nfe_emitidas';
+const NFE_PDF_IDB_KEY = 'delta_nfe_pdfs';
 let _nfeNotas = [];
 let _nfeFiltro = '';
 let _nfeStatusMsg = '';
@@ -12807,7 +12809,7 @@ function nfePrepararChrome() {
   if (excel) excel.style.display = 'none';
   const banner = document.getElementById('pv-banner');
   if (banner) {
-    banner.innerHTML = '<strong>NF emitidas</strong> — consulta. A carga do ZIP de XML da TTI faz-se em Dados. Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. CPF sem vendedor fica no Marcio Gorga, no Ecommerce. A mesma chave não duplica. A gravação é no fim da carga.';
+    banner.innerHTML = '<strong>NF emitidas</strong> — consulta. A carga do ZIP de XML e PDF da TTI faz-se em Dados. Clique no número da NF para abrir o PDF. Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. CPF sem vendedor fica no Marcio Gorga, no Ecommerce. A mesma chave não duplica. A gravação é no fim da carga.';
   }
 }
 
@@ -12824,20 +12826,48 @@ async function nfeLoadRemote() {
   return [];
 }
 
+function nfeMapaPdfs(notas, prev) {
+  const pdfs = Object.assign({}, prev || {});
+  (notas || []).forEach(n => {
+    if (!n || !n.chave || typeof n.pdfBase64 !== 'string' || !n.pdfBase64) return;
+    pdfs[n.chave] = { nome: n.pdfNome || (n.chave + '.pdf'), b64: n.pdfBase64 };
+  });
+  return pdfs;
+}
+
+/** PDF no IndexedDB deste browser. Na nuvem, o binário só entra se o JSON da célula couber. */
 async function nfePersistir(notas) {
   const arr = Array.isArray(notas) ? notas : [];
   const ts = new Date().toISOString();
+  let pdfsPrev = {};
   try {
-    await idbSet(NFE_IDB_KEY, { notas: arr, ts });
+    const pack = await idbGet(NFE_PDF_IDB_KEY);
+    if (pack && pack.pdfs) pdfsPrev = pack.pdfs;
+  } catch (_) {}
+  const pdfs = nfeMapaPdfs(arr, pdfsPrev);
+  try {
+    await idbSet(NFE_PDF_IDB_KEY, { pdfs, ts });
+  } catch (e) {
+    console.warn('nfe pdf idb', e);
+  }
+  const leves = typeof nfeNotaSemPdfBinario === 'function'
+    ? arr.map(nfeNotaSemPdfBinario)
+    : arr;
+  try {
+    await idbSet(NFE_IDB_KEY, { notas: leves, ts });
   } catch (e) {
     console.warn('nfe idb', e);
   }
+  const nuvem = typeof nfeNotasParaNuvem === 'function'
+    ? nfeNotasParaNuvem(arr)
+    : { notas: leves, pdfNaNuvem: false, pdfsFora: 0 };
+  const notasNuvem = nuvem.notas || leves;
   const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
     method: 'POST',
     headers: Object.assign({}, HEADERS, { Prefer: 'resolution=merge-duplicates' }),
     body: JSON.stringify({
       id: NFE_STORE_ID,
-      data: { __format: 'nfe_emitidas', __total: arr.length, notas: arr },
+      data: { __format: 'nfe_emitidas', __total: notasNuvem.length, notas: notasNuvem },
       atualizado_em: ts,
     }),
   });
@@ -12845,6 +12875,7 @@ async function nfePersistir(notas) {
     const t = await res.text().catch(() => '');
     throw new Error('Supabase HTTP ' + res.status + (t ? ' ' + t.slice(0, 140) : ''));
   }
+  return nuvem;
 }
 
 /** Junta local + cloud. Não grava a meio de um parse — só reconcilia o que já estava guardado. */
@@ -12854,25 +12885,35 @@ function nfeAplicarRegraGuardada(notas) {
 }
 
 /** A regra do CPF sem vendedor também vale para notas já gravadas «sem cliente». Não apaga as outras. */
+async function nfeLerPdfsLocais() {
+  try {
+    const pack = await idbGet(NFE_PDF_IDB_KEY);
+    if (pack && pack.pdfs && typeof pack.pdfs === 'object') return pack.pdfs;
+  } catch (_) {}
+  return {};
+}
+
 async function nfeHidrate() {
   let local = [];
   try {
     const packed = await idbGet(NFE_IDB_KEY);
     if (packed && Array.isArray(packed.notas)) local = packed.notas;
   } catch (_) {}
+  const pdfsLocais = await nfeLerPdfsLocais();
+  if (typeof nfeJuntarPdfsLocais === 'function') local = nfeJuntarPdfsLocais(local, pdfsLocais);
   let remote = null;
   try { remote = await nfeLoadRemote(); } catch (_) { remote = null; }
   if (remote == null) {
     const reap = nfeAplicarRegraGuardada(local);
-    _nfeNotas = reap.notas;
+    _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsLocais) : reap.notas;
     if (reap.alteradas > 0) {
-      try { await idbSet(NFE_IDB_KEY, { notas: reap.notas, ts: new Date().toISOString() }); } catch (_) {}
+      try { await idbSet(NFE_IDB_KEY, { notas: reap.notas.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n)), ts: new Date().toISOString() }); } catch (_) {}
     }
     return;
   }
   const merged = nfeMergeNotas(local, remote);
   const reap = nfeAplicarRegraGuardada(merged.notas);
-  _nfeNotas = reap.notas;
+  _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsLocais) : reap.notas;
   const localSet = new Set(local.map(n => n && n.chave).filter(Boolean));
   const remoteBy = new Map();
   remote.forEach(n => { if (n && n.chave && !remoteBy.has(n.chave)) remoteBy.set(n.chave, n); });
@@ -12886,7 +12927,10 @@ async function nfeHidrate() {
   if (remotoDesatualizado && reap.notas.length) {
     await nfePersistir(reap.notas);
   } else if (faltaLocal || reap.alteradas > 0) {
-    try { await idbSet(NFE_IDB_KEY, { notas: reap.notas, ts: new Date().toISOString() }); } catch (_) {}
+    try {
+      const leves = reap.notas.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n));
+      await idbSet(NFE_IDB_KEY, { notas: leves, ts: new Date().toISOString() });
+    } catch (_) {}
   }
 }
 
@@ -12918,12 +12962,25 @@ function nfeComCanal(nota) {
   return Object.assign({}, nota, { canalNome: nome || (nota && nota.canalNome) || '' });
 }
 
-async function nfeFicheiroParaXmls(file) {
+function nfeBytesParaBase64(bytes) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < u8.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, u8.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+async function nfeFicheiroParaPartes(file) {
   const name = String((file && file.name) || '');
   const low = name.toLowerCase();
   const type = String((file && file.type) || '').toLowerCase();
+  if (low.endsWith('.pdf') || type === 'application/pdf') {
+    return { xmls: [], pdfs: [{ name: name, pdfBase64: nfeBytesParaBase64(await file.arrayBuffer()) }] };
+  }
   if (low.endsWith('.xml') || type.includes('xml')) {
-    return [{ name: name, xml: await file.text() }];
+    return { xmls: [{ name: name, xml: await file.text() }], pdfs: [] };
   }
   if (low.endsWith('.zip') || type.includes('zip')) {
     if (typeof JSZip === 'undefined') throw new Error('JSZip indisponível neste browser.');
@@ -12932,17 +12989,19 @@ async function nfeFicheiroParaXmls(file) {
       zip = await JSZip.loadAsync(await file.arrayBuffer());
     } catch (e) {
       const msg = String((e && e.message) || e);
-      if (/encrypt|password|senha/i.test(msg)) throw new Error('Este ZIP está protegido. No cockpit TTIN, exporta o ZIP de XML da TTI sem senha.');
+      if (/encrypt|password|senha/i.test(msg)) throw new Error('Este ZIP está protegido. No cockpit TTIN, exporta o ZIP de XML e PDF da TTI sem senha.');
       throw new Error('Não consegui abrir o zip.');
     }
-    const jobs = [];
+    const xmlJobs = [];
+    const pdfJobs = [];
     zip.forEach((rel, entry) => {
-      if (!entry || entry.dir || !/\.xml$/i.test(rel)) return;
-      jobs.push(entry.async('string').then(xml => ({ name: rel, xml: xml })));
+      if (!entry || entry.dir) return;
+      if (/\.xml$/i.test(rel)) xmlJobs.push(entry.async('string').then(xml => ({ name: rel, xml: xml })));
+      else if (/\.pdf$/i.test(rel)) pdfJobs.push(entry.async('base64').then(b64 => ({ name: rel, pdfBase64: b64 })));
     });
-    return Promise.all(jobs);
+    return { xmls: await Promise.all(xmlJobs), pdfs: await Promise.all(pdfJobs) };
   }
-  throw new Error('Escolhe o ZIP de XML da TTI ou um XML de NF-e.');
+  throw new Error('Escolhe o ZIP de XML e PDF da TTI, um XML de NF-e ou um PDF da nota.');
 }
 
 async function nfeOnFiles(ev) {
@@ -12956,40 +13015,66 @@ async function nfeOnFiles(ev) {
   try {
     await nfeHidrate();
     const parsed = [];
+    const pdfs = [];
     let xmls = 0;
     let ignorados = 0;
     for (const file of files) {
-      const parts = await nfeFicheiroParaXmls(file);
-      for (const part of parts) {
+      const partes = await nfeFicheiroParaPartes(file);
+      pdfs.push.apply(pdfs, partes.pdfs || []);
+      for (const part of partes.xmls || []) {
         xmls++;
         const nota = nfeParseXml(part.xml, part.name);
         if (!nota) { ignorados++; continue; }
         parsed.push(nota);
       }
     }
-    if (!parsed.length) {
-      _nfeStatusMsg = xmls ? 'Nenhum XML de NF-e válido.' : 'O ficheiro não tem XML.';
+    if (!parsed.length && !pdfs.length) {
+      _nfeStatusMsg = xmls ? 'Nenhum XML de NF-e válido.' : 'O ficheiro não tem XML nem PDF.';
       if (typeof toast === 'function') toast(_nfeStatusMsg, 'error');
       return;
     }
-    const clientes = await nfeGarantirClientes();
-    const index = nfeIndexClientes(clientes);
-    const atrib = parsed.map(n => nfeComCanal(nfeCruzarNota(n, index, nfeCanalDeNpess)));
+    let atrib = [];
+    if (parsed.length) {
+      const clientes = await nfeGarantirClientes();
+      const index = nfeIndexClientes(clientes);
+      atrib = parsed.map(n => nfeComCanal(nfeCruzarNota(n, index, nfeCanalDeNpess)));
+    }
     const merged = nfeMergeNotas(_nfeNotas, atrib);
-    const reap = nfeAplicarRegraGuardada(merged.notas);
+    const associado = typeof nfeAssociarPdfs === 'function'
+      ? nfeAssociarPdfs(merged.notas, pdfs)
+      : { notas: merged.notas, ligados: 0, soltos: pdfs.length };
+    const reap = nfeAplicarRegraGuardada(associado.notas);
     _nfeNotas = reap.notas;
-    if (merged.novas > 0 || reap.alteradas > 0) await nfePersistir(_nfeNotas);
+    let nuvem = null;
+    if (merged.novas > 0 || reap.alteradas > 0 || associado.ligados > 0) nuvem = await nfePersistir(_nfeNotas);
     const com = atrib.filter(n => n.status === 'unico').length;
     const sem = atrib.filter(n => n.status === 'sem_cliente').length;
     const multi = atrib.filter(n => n.status === 'cnpj_multiplos').length;
-    _nfeStatusMsg = `${parsed.length} NF · ${merged.novas} novas · ${merged.repetidas} já guardadas · ${com} com cliente · ${sem} sem cliente · ${multi} com CNPJ em mais do que um código`
-      + (ignorados ? ` · ${ignorados} XML ignorados` : '');
+    const pdfOnde = !associado.ligados
+      ? ''
+      : (nuvem && nuvem.pdfsFora
+        ? ' · PDF neste browser; na nuvem ficou a referência'
+        : ' · PDF gravado com a nota');
+    const pdfTxt = (pdfs.length ? ` · ${associado.ligados} PDF associado${associado.ligados === 1 ? '' : 's'}` : '')
+      + (associado.soltos ? ` · ${associado.soltos} PDF sem nota` : '')
+      + pdfOnde;
+    _nfeStatusMsg = parsed.length
+      ? `${parsed.length} NF · ${merged.novas} novas · ${merged.repetidas} já guardadas · ${com} com cliente · ${sem} sem cliente · ${multi} com CNPJ em mais do que um código`
+        + (ignorados ? ` · ${ignorados} XML ignorados` : '')
+        + pdfTxt
+      : (associado.ligados
+        ? `${associado.ligados} PDF associado${associado.ligados === 1 ? '' : 's'}${pdfOnde}`
+        : 'O PDF não corresponde a nenhuma nota já carregada.');
     if (typeof toast === 'function') {
       toast(merged.novas > 0
-        ? ('NF guardadas. ' + merged.novas + ' novas.')
-        : (reap.alteradas > 0
-          ? 'CPF sem vendedor ficou no Marcio Gorga (Ecommerce).'
-          : 'Nenhuma nota nova — estas chaves já estavam guardadas.'));
+        ? ('NF guardadas. ' + merged.novas + ' novas' + (associado.ligados ? (', ' + associado.ligados + ' com PDF.') : '.'))
+        : (associado.ligados > 0
+          ? ('PDF associado a ' + associado.ligados + (associado.ligados === 1 ? ' nota.' : ' notas.'))
+          : (reap.alteradas > 0
+            ? 'CPF sem vendedor ficou no Marcio Gorga (Ecommerce).'
+            : (pdfs.length && !parsed.length
+              ? 'O PDF não corresponde a nenhuma nota já carregada.'
+              : 'Nenhuma nota nova — estas chaves já estavam guardadas.'))));
     }
   } catch (e) {
     console.error(e);
@@ -13374,6 +13459,14 @@ function nfeFiltrosHtml(scope, notas) {
   </div>`;
 }
 
+function nfeNumeroCelula(n) {
+  const num = escHtml((n && n.numero) || '—');
+  const serie = n && n.serie ? ` <span style="color:var(--muted);">sér. ${escHtml(n.serie)}</span>` : '';
+  const ch = String((n && n.chave) || '').replace(/[^0-9A-Za-z]/g, '');
+  if (!ch || !n || !n.numero) return num + serie;
+  return `<button type="button" class="nfe-click" title="Abrir o PDF desta NF" onclick="nfeAbrirPdf('${ch}')">${num}</button>${serie}`;
+}
+
 function nfeListaHtml(notas, passa) {
   const pred = typeof passa === 'function' ? passa : nfePassaFiltro;
   const vis = (notas || []).filter(pred).slice().sort(nfeCmpNota);
@@ -13413,7 +13506,7 @@ function nfeListaHtml(notas, passa) {
       ? `<div style="font-size:13px;font-weight:600;margin:8px 0 6px;">${escHtml(g.vend)} <span style="color:var(--muted);font-weight:500;">· ${meta}</span></div>`
       : `<div style="font-size:13px;font-weight:600;margin:8px 0 6px;color:var(--muted);">${meta}</div>`;
     const linhas = g.notas.map(n => `<tr>
-      <td style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;">${escHtml(n.numero || '—')}${n.serie ? ` <span style="color:var(--muted);">sér. ${escHtml(n.serie)}</span>` : ''}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;">${nfeNumeroCelula(n)}</td>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border);">${escHtml(n.cliente || '—')}</td>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;">${nfeFmtValor(n.valor)}</td>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;">${escHtml(nfeFmtData(n.data))}</td>
@@ -13443,7 +13536,7 @@ function nfeHtml() {
   const resumo = nfeTabelaResumo(rows, 'nfeFiltrar');
   const estado = escHtml(_nfeStatusMsg || (notas.length ? (notas.length + ' notas guardadas.') : 'Ainda sem carga. O ZIP de XML da TTI carrega-se em Dados.'));
   return `<p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;">
-      Consulta das NF já carregadas. O ZIP de XML da TTI carrega-se em <strong>Dados</strong>. CPF sem vendedor fica no Marcio Gorga (Ecommerce). A mesma chave não duplica.
+      Consulta das NF já carregadas. O ZIP de XML e PDF da TTI carrega-se em <strong>Dados</strong>. Clique no número da NF para abrir o PDF. CPF sem vendedor fica no Marcio Gorga (Ecommerce). A mesma chave não duplica.
     </p>
     <div style="font-size:12px;color:var(--muted);margin:0 0 12px;">${estado}</div>
     ${nfeFiltrosHtml('geral', notas)}
@@ -13647,6 +13740,50 @@ function cvmShowSub(sub) {
   if (tabQ) tabQ.classList.toggle('active', !notas);
   if (tabN) tabN.classList.toggle('active', notas);
   if (notas) nfeMontarCanal();
+}
+
+async function nfeAbrirPdf(chave) {
+  try {
+    const ch = String(chave || '').replace(/[^0-9A-Za-z]/g, '');
+    const nota = (_nfeNotas || []).find(n => n && String(n.chave) === ch) || null;
+    let map = null;
+    try {
+      const pack = await idbGet('delta_nfe_pdfs');
+      map = pack && pack.pdfs;
+    } catch (_) { map = null; }
+    const hit = (typeof nfePdfDaNota === 'function')
+      ? nfePdfDaNota(nota, map)
+      : { ok: false, msg: 'Esta NF não tem PDF.' };
+    if (!hit.ok || !hit.pdfBase64) {
+      if (typeof toast === 'function') toast((hit && hit.msg) || 'Esta NF não tem PDF.', 'error');
+      return;
+    }
+    const bin = atob(hit.pdfBase64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) & 255;
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    let aberto = false;
+    try {
+      if (typeof window !== 'undefined' && typeof window.open === 'function') {
+        const w = window.open(url, '_blank');
+        aberto = !!w;
+      }
+    } catch (_) { aberto = false; }
+    if (!aberto && typeof document !== 'undefined' && document.createElement) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      if (document.body) document.body.appendChild(a);
+      a.click();
+      if (a.remove) a.remove();
+    }
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
+  } catch (e) {
+    console.warn('nfe pdf', e);
+    if (typeof toast === 'function') toast('Esta NF não tem PDF.', 'error');
+  }
 }
 
 async function nfeMontarVista() {
@@ -35595,7 +35732,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-01-vendas-emissor: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-nfe-pdf: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

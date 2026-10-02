@@ -288,10 +288,11 @@ function testUiCarga() {
   const dadosIni = html.indexOf('id="panel-dados"');
   const dadosFim = html.indexOf('id="panel-historico-at"');
   const dados = html.slice(dadosIni, dadosFim);
-  assert(dados.includes('ZIP de XML da TTI'), 'Dados descreve o ZIP de XML da TTI');
+  assert(dados.includes('ZIP de XML e PDF da TTI'), 'Dados descreve o ZIP de XML e PDF da TTI');
   assert(dados.includes('cockpit TTIN'), 'explica que o ficheiro sai do cockpit TTIN');
   assert(dados.includes('id="dados-nfe-input"'), 'o botão de carregar está no Dados');
-  assert(dados.includes('Selecionar ZIP de XML da TTI'), 'o texto do botão é o ZIP de XML da TTI');
+  assert(dados.includes('Selecionar ZIP de XML e PDF da TTI'), 'o texto do botão é o ZIP de XML e PDF da TTI');
+  assert(dados.includes('.pdf'), 'o bloco de Dados também aceita PDF');
   assert(!dados.includes('type="password"'), 'Dados não pede senha para o zip');
   assert(!html.includes('delta.local'), 'não liga ao host delta.local');
 
@@ -311,13 +312,13 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-01-vendas-emissor'), 'service worker referido no index');
-  assert(!html.includes('v2026-10-01-nfe-dados-canal'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-01-vendas-emissor'), 'service worker actualizado');
-  assert(!sw.includes('v2026-10-01-nfe-dados-canal'), 'service worker actualizado');
+  assert(html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
+  assert(!html.includes('v2026-10-01-vendas-emissor'), 'service worker referido no index');
+  assert(sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
+  assert(!sw.includes('v2026-10-01-vendas-emissor'), 'service worker actualizado');
 
   const homeDados = html.slice(html.indexOf('class="home-dados-card"'), html.indexOf('class="home-dados-card"') + 700);
-  assert(homeDados.includes('ZIP de XML da TTI'), 'o cartão Dados na home fala do ZIP de XML da TTI');
+  assert(homeDados.includes('ZIP de XML e PDF da TTI'), 'o cartão Dados na home fala do ZIP de XML e PDF da TTI');
 }
 
 function loadNfeUi(notas, canalId, pvView) {
@@ -358,7 +359,7 @@ function loadNfeUi(notas, canalId, pvView) {
     '',
     false,
   ];
-  const api = new Function(...names, src + '\nreturn { nfePaintCanal, nfeHtml, nfeSetFiltro, nfeFiltrarCanal, nfeLimparFiltroCanal, nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, el: null };')(...vals);
+  const api = new Function(...names, src + '\nreturn { nfePaintCanal, nfeHtml, nfeSetFiltro, nfeFiltrarCanal, nfeLimparFiltroCanal, nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, nfeAbrirPdf, el: null };')(...vals);
   api.el = el;
   return api;
 }
@@ -527,12 +528,137 @@ function testFiltrosETotal(zipPath) {
   persist.nfeLimparFiltroCanal();
 }
 
+function crc32(buf) {
+  let c = ~0;
+  for (let i = 0; i < buf.length; i++) {
+    c ^= buf[i];
+    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+  }
+  return ~c >>> 0;
+}
+
+function makeZip(files) {
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  files.forEach(f => {
+    const name = Buffer.from(f.name);
+    const data = Buffer.isBuffer(f.data) ? f.data : Buffer.from(f.data);
+    const crc = crc32(data);
+    const local = Buffer.alloc(30 + name.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    name.copy(local, 30);
+    locals.push(Buffer.concat([local, data]));
+    const central = Buffer.alloc(46 + name.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    name.copy(central, 46);
+    centrals.push(central);
+    offset += local.length + data.length;
+  });
+  const cd = Buffer.concat(centrals);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(files.length, 8);
+  eocd.writeUInt16LE(files.length, 10);
+  eocd.writeUInt32LE(cd.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat(locals.concat([cd, eocd]));
+}
+
+function testPdfZipMinimo() {
+  const chave = '35261014830817000100550020000000010000000000';
+  const xml = `<?xml version="1.0"?><nfeProc><NFe><infNFe Id="NFe${chave}"><ide><serie>2</serie><nNF>1</nNF><dhEmi>2026-10-01T10:00:00-03:00</dhEmi></ide><emit><CNPJ>14830817000100</CNPJ></emit><dest><CNPJ>03852638000149</CNPJ><xNome>CLIENTE</xNome></dest><total><ICMSTot><vNF>10.50</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
+  const pdf = Buffer.from('%PDF-1.1\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
+  const zip = makeZip([
+    { name: chave + '.xml', data: Buffer.from(xml) },
+    { name: chave + '.pdf', data: pdf },
+    { name: 'solto.pdf', data: Buffer.from('%PDF-solto') },
+  ]);
+  const entries = nfe.nfeReadZipEntries(zip);
+  const xmls = entries.filter(e => e.xml);
+  const pdfs = entries.filter(e => e.pdfBase64);
+  assert(xmls.length === 1 && pdfs.length === 2, 'o zip mínimo traz 1 XML e 2 PDF');
+  assert(nfe.nfeReadZipXmls(zip).length === 1, 'a leitura de XML ignora o PDF');
+  const nota = nfe.nfeParseXml(xmls[0].xml, xmls[0].name);
+  const assoc = nfe.nfeAssociarPdfs([nota], pdfs);
+  assert(assoc.notas.length === 1, 'o PDF sem par não vira nota');
+  assert(assoc.ligados === 1 && assoc.soltos === 1, 'só o PDF da chave liga');
+  assert(assoc.notas[0].chave === chave && assoc.notas[0].numero === '1' && assoc.notas[0].serie === '2', 'a nota do XML mantém-se');
+  assert(assoc.notas[0].pdfNome === chave + '.pdf', 'o PDF associado é o da chave, veio ' + assoc.notas[0].pdfNome);
+  assert(Buffer.from(assoc.notas[0].pdfBase64, 'base64').equals(pdf), 'o binário é o PDF cujo nome é a chave');
+
+  const outraChave = '35261014830817000100550020000000100000000011';
+  const s1 = { chave: chave, numero: '10', serie: '1' };
+  const s2 = { chave: outraChave, numero: '10', serie: '2' };
+  const porNumero = nfe.nfeAssociarPdfs([s1, s2], [{ name: '10.pdf', pdfBase64: Buffer.from('%PDF-10').toString('base64') }]);
+  assert(porNumero.ligados === 0 && porNumero.soltos === 1, 'número repetido em duas séries não liga o PDF');
+  assert(!porNumero.notas[0].pdfBase64 && !porNumero.notas[1].pdfBase64, 'nenhuma das séries ficou com o PDF ambíguo');
+  assert(porNumero.notas.length === 2, 'o PDF sem par não cria nota');
+
+  const soUma = nfe.nfeAssociarPdfs([s1], [{ name: '10.pdf', pdfBase64: Buffer.from('%PDF-10').toString('base64') }]);
+  assert(soUma.ligados === 1 && soUma.notas[0].pdfNome === '10.pdf', 'um único número liga {número}.pdf');
+  const pelaChave = nfe.nfeAssociarPdfs([s1, s2], [{ name: outraChave + '.pdf', pdfBase64: Buffer.from('%PDF-s2').toString('base64') }]);
+  assert(pelaChave.ligados === 1 && pelaChave.notas[1].pdfNome === outraChave + '.pdf' && !pelaChave.notas[0].pdfBase64, 'a chave ganha ao número quando há duas séries');
+
+  const ja = { chave: chave, numero: '1', serie: '2' };
+  const deNovo = nfe.nfeAssociarPdfs(nfe.nfeMergeNotas([ja], [nota]).notas, pdfs);
+  assert(deNovo.notas.length === 1 && deNovo.ligados === 1, 'a mesma chave não duplica e recebe o PDF');
+  assert(deNovo.notas[0].numero === '1', 'a nota já guardada mantém o número');
+
+  const grande = 'A'.repeat(nfe.NFE_NUVEM_JSON_MAX);
+  const nuvem = nfe.nfeNotasParaNuvem([Object.assign({}, nota, { pdfNome: chave + '.pdf', pdfBase64: grande, temPdf: true })]);
+  assert(nuvem.pdfsFora === 1 && !nuvem.notas[0].pdfBase64, 'PDF grande sai da célula da nuvem');
+  assert(nuvem.notas[0].pdfNome === chave + '.pdf' && nuvem.notas[0].chave === chave, 'na nuvem fica a referência: chave e nome');
+  const pequeno = nfe.nfeNotasParaNuvem([Object.assign({}, nota, { pdfNome: 'a.pdf', pdfBase64: 'QQ==', temPdf: true })]);
+  assert(pequeno.pdfNaNuvem && pequeno.notas[0].pdfBase64 === 'QQ==', 'PDF pequeno pode ir com a nota');
+}
+
+async function testCliqueSemPdf() {
+  const sem = nfe.nfePdfDaNota({ chave: 'H1', numero: '10' }, null);
+  assert(sem.ok === false && sem.msg === 'Esta NF não tem PDF.', 'nota antiga sem PDF');
+  const com = nfe.nfePdfDaNota({ chave: 'H1', numero: '10' }, { H1: { b64: 'JVBERg==', nome: 'H1.pdf' } });
+  assert(com.ok === true && com.pdfNome === 'H1.pdf', 'o PDF guardado neste browser abre pela chave');
+
+  const notas = [
+    { chave: 'H1', canalId: 'horeca', canalNome: 'Horeca', vendedor: 'Hélcio Grégio', numero: '10', cliente: 'Cliente Horeca', valor: 10, data: '2026-10-01', status: 'unico', serie: '2' },
+  ];
+  const api = loadNfeUi(notas, 'horeca');
+  api.nfePaintCanal();
+  const host = api.el('canal-nfe-host');
+  const antes = host.innerHTML;
+  assert(antes.includes("nfeAbrirPdf('H1')"), 'no menu do canal o número da NF é clicável');
+  assert(antes.includes('sér. 2'), 'a série continua ao lado do número');
+  const geral = loadNfeUi(notas, '', 'nfe');
+  const g = geral.nfeHtml();
+  assert(g.includes("nfeAbrirPdf('H1')"), 'na previsão o número da NF é clicável');
+  const toasts = [];
+  global.toast = (m) => { toasts.push(String(m)); };
+  global.idbGet = async () => null;
+  await api.nfeAbrirPdf('H1');
+  assert(host.innerHTML === antes, 'clicar numa NF sem PDF não rebenta a lista');
+  assert(toasts.some(t => t.indexOf('Esta NF não tem PDF') >= 0), 'avisa que esta NF não tem PDF, veio ' + toasts.join('|'));
+}
+
 testAtribuicao();
 testCpfMarcio();
 testMenuCanal();
 testHorecaNaoListaEcommerce();
 testXmlAvulso();
 testUiCarga();
+testPdfZipMinimo();
 const zipPath = findZip();
 if (!zipPath) {
   console.log('SKIP zip: ficheiro do cockpit não está no repo (dados de clientes).');
@@ -541,8 +667,13 @@ if (!zipPath) {
   testFiltrosETotal(zipPath);
 }
 
-if (failed) {
-  console.error(failed + ' asserção(ões) falharam');
+testCliqueSemPdf().then(() => {
+  if (failed) {
+    console.error(failed + ' asserção(ões) falharam');
+    process.exit(1);
+  }
+  console.log('ok');
+}).catch((e) => {
+  console.error(e);
   process.exit(1);
-}
-console.log('ok');
+});
