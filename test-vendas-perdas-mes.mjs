@@ -368,6 +368,60 @@ check('a carga grava Fatur. por cliente só no mês corrente e no anterior', () 
   assert.ok(!html.includes('>Quadro</button>'));
 });
 
+check('NPess diferente entre anos junta o N ao N-1 do mesmo cliente', () => {
+  const mapas = ctx.mapasVendasQuadro();
+  mapas.vendedorPorNpess[99520003] = 'MASSIMO BOTTELLO';
+  mapas.vendedorPorNpess[99520020] = 'EDUARDO MOREIRA';
+  mapas.canalPorNpess[99520003] = 'Distribuidores regionais';
+  mapas.canalPorNpess[99520020] = 'Distribuidores regionais';
+  ctx._canalPorNpess = null;
+  const modelo = ctx.maioresPerdasMes([
+    { cod: '406016', data: '2025-09-15', valor: 58480.46, npess: 99520003 },
+    { cod: '406016', data: '2026-09-15', valor: 46662.60, npess: 99520020 },
+    { cod: '790976', data: '2025-09-02', valor: 47275.31, npess: 99520003 },
+    { cod: '790976', data: '2026-09-02', valor: 44282.17, npess: 99520020 },
+    { cod: '749122', data: '2025-09-02', valor: 31057.68, npess: 99520003 },
+    { cod: '749122', data: '2026-09-02', valor: 42688.42, npess: 99520020 },
+    { cod: 'PAROU', data: '2025-09-02', valor: 1000, npess: 99520003 },
+  ], {
+    ym: YM,
+    ymN1: YM1,
+    canalId: 'distribuidores',
+    mapas: mapas,
+    temColunaValor: true,
+    nomesPorCod: {
+      '406016': 'F. J. RIBEIRO CAFÉ-ME',
+      '790976': 'Outro que desceu',
+      '749122': 'Outro que subiu',
+      'PAROU': 'Parou de comprar',
+    },
+  });
+  assert.equal(modelo.criterio, 'n1');
+  const linhas = modelo.grupos.flatMap(g => g.linhas);
+  const ribeiro = linhas.find(r => r.cod === '406016');
+  assert.ok(ribeiro, 'o Ribeiro entra na lista');
+  assert.equal(ribeiro.vendedor, 'Eduardo Moreira');
+  assert.equal(ribeiro.n1, 58480.46);
+  assert.equal(ribeiro.n, 46662.6);
+  assert.equal(ribeiro.perda, 11817.86);
+  assert.equal(ribeiro.canal, 'Distribuidores');
+  const outro = linhas.find(r => r.cod === '790976');
+  assert.ok(outro);
+  assert.equal(outro.n, 44282.17);
+  assert.equal(outro.perda, 2993.14);
+  assert.ok(!linhas.some(r => r.cod === '749122'), 'quem comprou mais em N não é perda');
+  const parou = linhas.find(r => r.cod === 'PAROU');
+  assert.ok(parou);
+  assert.equal(parou.vendedor, 'Massimo Bottello');
+  assert.equal(parou.n, 0);
+  assert.equal(parou.perda, 1000);
+  const eduardo = modelo.grupos.find(g => g.vendedor === 'Eduardo Moreira');
+  const massimo = modelo.grupos.find(g => g.vendedor === 'Massimo Bottello');
+  assert.ok(eduardo.linhas.some(r => r.cod === '406016'));
+  assert.ok(!massimo.linhas.some(r => r.cod === '406016'));
+  assert.ok(ctx.textoCriterioPerdas(modelo).includes('mesmo que o vendedor tenha mudado'));
+});
+
 check('o filtro do vendedor grava no localStorage', () => {
   ctx._perdasFiltroUi = null;
   store.delta_vendas_perdas_filtro = JSON.stringify({
@@ -382,8 +436,8 @@ check('o filtro do vendedor grava no localStorage', () => {
   assert.equal(saved.porCanal.horeca, '');
   assert.equal(saved.geral, 'Filipe Neves');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-02-perdas-dados-cliente'));
-  assert.ok(html.includes('v2026-10-02-perdas-dados-cliente'));
+  assert.ok(sw.includes('v2026-10-02-perdas-chave-cliente'));
+  assert.ok(html.includes('v2026-10-02-perdas-chave-cliente'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);

@@ -21409,7 +21409,9 @@ async function loadVendasMenuCanal() {
  * Maiores perdas do mês: Top 20 clientes por vendedor.
  * Fonte = Fatur. e NPess gravados por cliente na carga (mês corrente e anterior).
  * A tabela vendas não tem essas colunas; o vendas_quadro é por vendedor e não chega.
- * Perda = max(0, N-1 − N). Sem N-1 por cliente, a perda é o Fatur. negativo do mês.
+ * Perda = max(0, N-1 − N). A comparação é pelo código do cliente: se o NPess
+ * mudou de um ano para o outro, o N junta ao N-1 (não fica 0).
+ * Sem N-1 por cliente, a perda é o Fatur. negativo do mês.
  */
 const PERDAS_FILTRO_LS = 'delta_vendas_perdas_filtro';
 const PERDAS_FILTRO_MS = 1000;
@@ -21489,6 +21491,8 @@ function indiceOrdemVendedorPerdas(nome, ordem) {
  * Top perdas do mês escolhido (não acumulado).
  * opts.temColunaValor === false → não há Fatur. por cliente; não inventa linhas.
  * opts.canalId vazio = todos os canais. Com canal, só NPess desse menu.
+ * A chave é o código do cliente. NPess diferente entre N e N-1 não parte a linha.
+ * A linha fica no vendedor com mais Fatur. no mês N; sem compras em N, no do N-1.
  */
 function maioresPerdasMes(linhas, opts) {
   const o = opts || {};
@@ -21524,8 +21528,7 @@ function maioresPerdasMes(linhas, opts) {
       ? dimensoesVendaQuadro(npess, mapas)
       : { vendedor: 'Por classificar' };
     const vendedor = nomeExibicaoVendedorPerdas(dim && dim.vendedor);
-    const vendKey = typeof normNomeVendaMenu === 'function' ? normNomeVendaMenu(vendedor) : vendedor;
-    const key = cod + '\t' + vendKey;
+    const key = cod;
     if (!buckets[key]) {
       const nome = nomesPorCod[cod] != null ? nomesPorCod[cod] : (nomesPorCod[String(row.cod)] || '');
       buckets[key] = {
@@ -21535,24 +21538,40 @@ function maioresPerdasMes(linhas, opts) {
         canalId: canalLinha,
         canal: nomeCanalAppPerdas(canalLinha),
         n: 0, nTem: false, n1: 0, n1Tem: false, neg: 0,
+        nPorVend: {},
+        n1PorVend: {},
+        canalPorVend: {},
       };
     }
     const b = buckets[key];
-    if (!b.canalId && canalLinha) {
-      b.canalId = canalLinha;
-      b.canal = nomeCanalAppPerdas(canalLinha);
+    if (!b.nome) {
+      const nome = nomesPorCod[cod] != null ? nomesPorCod[cod] : (nomesPorCod[String(row.cod)] || '');
+      if (nome) b.nome = String(nome);
     }
     if (valor == null) continue;
     algumValor = true;
+    if (canalLinha) b.canalPorVend[vendedor] = canalLinha;
     if (rowYm === ymN1) {
       b.n1 = arredondarRsPerdas(b.n1 + valor);
       b.n1Tem = true;
       algumN1 = true;
+      b.n1PorVend[vendedor] = arredondarRsPerdas((b.n1PorVend[vendedor] || 0) + valor);
     } else {
       b.n = arredondarRsPerdas(b.n + valor);
       b.nTem = true;
       if (valor < 0) b.neg = arredondarRsPerdas(b.neg + valor);
+      b.nPorVend[vendedor] = arredondarRsPerdas((b.nPorVend[vendedor] || 0) + valor);
     }
+  }
+  function vendedorComMaisFatur(map) {
+    let nome = '';
+    let max = null;
+    const ks = Object.keys(map || {});
+    for (let i = 0; i < ks.length; i++) {
+      const v = map[ks[i]];
+      if (max == null || v > max) { max = v; nome = ks[i]; }
+    }
+    return nome;
   }
   if (!algumValor) return vazio;
   const criterio = algumN1 ? 'n1' : 'devolucao';
@@ -21560,6 +21579,15 @@ function maioresPerdasMes(linhas, opts) {
   const bkeys = Object.keys(buckets);
   for (let i = 0; i < bkeys.length; i++) {
     const b = buckets[bkeys[i]];
+    const dono = vendedorComMaisFatur(b.nPorVend) || vendedorComMaisFatur(b.n1PorVend) || b.vendedor;
+    if (dono) {
+      b.vendedor = dono;
+      const cid = b.canalPorVend[dono];
+      if (cid) {
+        b.canalId = cid;
+        b.canal = nomeCanalAppPerdas(cid);
+      }
+    }
     let perda = 0;
     let n = 0;
     let n1 = 0;
@@ -21647,7 +21675,7 @@ function textoCriterioPerdas(modelo) {
   if (m.criterio === 'devolucao') {
     return 'Critério: devolução (Fatur. negativo do mês). Não há N-1 por cliente, por isso não se compara com o ano anterior.';
   }
-  return 'Critério: valor perdido = N-1 − N (vendas líquidas, Fatur.), só quem comprou menos que no mesmo mês do ano anterior. Não é acumulado.';
+  return 'Critério: valor perdido = N-1 − N (vendas líquidas, Fatur.), só quem comprou menos que no mesmo mês do ano anterior. O cliente é o mesmo código nos dois anos, mesmo que o vendedor tenha mudado. Não é acumulado.';
 }
 
 function perdasFiltroBlank() {
@@ -36691,7 +36719,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-perdas-dados-cliente: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-perdas-chave-cliente: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
