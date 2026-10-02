@@ -2138,7 +2138,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal, Accuracy de fecho, o quadro geral de Vendas e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
+          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -3554,8 +3554,17 @@ var _unused_placeholder = 1;
   <!-- VENDAS do menu do canal (Horeca, Ecommerce, Varejo, Distribuidores) -->
   <div class="panel" id="panel-vendas-canal">
     <div class="sub-nav" style="margin-bottom:12px;">
-      <button type="button" class="sub-tab active" id="cvm-sub-quadro" onclick="cvmShowSub('quadro')">Quadro</button>
+      <button type="button" class="sub-tab active" id="cvm-sub-quadro" onclick="cvmShowSub('quadro')">Vendas</button>
       <button type="button" class="sub-tab" id="cvm-sub-notas" onclick="cvmShowSub('notas')">Notas fiscais</button>
+      <button type="button" class="sub-tab" id="cvm-sub-perdas" onclick="cvmShowSub('perdas')">Maiores perdas mês</button>
+    </div>
+    <div id="cvm-periodo" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+      <label style="font-size:12px;color:var(--muted);">Mês
+        <select id="cvm-mes" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="cvmPeriodoMudou()"></select>
+      </label>
+      <label style="font-size:12px;color:var(--muted);">Ano
+        <select id="cvm-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="cvmPeriodoMudou()"></select>
+      </label>
     </div>
     <div id="cvm-pane-quadro">
     <div style="margin-bottom:12px;">
@@ -3563,15 +3572,14 @@ var _unused_placeholder = 1;
       <div id="canal-vendas-ate" style="font-size:14px;font-weight:700;color:#1e40af;margin-top:4px;"></div>
       <div style="font-size:12px;color:var(--muted);margin-top:2px;">Vendas líquidas só dos canais deste menu. O vendedor fica na mesma tabela.</div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
-      <label style="font-size:12px;color:var(--muted);">Mês
-        <select id="cvm-mes" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasMenuCanal()"></select>
-      </label>
-      <label style="font-size:12px;color:var(--muted);">Ano
-        <select id="cvm-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasMenuCanal()"></select>
-      </label>
-    </div>
     <div id="canal-vendas-quadro"><div style="color:var(--muted);font-size:13px;">A ler o agregado guardado…</div></div>
+    </div>
+    <div id="cvm-pane-perdas" style="display:none;">
+      <div style="margin-bottom:12px;">
+        <div id="cvm-perdas-titulo" style="font-size:16px;font-weight:700;">Maiores perdas mês</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;">Top 20 clientes por vendedor no mês seleccionado. Não é acumulado.</div>
+      </div>
+      <div id="cvm-perdas-host"><div style="color:var(--muted);font-size:13px;">Abre este separador para ver as perdas.</div></div>
     </div>
     <div id="cvm-pane-notas" style="display:none;">
       <div style="margin-bottom:12px;">
@@ -4004,6 +4012,7 @@ var _unused_placeholder = 1;
         <button type="button" class="sub-tab active" id="pv-tab-mapa" onclick="pvShowView('mapa')">Mapa mensal</button>
         <button type="button" class="sub-tab" id="pv-tab-accuracy" onclick="pvShowView('accuracy')">Accuracy de fecho</button>
         <button type="button" class="sub-tab" id="pv-tab-vendas" onclick="pvShowView('vendas')">Vendas</button>
+        <button type="button" class="sub-tab" id="pv-tab-perdas" onclick="pvShowView('perdas')">Maiores perdas mês</button>
         <button type="button" class="sub-tab" id="pv-tab-nfe" onclick="pvShowView('nfe')">NF emitidas</button>
       </div>
 
@@ -12815,10 +12824,12 @@ async function abrirPrevisaoVendasHome() {
     const tabM = document.getElementById('pv-tab-mapa');
     const tabA = document.getElementById('pv-tab-accuracy');
     const tabV = document.getElementById('pv-tab-vendas');
+    const tabP = document.getElementById('pv-tab-perdas');
     const tabN = document.getElementById('pv-tab-nfe');
     if (tabM) tabM.classList.add('active');
     if (tabA) tabA.classList.remove('active');
     if (tabV) tabV.classList.remove('active');
+    if (tabP) tabP.classList.remove('active');
     if (tabN) tabN.classList.remove('active');
     const mesWrap = document.getElementById('pv-mes-wrap');
     if (mesWrap) mesWrap.style.display = '';
@@ -12852,22 +12863,26 @@ function pvPct(a, b) {
 }
 
 function pvShowView(view) {
-  _pvView = view === 'accuracy' ? 'accuracy' : (view === 'vendas' ? 'vendas' : (view === 'nfe' ? 'nfe' : 'mapa'));
+  _pvView = (view === 'accuracy' || view === 'vendas' || view === 'nfe' || view === 'perdas') ? view : 'mapa';
   if (_pvView !== 'accuracy') _pvAccFiltro = '';
-  const tabM = document.getElementById('pv-tab-mapa');
-  const tabA = document.getElementById('pv-tab-accuracy');
-  const tabV = document.getElementById('pv-tab-vendas');
-  const tabN = document.getElementById('pv-tab-nfe');
-  if (tabM) tabM.classList.toggle('active', _pvView === 'mapa');
-  if (tabA) tabA.classList.toggle('active', _pvView === 'accuracy');
-  if (tabV) tabV.classList.toggle('active', _pvView === 'vendas');
-  if (tabN) tabN.classList.toggle('active', _pvView === 'nfe');
+  const tabs = {
+    mapa: 'pv-tab-mapa',
+    accuracy: 'pv-tab-accuracy',
+    vendas: 'pv-tab-vendas',
+    perdas: 'pv-tab-perdas',
+    nfe: 'pv-tab-nfe',
+  };
+  Object.keys(tabs).forEach(k => {
+    const el = document.getElementById(tabs[k]);
+    if (el) el.classList.toggle('active', _pvView === k);
+  });
+  const semMapa = _pvView === 'vendas' || _pvView === 'nfe' || _pvView === 'perdas';
   const mesWrap = document.getElementById('pv-mes-wrap');
   if (mesWrap) mesWrap.style.display = _pvView === 'mapa' ? '' : 'none';
   const anoWrap = document.getElementById('pv-ano-wrap');
-  if (anoWrap) anoWrap.style.display = (_pvView === 'vendas' || _pvView === 'nfe') ? 'none' : '';
+  if (anoWrap) anoWrap.style.display = semMapa ? 'none' : '';
   const excelBtn = document.getElementById('pv-btn-excel');
-  if (excelBtn) excelBtn.style.display = (_pvView === 'vendas' || _pvView === 'nfe') ? 'none' : '';
+  if (excelBtn) excelBtn.style.display = semMapa ? 'none' : '';
   pvEnsureCloudThenRender();
 }
 
@@ -13823,16 +13838,27 @@ async function nfeMontarCanal() {
 }
 
 function cvmShowSub(sub) {
-  const notas = sub === 'notas';
-  const quadro = document.getElementById('cvm-pane-quadro');
-  const pane = document.getElementById('cvm-pane-notas');
-  const tabQ = document.getElementById('cvm-sub-quadro');
-  const tabN = document.getElementById('cvm-sub-notas');
-  if (quadro) quadro.style.display = notas ? 'none' : '';
-  if (pane) pane.style.display = notas ? '' : 'none';
-  if (tabQ) tabQ.classList.toggle('active', !notas);
-  if (tabN) tabN.classList.toggle('active', notas);
-  if (notas) nfeMontarCanal();
+  const id = sub === 'notas' ? 'notas' : (sub === 'perdas' ? 'perdas' : 'quadro');
+  const panes = { quadro: 'cvm-pane-quadro', notas: 'cvm-pane-notas', perdas: 'cvm-pane-perdas' };
+  const tabs = { quadro: 'cvm-sub-quadro', notas: 'cvm-sub-notas', perdas: 'cvm-sub-perdas' };
+  Object.keys(panes).forEach(k => {
+    const el = document.getElementById(panes[k]);
+    if (el) el.style.display = k === id ? '' : 'none';
+    const tab = document.getElementById(tabs[k]);
+    if (tab) tab.classList.toggle('active', k === id);
+  });
+  const periodo = document.getElementById('cvm-periodo');
+  if (periodo) periodo.style.display = id === 'notas' ? 'none' : '';
+  if (id === 'notas') nfeMontarCanal();
+  if (id === 'perdas') montarVendasPerdasCanal();
+}
+
+function cvmPeriodoMudou() {
+  if (typeof renderVendasMenuCanal === 'function') renderVendasMenuCanal();
+  const pane = document.getElementById('cvm-pane-perdas');
+  if (pane && pane.style.display !== 'none' && typeof montarVendasPerdasCanal === 'function') {
+    montarVendasPerdasCanal();
+  }
 }
 
 async function nfeAbrirPdf(chave) {
@@ -13896,7 +13922,7 @@ async function nfeMontarVista() {
 async function pvEnsureCloudThenRender(opts) {
   pvBindAutosaveLifecycle();
   if (opts && opts.reload) pvFlushAutosave();
-  if (_pvView !== 'vendas' && _pvView !== 'nfe') {
+  if (_pvView !== 'vendas' && _pvView !== 'nfe' && _pvView !== 'perdas') {
     try { await pvFetchCloudMaps(false); } catch (_) {}
     try { if (typeof lerVendasQuadroPersistida === 'function') await lerVendasQuadroPersistida(); } catch (_) {}
   }
@@ -13909,6 +13935,25 @@ function pvRender(opts) {
   if (_pvView === 'nfe') {
     nfePrepararChrome();
     nfeMontarVista();
+    return;
+  }
+  if (_pvView === 'perdas') {
+    const modoP = document.getElementById('pv-modo-label');
+    if (modoP) {
+      modoP.textContent = '· Só consulta';
+      modoP.style.color = '#9a3412';
+    }
+    const roBannerP = document.getElementById('pv-readonly-banner');
+    if (roBannerP) roBannerP.style.display = 'none';
+    const btnPubP = document.getElementById('pv-btn-publicar');
+    if (btnPubP) btnPubP.style.display = 'none';
+    const excelBtnP = document.getElementById('pv-btn-excel');
+    if (excelBtnP) excelBtnP.style.display = 'none';
+    const bannerP = document.getElementById('pv-banner');
+    if (bannerP) {
+      bannerP.innerHTML = '<strong>Maiores perdas mês</strong> — Top 20 clientes por vendedor no mês escolhido (não é acumulado). Valor perdido = quanto o cliente deixou de comprar face ao mesmo mês do ano anterior. Todos os canais.';
+    }
+    pvMontarVistaPerdas();
     return;
   }
   if (_pvView === 'vendas') {
@@ -13982,8 +14027,8 @@ function pvRender(opts) {
         ? ` · Cloud: ${_pvCloudCache.actualizadoPor || '—'} ${new Date(_pvCloudCache.actualizadoEm).toLocaleString('pt-PT')}`
         : '';
       const editHint = edit
-        ? `<strong>Previsão de fecho</strong> (autosave; o lançamento manual mantém-se) · <strong>N</strong> = vendas líquidas do mês no quadro de vendas ·`
-        : `<strong>Previsão de fecho</strong> · <strong>N</strong> = vendas líquidas do mês no quadro de vendas ·`;
+        ? `<strong>Previsão de fecho</strong> (autosave; o lançamento manual mantém-se) · <strong>N</strong> = vendas líquidas do mês nas Vendas ·`
+        : `<strong>Previsão de fecho</strong> · <strong>N</strong> = vendas líquidas do mês nas Vendas ·`;
       banner.innerHTML = `<strong>${mesNome} ${ano}</strong> — N-1 = histórico · Budget = objectivo ·
         ${editHint}
         <strong>N VS N-1 %</strong> = (N, senão Previsão) vs N-1 ·
@@ -14491,7 +14536,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
             <th style="text-align:left;">Empresa</th>
             <th style="text-align:right;">N-1</th>
             <th style="text-align:right;background:#dbeafe;">Previsão de fecho</th>
-            <th style="text-align:right;background:#bbf7d0;" title="Vendas líquidas do mês (Fatur. do quadro de vendas)">N</th>
+            <th style="text-align:right;background:#bbf7d0;" title="Vendas líquidas do mês (Fatur. das Vendas)">N</th>
             <th style="text-align:right;" title="(N gravado, senão Previsão − N-1) / N-1">N VS N-1 %</th>
             <th style="text-align:right;">Budget</th>
             <th style="text-align:right;">Var Bud %</th>
@@ -19032,25 +19077,25 @@ function decidirActualizarQuadroVendas(cols, quadro) {
   if (!cols || !cols.valor) {
     return {
       acao: 'explicar',
-      mensagem: 'A tabela de vendas não tem a coluna de valor (vendas líquidas). Actualizar o quadro a partir da base gravaria zeros ou os canais antigos por cima, e apagaria um quadro já corrigido. Use Dados → Carregar Vendas com o Excel de 2026 (coluna de vendas líquidas e Nº pessoal).',
+      mensagem: 'A tabela de vendas não tem a coluna de valor (vendas líquidas). Actualizar as vendas a partir da base gravaria zeros ou os canais antigos por cima, e apagaria um painel já corrigido. Use Dados → Carregar Vendas com o Excel de 2026 (coluna de vendas líquidas e Nº pessoal).',
     };
   }
   if (quadroTemCanaisAntigos(quadro)) {
     return {
       acao: 'explicar',
-      mensagem: 'O quadro guardado ainda tem os canais anteriores (Ecommerce, Horeca, Varejo ou Distribuidores). Este botão não os substitui: a tabela de vendas não tem o valor líquido nem o Nº pessoal desses meses. Use Dados → Carregar Vendas com o Excel de 2026.',
+      mensagem: 'As vendas guardadas ainda têm os canais anteriores (Ecommerce, Horeca, Varejo ou Distribuidores). Este botão não os substitui: a tabela de vendas não tem o valor líquido nem o Nº pessoal desses meses. Use Dados → Carregar Vendas com o Excel de 2026.',
     };
   }
   if (quadroJaCorrigidoPeloExcel(quadro)) {
     return {
       acao: 'manter',
-      mensagem: 'O quadro já está com as linhas do Power BI. Actualizar a partir da tabela de vendas não volta a gravar por cima nem limpa estes R$.',
+      mensagem: 'As vendas já estão com as linhas do Power BI. Actualizar a partir da tabela de vendas não volta a gravar por cima nem limpa estes R$.',
     };
   }
   if (quadro && quadro.base_completa) {
     return {
       acao: 'manter',
-      mensagem: 'Quadro já guardado. A carga do Excel só lê e corrige o mês corrente e o mês anterior; o resto fica como está.',
+      mensagem: 'Vendas já guardadas. A carga do Excel só lê e corrige o mês corrente e o mês anterior; o resto fica como está.',
     };
   }
   return { acao: 'reconstruir', mensagem: '' };
@@ -19758,11 +19803,14 @@ function preencherSelectsQuadroVendas() {
   }
   if (!selM.dataset.ready) {
     const now = new Date();
-    selM.value = String(now.getMonth() + 1);
-    selA.value = String(now.getFullYear());
+    const mem = (typeof _vqPeriodoMem !== 'undefined' && _vqPeriodoMem) ? _vqPeriodoMem : null;
+    selM.value = String((mem && mem.mes) || (now.getMonth() + 1));
+    selA.value = String((mem && mem.ano) || now.getFullYear());
     selM.dataset.ready = '1';
   }
 }
+
+let _vqPeriodoMem = null;
 
 function periodoQuadroSelecionado() {
   preencherSelectsQuadroVendas();
@@ -19772,6 +19820,7 @@ function periodoQuadroSelecionado() {
   const mes = parseInt(selM && selM.value, 10) || (now.getMonth() + 1);
   const ano = parseInt(selA && selA.value, 10) || now.getFullYear();
   const ym = `${ano}-${String(mes).padStart(2, '0')}`;
+  _vqPeriodoMem = { mes: mes, ano: ano };
   return { mes, ano, ym };
 }
 
@@ -21339,6 +21388,8 @@ function initVendasMenuCanal() {
   loadVendasMenuCanal();
   const pane = document.getElementById('cvm-pane-notas');
   if (pane && pane.style.display !== 'none') nfeMontarCanal();
+  const perdas = document.getElementById('cvm-pane-perdas');
+  if (perdas && perdas.style.display !== 'none') montarVendasPerdasCanal();
 }
 
 async function loadVendasMenuCanal() {
@@ -21350,8 +21401,594 @@ async function loadVendasMenuCanal() {
     try { if (typeof lerVendasCoberturaPersistida === 'function') await lerVendasCoberturaPersistida(); } catch (_) {}
     renderVendasMenuCanal(q);
   } catch (e) {
-    el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao ler o quadro: ${e.message || e}</div>`;
+    el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao ler as vendas: ${e.message || e}</div>`;
   }
+}
+
+/**
+ * Maiores perdas do mês: Top 20 clientes por vendedor.
+ * Fonte = linhas da tabela vendas (cod + Fatur.), cruzadas com o NPess do canal.
+ * O agregado vendas_quadro é por canal/vendedor e não chega.
+ * Perda = max(0, N-1 − N). Sem N-1 por cliente, a perda é o Fatur. negativo do mês.
+ */
+const PERDAS_FILTRO_LS = 'delta_vendas_perdas_filtro';
+const PERDAS_FILTRO_MS = 1000;
+const PERDAS_TOP = 20;
+let _perdasFiltroTimer = null;
+let _perdasFiltroUi = null;
+let _perdasLinhasCache = { key: '', linhas: null, temColunaValor: false };
+let _perdasCanalGen = 0;
+let _perdasGeralGen = 0;
+
+function arredondarRsPerdas(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return 0;
+  return Math.round(v * 100) / 100;
+}
+
+/** YYYY-MM da linha. A tabela mistura 2026-09-01 e 10.09.2025. */
+function ymLinhaPerdas(data) {
+  const s = String(data || '').trim();
+  if (/^\d{4}-\d{2}/.test(s)) return s.slice(0, 7);
+  const m = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+  if (!m) return '';
+  const mes = String(parseInt(m[2], 10)).padStart(2, '0');
+  if (mes < '01' || mes > '12') return '';
+  return m[3] + '-' + mes;
+}
+
+function nomeExibicaoVendedorPerdas(raw) {
+  const bruto = String(raw || '').trim();
+  const n = typeof normNomeVendaMenu === 'function' ? normNomeVendaMenu(bruto) : bruto.toUpperCase();
+  if (!n || n === 'POR CLASSIFICAR') return 'Por classificar';
+  const canais = (typeof CANAIS_APP !== 'undefined' && CANAIS_APP) ? CANAIS_APP : {};
+  const ids = Object.keys(canais);
+  for (let i = 0; i < ids.length; i++) {
+    const vs = canais[ids[i]].vendedores || [];
+    for (let j = 0; j < vs.length; j++) {
+      const nn = typeof normNomeVendaMenu === 'function' ? normNomeVendaMenu(vs[j]) : String(vs[j] || '').toUpperCase();
+      if (nn === n) return String(vs[j]);
+    }
+  }
+  return bruto || 'Por classificar';
+}
+
+function nomeCanalAppPerdas(canalId) {
+  const c = (typeof CANAIS_APP !== 'undefined' && canalId && CANAIS_APP[canalId]) ? CANAIS_APP[canalId] : null;
+  return (c && c.nome) ? String(c.nome) : 'Por classificar';
+}
+
+function ordemVendedoresPerdas() {
+  const out = [];
+  const seen = {};
+  const ids = ['horeca', 'ecommerce', 'varejo', 'distribuidores'];
+  const canais = (typeof CANAIS_APP !== 'undefined' && CANAIS_APP) ? CANAIS_APP : {};
+  for (let i = 0; i < ids.length; i++) {
+    const vs = (canais[ids[i]] && canais[ids[i]].vendedores) || [];
+    for (let j = 0; j < vs.length; j++) {
+      const k = typeof normNomeVendaMenu === 'function' ? normNomeVendaMenu(vs[j]) : String(vs[j]);
+      if (!k || seen[k]) continue;
+      seen[k] = 1;
+      out.push(String(vs[j]));
+    }
+  }
+  return out;
+}
+
+function indiceOrdemVendedorPerdas(nome, ordem) {
+  const n = typeof normNomeVendaMenu === 'function' ? normNomeVendaMenu(nome) : String(nome || '');
+  const lista = Array.isArray(ordem) ? ordem : [];
+  for (let i = 0; i < lista.length; i++) {
+    const k = typeof normNomeVendaMenu === 'function' ? normNomeVendaMenu(lista[i]) : String(lista[i]);
+    if (k === n) return i;
+  }
+  return -1;
+}
+
+/**
+ * Top perdas do mês escolhido (não acumulado).
+ * opts.temColunaValor === false → não há Fatur. por cliente; não inventa linhas.
+ * opts.canalId vazio = todos os canais. Com canal, só NPess desse menu.
+ */
+function maioresPerdasMes(linhas, opts) {
+  const o = opts || {};
+  const ym = String(o.ym || '');
+  const ymN1 = String(o.ymN1 || '');
+  const canalId = String(o.canalId || '');
+  const top = (o.top > 0) ? o.top : PERDAS_TOP;
+  const mapas = o.mapas || (typeof mapasVendasQuadro === 'function' ? mapasVendasQuadro() : { canalPorNpess: {}, vendedorPorNpess: {} });
+  const npessPorCod = o.npessPorCod || {};
+  const nomesPorCod = o.nomesPorCod || {};
+  const filtroNorm = typeof normNomeVendaMenu === 'function' ? normNomeVendaMenu(o.vendedor || '') : String(o.vendedor || '').toUpperCase();
+  const vazio = { ym: ym, ymN1: ymN1, criterio: 'sem-fatur', motivo: 'linhas', grupos: [], vendedores: [] };
+  if (o.temColunaValor === false) {
+    vazio.motivo = 'coluna';
+    return vazio;
+  }
+  const buckets = {};
+  const list = Array.isArray(linhas) ? linhas : [];
+  let algumValor = false;
+  let algumN1 = false;
+  for (let i = 0; i < list.length; i++) {
+    const row = list[i];
+    if (!row) continue;
+    const rowYm = ymLinhaPerdas(row.data);
+    if (rowYm !== ym && rowYm !== ymN1) continue;
+    const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row.cod) : String(row.cod || '').trim();
+    if (!cod) continue;
+    const npess = typeof npessDaLinhaVendaQuadro === 'function' ? npessDaLinhaVendaQuadro(row, npessPorCod) : 0;
+    const canalLinha = (typeof getCanalIdPorVendedorCod === 'function') ? (getCanalIdPorVendedorCod(npess) || '') : '';
+    if (canalId && canalLinha !== canalId) continue;
+    const valor = typeof parseValorVendaSap === 'function' ? parseValorVendaSap(row.valor) : (Number.isFinite(+row.valor) ? +row.valor : null);
+    const dim = typeof dimensoesVendaQuadro === 'function'
+      ? dimensoesVendaQuadro(npess, mapas)
+      : { vendedor: 'Por classificar' };
+    const vendedor = nomeExibicaoVendedorPerdas(dim && dim.vendedor);
+    const vendKey = typeof normNomeVendaMenu === 'function' ? normNomeVendaMenu(vendedor) : vendedor;
+    const key = cod + '\t' + vendKey;
+    if (!buckets[key]) {
+      const nome = nomesPorCod[cod] != null ? nomesPorCod[cod] : (nomesPorCod[String(row.cod)] || '');
+      buckets[key] = {
+        cod: cod,
+        nome: nome ? String(nome) : '',
+        vendedor: vendedor,
+        canalId: canalLinha,
+        canal: nomeCanalAppPerdas(canalLinha),
+        n: 0, nTem: false, n1: 0, n1Tem: false, neg: 0,
+      };
+    }
+    const b = buckets[key];
+    if (!b.canalId && canalLinha) {
+      b.canalId = canalLinha;
+      b.canal = nomeCanalAppPerdas(canalLinha);
+    }
+    if (valor == null) continue;
+    algumValor = true;
+    if (rowYm === ymN1) {
+      b.n1 = arredondarRsPerdas(b.n1 + valor);
+      b.n1Tem = true;
+      algumN1 = true;
+    } else {
+      b.n = arredondarRsPerdas(b.n + valor);
+      b.nTem = true;
+      if (valor < 0) b.neg = arredondarRsPerdas(b.neg + valor);
+    }
+  }
+  if (!algumValor) return vazio;
+  const criterio = algumN1 ? 'n1' : 'devolucao';
+  const porVend = {};
+  const bkeys = Object.keys(buckets);
+  for (let i = 0; i < bkeys.length; i++) {
+    const b = buckets[bkeys[i]];
+    let perda = 0;
+    let n = 0;
+    let n1 = 0;
+    let nTem = false;
+    let n1Tem = false;
+    if (criterio === 'n1') {
+      if (!b.n1Tem) continue;
+      n1 = b.n1;
+      n = b.nTem ? b.n : 0;
+      nTem = true;
+      n1Tem = true;
+      perda = arredondarRsPerdas(n1 - n);
+      if (!(perda > 0)) continue;
+    } else {
+      if (!(b.neg < 0)) continue;
+      perda = arredondarRsPerdas(Math.abs(b.neg));
+      if (!(perda > 0)) continue;
+      n = b.nTem ? b.n : 0;
+      nTem = b.nTem;
+      n1Tem = false;
+    }
+    if (!porVend[b.vendedor]) porVend[b.vendedor] = [];
+    porVend[b.vendedor].push({
+      cod: b.cod,
+      nome: b.nome,
+      vendedor: b.vendedor,
+      canal: b.canal,
+      canalId: b.canalId,
+      n: n,
+      nTem: nTem,
+      n1: n1,
+      n1Tem: n1Tem,
+      perda: perda,
+    });
+  }
+  const ordem = ordemVendedoresPerdas();
+  const nomesVend = Object.keys(porVend);
+  nomesVend.sort(function (a, b) {
+    const ia = indiceOrdemVendedorPerdas(a, ordem);
+    const ib = indiceOrdemVendedorPerdas(b, ordem);
+    const oa = ia < 0 ? 999 : ia;
+    const ob = ib < 0 ? 999 : ib;
+    if (oa !== ob) return oa - ob;
+    if (a === 'Por classificar') return 1;
+    if (b === 'Por classificar') return -1;
+    return String(a).localeCompare(String(b), 'pt');
+  });
+  const gruposTodos = [];
+  for (let i = 0; i < nomesVend.length; i++) {
+    const nome = nomesVend[i];
+    const linhasVend = porVend[nome].slice().sort(function (a, b) {
+      if (b.perda !== a.perda) return b.perda - a.perda;
+      const cmp = String(a.nome || a.cod).localeCompare(String(b.nome || b.cod), 'pt');
+      if (cmp) return cmp;
+      return String(a.cod).localeCompare(String(b.cod), 'pt');
+    });
+    const topLinhas = linhasVend.slice(0, top);
+    let total = 0;
+    for (let j = 0; j < topLinhas.length; j++) total = arredondarRsPerdas(total + topLinhas[j].perda);
+    gruposTodos.push({ vendedor: nome, total: total, linhas: topLinhas });
+  }
+  const grupos = filtroNorm
+    ? gruposTodos.filter(function (g) {
+      const k = typeof normNomeVendaMenu === 'function' ? normNomeVendaMenu(g.vendedor) : g.vendedor;
+      return k === filtroNorm;
+    })
+    : gruposTodos;
+  return {
+    ym: ym,
+    ymN1: ymN1,
+    criterio: criterio,
+    motivo: '',
+    grupos: grupos,
+    vendedores: gruposTodos.map(function (g) { return g.vendedor; }),
+  };
+}
+
+function textoCriterioPerdas(modelo) {
+  const m = modelo || {};
+  if (m.criterio === 'sem-fatur') {
+    if (m.motivo === 'coluna') return 'A tabela de vendas não tem Fatur. por cliente. A lista não inventa clientes.';
+    return 'Não há Fatur. por cliente neste mês nem no mesmo mês do ano anterior. A lista não inventa clientes.';
+  }
+  if (m.criterio === 'devolucao') {
+    return 'Critério: devolução (Fatur. negativo do mês). Não há N-1 por cliente, por isso não se compara com o ano anterior.';
+  }
+  return 'Critério: valor perdido = N-1 − N (vendas líquidas, Fatur.), só quem comprou menos que no mesmo mês do ano anterior. Não é acumulado.';
+}
+
+function perdasFiltroBlank() {
+  return { geral: '', porCanal: {} };
+}
+
+function perdasFiltroState() {
+  if (_perdasFiltroUi) return _perdasFiltroUi;
+  _perdasFiltroUi = perdasFiltroBlank();
+  let raw = null;
+  try { raw = localStorage.getItem(PERDAS_FILTRO_LS); } catch (_) { raw = null; }
+  if (!raw) return _perdasFiltroUi;
+  try {
+    const p = JSON.parse(raw);
+    if (!p || typeof p !== 'object') return _perdasFiltroUi;
+    _perdasFiltroUi.geral = String(p.geral || '').slice(0, 80);
+    const por = p.porCanal && typeof p.porCanal === 'object' ? p.porCanal : {};
+    Object.keys(por).forEach(function (id) {
+      _perdasFiltroUi.porCanal[id] = String(por[id] || '').slice(0, 80);
+    });
+  } catch (_) {}
+  return _perdasFiltroUi;
+}
+
+function perdasFiltroDe(scope) {
+  const st = perdasFiltroState();
+  if (scope === 'geral') return st.geral || '';
+  return (st.porCanal && st.porCanal[scope]) || '';
+}
+
+function perdasGravarFiltro() {
+  const st = perdasFiltroState();
+  try {
+    localStorage.setItem(PERDAS_FILTRO_LS, JSON.stringify({ geral: st.geral || '', porCanal: st.porCanal || {} }));
+  } catch (_) {}
+}
+
+function perdasAgendarFiltro() {
+  try { clearTimeout(_perdasFiltroTimer); } catch (_) {}
+  _perdasFiltroTimer = setTimeout(perdasGravarFiltro, PERDAS_FILTRO_MS);
+  try { if (_perdasFiltroTimer && typeof _perdasFiltroTimer.unref === 'function') _perdasFiltroTimer.unref(); } catch (_) {}
+}
+
+function perdasBindFiltroAutosave() {
+  if (perdasBindFiltroAutosave.feito) return;
+  perdasBindFiltroAutosave.feito = true;
+  try {
+    if (typeof window === 'undefined' || !window.addEventListener) return;
+    window.addEventListener('pagehide', function () { perdasGravarFiltro(); });
+  } catch (_) {}
+}
+
+function perdasScopeCanal() {
+  const id = (typeof resolveCanalActivoId === 'function') ? resolveCanalActivoId() : '';
+  return id || 'canal';
+}
+
+function perdasSetFiltro(scope, valor) {
+  const st = perdasFiltroState();
+  const v = String(valor || '').slice(0, 80);
+  if (scope === 'geral') st.geral = v;
+  else {
+    if (!st.porCanal) st.porCanal = {};
+    st.porCanal[scope] = v;
+  }
+  perdasAgendarFiltro();
+  if (scope === 'geral') renderVendasPerdasGeral();
+  else renderVendasPerdasCanal();
+}
+
+function perdasLimpar(scope) {
+  const st = perdasFiltroState();
+  if (scope === 'geral') st.geral = '';
+  else {
+    if (!st.porCanal) st.porCanal = {};
+    st.porCanal[scope] = '';
+  }
+  try { clearTimeout(_perdasFiltroTimer); } catch (_) {}
+  perdasGravarFiltro();
+  if (scope === 'geral') renderVendasPerdasGeral();
+  else renderVendasPerdasCanal();
+}
+
+function htmlFiltroPerdas(modelo, scope) {
+  const esc = typeof escHtml === 'function' ? escHtml : function (s) { return String(s == null ? '' : s); };
+  const actual = perdasFiltroDe(scope);
+  const nomes = (modelo && modelo.vendedores) || [];
+  let opts = '<option value="">Todos</option>';
+  const seen = {};
+  for (let i = 0; i < nomes.length; i++) {
+    const v = nomes[i];
+    seen[v] = 1;
+    opts += '<option value="' + esc(v) + '"' + (v === actual ? ' selected' : '') + '>' + esc(v) + '</option>';
+  }
+  if (actual && !seen[actual]) {
+    opts += '<option value="' + esc(actual) + '" selected>' + esc(actual) + '</option>';
+  }
+  const onchange = scope === 'geral'
+    ? "perdasSetFiltro('geral', this.value)"
+    : "perdasSetFiltro(perdasScopeCanal(), this.value)";
+  const limpar = scope === 'geral' ? "perdasLimpar('geral')" : "perdasLimpar(perdasScopeCanal())";
+  const banner = actual
+    ? '<div class="vq-banner"><span>Filtro: Vendedor: ' + esc(actual) + '</span><button type="button" class="btn btn-secondary btn-sm" onclick="' + limpar + '">Limpar</button></div>'
+    : '';
+  return '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">'
+    + '<label style="font-size:12px;color:var(--muted);">Vendedor '
+    + '<select class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="' + onchange + '">' + opts + '</select>'
+    + '</label>'
+    + '<button type="button" class="btn btn-secondary btn-sm" onclick="' + limpar + '">Limpar</button>'
+    + '</div>' + banner;
+}
+
+function htmlCelulaRsPerdas(n, tem) {
+  if (!tem) return '<span class="vq-muted">—</span>';
+  return typeof formatNumeroQuadroPnL === 'function' ? formatNumeroQuadroPnL(n, true) : String(n);
+}
+
+function htmlPerdasMes(modelo, opts) {
+  const o = opts || {};
+  const geral = !!o.geral;
+  const scope = o.scope || (geral ? 'geral' : 'canal');
+  const esc = typeof escHtml === 'function' ? escHtml : function (s) { return String(s == null ? '' : s); };
+  const cols = geral ? 7 : 6;
+  const nota = textoCriterioPerdas(modelo);
+  const grupos = (modelo && modelo.grupos) || [];
+  let body = '';
+  if (!grupos.length) {
+    const vazio = perdasFiltroDe(scope) ? 'Este vendedor não tem perdas neste mês.' : 'Nenhum cliente com perda neste mês.';
+    body = '<tr><td colspan="' + cols + '" class="vq-muted" style="padding:16px;">' + esc(vazio) + '</td></tr>';
+  } else {
+    for (let i = 0; i < grupos.length; i++) {
+      const g = grupos[i];
+      const nCli = g.linhas.length;
+      const totalTxt = typeof formatValorQuadroRs === 'function' ? formatValorQuadroRs(g.total, true) : String(g.total);
+      body += '<tr class="vq-emp"><td colspan="' + cols + '"><strong>' + esc(g.vendedor) + '</strong> · '
+        + nCli + (nCli === 1 ? ' cliente' : ' clientes') + ' · perdido ' + esc(totalTxt) + '</td></tr>';
+      for (let j = 0; j < g.linhas.length; j++) {
+        const r = g.linhas[j];
+        const perdaTxt = typeof formatValorQuadroRs === 'function' ? formatValorQuadroRs(r.perda, true) : String(r.perda);
+        body += '<tr><td>' + esc(r.nome || '—') + '</td><td>' + esc(r.cod) + '</td><td>' + esc(r.vendedor) + '</td>'
+          + (geral ? ('<td>' + esc(r.canal || 'Por classificar') + '</td>') : '')
+          + '<td class="vq-num">' + htmlCelulaRsPerdas(r.n1, r.n1Tem) + '</td>'
+          + '<td class="vq-num">' + htmlCelulaRsPerdas(r.n, r.nTem) + '</td>'
+          + '<td class="vq-num vq-var-neg">' + esc(perdaTxt) + '</td></tr>';
+      }
+    }
+  }
+  const thCanal = geral ? '<th>Canal</th>' : '';
+  return htmlFiltroPerdas(modelo, scope)
+    + '<div class="vcob-note">' + esc(nota) + '</div>'
+    + '<div class="vq-scroll"><table class="vq-table"><thead><tr>'
+    + '<th>Cliente</th><th>Código</th><th>Vendedor</th>' + thCanal
+    + '<th class="vq-num">N-1</th><th class="vq-num">N</th><th class="vq-num">Valor perdido</th>'
+    + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+}
+
+function nomesClientePorCod(lista) {
+  const m = {};
+  const arr = Array.isArray(lista) ? lista : [];
+  for (let i = 0; i < arr.length; i++) {
+    const c = arr[i];
+    if (!c) continue;
+    const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(c.cod) : String(c.cod || '').trim();
+    if (!cod || m[cod]) continue;
+    m[cod] = String(c.nome || '').trim();
+  }
+  return m;
+}
+
+async function lerLinhasVendaPorMeses(yms) {
+  const cols = typeof detectarColunasVendasQuadro === 'function'
+    ? await detectarColunasVendasQuadro()
+    : { valor: false, npess: false };
+  if (!cols || !cols.valor) return { linhas: [], temColunaValor: false };
+  const campos = ['id', 'cod', 'data', 'valor'];
+  if (cols.npess) campos.push('npess');
+  const select = campos.join(',');
+  const out = [];
+  const vistos = {};
+  const lista = (Array.isArray(yms) ? yms : []).filter(function (ym) { return /^\d{4}-\d{2}$/.test(String(ym)); });
+  const pageSize = 1000;
+  async function pagina(filtro) {
+    let from = 0;
+    while (true) {
+      const to = from + pageSize - 1;
+      const url = SUPA_VENDAS + '?select=' + select + '&' + filtro + '&order=id.asc';
+      const res = await fetch(url, { headers: Object.assign({}, HEADERS, { Range: from + '-' + to }) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const page = await res.json();
+      if (!Array.isArray(page) || !page.length) break;
+      for (let j = 0; j < page.length; j++) {
+        const row = page[j];
+        const id = row && row.id != null ? String(row.id) : '';
+        if (id && vistos[id]) continue;
+        if (id) vistos[id] = 1;
+        out.push(row);
+      }
+      from += page.length;
+      if (page.length < pageSize) break;
+      if (from > 200000) break;
+    }
+  }
+  for (let i = 0; i < lista.length; i++) {
+    const ym = String(lista[i]);
+    const y = parseInt(ym.slice(0, 4), 10);
+    const m = parseInt(ym.slice(5), 10);
+    let ny = y;
+    let nm = m + 1;
+    if (nm > 12) { nm = 1; ny++; }
+    const de = ym + '-01';
+    const ate = ny + '-' + String(nm).padStart(2, '0') + '-01';
+    const mm = String(m).padStart(2, '0');
+    await pagina('data=gte.' + encodeURIComponent(de) + '&data=lt.' + encodeURIComponent(ate));
+    await pagina('data=like.' + encodeURIComponent('*.' + mm + '.' + y));
+  }
+  return { linhas: out, temColunaValor: true };
+}
+
+async function perdasLinhasDoPeriodo(ym, ymN1) {
+  const key = String(ym || '') + '|' + String(ymN1 || '');
+  if (_perdasLinhasCache.key === key && Array.isArray(_perdasLinhasCache.linhas)) return _perdasLinhasCache;
+  const pack = await lerLinhasVendaPorMeses([ym, ymN1]);
+  _perdasLinhasCache = { key: key, linhas: pack.linhas, temColunaValor: !!pack.temColunaValor };
+  return _perdasLinhasCache;
+}
+
+function perdasContexto(canalId, ym, ymN1, pack) {
+  let lista = [];
+  try { lista = typeof getListaClientesCompleta === 'function' ? getListaClientesCompleta() : []; } catch (_) { lista = []; }
+  return {
+    ym: ym,
+    ymN1: ymN1,
+    canalId: canalId || '',
+    npessPorCod: typeof npessPorCodDeLista === 'function' ? npessPorCodDeLista(lista) : {},
+    nomesPorCod: nomesClientePorCod(lista),
+    mapas: typeof mapasVendasQuadro === 'function' ? mapasVendasQuadro() : null,
+    temColunaValor: !!(pack && pack.temColunaValor),
+    vendedor: perdasFiltroDe(canalId ? canalId : 'geral'),
+  };
+}
+
+function pintarHostPerdas(host, modelo, opts) {
+  if (!host) return;
+  host.innerHTML = htmlPerdasMes(modelo, opts);
+}
+
+async function montarVendasPerdasCanal() {
+  perdasBindFiltroAutosave();
+  const gen = ++_perdasCanalGen;
+  const host = document.getElementById('cvm-perdas-host');
+  const titulo = document.getElementById('cvm-perdas-titulo');
+  const canalId = perdasScopeCanal();
+  const canal = (typeof CANAIS_APP !== 'undefined' && canalId && CANAIS_APP[canalId]) ? CANAIS_APP[canalId] : null;
+  if (titulo) titulo.textContent = canal ? ('Maiores perdas mês · ' + canal.nome) : 'Maiores perdas mês';
+  if (host) host.innerHTML = '<div style="color:var(--muted);font-size:13px;">A ler vendas por cliente…</div>';
+  try {
+    const periodo = typeof periodoVendasMenuSelecionado === 'function' ? periodoVendasMenuSelecionado() : { ym: '', ano: 0, mes: 0 };
+    const ymN1 = typeof ymQuadroAnoAnterior === 'function' ? ymQuadroAnoAnterior(periodo.ano, periodo.mes) : '';
+    const pack = await perdasLinhasDoPeriodo(periodo.ym, ymN1);
+    if (gen !== _perdasCanalGen) return;
+    const ctx = perdasContexto(canalId === 'canal' ? '' : canalId, periodo.ym, ymN1, pack);
+    ctx.vendedor = perdasFiltroDe(canalId);
+    const modelo = maioresPerdasMes(pack.linhas, ctx);
+    if (gen !== _perdasCanalGen) return;
+    pintarHostPerdas(host, modelo, { geral: false, scope: canalId });
+  } catch (e) {
+    if (gen !== _perdasCanalGen) return;
+    if (host) host.innerHTML = '<div style="color:var(--danger);font-size:13px;">Erro ao ler as perdas: ' + (typeof escHtml === 'function' ? escHtml(e.message || e) : String(e.message || e)) + '</div>';
+  }
+}
+
+function renderVendasPerdasCanal() {
+  const periodo = typeof periodoVendasMenuSelecionado === 'function' ? periodoVendasMenuSelecionado() : { ym: '', ano: 0, mes: 0 };
+  const ymN1 = typeof ymQuadroAnoAnterior === 'function' ? ymQuadroAnoAnterior(periodo.ano, periodo.mes) : '';
+  const key = String(periodo.ym || '') + '|' + String(ymN1 || '');
+  const host = document.getElementById('cvm-perdas-host');
+  if (_perdasLinhasCache.key !== key || !Array.isArray(_perdasLinhasCache.linhas)) {
+    montarVendasPerdasCanal();
+    return;
+  }
+  const canalId = perdasScopeCanal();
+  const ctx = perdasContexto(canalId === 'canal' ? '' : canalId, periodo.ym, ymN1, _perdasLinhasCache);
+  ctx.vendedor = perdasFiltroDe(canalId);
+  pintarHostPerdas(host, maioresPerdasMes(_perdasLinhasCache.linhas, ctx), { geral: false, scope: canalId });
+}
+
+function pvMontarVistaPerdas() {
+  const host = document.getElementById('pv-canal-panels');
+  if (!host) return;
+  if (!document.getElementById('pv-perdas-host')) {
+    host.innerHTML = ''
+      + '<div style="margin-bottom:12px;">'
+      + '<div style="font-size:16px;font-weight:700;">Maiores perdas mês</div>'
+      + '<div style="font-size:12px;color:var(--muted);margin-top:2px;">Top 20 clientes por vendedor no mês seleccionado, todos os canais. Não é acumulado.</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">'
+      + '<label style="font-size:12px;color:var(--muted);">Mês <select id="vq-mes" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="perdasPeriodoGeralMudou()"></select></label>'
+      + '<label style="font-size:12px;color:var(--muted);">Ano <select id="vq-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="perdasPeriodoGeralMudou()"></select></label>'
+      + '</div>'
+      + '<div id="pv-perdas-host"><div style="color:var(--muted);font-size:13px;">A ler vendas por cliente…</div></div>';
+  }
+  montarVendasPerdasGeral();
+}
+
+function perdasPeriodoGeralMudou() {
+  if (typeof periodoQuadroSelecionado === 'function') periodoQuadroSelecionado();
+  montarVendasPerdasGeral();
+}
+
+async function montarVendasPerdasGeral() {
+  perdasBindFiltroAutosave();
+  const gen = ++_perdasGeralGen;
+  const host = document.getElementById('pv-perdas-host');
+  if (host) host.innerHTML = '<div style="color:var(--muted);font-size:13px;">A ler vendas por cliente…</div>';
+  try {
+    const periodo = typeof periodoQuadroSelecionado === 'function' ? periodoQuadroSelecionado() : { ym: '', ano: 0, mes: 0 };
+    const ymN1 = typeof ymQuadroAnoAnterior === 'function' ? ymQuadroAnoAnterior(periodo.ano, periodo.mes) : '';
+    const pack = await perdasLinhasDoPeriodo(periodo.ym, ymN1);
+    if (gen !== _perdasGeralGen) return;
+    const ctx = perdasContexto('', periodo.ym, ymN1, pack);
+    ctx.vendedor = perdasFiltroDe('geral');
+    const modelo = maioresPerdasMes(pack.linhas, ctx);
+    if (gen !== _perdasGeralGen) return;
+    pintarHostPerdas(host, modelo, { geral: true, scope: 'geral' });
+  } catch (e) {
+    if (gen !== _perdasGeralGen) return;
+    if (host) host.innerHTML = '<div style="color:var(--danger);font-size:13px;">Erro ao ler as perdas: ' + (typeof escHtml === 'function' ? escHtml(e.message || e) : String(e.message || e)) + '</div>';
+  }
+}
+
+function renderVendasPerdasGeral() {
+  const periodo = typeof periodoQuadroSelecionado === 'function' ? periodoQuadroSelecionado() : { ym: '', ano: 0, mes: 0 };
+  const ymN1 = typeof ymQuadroAnoAnterior === 'function' ? ymQuadroAnoAnterior(periodo.ano, periodo.mes) : '';
+  const key = String(periodo.ym || '') + '|' + String(ymN1 || '');
+  const host = document.getElementById('pv-perdas-host');
+  if (!host || _perdasLinhasCache.key !== key || !Array.isArray(_perdasLinhasCache.linhas)) {
+    montarVendasPerdasGeral();
+    return;
+  }
+  const ctx = perdasContexto('', periodo.ym, ymN1, _perdasLinhasCache);
+  ctx.vendedor = perdasFiltroDe('geral');
+  pintarHostPerdas(host, maioresPerdasMes(_perdasLinhasCache.linhas, ctx), { geral: true, scope: 'geral' });
 }
 
 function htmlLinhaResumoPnL(row, filtro, escFn, periodo) {
@@ -21571,7 +22208,7 @@ function pvMontarVistaVendas() {
   if (!host) return;
   if (!document.getElementById('pv-vendas-quadro')) {
     const adminBtn = (typeof isAdmin === 'function' && isAdmin())
-      ? '<button type="button" class="btn btn-secondary btn-sm" id="pv-vendas-quadro-btn" onclick="actualizarQuadroVendas()">Actualizar quadro</button>'
+      ? '<button type="button" class="btn btn-secondary btn-sm" id="pv-vendas-quadro-btn" onclick="actualizarQuadroVendas()">Actualizar vendas</button>'
       : '';
     host.innerHTML = `
       <div style="margin-bottom:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;">
@@ -21607,7 +22244,7 @@ async function loadVendasQuadro() {
     try { if (typeof lerVendasCoberturaPersistida === 'function') await lerVendasCoberturaPersistida(); } catch (_) {}
     renderVendasQuadro(q);
   } catch (e) {
-    el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao ler o quadro: ${e.message || e}</div>`;
+    el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao ler as vendas: ${e.message || e}</div>`;
   }
 }
 
@@ -21633,13 +22270,13 @@ async function actualizarQuadroVendas() {
     let lista = [];
     try { lista = typeof getListaClientesCompleta === 'function' ? getListaClientesCompleta() : []; } catch (_) {}
     if (!Array.isArray(lista) || lista.length < 1000) {
-      el.innerHTML = `<div style="color:#92400e;font-size:13px;line-height:1.5;">A lista SAP ainda não está neste browser (menos de 1000 clientes). Espera a sincronização da lista e volta a carregar o quadro — senão o canal e o vendedor caem em «Por classificar».</div>`;
+      el.innerHTML = `<div style="color:#92400e;font-size:13px;line-height:1.5;">A lista SAP ainda não está neste browser (menos de 1000 clientes). Espera a sincronização da lista e volta a carregar as vendas — senão o canal e o vendedor caem em «Por classificar».</div>`;
       return;
     }
     const mapas = mapasVendasQuadro();
     const npessPorCod = npessPorCodDeLista(lista);
     const select = cols.valor ? 'cod,data,valor,npess' : 'cod,data';
-    el.innerHTML = `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> A construir o quadro em lotes… 0 linhas. Meses fechados não são reescritos.</div>`;
+    el.innerHTML = `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> A construir as vendas em lotes… 0 linhas. Meses fechados não são reescritos.</div>`;
     let db = quadroVendasVazio();
     let from = 0;
     const pageSize = 1000;
@@ -21654,7 +22291,7 @@ async function actualizarQuadroVendas() {
       if (!Array.isArray(page) || !page.length) break;
       db = somarQuadrosVendas(db, agregarVendasQuadro(page, { mapas, npessPorCod }));
       from += page.length;
-      el.innerHTML = `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> A construir o quadro em lotes… ${from.toLocaleString('pt-BR')} linhas.</div>`;
+      el.innerHTML = `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> A construir as vendas em lotes… ${from.toLocaleString('pt-BR')} linhas.</div>`;
       if (page.length < pageSize) break;
       if (from > 800000) break;
       await new Promise(r => setTimeout(r, 0));
@@ -21672,10 +22309,10 @@ async function actualizarQuadroVendas() {
     merged.base_completa = true;
     const saved = await salvarVendasQuadroPersistida(merged);
     renderVendasQuadro(saved);
-    if (typeof toast === 'function') toast('Quadro actualizado. A carga do Excel só lê e corrige o mês corrente e o mês anterior.');
+    if (typeof toast === 'function') toast('Vendas actualizadas. A carga do Excel só lê e corrige o mês corrente e o mês anterior.');
   } catch (e) {
     console.warn('actualizarQuadroVendas:', e);
-    el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao actualizar o quadro: ${e.message || e}</div>`;
+    el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao actualizar as vendas: ${e.message || e}</div>`;
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -22129,11 +22766,11 @@ async function processVendasFile(event) {
       await substituirValorMesesJanelaNoQuadro(linhasJanela, hoje);
       const remotoErro = window._vendasQuadroRemotoErro ? String(window._vendasQuadroRemotoErro).slice(0, 180) : '';
       quadroMsg = remotoErro
-        ? `<br>• Quadro substituído neste browser em ${janelaTxt}, mas o servidor não gravou (${remotoErro}).`
-        : `<br>• Quadro: R$ de ${janelaTxt} substituído pelo Fatur. do ficheiro (não soma por cima; meses anteriores intactos)`;
+        ? `<br>• Vendas substituídas neste browser em ${janelaTxt}, mas o servidor não gravou (${remotoErro}).`
+        : `<br>• Vendas: R$ de ${janelaTxt} substituído pelo Fatur. do ficheiro (não soma por cima; meses anteriores intactos)`;
     } catch (e) {
       console.warn('quadro janela:', e.message || e);
-      quadroMsg = `<br>• Quadro não actualizado: ${String(e.message || e).slice(0, 160)}`;
+      quadroMsg = `<br>• Vendas não actualizadas: ${String(e.message || e).slice(0, 160)}`;
     }
 
     setStatus(
@@ -35820,7 +36457,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-por-registar-helcio: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-vendas-perdas-mes: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
