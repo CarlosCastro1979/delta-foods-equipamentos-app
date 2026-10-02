@@ -4089,7 +4089,7 @@ var _unused_placeholder = 1;
           <span style="font-size:22px;">👥</span>
           <div>
             <div style="font-weight:600;font-size:15px;">Carregar Lista SAP</div>
-            <div style="font-size:12px;color:var(--muted);">Excel SAP de clientes. Anulados (vendedor 999) são apagados do Supabase.</div>
+            <div style="font-size:12px;color:var(--muted);">Excel SAP de clientes. Anulados (vendedor 999) são apagados do Supabase. Se o ficheiro tiver etiqueta de sensibilidade Microsoft, a leitura pára e a lista já publicada mantém-se.</div>
           </div>
         </div>
         <input type="file" id="dados-sap-input" accept=".xlsx,.xls" style="display:none" onchange="carregarListaSAP(event)">
@@ -9435,27 +9435,114 @@ let pendingVendedorMap = {};
 // ─── CARREGAR LISTA SAP ──────────────────────────────
 let _sapImportBuffer = null; // { novaLista, codsAnulados }
 
+function u8ContemUtf16(u8, texto, limite) {
+  const n = texto.length;
+  const max = Math.min(u8.length, limite) - n * 2;
+  for (let i = 0; i <= max; i++) {
+    let ok = true;
+    for (let j = 0; j < n; j++) {
+      if (u8[i + j * 2] !== texto.charCodeAt(j) || u8[i + j * 2 + 1] !== 0) { ok = false; break; }
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
+/** OLE com EncryptedPackage / EncryptionInfo / DRM — etiqueta Microsoft ou palavra-passe. */
+function oleTemMarcadorProtegido(u8) {
+  const lim = Math.min(u8.length, 256 * 1024);
+  return ['EncryptedPackage', 'EncryptionInfo', 'DRMEncryptedTransform'].some(m => u8ContemUtf16(u8, m, lim));
+}
+
+/**
+ * '' se o ficheiro pode ir ao leitor (.xlsx zip ou .xls antigo).
+ * Texto de erro se estiver vazio, irreconhecível ou protegido.
+ * Não mexe na lista publicada.
+ */
+function diagnosticoExcelListaSap(buf) {
+  let u8;
+  try {
+    u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  } catch (_) {
+    return 'Não foi possível ler o ficheiro. A lista publicada não foi alterada.';
+  }
+  if (!u8 || u8.length < 8) return 'Ficheiro vazio. A lista publicada não foi alterada.';
+  const ole = u8[0] === 0xD0 && u8[1] === 0xCF && u8[2] === 0x11 && u8[3] === 0xE0;
+  const zip = u8[0] === 0x50 && u8[1] === 0x4B;
+  if (ole && oleTemMarcadorProtegido(u8)) {
+    return 'Este Excel está protegido por etiqueta de sensibilidade Microsoft (ou palavra-passe). A app não consegue ler as linhas. A lista publicada não foi alterada. No Excel: Ficheiro → Informações → retira a etiqueta (ou guarda uma cópia sem proteção) e volta a carregar.';
+  }
+  if (!ole && !zip) return 'Formato não reconhecido (não é .xlsx nem .xls). A lista publicada não foi alterada.';
+  return '';
+}
+
+function mensagemErroLeituraExcel(e) {
+  const m = String((e && e.message) || e || '');
+  if (/encrypt|password|senha|proteg|EncryptionInfo/i.test(m)) {
+    return 'Este Excel está protegido (cifra ou etiqueta de sensibilidade). A app não leu as linhas. A lista publicada não foi alterada. Guarda uma cópia sem proteção e volta a carregar.';
+  }
+  return 'Não foi possível ler o Excel' + (m ? ' (' + m.slice(0, 140) + ')' : '') + '. A lista publicada não foi alterada.';
+}
+
+/** Falha de leitura: não deixa uma lista parcial pronta a confirmar. */
+function abortarCargaSAP(msg) {
+  _sapImportBuffer = null;
+  const st = document.getElementById('sap-load-status');
+  if (st) st.style.display = 'none';
+  const resultEl = document.getElementById('sap-result');
+  if (resultEl) {
+    resultEl.style.display = 'block';
+    resultEl.style.border = '1px solid #fecaca';
+    resultEl.style.background = '#fef2f2';
+    resultEl.style.color = '#991b1b';
+    resultEl.textContent = msg;
+  }
+  if (typeof toast === 'function') toast(msg, 'error');
+}
+
 async function carregarListaSAP(event) {
   const file = event.target.files[0];
   if (!file) return;
   event.target.value = '';
 
-  document.getElementById('sap-load-status').style.display = 'none';
-  document.getElementById('sap-result').style.display = 'none';
+  const statusEl = document.getElementById('sap-load-status');
+  const resultEl = document.getElementById('sap-result');
+  if (statusEl) statusEl.style.display = 'none';
+  if (resultEl) {
+    resultEl.style.display = 'none';
+    resultEl.style.border = '1px solid #c8e6c9';
+    resultEl.style.background = '#e8f5e9';
+    resultEl.style.color = '#2e7d32';
+  }
+  // Uma leitura que falhe a meio não pode confirmar a pré-visualização anterior.
+  _sapImportBuffer = null;
 
   toast('A ler ficheiro...');
+
+  try {
 
   if (!window.XLSX) {
     await new Promise((res,rej) => {
       const s = document.createElement('script');
       s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      s.onload = res; s.onerror = rej;
+      s.onload = res; s.onerror = () => rej(new Error('Não foi possível carregar o leitor de Excel'));
       document.head.appendChild(s);
     });
   }
 
   const buf = await file.arrayBuffer();
-  const wb  = window.XLSX.read(buf, {type:'array'});
+  const bloqueio = diagnosticoExcelListaSap(buf);
+  if (bloqueio) {
+    abortarCargaSAP(bloqueio);
+    return;
+  }
+  let wb;
+  try {
+    wb = window.XLSX.read(buf, {type:'array'});
+  } catch (e) {
+    abortarCargaSAP(mensagemErroLeituraExcel(e));
+    return;
+  }
   // Preferir a folha que tem coluna Cliente (nem sempre é a 1.ª).
   let rows = null;
   let headers = [];
@@ -9522,7 +9609,7 @@ async function carregarListaSAP(event) {
   const getCell = (row, i) => i >= 0 ? String(row[i] ?? '').trim() : '';
   const pagtoHeaderNome = iPagto >= 0 ? String(headers[iPagto] || '').trim() : '';
   if (iCliente === -1 || iNomeFinal === -1) {
-    toast('Colunas "Cliente" e "Nome" não encontradas. Verifica o ficheiro.', 'error');
+    abortarCargaSAP('Colunas "Cliente" e "Nome" não encontradas. Verifica o ficheiro. A lista publicada não foi alterada.');
     return;
   }
 
@@ -9589,7 +9676,7 @@ async function carregarListaSAP(event) {
   }
 
   if (!novaLista.length && !codsAnulados.length) {
-    toast('Nenhum cliente válido encontrado. Verifica o ficheiro e o cadastro de vendedores.', 'error');
+    abortarCargaSAP('Nenhum cliente válido encontrado. Verifica o ficheiro e o cadastro de vendedores. A lista publicada não foi alterada.');
     return;
   }
 
@@ -9710,6 +9797,10 @@ async function carregarListaSAP(event) {
       const el = document.getElementById('sap-anulados-registo');
       if (el) el.textContent = 'Não foi possível verificar registos — confirma com cuidado.';
     });
+  }
+
+  } catch (e) {
+    abortarCargaSAP(mensagemErroLeituraExcel(e));
   }
 }
 
@@ -9941,6 +10032,9 @@ async function confirmarCargaSAP() {
   const resultEl = document.getElementById('sap-result');
   resultEl.textContent = msg;
   resultEl.style.display = 'block';
+  resultEl.style.border = '1px solid #c8e6c9';
+  resultEl.style.background = '#e8f5e9';
+  resultEl.style.color = '#2e7d32';
   renderUltimaCargaSAP();
 
   _sapImportBuffer = null;
@@ -36811,7 +36905,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-nf-mesmo-vendedor: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-lista-excel: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
