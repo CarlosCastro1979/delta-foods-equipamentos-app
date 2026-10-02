@@ -109,6 +109,9 @@ for (const name of [
   'vendasISODateOnly',
   'maxDataVendaISO',
   'agregarVendasQuadro',
+  'vendasYmAnterior',
+  'mesesJanelaCargaVendas',
+  'vendaDataNaJanelaCarga',
   'vendaDataCaiEmMesFechado',
   'vendaDataEntraNaCarga',
   'vendaDataAntesDe2025',
@@ -345,9 +348,10 @@ check('carga Set/2026 apaga Ecommerce 14016, grava Lojas online e a segunda não
   };
   const linhas = [{ data: '2026-09-10', valor: 5000, npess: 99520001, tipo: 'OUTRO', cod: '100' }];
   const partes = ctx.classificarLinhasCargaVendas(linhas, fechados, hoje);
-  assert.equal(partes.inserir.length, 0, 'Set/2026 não entra na tabela vendas');
+  assert.equal(partes.janela.length, 1, 'Set/2026 entra na correcção do Fatur.');
   assert.equal(partes.valorHistorico.length, 1);
   assert.equal(ctx.vendaMesQuadroSubstituivel('2026-09', fechados, hoje), true);
+  assert.equal(ctx.vendaMesQuadroSubstituivel('2026-08', fechados, hoje), false);
   let q = ctx.substituirValorMesesFechadosNoQuadro(base, partes.valorHistorico, { mapas, hoje, mesesFechados: fechados });
   assert.equal(celula(q, '2026-09', 'Delta Foods Brasil', 'Ecommerce', 'MARCIO GORGA'), null);
   const lojas = celula(q, '2026-09', 'Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA');
@@ -357,7 +361,7 @@ check('carga Set/2026 apaga Ecommerce 14016, grava Lojas online e a segunda não
   assert.notEqual(lojas.valor, 14016 + 5000, 'não soma por cima do valor antigo');
   assert.equal(celula(q, '2026-08', 'Delta Foods Brasil', 'Horeca', 'HÉLCIO GRÉGIO').valor, 7760, 'mês ausente do ficheiro fica');
   const outraVez = ctx.classificarLinhasCargaVendas(linhas, fechados, hoje);
-  assert.equal(outraVez.inserir.length, 0, 'segunda carga também não grava linhas');
+  assert.equal(outraVez.janela.length, 1, 'segunda carga continua a trazer o Fatur. de Setembro');
   q = ctx.substituirValorMesesFechadosNoQuadro(q, outraVez.valorHistorico, { mapas, hoje, mesesFechados: fechados });
   assert.equal(celula(q, '2026-09', 'Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA').valor, 5000, 'segunda carga não duplica');
   assert.equal(celula(q, '2026-09', 'Delta Foods Brasil', 'Ecommerce', 'MARCIO GORGA'), null);
@@ -460,16 +464,19 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   const proc = extractFn(html, 'processVendasFile');
   assert.ok(proc.includes('indiceColunaValorVenda(headers)'));
   assert.ok(proc.includes('indiceColunaNpessVenda(headers)'));
-  assert.ok(proc.includes('substituirValorHistoricoNoQuadro'));
+  assert.ok(proc.includes('substituirValorMesesJanelaNoQuadro'));
   assert.ok(proc.includes('iNpessVenda >= 0'));
   const act = extractFn(html, 'actualizarQuadroVendas');
   assert.ok(act.includes('decidirActualizarQuadroVendas'));
   assert.ok(act.indexOf('decidirActualizarQuadroVendas') < act.indexOf('somarQuadrosVendas'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-02-nfe-pdf'));
+  assert.ok(sw.includes('v2026-10-02-vendas-dois-meses'));
+  assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
-  assert.ok(html.includes('v2026-10-02-nfe-pdf'));
+  assert.ok(html.includes('v2026-10-02-vendas-dois-meses'));
+  assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));
@@ -716,11 +723,16 @@ async function correrCarga(aoa, opts) {
 }
 
 for (const name of [
-  'normalizeVendaCod', 'formatDateISOLocal', 'parseDateSC', 'vendasHojeISO',
+  'normalizeVendaCod', 'codEmissorVendaAceite', 'formatDateISOLocal', 'parseDateSC', 'vendasHojeISO',
+  'vendasYmAnterior', 'mesesJanelaCargaVendas', 'vendaDataNaJanelaCarga', 'vendaDataAntesDe2025',
+  'vendaDedupKey', 'fundirLinhasVendaMesmoDia', 'getVendasDedupKeySet',
   'mesesFechadosFromCobertura', 'linhaValorQuadroDeExcel', 'formatVendasMesLabel',
   'npessPorCodDeLista', 'normalizarQuadroPersistido', 'instanteQuadroVendas',
   'escolherQuadroVendasMaisRecente', 'salvarVendasQuadroPersistida',
-  'lerVendasQuadroPersistida', 'substituirValorHistoricoNoQuadro', 'processVendasFile',
+  'lerVendasQuadroPersistida', 'substituirValorHistoricoNoQuadro',
+  'substituirValorMesesJanelaNoQuadro', 'detectarColunasVendasQuadro', 'linhaVendaParaSupabase',
+  'aggregateVendasPorMes', 'vendasCoberturaObjToMap', 'mergeCoberturaVendasMesesAbertos',
+  'fixarUltimaDataCoberturaJanela', 'processVendasFile',
 ]) {
   vm.runInContext(extractFn(html, name), ctx);
 }
@@ -755,7 +767,7 @@ checkAsync('carga com «Vendas líq.» substitui Set/2026 e o Supabase antigo n�
   assert.equal(lojas.valor, 4321.55);
   assert.notEqual(lojas.valor, 96570.64);
   const postsVendas = r.fetches.filter(f => f.method === 'POST' && /\/vendas(\?|$)/.test(f.url));
-  assert.equal(postsVendas.length, 0, 'Set/2026 não entra na tabela vendas');
+  assert.equal(postsVendas.length, 1, 'linha nova de Setembro entra na tabela; o Fatur. já substituiu o R$');
   const postQuadro = r.fetches.filter(f => f.method === 'POST' && f.url.includes('lista_clientes'));
   assert.ok(postQuadro.length >= 1, 'a carga grava o quadro no mesmo sítio que a vista lê');
 

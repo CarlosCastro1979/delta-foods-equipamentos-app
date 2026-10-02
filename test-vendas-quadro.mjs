@@ -105,6 +105,9 @@ const fns = [
   'linhasPlVendasQuadro',
   'mapasVendasQuadro',
   'vendasQuadroPassaFiltro',
+  'vendasYmAnterior',
+  'mesesJanelaCargaVendas',
+  'vendaDataNaJanelaCarga',
   'vendaDataCaiEmMesFechado',
   'vendaDataEntraNaCarga',
   'vendaDataAntesDe2025',
@@ -556,7 +559,7 @@ function totalMes(quadro, ym) {
   return Object.values(mes.celulas || {}).reduce((s, c) => ctx.somarValorQuadro(s, c.valor), 0);
 }
 
-check('ficheiro 2025–2026 fechado preenche R$ sem gravar linhas nem duplicar', () => {
+check('ficheiro com 2024, 2025 e Set/Out só substitui o mês corrente e o anterior', () => {
   const fechados = new Set(['2025-01', '2026-09', '2024-03', '2026-10']);
   const base = ctx.quadroVendasVazio();
   base.meses['2025-01'] = {
@@ -606,39 +609,36 @@ check('ficheiro 2025–2026 fechado preenche R$ sem gravar linhas nem duplicar',
   const optHist = { mapas, npessPorCod: opts.npessPorCod, hoje: HOJE, mesesFechados: fechados };
   const partes = ctx.classificarLinhasCargaVendas(ficheiro, fechados, HOJE);
   assert.equal(partes.ignoradasAntes2025, 1, '2024 ignorado por completo');
-  assert.equal(partes.inserir.length, 1, 'só o dia de hoje entra na tabela');
-  assert.equal(partes.inserir[0].data, HOJE);
-  assert.ok(partes.valorHistorico.every(r => r.data !== HOJE && !r.data.startsWith('2024')));
-  assert.equal(partes.valorHistorico.length, 4, 'Jan/2025 e Set/2026 vão só para o R$');
-  assert.ok(!partes.inserir.some(r => r.data.startsWith('2025') || r.data.startsWith('2026-09') || r.data.startsWith('2024')));
+  assert.equal(partes.janela.length, 3, 'só Setembro e Outubro entram');
+  assert.ok(partes.janela.every(r => r.data.startsWith('2026-09') || r.data === HOJE));
+  assert.ok(!partes.janela.some(r => r.data.startsWith('2025') || r.data.startsWith('2024')));
+  assert.equal(ctx.vendaMesQuadroSubstituivel('2025-01', fechados, HOJE), false);
+  assert.equal(ctx.vendaMesQuadroSubstituivel('2026-08', fechados, HOJE), false);
+  assert.equal(ctx.vendaMesQuadroSubstituivel('2026-09', fechados, HOJE), true);
+  assert.equal(ctx.vendaMesQuadroSubstituivel('2026-10', fechados, HOJE), true);
 
-  let q = ctx.substituirValorMesesFechadosNoQuadro(base, partes.valorHistorico, optHist);
-  q = ctx.aplicarCargaAoQuadro(q, partes.inserir, optHist);
+  let q = ctx.substituirValorMesesFechadosNoQuadro(base, partes.janela, optHist);
   const jan = celula(q, '2025-01', 'Delta Foods Brasil', 'Horeca', 'FILIPE NEVES');
-  assert.equal(jan.valor, 350, 'R$ de Jan/2025 igual ao ficheiro, não soma ao que já havia');
-  assert.equal(jan.linhas, 120, 'contagem de linhas já guardada não muda');
+  assert.equal(jan.valor, 999, 'Jan/2025 já gravado não é recalculado');
+  assert.equal(jan.linhas, 120);
   const diogo = celula(q, '2025-01', 'Q Brasil', 'Varejo e Distr. Varejo', 'DIOGO OLIVEIRA');
-  assert.equal(diogo, null, 'célula que o ficheiro não traz sai do mês — não fica a R$ 0');
-  assert.equal(totalMes(q, '2025-01'), 350);
+  assert.equal(diogo.valor, 50, 'célula de Jan/2025 que o ficheiro trazia fica, porque o mês está fora da janela');
+  assert.equal(totalMes(q, '2025-01'), 1049);
   const set = celula(q, '2026-09', 'Delta Foods Brasil', 'Distribuidores', 'MASSIMO BOTTELLO');
-  assert.equal(set.valor, 100);
-  assert.equal(set.linhas, 40);
+  assert.equal(set.valor, 100, 'Setembro passa a ser o Fatur. do ficheiro');
   assert.equal(totalMes(q, '2026-09'), 100);
   const fev = celula(q, '2025-02', 'Delta Foods Brasil', 'Horeca', 'FILIPE NEVES');
   assert.equal(fev.valor, 80, 'mês que o ficheiro não traz fica');
   assert.equal(fev.linhas, 10);
   assert.equal(q.meses['2024-03'], undefined, '2024 não cria mês no quadro');
   const out = celula(q, '2026-10', 'Delta Foods Brasil', 'Ecommerce', 'MARCIO GORGA');
-  assert.equal(out.valor, 1015, 'hoje soma ao R$ já acumulado');
-  assert.equal(out.linhas, 31);
+  assert.equal(out.valor, 15, 'Outubro é substituído pelo Fatur. do ficheiro, não soma ao que já havia');
+  assert.notEqual(out.valor, 1015);
 
-  q = ctx.substituirValorMesesFechadosNoQuadro(q, partes.valorHistorico, optHist);
-  q = ctx.aplicarCargaAoQuadro(q, [], optHist);
-  assert.equal(totalMes(q, '2025-01'), 350, 'segunda leitura não duplica o R$');
-  assert.equal(totalMes(q, '2026-09'), 100);
-  assert.equal(celula(q, '2025-01', 'Delta Foods Brasil', 'Horeca', 'FILIPE NEVES').linhas, 120);
-  assert.equal(celula(q, '2026-10', 'Delta Foods Brasil', 'Ecommerce', 'MARCIO GORGA').valor, 1015);
-  assert.equal(celula(q, '2026-10', 'Delta Foods Brasil', 'Ecommerce', 'MARCIO GORGA').linhas, 31);
+  q = ctx.substituirValorMesesFechadosNoQuadro(q, partes.janela, optHist);
+  assert.equal(totalMes(q, '2025-01'), 1049, 'segunda leitura não mexe em 2025');
+  assert.equal(totalMes(q, '2026-09'), 100, 'segunda leitura não duplica Setembro');
+  assert.equal(celula(q, '2026-10', 'Delta Foods Brasil', 'Ecommerce', 'MARCIO GORGA').valor, 15);
 });
 
 check('linha de 2024 é ignorada', () => {
@@ -668,52 +668,83 @@ check('linha de 2024 é ignorada', () => {
   assert.equal(celula(q, '2024-06', 'Delta Foods Brasil', 'Horeca', 'FILIPE NEVES').linhas, 4);
 });
 
-check('ficheiro só com o dia de hoje não zera o R$ do mês', () => {
-  const fechados = new Set(['2026-09', '2026-10']);
+check('ficheiro com 2019, Setembro e Outubro só corrige esses dois meses e soma a linha repetida', () => {
+  const hoje = '2026-10-02';
+  const fechados = new Set(['2024-06', '2026-08', '2025-01']);
   const base = ctx.quadroVendasVazio();
+  const filipe = {
+    empresa: 'Delta Foods Brasil', canal: 'Horeca', vendedor: 'FILIPE NEVES',
+    valor: 0, linhas: 1, linhasComValor: 1,
+  };
+  base.meses['2026-08'] = {
+    ultima_data: '2026-08-31',
+    celulas: { 'Delta Foods Brasil\tHoreca\tFILIPE NEVES': { ...filipe, valor: 800, linhas: 10 } },
+  };
+  base.meses['2026-09'] = {
+    ultima_data: '2026-09-20',
+    celulas: { 'Delta Foods Brasil\tHoreca\tFILIPE NEVES': { ...filipe, valor: 100, linhas: 4 } },
+  };
   base.meses['2026-10'] = {
+    ultima_data: '2026-10-01',
     celulas: {
-      'Delta Foods Brasil\tHoreca\tFILIPE NEVES': {
-        empresa: 'Delta Foods Brasil', canal: 'Horeca', vendedor: 'FILIPE NEVES',
-        valor: 1000, linhas: 40, linhasComValor: 40,
+      'Delta Foods Brasil\tEcommerce\tMARCIO GORGA': {
+        empresa: 'Delta Foods Brasil', canal: 'Ecommerce', vendedor: 'MARCIO GORGA',
+        valor: 50, linhas: 2, linhasComValor: 2,
       },
     },
   };
-  const soHoje = [{ cod: '9', data: HOJE, tipo: 'OUTRO', valor: 15, npess: 99520010 }];
-  const partes = ctx.classificarLinhasCargaVendas(soHoje, fechados, HOJE);
-  assert.equal(partes.valorHistorico.length, 0, 'o dia de hoje não repõe o mês');
-  assert.equal(partes.inserir.length, 1);
-  const optHoje = { mapas, hoje: HOJE, mesesFechados: fechados };
-  let q = ctx.substituirValorMesesFechadosNoQuadro(base, soHoje, optHoje);
-  assert.equal(celula(q, '2026-10', 'Delta Foods Brasil', 'Horeca', 'FILIPE NEVES').valor, 1000);
-  q = ctx.aplicarCargaAoQuadro(q, partes.inserir, optHoje);
-  const cel = celula(q, '2026-10', 'Delta Foods Brasil', 'Horeca', 'FILIPE NEVES');
-  assert.equal(cel.valor, 1015);
-  assert.equal(cel.linhas, 41);
-  assert.notEqual(cel.valor, 15);
-
-  const outrosDias = [
-    { cod: '8', data: '2026-10-02', tipo: 'OUTRO', valor: 400, npess: 99520010 },
-    { cod: '9', data: HOJE, tipo: 'OUTRO', valor: 15, npess: 99520010 },
+  base.meses['2024-06'] = {
+    celulas: { 'Delta Foods Brasil\tHoreca\tFILIPE NEVES': { ...filipe, valor: 10, linhas: 4 } },
+  };
+  const ficheiro = [
+    { cod: '1', data: '2019-09-15', tipo: 'OUTRO', valor: 9999, npess: 99520010 },
+    { cod: '1', data: '2024-06-02', tipo: 'OUTRO', valor: 5000, npess: 99520010 },
+    { cod: '1', data: '2026-08-31', tipo: 'OUTRO', valor: 12345, npess: 99520010 },
+    { cod: '444540', data: '2026-09-10', tipo: 'OUTRO', valor: 200, npess: 99520010 },
+    { cod: '444540', data: '2026-09-10', tipo: 'OUTRO', valor: 50, npess: 99520010 },
+    { cod: 'BR00002', data: '2026-10-01', tipo: 'GRÃO', valor: -100, npess: 99520001 },
+    { cod: 'BR00002', data: '2026-10-01', tipo: 'GRÃO', valor: '57,58-', npess: 99520001 },
   ];
-  const misto = ctx.classificarLinhasCargaVendas(outrosDias, fechados, HOJE);
-  assert.equal(misto.valorHistorico.length, 0, 'outros dias do mês de hoje não substituem o mês');
-  q = ctx.substituirValorMesesFechadosNoQuadro(base, misto.valorHistorico, optHoje);
-  assert.equal(totalMes(q, '2026-10'), 1000);
+  const partes = ctx.classificarLinhasCargaVendas(ficheiro, fechados, hoje);
+  assert.equal(partes.janela.length, 4);
+  assert.ok(partes.janela.every(r => r.data.startsWith('2026-09') || r.data.startsWith('2026-10')));
+  assert.equal(partes.ignoradasAntes2025, 2);
+  assert.equal(partes.ignoradasOutroDia, 1);
+  const opt = { mapas, hoje, mesesFechados: fechados };
+  const keys = new Set();
+  const soDedup = linhasNovas(partes.janela, keys);
+  assert.equal(soDedup.length, 2, 'o dedup cliente+data+tipo ficava só com uma linha de cada');
+  const qDedup = ctx.substituirValorMesesFechadosNoQuadro(base, soDedup, opt);
+  const q = ctx.substituirValorMesesFechadosNoQuadro(base, partes.janela, opt);
+  assert.equal(totalMes(q, '2026-09'), 250, 'a segunda linha do mesmo cliente/dia/tipo soma');
+  assert.equal(totalMes(qDedup, '2026-09'), 200, 'se o dedup deitasse a linha fora, Setembro ficava curto');
+  assert.equal(totalMes(q, '2026-10'), -157.58);
+  assert.equal(totalMes(q, '2026-08'), 800, 'Agosto gravado não muda');
+  assert.equal(celula(q, '2024-06', 'Delta Foods Brasil', 'Horeca', 'FILIPE NEVES').valor, 10);
+  assert.equal(q.meses['2019-09'], undefined);
+  assert.equal(q.meses['2026-09'].ultima_data, '2026-09-10');
+  assert.equal(q.meses['2026-10'].ultima_data, '2026-10-01');
+  assert.equal(ctx.textoAtualizacaoQuadroMes(q, '2026-09', { hoje }), 'Atualizado até 10/09/2026');
+  assert.equal(ctx.textoAtualizacaoQuadroMes(q, '2026-10', { hoje }), 'Atualizado até 01/10/2026');
+  const q2 = ctx.substituirValorMesesFechadosNoQuadro(q, partes.janela, opt);
+  assert.equal(totalMes(q2, '2026-09'), 250, 'segunda carga não soma por cima');
+  assert.equal(totalMes(q2, '2026-10'), -157.58);
+  assert.equal(totalMes(q2, '2026-08'), 800);
 });
 
 check('processVendasFile actualiza o quadro sem varrer a base', () => {
   const proc = extractFn(html, 'processVendasFile');
-  assert.ok(proc.includes('aplicarFaturDoDiaAoQuadro(candidatos, newVendas, diaAlvo, mesesFechados)'));
-  assert.ok(proc.includes('fundirLinhasVendaMesmoDia(candidatos)'));
-  assert.ok(proc.includes('aplicarFaturDoDiaAoQuadro(candidatos, [], diaAlvo, mesesFechados)'), 'dia já gravado ainda repõe o Fatur.');
-  assert.ok(proc.includes('vendasMesSoTemEsteDia'), 'mês que só tem um dia volta a aceitar esse Excel');
+  assert.ok(proc.includes('substituirValorMesesJanelaNoQuadro(linhasJanela, hoje)'));
+  assert.ok(proc.indexOf('substituirValorMesesJanelaNoQuadro(linhasJanela, hoje)') < proc.indexOf('getVendasDedupKeySet'));
+  assert.ok(proc.indexOf('substituirValorMesesJanelaNoQuadro(linhasJanela, hoje)') < proc.indexOf('fundirLinhasVendaMesmoDia(linhasJanela)'));
+  assert.ok(proc.includes('fundirLinhasVendaMesmoDia(linhasJanela)'));
+  assert.ok(proc.includes('meses: mesesDedup'));
+  assert.ok(!proc.includes('aplicarFaturDoDiaAoQuadro'));
+  assert.ok(!proc.includes('vendasMesSoTemEsteDia'));
   assert.ok(proc.includes('codEmissorVendaAceite(codRaw)'));
-  assert.ok(proc.includes('substituirValorHistoricoNoQuadro(linhasValorHistorico, hoje, mesesFechados)'));
+  assert.ok(proc.includes('vendaDataNaJanelaCarga'));
   assert.ok(proc.includes('vendaDataAntesDe2025'));
-  assert.ok(proc.includes('linhaValorQuadroDeExcel'));
-  assert.ok(proc.indexOf('vendaDataAntesDe2025') < proc.indexOf('candidatos.push'));
-  assert.ok(proc.indexOf('vendaDataCaiEmMesFechado') < proc.indexOf('row[iPeso]'));
+  assert.ok(proc.indexOf('vendaDataNaJanelaCarga') < proc.indexOf('row[iPeso]'));
   assert.ok(proc.includes('linhaVendaParaSupabase'));
   assert.ok(!proc.includes('actualizarQuadroVendas'));
   assert.ok(!proc.includes('getVendas('));
@@ -723,9 +754,13 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(html.includes('onclick="actualizarQuadroVendas()"'));
   assert.ok(!html.includes('id="dados-vendas-quadro"'));
   assert.ok(html.includes('Por classificar'));
-  assert.ok(html.includes('O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.'));
+  assert.ok(html.includes('A carga só lê e corrige o mês corrente e o mês anterior'));
+  assert.ok(!html.includes('desde ~2019'));
+  assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-02-nfe-pdf'));
+  assert.ok(sw.includes('v2026-10-02-vendas-dois-meses'));
+  assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
+  assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-vendas-1out'));
   assert.ok(!html.includes('v2026-10-01-vendas-1out'));
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
@@ -738,7 +773,9 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-02-nfe-pdf'));
+  assert.ok(html.includes('v2026-10-02-vendas-dois-meses'));
+  assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
+  assert.ok(!html.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
   assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));

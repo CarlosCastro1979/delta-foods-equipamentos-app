@@ -312,10 +312,10 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(!html.includes('v2026-10-01-vendas-emissor'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
-  assert(!sw.includes('v2026-10-01-vendas-emissor'), 'service worker actualizado');
+  assert(html.includes('v2026-10-02-vendas-dois-meses'), 'service worker referido no index');
+  assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
+  assert(sw.includes('v2026-10-02-vendas-dois-meses'), 'service worker actualizado');
+  assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
 
   const homeDados = html.slice(html.indexOf('class="home-dados-card"'), html.indexOf('class="home-dados-card"') + 700);
   assert(homeDados.includes('ZIP de XML e PDF da TTI'), 'o cartão Dados na home fala do ZIP de XML e PDF da TTI');
