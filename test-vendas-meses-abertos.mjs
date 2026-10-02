@@ -409,7 +409,7 @@ check('texto da cobertura diz que a carga só lê o mês corrente e o anterior',
   assert.ok(!html.includes('só entram linhas do dia local de hoje'));
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('desde 2019'));
-  assert.ok(html.includes('v2026-10-02-nf-mesmo-vendedor'));
+  assert.ok(html.includes('v2026-10-02-pdf-cockpit'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
@@ -426,7 +426,7 @@ check('texto da cobertura diz que a carga só lê o mês corrente e o anterior',
   assert.ok(html.includes('Os meses mais antigos ficam como estão'));
   assert.ok(!html.includes('Até Jun/2026 = fechado. De Jul/2026 em diante'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-02-nf-mesmo-vendedor'));
+  assert.ok(sw.includes('v2026-10-02-pdf-cockpit'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));

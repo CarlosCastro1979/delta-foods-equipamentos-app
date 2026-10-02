@@ -4131,7 +4131,8 @@ var _unused_placeholder = 1;
             <div style="font-weight:600;font-size:15px;">ZIP de XML e PDF da TTI</div>
             <div style="font-size:12px;color:var(--muted);line-height:1.5;">
               Ficheiro que sai do cockpit TTIN: XML de NF-e e o PDF de cada nota, dentro de um zip. Um XML ou um PDF avulso também entra.<br>
-              O PDF liga-se à nota pelo nome: primeiro a chave de 44 dígitos, depois o número da NF. Um PDF sem par não aparece como nota nova.<br>
+              O PDF liga-se à nota pelo nome: primeiro a chave de 44 dígitos, depois o número da NF. Vale NFe{chave}.pdf e a pasta do cockpit com barra invertida (NFe{chave}.pdf ao lado de NFe{chave}_prot.xml). Um PDF sem par não aparece como nota nova.<br>
+              O PDF que não cabe na mesma célula da lista fica gravado à parte e abre na mesma.<br>
               Cruza o CNPJ/CPF do destinatário com a lista de clientes. CPF sem vendedor fica no Marcio Gorga (Ecommerce, 99520001). CNPJ que já têm vendedor não mudam.<br>
               A mesma chave de NF não duplica. A gravação (nota e PDF) é só no fim da carga.<br>
               Consulta na Previsão de vendas e no menu Vendas de cada canal: clique no número da NF para abrir o PDF. Acesso: os mesmos admins deste ecrã.
@@ -12889,11 +12890,14 @@ function pvShowView(view) {
 const NFE_STORE_ID = 'nfe_emitidas';
 const NFE_IDB_KEY = 'delta_nfe_emitidas';
 const NFE_PDF_IDB_KEY = 'delta_nfe_pdfs';
+const NFE_PDF_CHUNK_PREFIX = 'nfe_pdfs_';
 let _nfeNotas = [];
 let _nfeFiltro = '';
 let _nfeStatusMsg = '';
 let _nfeGen = 0;
 let _nfeBusy = false;
+/** PDF já gravados na nuvem (célula da nota ou blocos nfe_pdfs_N), chave → { nome, b64 }. */
+let _nfePdfsNuvem = {};
 
 function nfeListaTemDocs(lista) {
   for (const c of lista || []) {
@@ -12921,6 +12925,43 @@ function nfePrepararChrome() {
   }
 }
 
+async function nfeLerPdfsNuvem(nChunks) {
+  const n = Number(nChunks) || 0;
+  const pdfs = {};
+  for (let i = 0; i < n; i++) {
+    const res = await fetch(
+      `${LISTA_CLIENTES_SUPA_URL}?id=eq.${NFE_PDF_CHUNK_PREFIX}${i}&select=data`,
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const rows = await res.json();
+    const data = rows && rows[0] && rows[0].data;
+    const lista = data && (Array.isArray(data.pdfs) ? data.pdfs : (Array.isArray(data) ? data : []));
+    const map = typeof nfeMapaPdfsDeChunks === 'function' ? nfeMapaPdfsDeChunks([lista]) : {};
+    Object.assign(pdfs, map);
+  }
+  return pdfs;
+}
+
+async function nfeLimparChunksPdf(keep) {
+  const res = await fetch(
+    `${LISTA_CLIENTES_SUPA_URL}?id=like.${NFE_PDF_CHUNK_PREFIX}*&select=id`,
+    { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+  );
+  if (!res.ok) return;
+  const rows = await res.json();
+  const toDelete = (rows || []).map(r => r && r.id).filter(id => {
+    const m = String(id || '').match(new RegExp('^' + NFE_PDF_CHUNK_PREFIX + '(\\d+)$'));
+    return m && parseInt(m[1], 10) >= keep;
+  });
+  if (!toDelete.length) return;
+  const inList = toDelete.map(id => `"${id}"`).join(',');
+  await fetch(`${LISTA_CLIENTES_SUPA_URL}?id=in.(${inList})`, {
+    method: 'DELETE',
+    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY },
+  });
+}
+
 async function nfeLoadRemote() {
   const res = await fetch(
     `${LISTA_CLIENTES_SUPA_URL}?id=eq.${NFE_STORE_ID}&select=data`,
@@ -12929,9 +12970,23 @@ async function nfeLoadRemote() {
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const rows = await res.json();
   const data = rows && rows[0] && rows[0].data;
-  if (data && Array.isArray(data.notas)) return data.notas;
-  if (Array.isArray(data)) return data;
-  return [];
+  let notas = [];
+  if (data && Array.isArray(data.notas)) notas = data.notas;
+  else if (Array.isArray(data)) notas = data;
+  const pdfs = {};
+  notas.forEach(n => {
+    if (!n || !n.chave || typeof n.pdfBase64 !== 'string' || !n.pdfBase64) return;
+    pdfs[n.chave] = { nome: n.pdfNome || '', b64: n.pdfBase64 };
+  });
+  const nChunks = data && Number(data.__pdfChunks) || 0;
+  if (nChunks > 0) {
+    try {
+      Object.assign(pdfs, await nfeLerPdfsNuvem(nChunks));
+    } catch (e) {
+      console.warn('nfe pdf nuvem', e);
+    }
+  }
+  return { notas, pdfs };
 }
 
 function nfeMapaPdfs(notas, prev) {
@@ -12970,12 +13025,40 @@ async function nfePersistir(notas) {
     ? nfeNotasParaNuvem(arr)
     : { notas: leves, pdfNaNuvem: false, pdfsFora: 0 };
   const notasNuvem = nuvem.notas || leves;
+  const fora = typeof nfePdfsForaDaCelula === 'function'
+    ? nfePdfsForaDaCelula(arr, notasNuvem)
+    : [];
+  const chunks = typeof nfePartirPdfsEmChunks === 'function'
+    ? nfePartirPdfsEmChunks(fora)
+    : [];
+  const prefer = Object.assign({}, HEADERS, { Prefer: 'resolution=merge-duplicates' });
+  for (let i = 0; i < chunks.length; i++) {
+    const resChunk = await fetch(LISTA_CLIENTES_SUPA_URL, {
+      method: 'POST',
+      headers: prefer,
+      body: JSON.stringify({
+        id: NFE_PDF_CHUNK_PREFIX + i,
+        data: { __format: 'nfe_pdfs', pdfs: chunks[i] },
+        atualizado_em: ts,
+      }),
+    });
+    if (!resChunk.ok) {
+      const t = await resChunk.text().catch(() => '');
+      throw new Error('Supabase HTTP ' + resChunk.status + (t ? ' ' + t.slice(0, 140) : ''));
+    }
+  }
   const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
     method: 'POST',
-    headers: Object.assign({}, HEADERS, { Prefer: 'resolution=merge-duplicates' }),
+    headers: prefer,
     body: JSON.stringify({
       id: NFE_STORE_ID,
-      data: { __format: 'nfe_emitidas', __total: notasNuvem.length, notas: notasNuvem },
+      data: {
+        __format: 'nfe_emitidas',
+        __total: notasNuvem.length,
+        __pdfChunks: chunks.length,
+        __pdfPrefix: NFE_PDF_CHUNK_PREFIX,
+        notas: notasNuvem,
+      },
       atualizado_em: ts,
     }),
   });
@@ -12983,6 +13066,8 @@ async function nfePersistir(notas) {
     const t = await res.text().catch(() => '');
     throw new Error('Supabase HTTP ' + res.status + (t ? ' ' + t.slice(0, 140) : ''));
   }
+  try { await nfeLimparChunksPdf(chunks.length); } catch (e) { console.warn('nfe pdf chunks', e); }
+  _nfePdfsNuvem = nfeMapaPdfs(arr, {});
   return nuvem;
 }
 
@@ -13038,13 +13123,24 @@ async function nfeHidrate() {
     if (packed && Array.isArray(packed.notas)) local = packed.notas;
   } catch (_) {}
   const pdfsLocais = await nfeLerPdfsLocais();
-  if (typeof nfeJuntarPdfsLocais === 'function') local = nfeJuntarPdfsLocais(local, pdfsLocais);
   let remote = null;
-  try { remote = await nfeLoadRemote(); } catch (_) { remote = null; }
+  let pdfsNuvem = {};
+  try {
+    const pack = await nfeLoadRemote();
+    if (pack && Array.isArray(pack.notas)) {
+      remote = pack.notas;
+      pdfsNuvem = pack.pdfs || {};
+    } else if (Array.isArray(pack)) {
+      remote = pack;
+    }
+  } catch (_) { remote = null; }
+  _nfePdfsNuvem = pdfsNuvem;
+  const pdfsTodos = Object.assign({}, pdfsNuvem, pdfsLocais);
+  if (typeof nfeJuntarPdfsLocais === 'function') local = nfeJuntarPdfsLocais(local, pdfsTodos);
   const catalogoNomes = await nfeCatalogoPronto();
   if (remote == null) {
     const reap = nfeAplicarRegraGuardada(local, catalogoNomes);
-    _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsLocais) : reap.notas;
+    _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsTodos) : reap.notas;
     if (reap.alteradas > 0) {
       try { await idbSet(NFE_IDB_KEY, { notas: reap.notas.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n)), ts: new Date().toISOString() }); } catch (_) {}
     }
@@ -13052,7 +13148,7 @@ async function nfeHidrate() {
   }
   const merged = nfeMergeNotas(local, remote);
   const reap = nfeAplicarRegraGuardada(merged.notas, catalogoNomes);
-  _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsLocais) : reap.notas;
+  _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsTodos) : reap.notas;
   const localSet = new Set(local.map(n => n && n.chave).filter(Boolean));
   const remoteBy = new Map();
   remote.forEach(n => { if (n && n.chave && !remoteBy.has(n.chave)) remoteBy.set(n.chave, n); });
@@ -13063,12 +13159,21 @@ async function nfeHidrate() {
     if (!r) return true;
     return typeof nfeAtribDifere === 'function' ? nfeAtribDifere(r, n) : false;
   });
-  if (remotoDesatualizado && reap.notas.length) {
-    await nfePersistir(reap.notas);
+  if (remotoDesatualizado && _nfeNotas.length) {
+    await nfePersistir(_nfeNotas);
   } else if (faltaLocal || reap.alteradas > 0) {
     try {
       const leves = reap.notas.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n));
       await idbSet(NFE_IDB_KEY, { notas: leves, ts: new Date().toISOString() });
+    } catch (_) {}
+  }
+  const faltaNoIdb = Object.keys(pdfsNuvem).some(ch => {
+    const loc = pdfsLocais[ch];
+    return !(loc && (loc.b64 || loc.pdfBase64));
+  });
+  if (faltaNoIdb) {
+    try {
+      await idbSet(NFE_PDF_IDB_KEY, { pdfs: nfeMapaPdfs(_nfeNotas, pdfsLocais), ts: new Date().toISOString() });
     } catch (_) {}
   }
 }
@@ -13185,17 +13290,24 @@ async function nfeOnFiles(ev) {
       : { notas: merged.notas, ligados: 0, soltos: pdfs.length };
     const reap = nfeAplicarRegraGuardada(associado.notas, catalogoNomes);
     _nfeNotas = reap.notas;
-    let nuvem = null;
-    if (merged.novas > 0 || reap.alteradas > 0 || associado.ligados > 0) nuvem = await nfePersistir(_nfeNotas);
+    const pdfsNuvem = _nfePdfsNuvem || {};
+    const faltaBinarioNuvem = pdfs.length > 0 && (reap.notas || []).some(n => {
+      if (!n || !n.chave || typeof nfeTemPdfBinario !== 'function' || !nfeTemPdfBinario(n)) return false;
+      const hit = pdfsNuvem[n.chave];
+      return !(hit && (hit.b64 || hit.pdfBase64));
+    });
+    if (merged.novas > 0 || reap.alteradas > 0 || associado.ligados > 0 || faltaBinarioNuvem) {
+      await nfePersistir(_nfeNotas);
+    }
     const com = atrib.filter(n => n.status === 'unico').length;
     const sem = atrib.filter(n => n.status === 'sem_cliente').length;
     const multi = atrib.filter(n => n.status === 'cnpj_multiplos').length;
-    const pdfOnde = !associado.ligados
-      ? ''
-      : (nuvem && nuvem.pdfsFora
-        ? ' · PDF neste browser; na nuvem ficou a referência'
-        : ' · PDF gravado com a nota');
-    const pdfTxt = (pdfs.length ? ` · ${associado.ligados} PDF associado${associado.ligados === 1 ? '' : 's'}` : '')
+    const pdfOnde = (associado.ligados || faltaBinarioNuvem) ? ' · PDF gravado com a nota' : '';
+    const pdfTxt = (pdfs.length
+      ? (associado.ligados
+        ? ` · ${associado.ligados} PDF associado${associado.ligados === 1 ? '' : 's'}`
+        : '')
+      : '')
       + (associado.soltos ? ` · ${associado.soltos} PDF sem nota` : '')
       + pdfOnde;
     _nfeStatusMsg = parsed.length
@@ -13207,14 +13319,16 @@ async function nfeOnFiles(ev) {
         : 'O PDF não corresponde a nenhuma nota já carregada.');
     if (typeof toast === 'function') {
       toast(merged.novas > 0
-        ? ('NF guardadas. ' + merged.novas + ' novas' + (associado.ligados ? (', ' + associado.ligados + ' com PDF.') : '.'))
+        ? ('NF guardadas. ' + merged.novas + ' novas' + (associado.ligados ? (', ' + associado.ligados + ' com PDF.') : (faltaBinarioNuvem ? ', com PDF.' : '.')))
         : (associado.ligados > 0
           ? ('PDF associado a ' + associado.ligados + (associado.ligados === 1 ? ' nota.' : ' notas.'))
-          : (reap.alteradas > 0
-            ? 'CPF sem vendedor ficou no Marcio Gorga (Ecommerce).'
-            : (pdfs.length && !parsed.length
-              ? 'O PDF não corresponde a nenhuma nota já carregada.'
-              : 'Nenhuma nota nova — estas chaves já estavam guardadas.'))));
+          : (faltaBinarioNuvem
+            ? 'PDF gravado com a nota.'
+            : (reap.alteradas > 0
+              ? 'CPF sem vendedor ficou no Marcio Gorga (Ecommerce).'
+              : (pdfs.length && !parsed.length
+                ? 'O PDF não corresponde a nenhuma nota já carregada.'
+                : 'Nenhuma nota nova — estas chaves já estavam guardadas.')))));
     }
   } catch (e) {
     console.error(e);
@@ -36811,7 +36925,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-nf-mesmo-vendedor: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-pdf-cockpit: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

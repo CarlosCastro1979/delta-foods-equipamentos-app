@@ -312,10 +312,10 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
+  assert(html.includes('v2026-10-02-pdf-cockpit'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-02-pdf-cockpit'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
 
@@ -628,6 +628,102 @@ function testPdfZipMinimo() {
   assert(pequeno.pdfNaNuvem && pequeno.notas[0].pdfBase64 === 'QQ==', 'PDF pequeno pode ir com a nota');
 }
 
+function zipSemPdf(zipPath) {
+  const buf = fs.readFileSync(zipPath);
+  const entries = nfe.nfeReadZipEntries(buf);
+  const xmls = entries.filter(e => e.xml != null);
+  const pdfs = entries.filter(e => e.pdfBase64);
+  const notas = xmls.map(x => nfe.nfeParseXml(x.xml, x.name)).filter(Boolean);
+  const assoc = nfe.nfeAssociarPdfs(notas, pdfs);
+  const sem = assoc.notas.filter(n => !n.pdfBase64);
+  return { xmls: xmls.length, pdfs: pdfs.length, parsed: notas.length, ligados: assoc.ligados, soltos: assoc.soltos, sem: sem.length };
+}
+
+function testPdfNomesCockpit() {
+  const chave = '35261014830817000100550020001022771810192077';
+  const xml = `<?xml version="1.0"?><nfeProc><NFe><infNFe Id="NFe${chave}"><ide><serie>2</serie><nNF>102277</nNF><dhEmi>2026-10-02T10:00:00-03:00</dhEmi></ide><emit><CNPJ>14830817000100</CNPJ></emit><dest><CNPJ>03852638000149</CNPJ><xNome>CLIENTE</xNome></dest><total><ICMSTot><vNF>10.50</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
+  const pdf = Buffer.from('%PDF-cockpit-pasta');
+  const pasta = '14830817000100_Delta Foods Brasil - SP\\02_10_2026__02_10_2026\\Saida\\';
+  const zip = makeZip([
+    { name: pasta + 'NFe' + chave + '_prot.xml', data: Buffer.from(xml) },
+    { name: pasta + 'NFe' + chave + '.pdf', data: pdf },
+  ]);
+  const entries = nfe.nfeReadZipEntries(zip);
+  const xmls = entries.filter(e => e.xml);
+  const pdfs = entries.filter(e => e.pdfBase64);
+  assert(xmls.length === 1 && pdfs.length === 1, 'a pasta com barra invertida traz o XML e o PDF');
+  const nota = nfe.nfeParseXml(xmls[0].xml, xmls[0].name);
+  assert(nota && nota.chave === chave, 'infNFe é a chave do nome');
+  assert(nfe.nfeChaveNoNome(pdfs[0].name) === chave, 'a chave do PDF é a do XML');
+  const assoc = nfe.nfeAssociarPdfs([nota], pdfs);
+  assert(assoc.ligados === 1 && assoc.soltos === 0 && assoc.notas.every(n => n.pdfBase64), '0 XML sem PDF neste formato');
+  assert(assoc.notas[0].pdfNome === 'NFe' + chave + '.pdf', 'o nome gravado é NFe{chave}.pdf');
+  assert(Buffer.from(assoc.notas[0].pdfBase64, 'base64').equals(pdf), 'o binário é o PDF ao lado do _prot.xml');
+
+  const antigo = nfe.nfeAssociarPdfs(
+    [{ chave: chave, numero: '102277' }],
+    [{ name: 'NFe' + chave + '.pdf', pdfBase64: Buffer.from('%PDF-antigo').toString('base64') }]
+  );
+  assert(antigo.ligados === 1 && antigo.notas[0].pdfNome === 'NFe' + chave + '.pdf', 'o formato antigo NFe{chave}.pdf continua a ligar');
+
+  const guardada = { chave: chave, numero: '102277' };
+  const outra = nfe.nfeAssociarPdfs(nfe.nfeMergeNotas([guardada], [nota]).notas, pdfs);
+  assert(outra.notas.length === 1 && outra.ligados === 1 && outra.notas[0].pdfBase64, 'nota já gravada sem PDF recebe o PDF na carga seguinte');
+
+  const este = '/home/ubuntu/.cursor/projects/workspace/uploads/zipoutput4279624288744104709_7bcd.zip';
+  const anterior = '/home/ubuntu/.cursor/projects/workspace/uploads/zipoutput2931485085134692785_ae6b.zip';
+  if (fs.existsSync(este)) {
+    const r = zipSemPdf(este);
+    assert(r.xmls === 18 && r.pdfs === 18 && r.parsed === 18 && r.sem === 0 && r.soltos === 0, 'este zip fica com 0 XML sem PDF, veio ' + JSON.stringify(r));
+  }
+  if (fs.existsSync(anterior)) {
+    const r = zipSemPdf(anterior);
+    assert(r.xmls === 49 && r.pdfs === 49 && r.parsed === 49 && r.sem === 0 && r.soltos === 0, 'o zip anterior não piora, veio ' + JSON.stringify(r));
+  }
+}
+
+function testPdfChunks() {
+  const pequeno = nfe.nfeNotasParaNuvem([
+    { chave: 'A', numero: '1', pdfNome: 'A.pdf', pdfBase64: 'QQ==' },
+  ]);
+  assert(pequeno.pdfsFora === 0, 'um PDF pequeno fica na célula');
+  assert(nfe.nfePdfsForaDaCelula(
+    [{ chave: 'A', pdfBase64: 'QQ==', pdfNome: 'A.pdf' }],
+    pequeno.notas
+  ).length === 0, 'o que cabe na célula não vai para bloco');
+
+  const grande = 'B'.repeat(Math.floor(nfe.NFE_NUVEM_JSON_MAX / 2) + 2000);
+  const notas = [1, 2, 3].map(i => ({
+    chave: 'K' + i,
+    numero: String(i),
+    pdfNome: 'K' + i + '.pdf',
+    pdfBase64: grande + i,
+  }));
+  const nuvem = nfe.nfeNotasParaNuvem(notas);
+  assert(nuvem.pdfsFora > 0, 'três PDF grandes não cabem todos na célula');
+  const fora = nfe.nfePdfsForaDaCelula(notas, nuvem.notas);
+  assert(fora.length === nuvem.pdfsFora, 'os PDF tirados da célula são os que faltam gravar');
+  const chunks = nfe.nfePartirPdfsEmChunks(fora);
+  assert(chunks.length >= 1, 'há pelo menos um bloco');
+  chunks.forEach(bloco => {
+    const tam = JSON.stringify({ __format: 'nfe_pdfs', pdfs: bloco }).length;
+    assert(tam <= nfe.NFE_NUVEM_JSON_MAX || bloco.length === 1, 'cada bloco cabe na célula ou é um PDF só, veio ' + tam);
+  });
+  const mapa = nfe.nfeMapaPdfsDeChunks(chunks);
+  assert(Object.keys(mapa).length === fora.length, 'o mapa repõe cada PDF tirado da célula');
+  const leves = nuvem.notas.map(n => Object.assign({}, n));
+  const juntos = nfe.nfeJuntarPdfsLocais(leves, mapa);
+  notas.forEach(n => {
+    const hit = juntos.find(x => x.chave === n.chave);
+    assert(hit && hit.pdfBase64 === n.pdfBase64, 'depois dos blocos a nota ' + n.chave + ' tem o PDF');
+  });
+
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  assert(html.includes('__pdfChunks'), 'a célula das NF indica os blocos de PDF');
+  assert(html.includes('nfe_pdfs_'), 'os PDF que não cabem gravam-se em nfe_pdfs_');
+  assert(!html.includes('na nuvem ficou a referência'), 'a carga já não diz que o PDF ficou só de referência');
+}
+
 async function testCliqueSemPdf() {
   const sem = nfe.nfePdfDaNota({ chave: 'H1', numero: '10' }, null);
   assert(sem.ok === false && sem.msg === 'Esta NF não tem PDF.', 'nota antiga sem PDF');
@@ -787,6 +883,8 @@ testHorecaNaoListaEcommerce();
 testXmlAvulso();
 testUiCarga();
 testPdfZipMinimo();
+testPdfNomesCockpit();
+testPdfChunks();
 const zipPath = findZip();
 if (!zipPath) {
   console.log('SKIP zip: ficheiro do cockpit não está no repo (dados de clientes).');
