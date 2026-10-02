@@ -30978,7 +30978,7 @@ async function mc00FetchAllOccParams() {
   return all;
 }
 
-/** Stock SAP DFB (enrich). Falha → {} (catálogo continua com occ_params). */
+/** Stock SAP DFB (enrich). sap_data vazio ou falha → {} ; os códigos vêm da cópia na cloud. */
 async function mc00FetchSapStockByEan() {
   const eanMap = {};
   try {
@@ -31022,9 +31022,130 @@ async function mc00FetchSapStockByEan() {
 /** Categorias do Cadastro (occ_params) — mesmas opções da aba Cadastro. */
 let _mc00CadCats = [];
 
+function mc00PushSapCode(map, ean, code) {
+  const e = String(ean || '').trim();
+  const c = String(code || '').trim();
+  if (!e || !c) return;
+  if (!map[e]) map[e] = [];
+  if (!map[e].includes(c)) map[e].push(c);
+}
+
+async function mc00FetchPagedJson(pathAndQuery) {
+  const page = 1000;
+  let offset = 0;
+  const all = [];
+  const join = pathAndQuery.includes('?') ? '&' : '?';
+  for (;;) {
+    const res = await fetch(
+      `${MC00_SB}${pathAndQuery}${join}limit=${page}&offset=${offset}`,
+      { headers: mc00ApiHeaders() }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const chunk = await res.json();
+    if (!Array.isArray(chunk) || !chunk.length) break;
+    all.push(...chunk);
+    if (chunk.length < page) break;
+    offset += page;
+  }
+  return all;
+}
+
 /**
- * Catálogo MC00 = Cadastro de Artigos (occ_params) + enrich stock SAP.
- * Sem código SAP = descontinuado / sem stock → excluído do picker.
+ * Códigos SAP já gravados na cloud, por EAN.
+ * logistica_stock.sap_data da DFB pode ficar [] quando o slot SAP recebe o Excel WMS.
+ * margens.material e logistica_vendas.mat_code (empresa DFB) são a cópia que fica.
+ */
+async function mc00FetchCloudSapCodesByEan() {
+  const byEan = {};
+  try {
+    const rows = await mc00FetchPagedJson('/margens?select=ean,material');
+    rows.forEach(r => mc00PushSapCode(byEan, r.ean, r.material));
+  } catch (e) {
+    console.warn('[MC00] margens indisponível:', e);
+  }
+  try {
+    const rows = await mc00FetchPagedJson('/logistica_vendas?select=ean,mat_code&empresa=eq.DFB');
+    rows.forEach(r => mc00PushSapCode(byEan, r.ean, r.mat_code));
+  } catch (e) {
+    console.warn('[MC00] logistica_vendas DFB indisponível:', e);
+  }
+  return byEan;
+}
+
+function mc00CodesFrom(raw) {
+  if (!raw) return [];
+  const arr = Array.isArray(raw) ? raw : [...raw];
+  const out = [];
+  arr.forEach(c => {
+    const s = String(c || '').trim();
+    if (s && !out.includes(s)) out.push(s);
+  });
+  return out;
+}
+
+/**
+ * Artigos MC00 da DFB a partir do Cadastro (occ_params).
+ * Código SAP: stock DFB, se existir, e depois margens / vendas DFB pelo mesmo EAN.
+ * Sem código SAP o artigo não entra. Não cria produtos que não estejam no cadastro
+ * (stock com quantidade e código entra só quando o snapshot SAP os traz).
+ */
+function mc00ListArtigosDfb(params, stockByEan, codeByEan) {
+  stockByEan = stockByEan || {};
+  codeByEan = codeByEan || {};
+  const seen = new Set();
+  const out = [];
+
+  (params || []).forEach(p => {
+    const ean = String((p && p.ean) || '').trim();
+    if (!ean || seen.has(ean)) return;
+    if (p.descontinuado === true) return;
+    const st = stockByEan[ean];
+    const codes = mc00CodesFrom(mc00CodesFrom(st && st.sapCodes).concat(mc00CodesFrom(codeByEan[ean])));
+    if (!codes.length) return;
+    seen.add(ean);
+    out.push({
+      ean,
+      sapCode: codes[0],
+      sapCodes: codes,
+      descricao: String((st && st.desc) || p.descricao || '').trim(),
+      cat: String(p.cat || '').trim(),
+      subcat: String(p.subcat || '').trim(),
+      descontinuado: false,
+      preco: (st && st.preco) || 0,
+      qt: (st && st.qt) || 0,
+    });
+  });
+
+  Object.values(stockByEan).forEach(st => {
+    if (!st || !st.ean || seen.has(st.ean) || !(st.qt > 0)) return;
+    const codes = mc00CodesFrom(st.sapCodes);
+    if (!codes.length) return;
+    seen.add(st.ean);
+    out.push({
+      ean: st.ean,
+      sapCode: codes[0],
+      sapCodes: codes,
+      descricao: String(st.desc || '').trim(),
+      cat: '',
+      subcat: '',
+      descontinuado: false,
+      preco: st.preco || 0,
+      qt: st.qt || 0,
+    });
+  });
+
+  out.sort((a, b) => {
+    const ca = (a.cat || 'zzz').localeCompare(b.cat || 'zzz', 'pt');
+    if (ca) return ca;
+    const sa = (a.subcat || '').localeCompare(b.subcat || '', 'pt');
+    if (sa) return sa;
+    return (a.descricao || '').localeCompare(b.descricao || '', 'pt');
+  });
+  return out;
+}
+
+/**
+ * Catálogo MC00 = Cadastro de Artigos + códigos SAP já gravados (stock, margens, vendas DFB).
  */
 async function mc00LoadCatalog(force) {
   if (_mc00Catalog && !force) return _mc00Catalog;
@@ -31032,68 +31153,21 @@ async function mc00LoadCatalog(force) {
   _mc00CatalogLoading = (async () => {
     const params = await mc00FetchAllOccParams();
     if (!params.length) {
-      throw new Error('Cadastro de Artigos vazio (logistica_occ_params). Abre o SAPxUnilog → Cadastro e confirma os artigos.');
+      throw new Error('Cadastro de Artigos vazio (logistica_occ_params).');
     }
 
     const stockByEan = await mc00FetchSapStockByEan();
-    const seen = new Set();
-    const out = [];
-
-    // 1) Artigos do Cadastro (cat/subcat) — só com cód. SAP no stock
-    params.forEach(p => {
-      const ean = String(p.ean || '').trim();
-      if (!ean || seen.has(ean)) return;
-      if (p.descontinuado === true) return;
-      const st = stockByEan[ean];
-      const codes = st ? [...st.sapCodes].filter(Boolean) : [];
-      // Sem material SAP = fora de catálogo comercial (descontinuado / sem stock)
-      if (!codes.length) return;
-      seen.add(ean);
-      out.push({
-        ean,
-        sapCode: codes[0],
-        sapCodes: codes,
-        descricao: (st?.desc || p.descricao || '').trim(),
-        cat: String(p.cat || '').trim(),
-        subcat: String(p.subcat || '').trim(),
-        descontinuado: false,
-        preco: st?.preco || 0,
-        qt: st?.qt || 0,
-      });
-    });
-
-    // 2) EANs com stock>0 e cód. SAP ainda sem ficha no Cadastro
-    Object.values(stockByEan).forEach(st => {
-      if (!st.ean || seen.has(st.ean) || !(st.qt > 0)) return;
-      const codes = [...(st.sapCodes || [])].filter(Boolean);
-      if (!codes.length) return;
-      seen.add(st.ean);
-      out.push({
-        ean: st.ean,
-        sapCode: codes[0],
-        sapCodes: codes,
-        descricao: (st.desc || '').trim(),
-        cat: '',
-        subcat: '',
-        descontinuado: false,
-        preco: st.preco || 0,
-        qt: st.qt || 0,
-      });
-    });
-
-    out.sort((a, b) => {
-      const ca = (a.cat || 'zzz').localeCompare(b.cat || 'zzz', 'pt');
-      if (ca) return ca;
-      const sa = (a.subcat || '').localeCompare(b.subcat || '', 'pt');
-      if (sa) return sa;
-      return (a.descricao || '').localeCompare(b.descricao || '', 'pt');
-    });
+    const codeByEan = await mc00FetchCloudSapCodesByEan();
+    const out = mc00ListArtigosDfb(params, stockByEan, codeByEan);
 
     if (!out.length) {
-      throw new Error('Nenhum artigo com código SAP no Cadastro. Confirma o stock DFB no SAPxUnilog.');
+      throw new Error(
+        'Nenhum artigo com código SAP no Cadastro (' + params.length +
+        ' artigos, ' + Object.keys(codeByEan).length + ' EANs com código na cloud, stock DFB ' +
+        Object.keys(stockByEan).length + ' EANs).'
+      );
     }
 
-    // Categorias só dos artigos activos (com cód. SAP)
     _mc00CadCats = [...new Set(out.map(p => p.cat).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'pt'));
 
@@ -35652,7 +35726,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-vendas-dois-meses: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-catalogo-mc00: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
