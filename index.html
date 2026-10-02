@@ -4974,9 +4974,10 @@ function escolherListaPorRegistar(localCanal, remoteCanal, opts) {
 }
 
 /**
- * Universo de «Por Registar» do canal activo.
- * Horeca: a cloud (lista_clientes) é a fonte partilhada com o admin. Um IndexedDB
- * antigo não pode deixar a equipa com 3 pendentes quando a cloud tem o canal completo.
+ * Universo de «Por Registar» do canal activo (ainda sem o filtro do login).
+ * Horeca: a cloud (lista_clientes) é a fonte. Um IndexedDB antigo não pode
+ * cortar a lista (ex. 3 quando a cloud tem o canal). Quem vê o quê é
+ * getVendedorScope: Filipe e admin vêem este universo; cada vendedor só os seus.
  * Outros canais: não substituir uma lista local grande por um recorte (ex. publicação só Horeca).
  */
 function listaPorRegistarDoCanal(localAll, remoteAll, canalId, opts) {
@@ -9102,16 +9103,19 @@ function distFindRegistoForCliente(cliente, index) {
 
 async function loadPendentes() {
   await sincronizarListaClientes();
-  // Sempre filtrar pelo canal activo (NPess/nome exclusivos — sem misturar Ecommerce em Dist.)
-  // Horeca: cloud partilhada, canal completo — não o cache local nem o vendedor do login.
+  // Canal activo. Horeca: universo = cloud completa (não o cache cortado).
+  // O login corta depois: Hélcio só os seus; Filipe e admin vêem o canal.
   const canalId = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : _canalActivo) || null;
   const localAll = typeof getListaClientesCompleta === 'function' ? getListaClientesCompleta() : [];
   const remoteAll = Array.isArray(_ultimaListaClientesRemota) ? _ultimaListaClientesRemota : [];
   const localTs = tsListaClientes(_listaClientesTs);
   const remoteTs = tsListaClientes(_ultimaListaClientesRemotaTs);
-  const listaAtiva = listaPorRegistarDoCanal(localAll, remoteAll, canalId, {
+  const listaCanal = listaPorRegistarDoCanal(localAll, remoteAll, canalId, {
     remoteNewer: remoteTs > localTs,
   });
+  const listaAtiva = typeof normalizeVendedorCliente === 'function'
+    ? listaCanal.map(normalizeVendedorCliente)
+    : listaCanal;
 
   try {
     const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
@@ -9139,7 +9143,6 @@ async function loadPendentes() {
   fillVendedorSelectCanal('pending-filter-vendedor', {
     emptyLabel: 'Todos os vendedores',
     keepExtra: false,
-    ignoreScope: true,
   });
   renderPendentes();
 }
@@ -9236,10 +9239,14 @@ function renderDistContratosFalta() {
 
 function renderPendentes() {
   const search = document.getElementById('pending-search')?.value?.trim()?.toLowerCase() || '';
-  // «Todos os vendedores» mostra o canal inteiro. O login (Hélcio, Paulo, …) não corta a lista.
-  const vendFilt = document.getElementById('pending-filter-vendedor')?.value || '';
+  const vendFilt = typeof resolveVendFilt === 'function'
+    ? resolveVendFilt('pending-filter-vendedor')
+    : (document.getElementById('pending-filter-vendedor')?.value || '');
   const canalId = resolveCanalActivoId();
   let filtered = pendentesData.filter(c => !canalId || clientePertenceAoCanal(c, canalId));
+  if (typeof filterByUtilizadorActivo === 'function') {
+    filtered = filterByUtilizadorActivo(filtered, c => c && c.vendedor);
+  }
   if (search) filtered = filtered.filter(c => c.nome.toLowerCase().includes(search) || c.cod.toLowerCase().includes(search) || (c.vendedor||'').toLowerCase().includes(search));
   if (vendFilt) filtered = filtered.filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vendFilt));
 
@@ -9995,7 +10002,7 @@ function getListaClientesCompleta() {
  * Lista activa no contexto actual.
  * Dentro de um canal → só clientes dos vendedores desse canal.
  * No Horeca, vendedores normais vêem só os seus (admin / Filipe vêem todos).
- * «Por Registar» não passa por aqui: usa listaPorRegistarDoCanal (canal completo, fonte cloud).
+ * «Por Registar» lê a cloud em listaPorRegistarDoCanal e aplica o mesmo escopo na renderização.
  */
 function getListaClientesActiva() {
   const full = getListaClientesCompleta();
@@ -10808,16 +10815,13 @@ function getVendedoresCanalActivo(canalId) {
 }
 
 /** Preenche select com vendedores do canal activo (+ opção vazia). */
-function fillVendedorSelectCanal(selOrId, { emptyLabel, selected, keepExtra, ignoreScope } = {}) {
+function fillVendedorSelectCanal(selOrId, { emptyLabel, selected, keepExtra } = {}) {
   const sel = typeof selOrId === 'string' ? document.getElementById(selOrId) : selOrId;
   if (!sel) return;
   let cur = selected !== undefined ? selected : sel.value;
   let vends = getVendedoresCanalActivo();
   // Horeca: vendedor logado só vê/selecciona o próprio nome (exceto admin/Filipe).
-  // Por Registar passa ignoreScope: o canal inteiro, com «Todos os vendedores».
-  const scope = ignoreScope
-    ? null
-    : (typeof getVendedorScope === 'function' ? getVendedorScope() : null);
+  const scope = typeof getVendedorScope === 'function' ? getVendedorScope() : null;
   if (scope) {
     const sn = normNomeUtilizador(scope);
     vends = vends.filter(v => normNomeUtilizador(v) === sn);
@@ -11090,7 +11094,7 @@ function abrirCanalConfirmado(canalId) {
     fillVendedorSelectCanal('f-vendedor', { emptyLabel: '— Selecionar vendedor —' });
     fillVendedorSelectCanal('e-vendedor', { emptyLabel: '— Selecionar vendedor —', keepExtra: true });
     fillVendedorSelectCanal('filtro-vendedor-lista', { emptyLabel: 'Todos os vendedores' });
-    fillVendedorSelectCanal('pending-filter-vendedor', { emptyLabel: 'Todos os vendedores', ignoreScope: true });
+    fillVendedorSelectCanal('pending-filter-vendedor', { emptyLabel: 'Todos os vendedores' });
     fillVendedorSelectCanal('dist-falta-filter-vendedor', { emptyLabel: 'Todos os vendedores' });
     fillVendedorSelectCanal('contratos-vendedor', { emptyLabel: 'Todos os vendedores' });
     fillVendedorSelectCanal('contratos-pr-vendedor', { emptyLabel: 'Todos os vendedores' });
@@ -26408,11 +26412,9 @@ function isAdmin() {
 }
 
 /**
- * Escopo de dados no Horeca:
+ * Escopo de dados no Horeca (inclui Por Registar):
  * - null → vê todos (admin Carlos, Filipe, ou fora do Horeca)
  * - string → só esse vendedor (Hélcio, Paulo, Daniela, …)
- * Por Registar não usa este escopo: Horeca vê os pendentes do canal inteiro
- * (a mesma lista que o admin), não só os do login.
  * Usa resolveCanalActivoId (com rehidratação) — não só _canalActivo em memória.
  */
 function getVendedorScope() {
@@ -26561,7 +26563,7 @@ function aplicarUtilizador(nome) {
       fillVendedorSelectCanal('f-vendedor', { emptyLabel: '— Selecionar vendedor —', selected: nome });
       fillVendedorSelectCanal('e-vendedor', { emptyLabel: '— Selecionar vendedor —', selected: nome, keepExtra: true });
       fillVendedorSelectCanal('filtro-vendedor-lista', { emptyLabel: 'Todos os vendedores', selected: nome });
-      fillVendedorSelectCanal('pending-filter-vendedor', { emptyLabel: 'Todos os vendedores', ignoreScope: true });
+      fillVendedorSelectCanal('pending-filter-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
       fillVendedorSelectCanal('contratos-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
       fillVendedorSelectCanal('contratos-pr-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
       fillVendedorSelectCanal('sc-vendedor', { emptyLabel: 'Todos os vendedores', selected: nome });
@@ -35818,7 +35820,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-por-registar-horeca: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-por-registar-helcio: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
