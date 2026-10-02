@@ -264,10 +264,10 @@ check('Por Registar aplica o escopo do login em cima da cloud', () => {
 });
 
 check('service worker sobe para por-registar-helcio', () => {
-  assert.ok(sw.includes('v2026-10-02-por-registar-helcio'));
-  assert.ok(html.includes('v2026-10-02-por-registar-helcio'));
-  assert.ok(!sw.includes('v2026-10-02-por-registar-horeca'));
-  assert.ok(!html.includes('v2026-10-02-por-registar-horeca'));
+  assert.ok(sw.includes('v2026-10-02-vendas-perdas-mes'));
+  assert.ok(html.includes('v2026-10-02-vendas-perdas-mes'));
+  assert.ok(!sw.includes('v2026-10-02-por-registar-helcio'));
+  assert.ok(!html.includes('v2026-10-02-por-registar-helcio'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);
