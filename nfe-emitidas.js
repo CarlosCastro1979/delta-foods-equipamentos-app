@@ -551,7 +551,12 @@
     return /\.pdf$/i.test(nfeBaseNome(name));
   }
 
-  /** 44 dígitos seguidos no nome do ficheiro (a chave da NF-e). */
+  /**
+   * 44 dígitos seguidos no nome do ficheiro (a chave da NF-e).
+   * O cockpit grava pastas com barra invertida:
+   * ...\NFe{chave}.pdf ao lado de ...\NFe{chave}_prot.xml.
+   * NFe{chave}.pdf (ou só os 44 dígitos) no nome continua a contar.
+   */
   function nfeChaveNoNome(name) {
     var base = nfeBaseNome(name);
     var m = base.match(/(\d{44})/);
@@ -621,7 +626,7 @@
     return { notas: out, ligados: ligados, soltos: livres.length - ligados };
   }
 
-  /** Teto seguro do JSON da célula lista_clientes (o PDF grande fica só no browser). */
+  /** Teto seguro do JSON de uma célula lista_clientes. O que não cabe vai para células nfe_pdfs_N. */
   var NFE_NUVEM_JSON_MAX = 750000;
 
   function nfeNotaSemPdfBinario(nota) {
@@ -651,6 +656,70 @@
       stripped++;
     });
     return { notas: arr, pdfNaNuvem: stripped === 0, pdfsFora: stripped };
+  }
+
+  /** PDF que a célula das notas já não leva — estes é que têm de ir para blocos à parte. */
+  function nfePdfsForaDaCelula(notas, notasNuvem) {
+    var dentro = {};
+    (notasNuvem || []).forEach(function (n) {
+      if (n && n.chave && nfeTemPdfBinario(n)) dentro[n.chave] = true;
+    });
+    var fora = [];
+    (notas || []).forEach(function (n) {
+      if (!n || !n.chave || !nfeTemPdfBinario(n) || dentro[n.chave]) return;
+      fora.push(n);
+    });
+    return fora;
+  }
+
+  function nfeTamanhoBlocoPdf(lista) {
+    return nfeJsonLen({ __format: 'nfe_pdfs', pdfs: lista });
+  }
+
+  /**
+   * Parte os PDF em listas cujo JSON cabe numa célula.
+   * Um PDF maior do que o tecto fica sozinho no seu bloco.
+   */
+  function nfePartirPdfsEmChunks(notas) {
+    var itens = [];
+    (notas || []).forEach(function (n) {
+      if (!n || !n.chave || !nfeTemPdfBinario(n)) return;
+      itens.push({
+        chave: String(n.chave),
+        nome: n.pdfNome || (String(n.chave) + '.pdf'),
+        b64: n.pdfBase64,
+      });
+    });
+    var chunks = [];
+    var atual = [];
+    itens.forEach(function (item) {
+      if (!atual.length) {
+        atual = [item];
+        return;
+      }
+      var junto = atual.concat([item]);
+      if (nfeTamanhoBlocoPdf(junto) > NFE_NUVEM_JSON_MAX) {
+        chunks.push(atual);
+        atual = [item];
+      } else {
+        atual = junto;
+      }
+    });
+    if (atual.length) chunks.push(atual);
+    return chunks;
+  }
+
+  function nfeMapaPdfsDeChunks(chunks) {
+    var map = {};
+    (chunks || []).forEach(function (chunk) {
+      var lista = Array.isArray(chunk) ? chunk : (chunk && (chunk.pdfs || chunk));
+      if (!Array.isArray(lista)) return;
+      lista.forEach(function (p) {
+        if (!p || !p.chave || !p.b64) return;
+        map[String(p.chave)] = { nome: p.nome || '', b64: p.b64 };
+      });
+    });
+    return map;
   }
 
   function nfeJuntarPdfsLocais(notas, pdfs) {
@@ -787,6 +856,9 @@
     NFE_NUVEM_JSON_MAX: NFE_NUVEM_JSON_MAX,
     nfeNotaSemPdfBinario: nfeNotaSemPdfBinario,
     nfeNotasParaNuvem: nfeNotasParaNuvem,
+    nfePdfsForaDaCelula: nfePdfsForaDaCelula,
+    nfePartirPdfsEmChunks: nfePartirPdfsEmChunks,
+    nfeMapaPdfsDeChunks: nfeMapaPdfsDeChunks,
     nfeJuntarPdfsLocais: nfeJuntarPdfsLocais,
     nfePdfDaNota: nfePdfDaNota,
     nfeReadZipEntries: nfeReadZipEntries,

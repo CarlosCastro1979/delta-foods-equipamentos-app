@@ -110,8 +110,8 @@ check('o catálogo lê margens e vendas DFB, não só sap_data', () => {
 });
 
 check('service worker com versão nova', () => {
-  assert.ok(sw.includes('v2026-10-02-nf-transferencias'));
-  assert.ok(html.includes('v2026-10-02-nf-transferencias'));
+  assert.ok(sw.includes('v2026-10-02-pdf-cockpit'));
+  assert.ok(html.includes('v2026-10-02-pdf-cockpit'));
   assert.ok(!sw.includes('v2026-10-02-por-registar-helcio'));
   assert.ok(!html.includes('v2026-10-02-por-registar-helcio'));
 });
