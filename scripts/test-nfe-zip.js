@@ -312,10 +312,12 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-02-lista-excel'), 'service worker referido no index');
+  assert(html.includes('v2026-10-02-nf-transferencias'), 'service worker referido no index');
+  assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-02-lista-excel'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-02-nf-transferencias'), 'service worker actualizado');
+  assert(!sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
 
@@ -777,6 +779,171 @@ function testVendedorAtual() {
   assert(listaDiogo.includes('Limpar'), 'o filtro do Diogo tem Limpar');
   const cpf = nfe.nfeCruzarNota({ chave: 'CPF1', destDoc: '31499205821', cliente: 'Leandro Falcone' }, vazio, canal, catalogo);
   assert(cpf.vendedor === 'Marcio Gorga' && cpf.npess === '99520001', 'CPF sem lista continua no Marcio');
+}
+
+function xmlTransferencia(numero, valor, emit, dest) {
+  const emitDoc = String(emit || '14830817000363').replace(/\D/g, '');
+  const destDoc = String(dest || '14830817000100').replace(/\D/g, '');
+  const n = String(numero);
+  const chave = ('32' + emitDoc + '55001' + n.padStart(9, '0')).padEnd(44, '0').slice(0, 44);
+  return `<?xml version="1.0"?><nfeProc><NFe><infNFe Id="NFe${chave}"><ide><serie>1</serie><nNF>${n}</nNF><dhEmi>2026-10-02T10:00:00-03:00</dhEmi><natOp>Transferência de mercadoria</natOp></ide><emit><CNPJ>${emit}</CNPJ><xNome>Delta Foods Brasil Com Imp Exp Prod</xNome></emit><dest><CNPJ>${dest}</CNPJ><xNome>Delta Foods Brasil Com Imp Exp Prod</xNome></dest><total><ICMSTot><vNF>${valor}</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
+}
+
+function testTransferenciasInternas() {
+  assert(nfe.NFE_DELTA_CNPJ_ES === '14830817000363', 'CNPJ da Delta ES');
+  assert(nfe.NFE_DELTA_CNPJ_SP === '14830817000100', 'CNPJ da Delta SP');
+  assert(nfe.NFE_TRANSF_CANAL === 'transferencias' && nfe.NFE_TRANSF_CANAL_NOME === 'Transferências internas', 'canal Transferências internas');
+
+  const catalogoMarcio = [{
+    cod: '900', npess: 99520001, nome: 'Delta Foods Brasil Com Imp Exp Prod', vendedor: 'MARCIO GORGA',
+  }];
+  const idxMarcio = nfe.nfeIndexClientes([
+    { cod: '900', cnpj: '14.830.817/0001-00', npess: '99520001', vendedor: 'MARCIO GORGA' },
+  ]);
+  const idxHelcio = nfe.nfeIndexClientes([
+    { cod: '1', cnpj: '03.852.638/0001-49', npess: '99520002', vendedor: 'HÉLCIO GRÉGIO' },
+  ]);
+
+  const brutas = [
+    { numero: '4559', valor: '22110.07' },
+    { numero: '4558', valor: '214943.85' },
+    { numero: '4557', valor: '194179.64' },
+    { numero: '4555', valor: '126840.93' },
+  ].map(function (r) {
+    return nfe.nfeParseXml(xmlTransferencia(r.numero, r.valor, '14.830.817/0003-63', '14.830.817/0001-00'), r.numero + '.xml');
+  });
+  assert(brutas.every(Boolean), 'as 4 NF de transferência parseiam');
+  brutas.forEach(function (n) {
+    assert(n.emitCnpj === '14830817000363', n.numero + ' emitente é a Delta ES, veio ' + n.emitCnpj);
+    assert(n.destDoc === '14830817000100', n.numero + ' destinatário é a Delta SP, veio ' + n.destDoc);
+    assert(n.serie === '1' && /^2026-10-02/.test(n.data), n.numero + ' série 1 em 02/10/2026');
+  });
+  const soma = brutas.reduce(function (s, n) { return s + Math.round(n.valor * 100); }, 0) / 100;
+  assert(soma === 558074.49, 'as 4 notas somam 558.074,49, veio ' + soma);
+
+  const cruzadas = brutas.map(function (n) {
+    return nfe.nfeCruzarNota(n, idxMarcio, canalDeNpess, catalogoMarcio);
+  });
+  cruzadas.forEach(function (n) {
+    assert(n.canalId === 'transferencias' && n.canalNome === 'Transferências internas', n.numero + ' vai para Transferências internas, veio ' + n.canalId);
+    assert(!n.vendedor && !n.npess, n.numero + ' fica sem o Marcio, veio ' + n.vendedor + ' ' + n.npess);
+    assert(nfe.nfeNormNome(n.vendedor) !== 'MARCIO GORGA', n.numero + ' não fica no Marcio');
+  });
+  assert(nfe.nfeNotasDoCanal(cruzadas, 'ecommerce').length === 0, 'o menu do Ecommerce não fica com estas notas');
+  assert(nfe.nfeNotasDoCanal(cruzadas, 'transferencias').length === 4, 'as 4 notas estão no canal de transferências');
+
+  const gravadas = brutas.map(function (n) {
+    return Object.assign({}, n, {
+      status: 'unico', canalId: '', canalNome: '', vendedor: 'MARCIO GORGA', npess: '99520001', cod: '900',
+    });
+  });
+  const cpfGravado = {
+    chave: 'CPF1', numero: '102240', destDoc: '31499205821', cliente: 'Leandro Falcone',
+    status: 'sem_cliente', canalId: '', vendedor: '', valor: 123.12,
+  };
+  const helcio = nfe.nfeCruzarNota({
+    chave: 'H1', numero: '102239', destDoc: '03852638000149', emitCnpj: '14830817000100',
+    cliente: 'DELTA CAFES DO CLIENTE LTDA',
+  }, idxHelcio, canalDeNpess, catalogoMarcio);
+  assert(helcio.canalId === 'horeca' && /HELCIO/.test(nfe.nfeNormNome(helcio.vendedor)), 'CNPJ de cliente normal, mesmo com Delta no nome e emitente SP, não vira transferência');
+  assert(!nfe.nfeEhTransferenciaInterna(helcio), 'o CNPJ 03.852.638/0001-49 não é transferência');
+
+  const outroNome = nfe.nfeCruzarNota({
+    chave: 'D1', numero: '102282', destDoc: '11239661000190', emitCnpj: '14830817000100',
+    cliente: 'F. J. RIBEIRO CAFÉ-ME',
+  }, new Map(), canalDeNpess, [
+    { cod: '406016', npess: 99520020, nome: 'F. J. RIBEIRO CAFÉ-ME', vendedor: 'EDUARDO MOREIRA' },
+  ]);
+  assert(outroNome.vendedor === 'EDUARDO MOREIRA' && outroNome.canalId === 'distribuidores', 'venda da Delta SP para cliente normal continua nesse vendedor');
+  assert(outroNome.canalId !== 'transferencias', 'CNPJ de cliente normal não entra em Transferências internas');
+
+  const inverso = nfe.nfeCruzarNota(
+    nfe.nfeParseXml(xmlTransferencia('4600', '10.00', '14830817000100', '14830817000363'), '4600.xml'),
+    idxMarcio, canalDeNpess, catalogoMarcio
+  );
+  assert(inverso.canalId === 'transferencias' && !inverso.vendedor, 'SP → ES entre os dois CNPJ da Delta também é transferência');
+
+  const terceiro = nfe.nfeCruzarNota({
+    chave: 'T1', numero: '8', destDoc: '14830817000100', emitCnpj: '03852638000149',
+    cliente: 'Delta Foods Brasil Com Imp Exp Prod',
+  }, idxMarcio, canalDeNpess, catalogoMarcio);
+  assert(terceiro.canalId !== 'transferencias', 'destinatário SP com emitente que não é a Delta ES não é o par');
+
+  const nomePrimeiro = nfe.nfeReaplicarVendedorPorNome(gravadas.map(function (n) {
+    return Object.assign({}, n, { status: 'sem_cliente', vendedor: '', npess: '', canalId: '', cod: '' });
+  }).concat([cpfGravado, helcio]), catalogoMarcio, canalDeNpess);
+  const cpfDepois = nfe.nfeReaplicarCpfSemVendedor(nomePrimeiro.notas);
+  const reap = nfe.nfeReaplicarTransferenciasInternas(cpfDepois.notas);
+  assert(reap.alteradas === 4, 'as 4 notas já gravadas mudam ao abrir a lista, veio ' + reap.alteradas);
+  reap.notas.filter(function (n) { return ['4559', '4558', '4557', '4555'].indexOf(n.numero) >= 0; }).forEach(function (n) {
+    assert(n.canalId === 'transferencias' && !n.vendedor && !n.npess, n.numero + ' gravada sai do Marcio');
+  });
+  const cpfFix = reap.notas.find(function (n) { return n.numero === '102240'; });
+  assert(cpfFix && cpfFix.vendedor === 'Marcio Gorga' && cpfFix.canalId === 'ecommerce', 'CPF sem vendedor continua no Marcio Ecommerce');
+  const hFix = reap.notas.find(function (n) { return n.chave === 'H1'; });
+  assert(hFix && hFix.canalId === 'horeca' && /HELCIO/.test(nfe.nfeNormNome(hFix.vendedor)), 'a nota do Hélcio não passa a transferência');
+  const outra = nfe.nfeReaplicarTransferenciasInternas(reap.notas);
+  assert(outra.alteradas === 0, 'segunda leitura das transferências já está estável');
+  assert(nfe.nfeAtribDifere(gravadas[0], reap.notas.find(function (n) { return n.numero === '4559'; })), 'a 4559 gravada no Marcio difere da classificação nova');
+
+  const jaNoMarcio = nfe.nfeReaplicarTransferenciasInternas(gravadas.concat([helcio, {
+    chave: 'CPFHEL', destDoc: '31499205821', status: 'unico', canalId: 'horeca', vendedor: 'HÉLCIO GRÉGIO', npess: '99520002',
+  }]));
+  assert(jaNoMarcio.alteradas === 4, 'notas já no Marcio sem canal também saem');
+  assert(jaNoMarcio.notas.every(function (n) {
+    if (['4559', '4558', '4557', '4555'].indexOf(String(n.numero)) < 0) return n.vendedor && n.canalId !== 'transferencias';
+    return n.canalId === 'transferencias' && !n.vendedor;
+  }), 'só as 4 transferências mudam; Hélcio e o CPF dele ficam');
+
+  const ui = loadNfeUi(reap.notas.filter(function (n) {
+    return ['4559', '4558', '4557', '4555'].indexOf(String(n.numero)) >= 0;
+  }).map(function (n) { return Object.assign({}, n, { status: 'unico' }); }), '', 'nfe');
+  const lista = ui.nfeHtml();
+  assert(lista.includes('Transferências internas'), 'a lista mostra Transferências internas');
+  ['4559', '4558', '4557', '4555'].forEach(function (num) {
+    assert(lista.includes(num), 'a lista mostra a NF ' + num);
+  });
+  assert(lista.includes(brl(558074.49)), 'a lista mostra R$ 558.074,49');
+  const corpo = lista.slice(lista.indexOf('Total da lista:'));
+  assert(corpo.indexOf('Transferências internas') >= 0 && !/Marcio|MARCIO/i.test(corpo), 'as 4 notas não aparecem no Marcio');
+  assert(lista.includes('canal%3Atransferencias'), 'a contagem de Transferências internas é clicável');
+
+  const mista = reap.notas.filter(function (n) {
+    return ['4559', '4558', '4557', '4555', '102240'].indexOf(String(n.numero)) >= 0;
+  });
+  const eco = loadNfeUi(mista, 'ecommerce');
+  eco.nfePaintCanal();
+  const hostEco = eco.el('canal-nfe-host').innerHTML;
+  assert(hostEco.includes('102240'), 'o Ecommerce continua com o CPF do Marcio');
+  assert(!hostEco.includes('4559') && !hostEco.includes('4555'), 'o menu do Marcio não lista as transferências');
+
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const regraIni = html.indexOf('function nfeAplicarRegraGuardada');
+  const regraFim = html.indexOf('function nfeCatalogoVendedorAtual');
+  const regra = html.slice(regraIni, regraFim);
+  assert(regra.includes('nfeReaplicarTransferenciasInternas'), 'abrir a lista reaplica a transferência nas notas já gravadas');
+  assert(regra.indexOf('nfeReaplicarVendedorPorNome') < regra.indexOf('nfeReaplicarTransferenciasInternas'), 'a transferência corre depois do nome');
+  assert(regra.indexOf('nfeReaplicarCpfSemVendedor') < regra.indexOf('nfeReaplicarTransferenciasInternas'), 'a transferência corre depois do CPF');
+  const porReg = html.slice(html.indexOf('function listaPorRegistarDoCanal'), html.indexOf('function listaPorRegistarDoCanal') + 900);
+  assert(!porReg.includes('transferencias') && !porReg.includes('Transferências'), 'Por Registar fica intacto');
+
+  const zipReal = [
+    process.env.NFE_ZIP_ES,
+    '/home/ubuntu/.cursor/projects/workspace/uploads/zipoutput4279624288744104709_7bcd.zip',
+  ].filter(Boolean).find(function (p) { return fs.existsSync(p); });
+  if (!zipReal) {
+    console.log('SKIP xml real 4555-4559: zip fora do repo.');
+    return;
+  }
+  const reais = nfe.nfeReadZipXmls(fs.readFileSync(zipReal))
+    .map(function (x) { return nfe.nfeParseXml(x.xml, x.name); })
+    .filter(function (n) { return n && ['4559', '4558', '4557', '4555'].indexOf(n.numero) >= 0 && n.serie === '1'; });
+  assert(reais.length === 4, 'o zip tem as 4 NF, veio ' + reais.length);
+  reais.forEach(function (n) {
+    const c = nfe.nfeCruzarNota(n, idxMarcio, canalDeNpess, catalogoMarcio);
+    assert(n.emitCnpj === '14830817000363' && n.destDoc === '14830817000100', 'XML real ' + n.numero + ' é ES → SP');
+    assert(c.canalId === 'transferencias' && !c.vendedor, 'XML real ' + n.numero + ' sai do Marcio');
+  });
 }
 
 testAtribuicao();

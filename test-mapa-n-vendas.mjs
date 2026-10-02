@@ -355,11 +355,11 @@ check('o quadro de Vendas mantém a ordem das colunas e o mapa não ganha volume
   assert.ok(!mapa.includes('QtFaturada'));
   assert.ok(html.includes('pvPrepararLinhasMapa'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-02-lista-excel'));
+  assert.ok(sw.includes('v2026-10-02-nf-transferencias'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
-  assert.ok(html.includes('v2026-10-02-lista-excel'));
+  assert.ok(html.includes('v2026-10-02-nf-transferencias'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
