@@ -133,6 +133,8 @@ vm.createContext(ctx);
   'nomeCanalAppPerdas',
   'ordemVendedoresPerdas',
   'indiceOrdemVendedorPerdas',
+  'npessAcabaEm999',
+  'clienteAnuladoForaDasPerdas',
   'maioresPerdasMes',
   'textoCriterioPerdas',
   'perdasFiltroBlank',
@@ -449,6 +451,93 @@ check('sem compras em N, a linha fica no NPess atual e o R$ não muda', () => {
   assert.ok(!modelo.grupos.some(g => g.vendedor === 'Massimo Bottello' && g.linhas.some(r => r.cod === '406016')));
 });
 
+check('NPess 2026 a acabar em 999 não aparece; activo com N menor que N-1 aparece', () => {
+  const mapas = ctx.mapasVendasQuadro();
+  const base = {
+    ym: YM,
+    ymN1: YM1,
+    canalId: 'horeca',
+    mapas: mapas,
+    temColunaValor: true,
+    nomesPorCod: {
+      '404135': 'PANIFICADORA VILA MONUMENTO LTDA',
+      '430124': 'ORQUIDEA PALACE',
+      '429693': 'CHURRASCARIA ESTANCIA SB LTDA',
+      'ANUL': 'CLIENTE ANULADO 2026',
+      '794481': 'PONTE ATLANTICA',
+    },
+  };
+  const modelo = ctx.maioresPerdasMes([
+    { cod: 'ANUL', data: '2025-09-02', valor: 8000, npess: 99520002 },
+    { cod: '404135', data: '2025-09-10', valor: 3700.94, npess: 99520002 },
+    { cod: '430124', data: '2025-09-10', valor: 7819.22, npess: 99520002 },
+    { cod: '430124', data: '2026-09-10', valor: 3099.96, npess: 99520002 },
+    { cod: '429693', data: '2025-09-10', valor: 4655.45, npess: 99520002 },
+    { cod: '794481', data: '2025-09-02', valor: 2399.41, npess: 99520002 },
+  ], Object.assign({}, base, {
+    npessAtualPorCod: {
+      ANUL: { npess: 99529999, ym: '2026-06' },
+      '404135': { npess: 99520002, ym: '2025-12' },
+      '430124': { npess: 99520002, ym: '2026-09' },
+      '429693': { npess: 99520002, ym: '2025-10' },
+      '794481': { npess: 99520002, ym: '2026-03' },
+    },
+    codsAnulados: { '404135': 1, '794481': 1 },
+  }));
+  const linhas = modelo.grupos.flatMap(g => g.linhas);
+  assert.ok(!linhas.some(r => r.cod === 'ANUL'), 'NPess 2026 a acabar em 999 não entra, mesmo com N = 0 e Hélcio em 2025');
+  assert.ok(!linhas.some(r => r.cod === '404135'), 'sem linha em 2026 e associado a 999 não entra');
+  const orquidea = linhas.find(r => r.cod === '430124');
+  assert.ok(orquidea, 'Orquídea continua');
+  assert.equal(orquidea.vendedor, 'Hélcio Grégio');
+  assert.equal(orquidea.n, 3099.96);
+  assert.equal(orquidea.n1, 7819.22);
+  assert.equal(orquidea.perda, 4719.26);
+  const estancia = linhas.find(r => r.cod === '429693');
+  assert.ok(estancia, 'activo que não comprou no mês continua');
+  assert.equal(estancia.n, 0);
+  assert.equal(estancia.perda, 4655.45);
+  assert.equal(estancia.vendedor, 'Hélcio Grégio');
+  const ponte = linhas.find(r => r.cod === '794481');
+  assert.ok(ponte, 'com NPess actual de 2026 que não é 999 continua, mesmo que o código esteja na lista de anulados');
+  assert.equal(ponte.n, 0);
+  assert.equal(ponte.perda, 2399.41);
+  assert.equal(ctx.npessAcabaEm999(99529999), true);
+  assert.equal(ctx.npessAcabaEm999(99019999), true);
+  assert.equal(ctx.npessAcabaEm999(99520002), false);
+  assert.equal(ctx.npessAcabaEm999(0), false);
+
+  const soLista = ctx.maioresPerdasMes([
+    { cod: '404135', data: '2025-09-10', valor: 100, npess: 99520002 },
+    { cod: '429693', data: '2025-09-10', valor: 50, npess: 99520002 },
+  ], Object.assign({}, base, {
+    npessListaPorCod: { '404135': 99019999, '429693': 99520002 },
+  }));
+  const so = soLista.grupos.flatMap(g => g.linhas);
+  assert.ok(!so.some(r => r.cod === '404135'));
+  assert.ok(so.some(r => r.cod === '429693'));
+  assert.ok(ctx.textoCriterioPerdas(modelo).includes('termina em 999'));
+
+  const so2025 = ctx.maioresPerdasMes([
+    { cod: 'VELHO999', data: '2025-09-10', valor: 100, npess: 99520999 },
+    { cod: '429693', data: '2025-09-10', valor: 50, npess: 99520002 },
+  ], Object.assign({}, base, { canalId: '' }));
+  const velhos = so2025.grupos.flatMap(g => g.linhas);
+  assert.ok(velhos.some(r => r.cod === 'VELHO999'), 'NPess 999 só em 2025 não exclui');
+  assert.ok(velhos.some(r => r.cod === '429693'));
+
+  const muitas = [];
+  for (let i = 1; i <= 21; i++) muitas.push({ cod: 'T' + i, data: '2025-09-01', valor: i, npess: 99520002 });
+  muitas.push({ cod: 'ANULG', data: '2025-09-01', valor: 9999, npess: 99520002 });
+  muitas.push({ cod: 'ANULG', data: '2026-09-01', valor: 0, npess: 99529999 });
+  const top = ctx.maioresPerdasMes(muitas, base);
+  const topLinhas = top.grupos.flatMap(g => g.linhas);
+  assert.ok(!topLinhas.some(r => r.cod === 'ANULG'), 'anulado 999 não ocupa lugar no top 20');
+  assert.equal(topLinhas.length, 20);
+  assert.ok(topLinhas.some(r => r.cod === 'T2'), 'o 20.º activo entra depois de sair o anulado');
+  assert.ok(!topLinhas.some(r => r.cod === 'T1'));
+});
+
 check('o filtro do vendedor grava no localStorage', () => {
   ctx._perdasFiltroUi = null;
   store.delta_vendas_perdas_filtro = JSON.stringify({
@@ -463,8 +552,8 @@ check('o filtro do vendedor grava no localStorage', () => {
   assert.equal(saved.porCanal.horeca, '');
   assert.equal(saved.geral, 'Filipe Neves');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-02-pdf-cockpit'));
-  assert.ok(html.includes('v2026-10-02-pdf-cockpit'));
+  assert.ok(sw.includes('v2026-10-02-perdas-sem-999'));
+  assert.ok(html.includes('v2026-10-02-perdas-sem-999'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);

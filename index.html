@@ -9890,6 +9890,7 @@ async function confirmarCargaSAP() {
   novaLista = deduplicarListaSAPPorCod(repostos.lista);
   acumularSapDetalhe(novaLista);
   codsAnulados = filtrarAnuladosSemLinhaActiva(codsAnulados, novaLista);
+  try { await guardarSapAnulados999(codsAnulados); } catch (e) { console.warn('guardarSapAnulados999', e); }
 
   // 1. Guardar nova lista activa (memória + IndexedDB; localStorage best-effort)
   const listaTs = Date.now();
@@ -21672,6 +21673,8 @@ async function loadVendasMenuCanal() {
  * mudou de um ano para o outro, o N junta ao N-1 (não fica 0). O valor perdido
  * não muda; a linha fica no NPess atual (mês mais recente de 2026), não no de N-1.
  * Sem N-1 por cliente, a perda é o Fatur. negativo do mês.
+ * Anulados não entram: o NPess actual de 2026 acaba em 999. Sem linha em 2026,
+ * sai quem está associado a um NPess 999 (sem vendedor activo). N = 0 sozinho não tira.
  */
 const PERDAS_FILTRO_LS = 'delta_vendas_perdas_filtro';
 const PERDAS_FILTRO_MS = 1000;
@@ -21747,6 +21750,38 @@ function indiceOrdemVendedorPerdas(nome, ordem) {
   return -1;
 }
 
+/** NPess de anulado: o código do vendedor termina em 999 (99529999, 99019999, …). */
+function npessAcabaEm999(npess) {
+  const n = parseInt(npess, 10);
+  if (!n || isNaN(n)) return false;
+  return String(n).endsWith('999');
+}
+
+/**
+ * true → o cliente não entra em Maiores perdas.
+ * Com NPess de 2026, manda esse código: acaba em 999 → fora.
+ * Sem NPess de 2026 não se inventa anulado a partir do código de 2025.
+ * Sem linha em 2026, fora só se o código está nos anulados ou o NPess da lista acaba em 999.
+ * N = 0 de um cliente activo não chega para o tirar.
+ */
+function clienteAnuladoForaDasPerdas(cod, npessDono, tem2026, opts) {
+  if (tem2026) return npessAcabaEm999(npessDono);
+  const o = opts || {};
+  const k = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(cod) : String(cod || '').replace(/^0+/, '');
+  const set = o.codsAnulados;
+  if (set) {
+    if (typeof set.has === 'function' && (set.has(k) || set.has(String(cod)))) return true;
+    if (set[k] || set[String(cod)]) return true;
+  }
+  const lista = o.npessListaPorCod || null;
+  if (lista) {
+    const raw = lista[k] != null ? lista[k] : (lista[String(cod)] != null ? lista[String(cod)] : lista[cod]);
+    const n = raw && typeof raw === 'object' ? raw.npess : raw;
+    if (npessAcabaEm999(n)) return true;
+  }
+  return false;
+}
+
 /**
  * Top perdas do mês escolhido (não acumulado).
  * opts.temColunaValor === false → não há Fatur. por cliente; não inventa linhas.
@@ -21771,6 +21806,7 @@ function maioresPerdasMes(linhas, opts) {
     return vazio;
   }
   const buckets = {};
+  const npess999Visto = {};
   const list = Array.isArray(linhas) ? linhas : [];
   let algumValor = false;
   let algumN1 = false;
@@ -21783,8 +21819,13 @@ function maioresPerdasMes(linhas, opts) {
     if (!cod) continue;
     const npess = typeof npessDaLinhaVendaQuadro === 'function' ? npessDaLinhaVendaQuadro(row, npessPorCod) : 0;
     const canalLinha = (typeof getCanalIdPorVendedorCod === 'function') ? (getCanalIdPorVendedorCod(npess) || '') : '';
-    if (canalId && canalLinha !== canalId) continue;
     const valor = typeof parseValorVendaSap === 'function' ? parseValorVendaSap(row.valor) : (Number.isFinite(+row.valor) ? +row.valor : null);
+    if (rowYm >= '2026-01' && npess && valor != null && npessAcabaEm999(npess)) {
+      if (!npess999Visto[cod]) npess999Visto[cod] = {};
+      if (!npess999Visto[cod][rowYm]) npess999Visto[cod][rowYm] = {};
+      npess999Visto[cod][rowYm][npess] = arredondarRsPerdas((npess999Visto[cod][rowYm][npess] || 0) + valor);
+    }
+    if (canalId && canalLinha !== canalId) continue;
     const dim = typeof dimensoesVendaQuadro === 'function'
       ? dimensoesVendaQuadro(npess, mapas)
       : { vendedor: 'Por classificar' };
@@ -21829,6 +21870,21 @@ function maioresPerdasMes(linhas, opts) {
       b.nPorVend[vendedor] = arredondarRsPerdas((b.nPorVend[vendedor] || 0) + valor);
     }
   }
+  function npess999DoCod(cod) {
+    const meses = npess999Visto[cod];
+    if (!meses) return { npess: 0, ym: '' };
+    const ymRecente = Object.keys(meses).sort().pop();
+    const slots = meses[ymRecente] || {};
+    let best = 0;
+    let max = null;
+    Object.keys(slots).forEach(function (np) {
+      const v = slots[np];
+      const n = parseInt(np, 10) || 0;
+      if (!n) return;
+      if (max == null || v > max) { max = v; best = n; }
+    });
+    return { npess: best, ym: ymRecente || '' };
+  }
   function vendedorComMaisFatur(map) {
     let nome = '';
     let max = null;
@@ -21847,15 +21903,17 @@ function maioresPerdasMes(linhas, opts) {
     const b = buckets[bkeys[i]];
     const informado = (function () {
       const mapa = o.npessAtualPorCod;
-      if (!mapa) return 0;
+      if (!mapa) return { npess: 0, ym: '' };
       const raw = mapa[b.cod] != null ? mapa[b.cod] : mapa[String(b.cod)];
-      if (raw && typeof raw === 'object') return parseInt(raw.npess, 10) || 0;
-      return parseInt(raw, 10) || 0;
+      if (raw && typeof raw === 'object') {
+        return { npess: parseInt(raw.npess, 10) || 0, ym: String(raw.ym || '').slice(0, 7) };
+      }
+      return { npess: parseInt(raw, 10) || 0, ym: '' };
     })();
     const doMes = (function () {
       const meses = b.mesNpess || {};
       const yms = Object.keys(meses);
-      if (!yms.length) return 0;
+      if (!yms.length) return { npess: 0, ym: '' };
       const desde = yms.some(function (k) { return k >= '2026-01'; });
       const cand = desde ? yms.filter(function (k) { return k >= '2026-01'; }) : yms;
       const ymRecente = cand.slice().sort().pop();
@@ -21868,9 +21926,17 @@ function maioresPerdasMes(linhas, opts) {
         if (!n) return;
         if (max == null || v > max) { max = v; best = n; }
       });
-      return best;
+      return { npess: best, ym: ymRecente || '' };
     })();
-    const npessDono = informado || doMes;
+    const visto999 = npess999DoCod(b.cod);
+    const tem2026 = (informado.ym >= '2026-01') || (doMes.ym >= '2026-01') || (visto999.ym >= '2026-01');
+    let npess2026 = 0;
+    if (informado.ym >= '2026-01' && informado.npess) npess2026 = informado.npess;
+    else if (doMes.ym >= '2026-01' && doMes.npess && doMes.ym >= visto999.ym) npess2026 = doMes.npess;
+    else if (visto999.ym >= '2026-01' && visto999.npess) npess2026 = visto999.npess;
+    else if (doMes.ym >= '2026-01' && doMes.npess) npess2026 = doMes.npess;
+    const npessDono = npess2026 || informado.npess || doMes.npess;
+    if (clienteAnuladoForaDasPerdas(b.cod, npessDono, tem2026, o)) continue;
     let aplicado = false;
     if (npessDono && typeof dimensoesVendaQuadro === 'function') {
       const dimD = dimensoesVendaQuadro(npessDono, mapas);
@@ -21984,7 +22050,7 @@ function textoCriterioPerdas(modelo) {
   if (m.criterio === 'devolucao') {
     return 'Critério: devolução (Fatur. negativo do mês). Não há N-1 por cliente, por isso não se compara com o ano anterior.';
   }
-  return 'Critério: valor perdido = N-1 − N (vendas líquidas, Fatur.), só quem comprou menos que no mesmo mês do ano anterior. O cliente é o mesmo código nos dois anos, mesmo que o vendedor tenha mudado. A linha fica no vendedor atual, o do mês mais recente. Não é acumulado.';
+  return 'Critério: valor perdido = N-1 − N (vendas líquidas, Fatur.), só quem comprou menos que no mesmo mês do ano anterior. O cliente é o mesmo código nos dois anos, mesmo que o vendedor tenha mudado. A linha fica no vendedor atual, o do mês mais recente, e esse vendedor não é um código 999. Não é acumulado. Clientes anulados não entram: o NPess actual de 2026 termina em 999, ou não há linha em 2026 e o cliente está associado a um NPess 999. Um activo que só não comprou no mês continua.';
 }
 
 function perdasFiltroBlank() {
@@ -22143,6 +22209,76 @@ function htmlPerdasMes(modelo, opts) {
 
 const VENDAS_CLIENTE_LS_KEY = 'delta_vendas_cliente_v1';
 const VENDAS_CLIENTE_SUPA_ID = 'vendas_cliente';
+/** Códigos SAP cujo único NPess acaba em 999 (sem linha activa). Não é a lista de clientes. */
+const SAP_ANULADOS_999_ID = 'sap_anulados_999';
+const SAP_ANULADOS_999_LS = 'delta_sap_anulados_999';
+
+function normalizarCodsAnulados999(raw) {
+  const out = {};
+  const arr = Array.isArray(raw) ? raw : ((raw && raw.cods) || []);
+  for (let i = 0; i < arr.length; i++) {
+    const k = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(arr[i]) : String(arr[i] || '').replace(/^0+/, '');
+    if (!k || k === '0') continue;
+    out[k] = 1;
+  }
+  return out;
+}
+
+async function lerSapAnulados999() {
+  if (typeof window !== 'undefined' && window._sapAnulados999Pronto && window._sapAnulados999) return window._sapAnulados999;
+  let local = null;
+  try { local = JSON.parse(localStorage.getItem(SAP_ANULADOS_999_LS) || 'null'); } catch (_) { local = null; }
+  try {
+    const res = await fetch(
+      LISTA_CLIENTES_SUPA_URL + '?id=eq.' + SAP_ANULADOS_999_ID + '&select=data',
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+    );
+    if (res && res.ok) {
+      const rows = await res.json();
+      const data = rows && rows[0] && rows[0].data;
+      if (data && (Array.isArray(data.cods) || Array.isArray(data))) {
+        const map = normalizarCodsAnulados999(data);
+        window._sapAnulados999 = map;
+        window._sapAnulados999Pronto = true;
+        try { localStorage.setItem(SAP_ANULADOS_999_LS, JSON.stringify({ cods: Object.keys(map) })); } catch (_) {}
+        return map;
+      }
+    }
+  } catch (e) {
+    console.warn('lerSapAnulados999:', e.message || e);
+  }
+  const map = normalizarCodsAnulados999(local);
+  window._sapAnulados999 = map;
+  window._sapAnulados999Pronto = true;
+  return map;
+}
+
+async function guardarSapAnulados999(cods) {
+  const lista = [];
+  const seen = {};
+  const arr = Array.isArray(cods) ? cods : [];
+  for (let i = 0; i < arr.length; i++) {
+    const k = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(arr[i]) : String(arr[i] || '').replace(/^0+/, '');
+    if (!k || k === '0' || seen[k]) continue;
+    seen[k] = 1;
+    lista.push(k);
+  }
+  const body = { cods: lista, atualizado_em: new Date().toISOString() };
+  window._sapAnulados999 = normalizarCodsAnulados999(body);
+  window._sapAnulados999Pronto = true;
+  try { localStorage.setItem(SAP_ANULADOS_999_LS, JSON.stringify(body)); } catch (_) {}
+  const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
+    method: 'POST',
+    headers: { ...HEADERS, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ id: SAP_ANULADOS_999_ID, data: body, atualizado_em: body.atualizado_em }),
+  });
+  if (!res || !res.ok) {
+    let detalhe = 'HTTP ' + (res && res.status);
+    try { detalhe += ' ' + String(await res.text()).slice(0, 160); } catch (_) {}
+    throw new Error(detalhe.trim());
+  }
+  return body;
+}
 
 function vendasClienteVazio() {
   return { atualizado_em: null, meses: {} };
@@ -22450,10 +22586,12 @@ function perdasContexto(canalId, ym, ymN1, pack) {
       const mapa = npessAtualPorCodDeVendasCliente(store);
       const out = {};
       Object.keys(mapa || {}).forEach(function (cod) {
-        if (mapa[cod] && mapa[cod].npess) out[cod] = mapa[cod].npess;
+        if (mapa[cod] && mapa[cod].npess) out[cod] = { npess: mapa[cod].npess, ym: mapa[cod].ym || '' };
       });
       return out;
     })(),
+    codsAnulados: (typeof window !== 'undefined' && window._sapAnulados999) || null,
+    npessListaPorCod: typeof npessPorCodDeLista === 'function' ? npessPorCodDeLista(lista) : {},
   };
 }
 
@@ -22475,6 +22613,7 @@ async function montarVendasPerdasCanal() {
     const periodo = typeof periodoVendasMenuSelecionado === 'function' ? periodoVendasMenuSelecionado() : { ym: '', ano: 0, mes: 0 };
     const ymN1 = typeof ymQuadroAnoAnterior === 'function' ? ymQuadroAnoAnterior(periodo.ano, periodo.mes) : '';
     const pack = await perdasLinhasDoPeriodo(periodo.ym, ymN1);
+    try { await lerSapAnulados999(); } catch (_) {}
     if (gen !== _perdasCanalGen) return;
     const ctx = perdasContexto(canalId === 'canal' ? '' : canalId, periodo.ym, ymN1, pack);
     ctx.vendedor = perdasFiltroDe(canalId);
@@ -22534,6 +22673,7 @@ async function montarVendasPerdasGeral() {
     const periodo = typeof periodoQuadroSelecionado === 'function' ? periodoQuadroSelecionado() : { ym: '', ano: 0, mes: 0 };
     const ymN1 = typeof ymQuadroAnoAnterior === 'function' ? ymQuadroAnoAnterior(periodo.ano, periodo.mes) : '';
     const pack = await perdasLinhasDoPeriodo(periodo.ym, ymN1);
+    try { await lerSapAnulados999(); } catch (_) {}
     if (gen !== _perdasGeralGen) return;
     const ctx = perdasContexto('', periodo.ym, ymN1, pack);
     ctx.vendedor = perdasFiltroDe('geral');
@@ -37038,7 +37178,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-pdf-cockpit: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-perdas-sem-999: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
