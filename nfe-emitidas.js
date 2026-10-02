@@ -212,13 +212,180 @@
     });
   }
 
-  function nfeCruzarNota(nota, index, canalDeNpess) {
+  /**
+   * CNPJ que não está na lista: se o nome da NF corresponde a um só código
+   * do catálogo (vendas_cliente / Excel, já com o NPess atual), atribui esse vendedor.
+   * Dois códigos com o mesmo nome (Creative, Beer Bev) ficam sem cliente.
+   * CPF não entra aqui.
+   */
+  function nfeCruzarNota(nota, index, canalDeNpess, catalogo) {
     var dest = nfeNormDoc(nota && nota.destDoc);
     var hits = (index && dest && index.get(dest)) || [];
     var a = nfeAtribuirDestinatario(hits, canalDeNpess);
     var out = Object.assign({}, nota, a);
+    if (out.status === NFE_STATUS_SEM && !nfeDocEhCpf(out.destDoc) && catalogo) {
+      var porNome = nfeAtribuirPorNome(out.cliente, catalogo, canalDeNpess);
+      if (porNome) out = Object.assign({}, out, porNome);
+    }
     if (nfeCpfPrecisaMarcio(out)) return nfeComMarcioEcommerce(out);
     return out;
+  }
+
+  /** Nome comparável: sem acentos, pontuação vira espaço. */
+  function nfeNormChaveNome(s) {
+    return nfeNormNome(s).replace(/[^A-Z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  /**
+   * O nome da NF corresponde ao do código quando são iguais ou um é frase inteira do outro.
+   * Nomes curtos (menos de 8 letras) não chegam — evita apanhar «ME» ou «LTDA» sozinhos.
+   */
+  function nfeNomeCorresponde(nfNome, clienteNome) {
+    var a = nfeNormChaveNome(nfNome);
+    var b = nfeNormChaveNome(clienteNome);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    var curto = a.length <= b.length ? a : b;
+    var longo = a.length <= b.length ? b : a;
+    if (curto.length < 8) return false;
+    return (' ' + longo + ' ').indexOf(' ' + curto + ' ') >= 0;
+  }
+
+  function nfeYmDeData(data) {
+    var s = String(data || '').trim();
+    if (/^\d{4}-\d{2}/.test(s)) return s.slice(0, 7);
+    var m = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+    if (!m) return '';
+    var mes = String(parseInt(m[2], 10)).padStart(2, '0');
+    if (mes < '01' || mes > '12') return '';
+    return m[3] + '-' + mes;
+  }
+
+  /**
+   * NPess que conta, por código SAP. Códigos diferentes não se juntam.
+   * É o das vendas mais recentes: o mês maior; se 2026 já tem vendas, 2025 não entra.
+   * No mesmo mês, fica o NPess com mais Fatur.
+   * linhas: { cod, data|ym, npess, valor, nome }
+   * devolve { cod: { npess, ym, nome, valor } }
+   */
+  function npessAtualDeLinhas(linhas) {
+    var porCod = {};
+    (linhas || []).forEach(function (row) {
+      if (!row) return;
+      var cod = String(row.cod == null ? '' : row.cod).trim();
+      if (!cod) return;
+      var ym = row.ym ? String(row.ym).slice(0, 7) : nfeYmDeData(row.data);
+      if (!/^\d{4}-\d{2}$/.test(ym)) return;
+      var npess = parseInt(row.npess, 10) || 0;
+      if (!npess) return;
+      var valor = Number(row.valor);
+      if (!Number.isFinite(valor)) valor = 0;
+      var nome = String(row.nome || '').trim();
+      if (!porCod[cod]) porCod[cod] = {};
+      if (!porCod[cod][ym]) porCod[cod][ym] = {};
+      if (!porCod[cod][ym][npess]) porCod[cod][ym][npess] = { valor: 0, nome: '' };
+      porCod[cod][ym][npess].valor += valor;
+      if (nome) porCod[cod][ym][npess].nome = nome;
+    });
+    var out = {};
+    Object.keys(porCod).forEach(function (cod) {
+      var meses = porCod[cod];
+      var yms = Object.keys(meses);
+      var temDesde2026 = yms.some(function (ym) { return ym >= '2026-01'; });
+      var candidatos = temDesde2026 ? yms.filter(function (ym) { return ym >= '2026-01'; }) : yms;
+      var ym = candidatos.slice().sort().pop();
+      var slots = meses[ym];
+      var bestNp = 0;
+      var bestVal = null;
+      var bestNome = '';
+      Object.keys(slots).forEach(function (np) {
+        var v = slots[np].valor;
+        var n = parseInt(np, 10) || 0;
+        if (!n) return;
+        if (bestVal == null || v > bestVal) {
+          bestVal = v;
+          bestNp = n;
+          bestNome = slots[np].nome || '';
+        }
+      });
+      if (!bestNp) return;
+      out[cod] = { npess: bestNp, ym: ym, nome: bestNome, valor: bestVal };
+    });
+    return out;
+  }
+
+  function npessAtualPorCodDeVendasCliente(store) {
+    var meses = (store && store.meses) || {};
+    var linhas = [];
+    Object.keys(meses).forEach(function (ym) {
+      var clientes = (meses[ym] && meses[ym].clientes) || {};
+      Object.keys(clientes).forEach(function (k) {
+        var c = clientes[k];
+        if (!c || !c.cod) return;
+        linhas.push({ cod: c.cod, ym: ym, npess: c.npess, valor: c.valor, nome: c.nome });
+      });
+    });
+    return npessAtualDeLinhas(linhas);
+  }
+
+  /** Um registo por código, já com o NPess atual e o nome gravado nesse mês. */
+  function catalogoVendedorAtual(storeOrLinhas) {
+    var mapa;
+    if (storeOrLinhas && storeOrLinhas.meses) mapa = npessAtualPorCodDeVendasCliente(storeOrLinhas);
+    else if (Array.isArray(storeOrLinhas)) mapa = npessAtualDeLinhas(storeOrLinhas);
+    else mapa = {};
+    return Object.keys(mapa).map(function (cod) {
+      var e = mapa[cod];
+      return { cod: cod, npess: e.npess, nome: e.nome, ym: e.ym };
+    });
+  }
+
+  function nfeCodigosPorNome(nomeNf, catalogo) {
+    var hits = {};
+    (catalogo || []).forEach(function (c) {
+      if (!c || c.cod == null || !c.nome) return;
+      if (!nfeNomeCorresponde(nomeNf, c.nome)) return;
+      var cod = String(c.cod).trim();
+      if (!cod || hits[cod]) return;
+      hits[cod] = c;
+    });
+    return Object.keys(hits).map(function (cod) { return hits[cod]; });
+  }
+
+  function nfeAtribuirPorNome(nomeNf, catalogo, canalDeNpess) {
+    var hits = nfeCodigosPorNome(nomeNf, catalogo);
+    if (hits.length !== 1) return null;
+    var c = hits[0];
+    var npess = parseInt(c.npess, 10) || 0;
+    var canalId = '';
+    try {
+      canalId = (typeof canalDeNpess === 'function' ? canalDeNpess(npess) : '') || '';
+    } catch (_) { canalId = ''; }
+    return {
+      status: NFE_STATUS_UNICO,
+      canalId: String(canalId || ''),
+      vendedor: String(c.vendedor || '').trim(),
+      cod: String(c.cod).trim(),
+      npess: npess ? String(npess) : '',
+      codigos: [String(c.cod).trim()],
+      rotulo: '',
+    };
+  }
+
+  /** Notas já «sem cliente»: CNPJ cujo nome é unívoco passa ao vendedor atual. O resto fica. */
+  function nfeReaplicarVendedorPorNome(notas, catalogo, canalDeNpess) {
+    var alteradas = 0;
+    if (!catalogo || !catalogo.length) return { notas: notas || [], alteradas: 0 };
+    var out = (notas || []).map(function (n) {
+      if (!n || n.status !== NFE_STATUS_SEM) return n;
+      if (nfeDocEhCpf(n.destDoc)) return n;
+      if (String(n.vendedor || '').trim()) return n;
+      var porNome = nfeAtribuirPorNome(n.cliente, catalogo, canalDeNpess);
+      if (!porNome) return n;
+      alteradas++;
+      return Object.assign({}, n, porNome);
+    });
+    return { notas: out, alteradas: alteradas };
   }
 
   /** Notas já gravadas «sem cliente»: o CPF sem vendedor passa a Marcio / Ecommerce. O resto fica. */
@@ -502,6 +669,14 @@
     NFE_CPF_NPESS: NFE_CPF_NPESS,
     nfeAtribuirDestinatario: nfeAtribuirDestinatario,
     nfeCruzarNota: nfeCruzarNota,
+    nfeNormChaveNome: nfeNormChaveNome,
+    nfeNomeCorresponde: nfeNomeCorresponde,
+    npessAtualDeLinhas: npessAtualDeLinhas,
+    npessAtualPorCodDeVendasCliente: npessAtualPorCodDeVendasCliente,
+    catalogoVendedorAtual: catalogoVendedorAtual,
+    nfeCodigosPorNome: nfeCodigosPorNome,
+    nfeAtribuirPorNome: nfeAtribuirPorNome,
+    nfeReaplicarVendedorPorNome: nfeReaplicarVendedorPorNome,
     nfeReaplicarCpfSemVendedor: nfeReaplicarCpfSemVendedor,
     nfeAtribDifere: nfeAtribDifere,
     nfeMergeNotas: nfeMergeNotas,

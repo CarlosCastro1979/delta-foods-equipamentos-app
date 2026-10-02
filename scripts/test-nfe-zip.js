@@ -312,9 +312,9 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-02-perdas-chave-cliente'), 'service worker referido no index');
+  assert(html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-02-perdas-chave-cliente'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
 
   const homeDados = html.slice(html.indexOf('class="home-dados-card"'), html.indexOf('class="home-dados-card"') + 700);
@@ -652,8 +652,95 @@ async function testCliqueSemPdf() {
   assert(toasts.some(t => t.indexOf('Esta NF não tem PDF') >= 0), 'avisa que esta NF não tem PDF, veio ' + toasts.join('|'));
 }
 
+function testVendedorAtual() {
+  const linhas = [
+    { cod: '406016', ym: '2025-09', npess: 99520003, valor: 58480.46, nome: 'F. J. RIBEIRO CAFÉ-ME' },
+    { cod: '406016', ym: '2026-01', npess: 99520003, valor: 28362.37, nome: 'F. J. RIBEIRO CAFÉ-ME' },
+    { cod: '406016', ym: '2026-09', npess: 99520020, valor: 46662.60, nome: 'F. J. RIBEIRO CAFÉ-ME' },
+    { cod: '797629', ym: '2025-12', npess: 99520003, valor: 12338.82, nome: 'BRAVISSIMA CAFES E MAQUINAS LTDA' },
+    { cod: '797629', ym: '2026-01', npess: 99520003, valor: 11671.58, nome: 'BRAVISSIMA CAFES E MAQUINAS LTDA' },
+    { cod: '797629', ym: '2026-09', npess: 99520020, valor: 6461.62, nome: 'BRAVISSIMA CAFES E MAQUINAS LTDA' },
+    { cod: '444540', ym: '2026-01', npess: 99520004, valor: 379412.07, nome: 'DIFRISUL DISTRIBUIDORA LTDA' },
+    { cod: '447886', ym: '2026-02', npess: 99520004, valor: 115681.71, nome: 'NUTRI MAIS DISTRIBUIDORA ALIMENTOS' },
+    { cod: '447886', ym: '2026-08', npess: 99520004, valor: 23594.37, nome: 'NUTRI MAIS DISTRIBUIDORA ALIMENTOS' },
+    { cod: '449064', ym: '2026-08', npess: 99520008, valor: 70143.33, nome: 'CREATIVE VARIEDADES LTDA' },
+    { cod: '778577', ym: '2025-01', npess: 99520001, valor: 163102.07, nome: 'CREATIVE VARIEDADES LTDA' },
+    { cod: '778577', ym: '2026-09', npess: 99520008, valor: 96960.36, nome: 'CREATIVE VARIEDADES LTDA' },
+    { cod: '453756', ym: '2026-07', npess: 99520004, valor: 23243.9, nome: 'BEER BEV COM IMP E DIST ALIMENTOS' },
+    { cod: '455724', ym: '2026-07', npess: 99520004, valor: 30449.06, nome: 'BEER BEV COM.IMP.E DIST.ALIMENTOS,' },
+  ];
+  const mapa = nfe.npessAtualDeLinhas(linhas);
+  assert(mapa['406016'].npess === 99520020 && mapa['406016'].ym === '2026-09', '406016 fica no Eduardo, mês 2026-09');
+  assert(mapa['797629'].npess === 99520020, 'Bravissima fica no Eduardo');
+  assert(mapa['444540'].npess === 99520004, 'Difrisul fica no Diogo');
+  assert(mapa['447886'].npess === 99520004 && mapa['447886'].ym === '2026-08', 'Nutri Mais fica no Diogo do mês mais recente');
+  assert(mapa['449064'].npess === 99520008 && mapa['778577'].npess === 99520008, 'Creative são dois códigos, cada um com o NPess atual');
+  assert(mapa['778577'].npess !== 99520001, '778577 não usa o NPess de 2025');
+  assert(mapa['453756'].npess === 99520004 && mapa['455724'].npess === 99520004, 'Beer Bev não junta os dois códigos');
+  const recente = nfe.npessAtualDeLinhas([
+    { cod: '406016', ym: '2026-01', npess: 99520003, valor: 999999, nome: 'F. J. RIBEIRO CAFÉ-ME' },
+    { cod: '406016', ym: '2026-09', npess: 99520020, valor: 10, nome: 'F. J. RIBEIRO CAFÉ-ME' },
+  ]);
+  assert(recente['406016'].npess === 99520020 && recente['406016'].ym === '2026-09', 'o mês mais recente ganha mesmo com menos Fatur');
+
+  const nomes = {
+    99520020: 'EDUARDO MOREIRA',
+    99520004: 'DIOGO OLIVEIRA',
+    99520008: 'MARCIO GORGA',
+    99520003: 'MASSIMO BOTTELLO',
+  };
+  const catalogo = nfe.catalogoVendedorAtual(linhas).map(c => Object.assign({}, c, { vendedor: nomes[c.npess] || '' }));
+  function canal(np) {
+    const n = parseInt(np, 10);
+    if (n === 99520020 || n === 99520003) return 'distribuidores';
+    if (n === 99520004) return 'varejo';
+    if (n === 99520008 || n === 99520001) return 'ecommerce';
+    return canalDeNpess(np);
+  }
+  const vazio = new Map();
+  const ribeiro = nfe.nfeCruzarNota({
+    chave: 'NF102282', numero: '102282', destDoc: '11239661000190',
+    cliente: 'F. J. RIBEIRO CAFÉ-ME RIBER COFFEE',
+  }, vazio, canal, catalogo);
+  assert(ribeiro.status === 'unico' && ribeiro.cod === '406016' && ribeiro.npess === '99520020', 'NF 102282 vai para o Eduardo do 406016, veio ' + ribeiro.npess + ' ' + ribeiro.cod);
+  assert(ribeiro.vendedor === 'EDUARDO MOREIRA' && ribeiro.canalId === 'distribuidores', '102282 canal distribuidores');
+  const difri = nfe.nfeCruzarNota({
+    chave: 'NF102272', numero: '102272', destDoc: '83690339000194',
+    cliente: 'DIFRISUL DISTRIBUIDORA LTDA DRIFISUL',
+  }, vazio, canal, catalogo);
+  assert(difri.status === 'unico' && difri.cod === '444540' && difri.npess === '99520004', 'NF 102272 Difrisul vai para o Diogo, veio ' + difri.npess + ' ' + difri.cod);
+  assert(difri.vendedor === 'DIOGO OLIVEIRA' && difri.canalId === 'varejo', '102272 canal varejo');
+  const creative = nfe.nfeCruzarNota({
+    chave: 'CRE', numero: '1', destDoc: '00000000000191', cliente: 'CREATIVE VARIEDADES LTDA',
+  }, vazio, canal, catalogo);
+  assert(creative.status === 'sem_cliente' && !creative.vendedor, 'nome em dois códigos Creative não se atribui');
+  const beer = nfe.nfeCruzarNota({
+    chave: 'BB', numero: '2', destDoc: '00000000000192', cliente: 'BEER BEV COM.IMP.E DIST.ALIMENTOS,',
+  }, vazio, canal, catalogo);
+  assert(beer.status === 'sem_cliente' && !beer.vendedor, 'nome em dois códigos Beer Bev não se atribui');
+  const idxLista = nfe.nfeIndexClientes([
+    { cod: '9', cnpj: '11.239.661/0001-90', npess: '99520002', vendedor: 'HÉLCIO GRÉGIO' },
+  ]);
+  const pelaLista = nfe.nfeCruzarNota({
+    chave: 'L', numero: '102282', destDoc: '11239661000190', cliente: 'F. J. RIBEIRO CAFÉ-ME RIBER COFFEE',
+  }, idxLista, canal, catalogo);
+  assert(pelaLista.cod === '9' && pelaLista.npess === '99520002', 'CNPJ que já está na lista não passa pelo nome');
+  const reap = nfe.nfeReaplicarVendedorPorNome([
+    { chave: 'NF102282', numero: '102282', destDoc: '11239661000190', cliente: 'F. J. RIBEIRO CAFÉ-ME RIBER COFFEE', status: 'sem_cliente', vendedor: '' },
+    { chave: 'H1', status: 'unico', vendedor: 'HÉLCIO GRÉGIO', npess: '99520002', canalId: 'horeca', destDoc: '03852638000149' },
+    { chave: 'CPF1', destDoc: '31499205821', cliente: 'Leandro Falcone', status: 'sem_cliente', vendedor: '' },
+  ], catalogo, canal);
+  assert(reap.alteradas === 1, 'só o CNPJ sem cliente e com nome unívoco muda');
+  assert(reap.notas[0].npess === '99520020' && reap.notas[0].cod === '406016', '102282 já gravada passa ao Eduardo');
+  assert(reap.notas[1].vendedor === 'HÉLCIO GRÉGIO' && reap.notas[1].npess === '99520002', 'a nota do Hélcio não muda');
+  assert(!reap.notas[2].vendedor, 'CPF sem vendedor não entra na regra do nome');
+  const cpf = nfe.nfeCruzarNota({ chave: 'CPF1', destDoc: '31499205821', cliente: 'Leandro Falcone' }, vazio, canal, catalogo);
+  assert(cpf.vendedor === 'Marcio Gorga' && cpf.npess === '99520001', 'CPF sem lista continua no Marcio');
+}
+
 testAtribuicao();
 testCpfMarcio();
+testVendedorAtual();
 testMenuCanal();
 testHorecaNaoListaEcommerce();
 testXmlAvulso();

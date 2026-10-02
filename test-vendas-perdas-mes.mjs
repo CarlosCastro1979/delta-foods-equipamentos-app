@@ -422,6 +422,33 @@ check('NPess diferente entre anos junta o N ao N-1 do mesmo cliente', () => {
   assert.ok(ctx.textoCriterioPerdas(modelo).includes('mesmo que o vendedor tenha mudado'));
 });
 
+check('sem compras em N, a linha fica no NPess atual e o R$ não muda', () => {
+  const mapas = ctx.mapasVendasQuadro();
+  mapas.vendedorPorNpess[99520003] = 'MASSIMO BOTTELLO';
+  mapas.vendedorPorNpess[99520020] = 'EDUARDO MOREIRA';
+  mapas.canalPorNpess[99520003] = 'Distribuidores regionais';
+  mapas.canalPorNpess[99520020] = 'Distribuidores regionais';
+  ctx._canalPorNpess = null;
+  const modelo = ctx.maioresPerdasMes([
+    { cod: '406016', data: '2025-09-15', valor: 58480.46, npess: 99520003 },
+  ], {
+    ym: YM,
+    ymN1: YM1,
+    canalId: 'distribuidores',
+    mapas: mapas,
+    temColunaValor: true,
+    nomesPorCod: { '406016': 'F. J. RIBEIRO CAFÉ-ME' },
+    npessAtualPorCod: { '406016': 99520020 },
+  });
+  const ribeiro = modelo.grupos.flatMap(g => g.linhas).find(r => r.cod === '406016');
+  assert.ok(ribeiro, 'o Ribeiro entra mesmo sem compras em N');
+  assert.equal(ribeiro.vendedor, 'Eduardo Moreira');
+  assert.equal(ribeiro.n1, 58480.46);
+  assert.equal(ribeiro.n, 0);
+  assert.equal(ribeiro.perda, 58480.46);
+  assert.ok(!modelo.grupos.some(g => g.vendedor === 'Massimo Bottello' && g.linhas.some(r => r.cod === '406016')));
+});
+
 check('o filtro do vendedor grava no localStorage', () => {
   ctx._perdasFiltroUi = null;
   store.delta_vendas_perdas_filtro = JSON.stringify({
@@ -436,8 +463,8 @@ check('o filtro do vendedor grava no localStorage', () => {
   assert.equal(saved.porCanal.horeca, '');
   assert.equal(saved.geral, 'Filipe Neves');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-02-perdas-chave-cliente'));
-  assert.ok(html.includes('v2026-10-02-perdas-chave-cliente'));
+  assert.ok(sw.includes('v2026-10-02-vendedor-atual'));
+  assert.ok(html.includes('v2026-10-02-vendedor-atual'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);

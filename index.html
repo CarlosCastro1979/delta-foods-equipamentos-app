@@ -12986,10 +12986,40 @@ async function nfePersistir(notas) {
   return nuvem;
 }
 
-/** Junta local + cloud. Não grava a meio de um parse — só reconcilia o que já estava guardado. */
-function nfeAplicarRegraGuardada(notas) {
-  if (typeof nfeReaplicarCpfSemVendedor !== 'function') return { notas: notas || [], alteradas: 0 };
-  return nfeReaplicarCpfSemVendedor(notas);
+/**
+ * Junta local + cloud. Não grava a meio de um parse — só reconcilia o que já estava guardado.
+ * Nome unívoco no vendas_cliente (vendedor atual) e, a seguir, CPF sem vendedor → Marcio.
+ */
+function nfeAplicarRegraGuardada(notas, catalogo) {
+  let base = notas || [];
+  let alteradas = 0;
+  if (typeof nfeReaplicarVendedorPorNome === 'function' && catalogo && catalogo.length) {
+    const nome = nfeReaplicarVendedorPorNome(base, catalogo, nfeCanalDeNpess);
+    base = (nome.notas || []).map(n => (typeof nfeComCanal === 'function' ? nfeComCanal(n) : n));
+    alteradas += nome.alteradas || 0;
+  }
+  if (typeof nfeReaplicarCpfSemVendedor !== 'function') return { notas: base, alteradas: alteradas };
+  const cpf = nfeReaplicarCpfSemVendedor(base);
+  return { notas: cpf.notas, alteradas: alteradas + (cpf.alteradas || 0) };
+}
+
+/** Catálogo cod → nome + NPess atual (mês mais recente de 2026) a partir do vendas_cliente. */
+function nfeCatalogoVendedorAtual(store) {
+  if (typeof catalogoVendedorAtual !== 'function') return [];
+  const lista = catalogoVendedorAtual(store);
+  return lista.map(function (c) {
+    const np = String(c.npess || '');
+    const vend = (typeof VENDEDOR_MAP !== 'undefined' && VENDEDOR_MAP[np]) ? VENDEDOR_MAP[np] : '';
+    return { cod: c.cod, npess: c.npess, nome: c.nome, ym: c.ym, vendedor: vend };
+  });
+}
+
+async function nfeCatalogoPronto() {
+  let store = (typeof window !== 'undefined' && window._vendasCliente) || null;
+  if ((!store || !store.meses) && typeof lerVendasClientePersistida === 'function') {
+    try { store = await lerVendasClientePersistida(); } catch (_) { store = null; }
+  }
+  return nfeCatalogoVendedorAtual(store);
 }
 
 /** A regra do CPF sem vendedor também vale para notas já gravadas «sem cliente». Não apaga as outras. */
@@ -13011,8 +13041,9 @@ async function nfeHidrate() {
   if (typeof nfeJuntarPdfsLocais === 'function') local = nfeJuntarPdfsLocais(local, pdfsLocais);
   let remote = null;
   try { remote = await nfeLoadRemote(); } catch (_) { remote = null; }
+  const catalogoNomes = await nfeCatalogoPronto();
   if (remote == null) {
-    const reap = nfeAplicarRegraGuardada(local);
+    const reap = nfeAplicarRegraGuardada(local, catalogoNomes);
     _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsLocais) : reap.notas;
     if (reap.alteradas > 0) {
       try { await idbSet(NFE_IDB_KEY, { notas: reap.notas.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n)), ts: new Date().toISOString() }); } catch (_) {}
@@ -13020,7 +13051,7 @@ async function nfeHidrate() {
     return;
   }
   const merged = nfeMergeNotas(local, remote);
-  const reap = nfeAplicarRegraGuardada(merged.notas);
+  const reap = nfeAplicarRegraGuardada(merged.notas, catalogoNomes);
   _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsLocais) : reap.notas;
   const localSet = new Set(local.map(n => n && n.chave).filter(Boolean));
   const remoteBy = new Map();
@@ -13142,16 +13173,17 @@ async function nfeOnFiles(ev) {
       return;
     }
     let atrib = [];
+    const catalogoNomes = await nfeCatalogoPronto();
     if (parsed.length) {
       const clientes = await nfeGarantirClientes();
       const index = nfeIndexClientes(clientes);
-      atrib = parsed.map(n => nfeComCanal(nfeCruzarNota(n, index, nfeCanalDeNpess)));
+      atrib = parsed.map(n => nfeComCanal(nfeCruzarNota(n, index, nfeCanalDeNpess, catalogoNomes)));
     }
     const merged = nfeMergeNotas(_nfeNotas, atrib);
     const associado = typeof nfeAssociarPdfs === 'function'
       ? nfeAssociarPdfs(merged.notas, pdfs)
       : { notas: merged.notas, ligados: 0, soltos: pdfs.length };
-    const reap = nfeAplicarRegraGuardada(associado.notas);
+    const reap = nfeAplicarRegraGuardada(associado.notas, catalogoNomes);
     _nfeNotas = reap.notas;
     let nuvem = null;
     if (merged.novas > 0 || reap.alteradas > 0 || associado.ligados > 0) nuvem = await nfePersistir(_nfeNotas);
@@ -21410,7 +21442,8 @@ async function loadVendasMenuCanal() {
  * Fonte = Fatur. e NPess gravados por cliente na carga (mês corrente e anterior).
  * A tabela vendas não tem essas colunas; o vendas_quadro é por vendedor e não chega.
  * Perda = max(0, N-1 − N). A comparação é pelo código do cliente: se o NPess
- * mudou de um ano para o outro, o N junta ao N-1 (não fica 0).
+ * mudou de um ano para o outro, o N junta ao N-1 (não fica 0). O valor perdido
+ * não muda; a linha fica no NPess atual (mês mais recente de 2026), não no de N-1.
  * Sem N-1 por cliente, a perda é o Fatur. negativo do mês.
  */
 const PERDAS_FILTRO_LS = 'delta_vendas_perdas_filtro';
@@ -21492,7 +21525,8 @@ function indiceOrdemVendedorPerdas(nome, ordem) {
  * opts.temColunaValor === false → não há Fatur. por cliente; não inventa linhas.
  * opts.canalId vazio = todos os canais. Com canal, só NPess desse menu.
  * A chave é o código do cliente. NPess diferente entre N e N-1 não parte a linha.
- * A linha fica no vendedor com mais Fatur. no mês N; sem compras em N, no do N-1.
+ * Quem fica com a linha é o NPess atual: opts.npessAtualPorCod (histórico todo)
+ * ou, sem isso, o mês mais recente entre N e N-1. 2025 não ganha se 2026 já tiver outro.
  */
 function maioresPerdasMes(linhas, opts) {
   const o = opts || {};
@@ -21541,6 +21575,7 @@ function maioresPerdasMes(linhas, opts) {
         nPorVend: {},
         n1PorVend: {},
         canalPorVend: {},
+        mesNpess: {},
       };
     }
     const b = buckets[key];
@@ -21550,6 +21585,10 @@ function maioresPerdasMes(linhas, opts) {
     }
     if (valor == null) continue;
     algumValor = true;
+    if (npess) {
+      if (!b.mesNpess[rowYm]) b.mesNpess[rowYm] = {};
+      b.mesNpess[rowYm][npess] = arredondarRsPerdas((b.mesNpess[rowYm][npess] || 0) + valor);
+    }
     if (canalLinha) b.canalPorVend[vendedor] = canalLinha;
     if (rowYm === ymN1) {
       b.n1 = arredondarRsPerdas(b.n1 + valor);
@@ -21579,15 +21618,58 @@ function maioresPerdasMes(linhas, opts) {
   const bkeys = Object.keys(buckets);
   for (let i = 0; i < bkeys.length; i++) {
     const b = buckets[bkeys[i]];
-    const dono = vendedorComMaisFatur(b.nPorVend) || vendedorComMaisFatur(b.n1PorVend) || b.vendedor;
-    if (dono) {
-      b.vendedor = dono;
-      const cid = b.canalPorVend[dono];
-      if (cid) {
-        b.canalId = cid;
-        b.canal = nomeCanalAppPerdas(cid);
+    const informado = (function () {
+      const mapa = o.npessAtualPorCod;
+      if (!mapa) return 0;
+      const raw = mapa[b.cod] != null ? mapa[b.cod] : mapa[String(b.cod)];
+      if (raw && typeof raw === 'object') return parseInt(raw.npess, 10) || 0;
+      return parseInt(raw, 10) || 0;
+    })();
+    const doMes = (function () {
+      const meses = b.mesNpess || {};
+      const yms = Object.keys(meses);
+      if (!yms.length) return 0;
+      const desde = yms.some(function (k) { return k >= '2026-01'; });
+      const cand = desde ? yms.filter(function (k) { return k >= '2026-01'; }) : yms;
+      const ymRecente = cand.slice().sort().pop();
+      const slots = meses[ymRecente] || {};
+      let best = 0;
+      let max = null;
+      Object.keys(slots).forEach(function (np) {
+        const v = slots[np];
+        const n = parseInt(np, 10) || 0;
+        if (!n) return;
+        if (max == null || v > max) { max = v; best = n; }
+      });
+      return best;
+    })();
+    const npessDono = informado || doMes;
+    let aplicado = false;
+    if (npessDono && typeof dimensoesVendaQuadro === 'function') {
+      const dimD = dimensoesVendaQuadro(npessDono, mapas);
+      const vendD = nomeExibicaoVendedorPerdas(dimD && dimD.vendedor);
+      if (vendD && vendD !== 'Por classificar') {
+        b.vendedor = vendD;
+        const cidD = (typeof getCanalIdPorVendedorCod === 'function') ? (getCanalIdPorVendedorCod(npessDono) || '') : '';
+        if (cidD) {
+          b.canalId = cidD;
+          b.canal = nomeCanalAppPerdas(cidD);
+        }
+        aplicado = true;
       }
     }
+    if (!aplicado) {
+      const dono = vendedorComMaisFatur(b.nPorVend) || vendedorComMaisFatur(b.n1PorVend) || b.vendedor;
+      if (dono) {
+        b.vendedor = dono;
+        const cid = b.canalPorVend[dono];
+        if (cid) {
+          b.canalId = cid;
+          b.canal = nomeCanalAppPerdas(cid);
+        }
+      }
+    }
+    if (canalId && b.canalId && b.canalId !== canalId) continue;
     let perda = 0;
     let n = 0;
     let n1 = 0;
@@ -21675,7 +21757,7 @@ function textoCriterioPerdas(modelo) {
   if (m.criterio === 'devolucao') {
     return 'Critério: devolução (Fatur. negativo do mês). Não há N-1 por cliente, por isso não se compara com o ano anterior.';
   }
-  return 'Critério: valor perdido = N-1 − N (vendas líquidas, Fatur.), só quem comprou menos que no mesmo mês do ano anterior. O cliente é o mesmo código nos dois anos, mesmo que o vendedor tenha mudado. Não é acumulado.';
+  return 'Critério: valor perdido = N-1 − N (vendas líquidas, Fatur.), só quem comprou menos que no mesmo mês do ano anterior. O cliente é o mesmo código nos dois anos, mesmo que o vendedor tenha mudado. A linha fica no vendedor atual, o do mês mais recente. Não é acumulado.';
 }
 
 function perdasFiltroBlank() {
@@ -22135,6 +22217,16 @@ function perdasContexto(canalId, ym, ymN1, pack) {
     mapas: typeof mapasVendasQuadro === 'function' ? mapasVendasQuadro() : null,
     temColunaValor: !!(pack && pack.temColunaValor),
     vendedor: perdasFiltroDe(canalId ? canalId : 'geral'),
+    npessAtualPorCod: (function () {
+      const store = (typeof window !== 'undefined' && window._vendasCliente) || null;
+      if (!store || typeof npessAtualPorCodDeVendasCliente !== 'function') return {};
+      const mapa = npessAtualPorCodDeVendasCliente(store);
+      const out = {};
+      Object.keys(mapa || {}).forEach(function (cod) {
+        if (mapa[cod] && mapa[cod].npess) out[cod] = mapa[cod].npess;
+      });
+      return out;
+    })(),
   };
 }
 
@@ -36719,7 +36811,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-perdas-chave-cliente: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-02-vendedor-atual: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
