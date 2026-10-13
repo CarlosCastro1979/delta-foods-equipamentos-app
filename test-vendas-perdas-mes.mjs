@@ -552,8 +552,8 @@ check('o filtro do vendedor grava no localStorage', () => {
   assert.equal(saved.porCanal.horeca, '');
   assert.equal(saved.geral, 'Filipe Neves');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-02-perdas-sem-999'));
-  assert.ok(html.includes('v2026-10-02-perdas-sem-999'));
+  assert.ok(sw.includes('v2026-10-13-comissao-rc'));
+  assert.ok(html.includes('v2026-10-13-comissao-rc'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);

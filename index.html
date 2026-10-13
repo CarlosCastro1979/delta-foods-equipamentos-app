@@ -1980,6 +1980,8 @@ var _unused_placeholder = 1;
 </script>
 <script src="simulador-template.js"></script>
 <script src="nfe-emitidas.js"></script>
+<script src="comissao-rc-mapa.js"></script>
+<script src="comissao-rc.js"></script>
 </head>
 <body class="view-home">
 
@@ -3841,7 +3843,7 @@ var _unused_placeholder = 1;
         <div>
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Área Financeira</h2>
-          <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">Vista consolidada (todos os canais) — encerramentos, contencioso, dívida sem compras e documento Quebra.</p>
+          <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">Vista consolidada (todos os canais) — encerramentos, contencioso, dívida sem compras, documento Quebra e comissão de RC.</p>
         </div>
       </div>
       <div class="sub-nav" style="margin-bottom:16px;">
@@ -3849,6 +3851,7 @@ var _unused_placeholder = 1;
         <button type="button" class="sub-tab" id="af-tab-cont" onclick="showAreaFinanceira('contencioso')">Contencioso</button>
         <button type="button" class="sub-tab" id="af-tab-div" onclick="showAreaFinanceira('divida-sem-compras')">Dívida + sem compras ≥ 3m</button>
         <button type="button" class="sub-tab" id="af-tab-quebra" onclick="showAreaFinanceira('quebra')">Criar documento Quebra</button>
+        <button type="button" class="sub-tab" id="af-tab-rc" onclick="showAreaFinanceira('comissao-rc')">Comissão de RC</button>
       </div>
       <div id="af-sec-encerramentos">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
@@ -3957,6 +3960,23 @@ var _unused_placeholder = 1;
           </div>
           <div id="af-qb-status" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
         </div>
+      </div>
+      <div id="af-sec-comissao-rc" style="display:none;">
+        <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:12px;">
+          <div>
+            <h3 style="font-size:16px;font-weight:600;margin:0 0 4px;">Comissão de RC</h3>
+            <p style="font-size:12px;color:var(--muted);margin:0;line-height:1.45;">Faturação mensal da soma dos clientes de cada RC e comissão a pagar (4%).</p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <label style="font-size:12px;color:var(--muted);">Mês
+              <select id="cr-mes" class="form-input" style="height:36px;min-width:120px;margin-left:6px;" onchange="renderComissaoRc()"></select>
+            </label>
+            <label style="font-size:12px;color:var(--muted);">Ano
+              <select id="cr-ano" class="form-input" style="height:36px;min-width:90px;margin-left:6px;" onchange="renderComissaoRc()"></select>
+            </label>
+          </div>
+        </div>
+        <div id="cr-host"><div style="color:var(--muted);font-size:13px;padding:12px 0;">A carregar…</div></div>
       </div>
     </div>
   </div>
@@ -12857,7 +12877,7 @@ async function abrirAreaFinanceiraHome() {
     const gate = document.getElementById('af-pin-gate');
     const content = document.getElementById('af-content');
     if (content && content.style.display === 'block') {
-      showAreaFinanceira(_afSubActiva || 'encerramentos');
+      showAreaFinanceira(typeof subAreaFinanceiraInicial === 'function' ? subAreaFinanceiraInicial() : (_afSubActiva || 'encerramentos'));
       return;
     }
     if (gate) gate.style.display = '';
@@ -12870,7 +12890,7 @@ async function abrirAreaFinanceiraHome() {
     if (!ok) { voltarHome(); return; }
     if (gate) gate.style.display = 'none';
     if (content) content.style.display = 'block';
-    showAreaFinanceira('encerramentos');
+    showAreaFinanceira(typeof subAreaFinanceiraInicial === 'function' ? subAreaFinanceiraInicial() : 'encerramentos');
   } catch (e) {
     console.error('abrirAreaFinanceiraHome', e);
     alert('Erro ao abrir Área Financeira: ' + (e && e.message ? e.message : e));
@@ -27907,6 +27927,7 @@ function confirmarLogin() {
   lo.style.display = 'none';
   voltarHome();
   atualizarHomeCanais();
+  if (typeof tentarAbrirComissaoRcDeepLink === 'function') tentarAbrirComissaoRcDeepLink();
 }
 
 function aplicarUtilizador(nome) {
@@ -34851,6 +34872,7 @@ function showAreaFinanceira(sub) {
     contencioso: 'af-sec-contencioso',
     'divida-sem-compras': 'af-sec-divida-sem-compras',
     quebra: 'af-sec-quebra',
+    'comissao-rc': 'af-sec-comissao-rc',
   };
   Object.values(map).forEach(id => {
     const el = document.getElementById(id);
@@ -34863,10 +34885,12 @@ function showAreaFinanceira(sub) {
   document.getElementById('af-tab-cont')?.classList.toggle('active', _afSubActiva === 'contencioso');
   document.getElementById('af-tab-div')?.classList.toggle('active', _afSubActiva === 'divida-sem-compras');
   document.getElementById('af-tab-quebra')?.classList.toggle('active', _afSubActiva === 'quebra');
+  document.getElementById('af-tab-rc')?.classList.toggle('active', _afSubActiva === 'comissao-rc');
   if (_afSubActiva === 'encerramentos') loadAfEncerramentos();
   else if (_afSubActiva === 'contencioso') loadAfContencioso();
   else if (_afSubActiva === 'divida-sem-compras') loadAfDividaSemCompras();
   else if (_afSubActiva === 'quebra') quebraInitPanel();
+  else if (_afSubActiva === 'comissao-rc' && typeof renderComissaoRc === 'function') renderComissaoRc();
 }
 
 async function loadAfEncerramentos() {
@@ -37162,6 +37186,7 @@ async function exportATHistoricoExcel() {
 window.addEventListener('DOMContentLoaded', async () => {
   initLogin();
   voltarHome(); // abre na seleção de canais (+ Dados)
+  if (typeof tentarAbrirComissaoRcDeepLink === 'function') tentarAbrirComissaoRcDeepLink();
   try { await carregarListaClientesLocalAsync(); } catch (_) {}
   await sincronizarListaClientes();
   try { await sincronizarListaContencioso(); } catch (_) {}
@@ -37178,7 +37203,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-02-perdas-sem-999: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-13-comissao-rc: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

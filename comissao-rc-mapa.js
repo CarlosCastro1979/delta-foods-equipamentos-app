@@ -1,0 +1,367 @@
+/* Mapa RC → códigos de cliente. Seed da lista Excel (Diogo excluído). Não editar à mão. */
+var COMISSAO_RC_MAPA_SEED = {
+  "taxa": 0.04,
+  "origem": "Lista Clientes Diogo com RC",
+  "nota": "Atribuições cujo nome contém Diogo foram ignoradas. Cada RC fica com os códigos de cliente da coluna NOME VENDEDOR.",
+  "rcs": [
+    {
+      "nome": "EMANUEL VALLE",
+      "clientes": [
+        {
+          "cod": "425623",
+          "nome": "Caico Distribuid. Laticinios Frios"
+        },
+        {
+          "cod": "457218",
+          "nome": "D&D ANGEIRAS DISTR"
+        },
+        {
+          "cod": "431503",
+          "nome": "Dia Distribuidora"
+        },
+        {
+          "cod": "433763",
+          "nome": "Dia Distribuidora"
+        },
+        {
+          "cod": "431609",
+          "nome": "Distrib. E Logist. Pernambuco I.e."
+        },
+        {
+          "cod": "447886",
+          "nome": "Nutri Mais Distribuidora Alimentos"
+        },
+        {
+          "cod": "451829",
+          "nome": "Pontual"
+        },
+        {
+          "cod": "410730",
+          "nome": "Rubi Distribuidora"
+        }
+      ]
+    },
+    {
+      "nome": "FABRICIO BERTASINI",
+      "clientes": [
+        {
+          "cod": "423557",
+          "nome": "DNA 2"
+        },
+        {
+          "cod": "410732",
+          "nome": "DNA Disitribuidora"
+        },
+        {
+          "cod": "749094",
+          "nome": "Peralta Dist De Alimentos Ltda"
+        }
+      ]
+    },
+    {
+      "nome": "FABRICIO FERNANDES",
+      "clientes": [
+        {
+          "cod": "450798",
+          "nome": "Ccb Central De Compras Do Brasil Lt"
+        },
+        {
+          "cod": "409145",
+          "nome": "Drift Comercio De Alimentos S.a."
+        },
+        {
+          "cod": "760254",
+          "nome": "Drift Comercio De Alimentos S.a."
+        },
+        {
+          "cod": "760255",
+          "nome": "Drift Comercio De Alimentos S.a."
+        },
+        {
+          "cod": "782343",
+          "nome": "Drift Comercio De Alimentos S.a."
+        },
+        {
+          "cod": "795353",
+          "nome": "Drift Comercio De Alimentos S.a."
+        },
+        {
+          "cod": "423964",
+          "nome": "Drift Comercio De Alimentos S/a"
+        },
+        {
+          "cod": "417591",
+          "nome": "Drift Comercio De Alimentos S/a."
+        },
+        {
+          "cod": "440037",
+          "nome": "Drift Comercio De Alimentos S/a."
+        },
+        {
+          "cod": "440039",
+          "nome": "Drift Comercio De Alimentos S/a."
+        },
+        {
+          "cod": "756130",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756205",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756206",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756207",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756208",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756209",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756210",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756211",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756212",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756222",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756224",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756233",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "756238",
+          "nome": "Drift Comercio De Alimentos Sa"
+        },
+        {
+          "cod": "791222",
+          "nome": "Drift Comércio De Alimentos S.a."
+        },
+        {
+          "cod": "453894",
+          "nome": "ELSON S PRODUTOS ALIMENTICIOS LTDA - LINHARES"
+        },
+        {
+          "cod": "453991",
+          "nome": "ELSON S PRODUTOS ALIMENTICIOS LTDA - VIANA"
+        },
+        {
+          "cod": "411059",
+          "nome": "Itapoa Supermercado Ltda"
+        },
+        {
+          "cod": "425836",
+          "nome": "Itapoa Supermercado Ltda"
+        },
+        {
+          "cod": "755807",
+          "nome": "Itapoa Supermercado Ltda"
+        },
+        {
+          "cod": "756185",
+          "nome": "Itapoa Supermercado Ltda"
+        },
+        {
+          "cod": "756427",
+          "nome": "Itapoa Supermercado Ltda"
+        },
+        {
+          "cod": "756203",
+          "nome": "Itapoa Supermercados Ltda"
+        },
+        {
+          "cod": "756215",
+          "nome": "Itapoa Supermercados Ltda"
+        },
+        {
+          "cod": "769473",
+          "nome": "Itapoa Supermercados Ltda"
+        },
+        {
+          "cod": "448201",
+          "nome": "Lube Distribuidora Ltda"
+        },
+        {
+          "cod": "756229",
+          "nome": "Osvaldo Perim Supermercado Ltda"
+        },
+        {
+          "cod": "439751",
+          "nome": "Osvaldo Perim Supermercados Ltda"
+        },
+        {
+          "cod": "440546",
+          "nome": "Primato Cooperativa Agroindustrial"
+        },
+        {
+          "cod": "440549",
+          "nome": "Primato Cooperativa Agroindustrial"
+        },
+        {
+          "cod": "756232",
+          "nome": "Realmar Distribuidora Ltda"
+        },
+        {
+          "cod": "448761",
+          "nome": "Supermercado Show De Compras Ltda"
+        }
+      ]
+    },
+    {
+      "nome": "JACSON",
+      "clientes": [
+        {
+          "cod": "442911",
+          "nome": "Casa Prime Ltda"
+        },
+        {
+          "cod": "429014",
+          "nome": "Essence Representacoes Eireli"
+        }
+      ]
+    },
+    {
+      "nome": "JOCINEI NEVES",
+      "clientes": [
+        {
+          "cod": "453756",
+          "nome": "BEER BEV COM IMP E DIST ALIMENTOS LTDA"
+        },
+        {
+          "cod": "455724",
+          "nome": "BEER BEV COM IMP E DIST ALIMENTOS LTDA"
+        },
+        {
+          "cod": "433720",
+          "nome": "Coop. Prod. E Abastecim. Vale Do It"
+        },
+        {
+          "cod": "432923",
+          "nome": "Cooperativa Prdc E Abst Vale Itajai"
+        },
+        {
+          "cod": "444540",
+          "nome": "DIFRISUL"
+        },
+        {
+          "cod": "433642",
+          "nome": "Gbr Comercio E Distribuicao  Ltda"
+        },
+        {
+          "cod": "438220",
+          "nome": "Hiper Select Supermercados  Ltda"
+        },
+        {
+          "cod": "440336",
+          "nome": "Primato Cooperativa Agroindustrial"
+        },
+        {
+          "cod": "440548",
+          "nome": "Primato Cooperativa Agroindustrial"
+        },
+        {
+          "cod": "440550",
+          "nome": "Primato Cooperativa Agroindustrial"
+        },
+        {
+          "cod": "440551",
+          "nome": "Primato Cooperativa Agroindustrial"
+        },
+        {
+          "cod": "440552",
+          "nome": "Primato Cooperativa Agroindustrial"
+        },
+        {
+          "cod": "440554",
+          "nome": "Primato Cooperativa Agroindustrial"
+        },
+        {
+          "cod": "440555",
+          "nome": "Primato Cooperativa Agroindustrial"
+        },
+        {
+          "cod": "440780",
+          "nome": "Primato Cooperativa Agroindustrial"
+        },
+        {
+          "cod": "434292",
+          "nome": "Silvieri Supermercados Ltda"
+        },
+        {
+          "cod": "434363",
+          "nome": "Silvieri Supermercados Ltda"
+        },
+        {
+          "cod": "426641",
+          "nome": "Supermercado Silveira  Ltda"
+        },
+        {
+          "cod": "433068",
+          "nome": "Supermercados Taviana Ltda"
+        }
+      ]
+    },
+    {
+      "nome": "RICARDO MIRANDA",
+      "clientes": [
+        {
+          "cod": "749004",
+          "nome": "Cencosud Brasil Comercial S.a"
+        },
+        {
+          "cod": "759725",
+          "nome": "Cencosud Brasil Comercial S.a"
+        },
+        {
+          "cod": "424765",
+          "nome": "Comercial De Alimentos Gilmar Ltda"
+        },
+        {
+          "cod": "424769",
+          "nome": "Comercial De Alimentos Gilmar Ltda"
+        }
+      ]
+    },
+    {
+      "nome": "ÁLVARO MESQUITA",
+      "clientes": [
+        {
+          "cod": "414816",
+          "nome": "CE VEND"
+        },
+        {
+          "cod": "428521",
+          "nome": "Grupo Opção (Food)"
+        },
+        {
+          "cod": "423527",
+          "nome": "Grupo Opção (Varejo)"
+        },
+        {
+          "cod": "411232",
+          "nome": "Mercadinho São Luiz"
+        }
+      ]
+    }
+  ]
+};
