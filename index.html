@@ -4125,6 +4125,24 @@ var _unused_placeholder = 1;
         <div id="sap-ultima-carga" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
       </div>
 
+      <!-- CARREGAR LISTA DE RC -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="font-size:22px;">🤝</span>
+          <div>
+            <div style="font-weight:600;font-size:15px;">Carregar lista de RC</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5;">
+              Excel com o código do cliente, o nome do cliente e <strong>NOME VENDEDOR</strong> (folha Lista Completa).<br>
+              Nomes de vendedor; o que for Diogo é ignorado; cada nome fica com os códigos de cliente; a comissão é 4% da faturação mensal desses clientes.<br>
+              O ficheiro substitui o mapa. Se tiver etiqueta de sensibilidade Microsoft, a leitura pára e o mapa actual mantém-se.
+            </div>
+          </div>
+        </div>
+        <input type="file" id="dados-rc-input" accept=".xlsx,.xls" style="display:none" onchange="carregarListaComissaoRc(event)">
+        <button type="button" class="btn btn-primary btn-sm" id="dados-rc-btn" onclick="document.getElementById('dados-rc-input').click()">📂 Selecionar ficheiro</button>
+        <div id="dados-rc-status" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+      </div>
+
       <!-- CARREGAR DÍVIDAS -->
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
@@ -9503,6 +9521,99 @@ function mensagemErroLeituraExcel(e) {
     return 'Este Excel está protegido (cifra ou etiqueta de sensibilidade). A app não leu as linhas. A lista publicada não foi alterada. Guarda uma cópia sem proteção e volta a carregar.';
   }
   return 'Não foi possível ler o Excel' + (m ? ' (' + m.slice(0, 140) + ')' : '') + '. A lista publicada não foi alterada.';
+}
+
+function textoErroMapaRc(msg) {
+  const s = String(msg || '').replace(/A lista publicada não foi alterada/g, 'O mapa de RC não foi alterado');
+  if (/não foi alterado/i.test(s)) return s;
+  return (s ? s.replace(/\.\s*$/, '') + '. ' : '') + 'O mapa de RC não foi alterado.';
+}
+
+function mostrarEstadoListaRc(msg, erro) {
+  const el = document.getElementById('dados-rc-status');
+  if (el) {
+    el.style.color = erro ? 'var(--danger)' : 'var(--muted)';
+    el.textContent = msg;
+  }
+}
+
+/** Carga da lista de RC. Falha de leitura não substitui o mapa. */
+async function carregarListaComissaoRc(event) {
+  const file = event && event.target && event.target.files ? event.target.files[0] : null;
+  if (!file) return;
+  if (event.target) event.target.value = '';
+  mostrarEstadoListaRc('', false);
+  if (typeof linhasDeTabelaComissaoRc !== 'function' || typeof substituirMapaComissaoRc !== 'function' || typeof guardarMapaComissaoRc !== 'function') {
+    const msg = 'O leitor da lista de RC não está disponível. O mapa de RC não foi alterado.';
+    mostrarEstadoListaRc(msg, true);
+    if (typeof toast === 'function') toast(msg, 'error');
+    return;
+  }
+  if (typeof toast === 'function') toast('A ler lista de RC…');
+  try {
+    await ensureXLSX();
+  } catch (_) {
+    const msg = 'Não foi possível carregar a biblioteca Excel. O mapa de RC não foi alterado.';
+    mostrarEstadoListaRc(msg, true);
+    if (typeof toast === 'function') toast(msg, 'error');
+    return;
+  }
+  let buf;
+  try { buf = await file.arrayBuffer(); }
+  catch (_) {
+    const msg = 'Não foi possível ler o ficheiro. O mapa de RC não foi alterado.';
+    mostrarEstadoListaRc(msg, true);
+    if (typeof toast === 'function') toast(msg, 'error');
+    return;
+  }
+  const diag = diagnosticoExcelListaSap(buf);
+  if (diag) {
+    const bloqueio = textoErroMapaRc(diag);
+    mostrarEstadoListaRc(bloqueio, true);
+    if (typeof toast === 'function') toast(bloqueio, 'error');
+    return;
+  }
+  let wb;
+  try {
+    wb = window.XLSX.read(buf, { type: 'array' });
+  } catch (e) {
+    const msg = textoErroMapaRc(mensagemErroLeituraExcel(e));
+    mostrarEstadoListaRc(msg, true);
+    if (typeof toast === 'function') toast(msg, 'error');
+    return;
+  }
+  const nomes = Array.isArray(wb.SheetNames) ? wb.SheetNames.slice() : [];
+  nomes.sort((a, b) => (/lista\s*completa/i.test(a) ? -1 : /lista\s*completa/i.test(b) ? 1 : 0));
+  let leitura = null;
+  for (let s = 0; s < nomes.length; s++) {
+    const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[nomes[s]], { header: 1, defval: '', raw: true });
+    const tentativa = linhasDeTabelaComissaoRc(rows);
+    if (!leitura || tentativa.ok || (tentativa.cabecalho && !leitura.cabecalho)) leitura = tentativa;
+    if (tentativa.ok) break;
+  }
+  if (!leitura) leitura = linhasDeTabelaComissaoRc([]);
+  const anterior = typeof seedMapaComissaoRc === 'function' ? seedMapaComissaoRc() : { rcs: [] };
+  const aplicado = substituirMapaComissaoRc(anterior, leitura);
+  if (!aplicado.substituido) {
+    const msg = aplicado.erro || 'O mapa de RC não foi alterado.';
+    mostrarEstadoListaRc(msg, true);
+    if (typeof toast === 'function') toast(msg, 'error');
+    return;
+  }
+  const gravado = await guardarMapaComissaoRc(aplicado.mapa);
+  if (!gravado || !gravado.ok) {
+    const msg = (gravado && gravado.erro) || 'Não foi possível gravar o mapa de RC. O mapa anterior mantém-se.';
+    mostrarEstadoListaRc(msg, true);
+    if (typeof toast === 'function') toast(msg, 'error');
+    return;
+  }
+  const nCli = (gravado.mapa.rcs || []).reduce((s, rc) => s + (rc.clientes ? rc.clientes.length : 0), 0);
+  const ign = leitura.ignorados ? ` Diogo ignorado: ${leitura.ignorados}.` : '';
+  mostrarEstadoListaRc(gravado.mapa.rcs.length + ' RC, ' + nCli + ' clientes.' + ign, false);
+  if (typeof toast === 'function') toast('Guardado');
+  if (typeof renderComissaoRc === 'function') {
+    try { renderComissaoRc(); } catch (_) {}
+  }
 }
 
 /** Falha de leitura: não deixa uma lista parcial pronta a confirmar. */
@@ -37203,7 +37314,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-13-comissao-rc: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-13-comissao-rc-carga: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

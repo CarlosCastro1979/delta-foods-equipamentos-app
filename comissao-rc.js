@@ -112,6 +112,197 @@
     return normalizarMapaComissaoRc({ atribuicoes: linhas || [] });
   }
 
+  var COMISSAO_RC_LS_KEY = 'df_comissao_rc';
+
+  function normHeaderRc(h) {
+    return String(h == null ? '' : h)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /** Código de cliente vindo do Excel (número ou texto). */
+  function codCelulaRc(val) {
+    if (val == null || val === '') return '';
+    if (typeof val === 'number' && Number.isFinite(val)) return normCodRc(String(Math.round(val)));
+    var s = String(val).trim();
+    if (/^\d+\.0+$/.test(s)) s = s.replace(/\.0+$/, '');
+    return normCodRc(s);
+  }
+
+  function indiceCabecalhoRc(rows) {
+    var lista = Array.isArray(rows) ? rows : [];
+    var limite = Math.min(lista.length, 30);
+    for (var i = 0; i < limite; i++) {
+      var row = lista[i] || [];
+      for (var j = 0; j < row.length; j++) {
+        if (/nome\s*vendedor/.test(normHeaderRc(row[j]))) return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * Folha «Lista Completa»: código do cliente, nome do cliente, NOME VENDEDOR.
+   * «Nr e N» / «e Cliente» é o cabeçalho já visto nesse ficheiro.
+   */
+  function colunasComissaoRc(headers) {
+    var hn = [];
+    var i;
+    for (i = 0; i < headers.length; i++) hn.push(normHeaderRc(headers[i]));
+    var iVend = -1;
+    for (i = 0; i < hn.length; i++) {
+      if (/nome\s*vendedor/.test(hn[i])) { iVend = i; break; }
+    }
+    var iCod = -1;
+    for (i = 0; i < hn.length; i++) {
+      if (i === iVend) continue;
+      if (/^cliente$/.test(hn[i]) || /^cod(igo)?\.?\s*(cliente|sap)?$/.test(hn[i])) { iCod = i; break; }
+    }
+    if (iCod < 0) {
+      for (i = 0; i < hn.length; i++) {
+        if (i === iVend) continue;
+        if (/^nr\b/.test(hn[i]) || /^n[o°]\b/.test(hn[i]) || /^numero\b/.test(hn[i])) { iCod = i; break; }
+      }
+    }
+    var iNome = -1;
+    for (i = 0; i < hn.length; i++) {
+      if (i === iVend || i === iCod) continue;
+      if (/^nome\b/.test(hn[i]) || /nome\s*(do\s*)?cliente/.test(hn[i])) { iNome = i; break; }
+    }
+    if (iNome < 0) {
+      for (i = 0; i < hn.length; i++) {
+        if (i === iVend || i === iCod) continue;
+        if (/cliente/.test(hn[i])) { iNome = i; break; }
+      }
+    }
+    var iNpess = -1;
+    for (i = 0; i < hn.length; i++) {
+      if (/npess|n[ºo°.]?\s*pess|pessoa\s*resp/.test(hn[i])) { iNpess = i; break; }
+    }
+    return { iCod: iCod, iNome: iNome, iVend: iVend, iNpess: iNpess };
+  }
+
+  /**
+   * Lê a grelha (primeira linha útil = cabeçalho). Diogo sai.
+   * O primeiro código não-Diogo fica; uma repetição não o põe noutro RC.
+   * Não grava nada — uma leitura falhada devolve ok:false.
+   */
+  function linhasDeTabelaComissaoRc(rows) {
+    var lista = Array.isArray(rows) ? rows : [];
+    var iCab = indiceCabecalhoRc(lista);
+    if (iCab < 0) {
+      return {
+        ok: false,
+        cabecalho: false,
+        erro: 'Não encontrei a coluna NOME VENDEDOR. O mapa de RC não foi alterado.',
+        linhas: [],
+        ignorados: 0,
+      };
+    }
+    var cols = colunasComissaoRc(lista[iCab] || []);
+    if (cols.iVend < 0 || cols.iCod < 0 || cols.iNome < 0) {
+      return {
+        ok: false,
+        cabecalho: true,
+        erro: 'Não encontrei o código e o nome do cliente ao lado de NOME VENDEDOR. O mapa de RC não foi alterado.',
+        linhas: [],
+        ignorados: 0,
+      };
+    }
+    var linhas = [];
+    var vistos = {};
+    var ignorados = 0;
+    for (var r = iCab + 1; r < lista.length; r++) {
+      var row = lista[r] || [];
+      var pessoa = normNomeRc(row[cols.iVend]);
+      if (!pessoa) continue;
+      var npess = cols.iNpess >= 0 ? row[cols.iNpess] : 0;
+      if (pessoaEhDiogo(pessoa, npess)) { ignorados++; continue; }
+      var cod = codCelulaRc(row[cols.iCod]);
+      if (!cod || vistos[cod]) continue;
+      vistos[cod] = 1;
+      linhas.push({
+        pessoa: pessoa,
+        npess: npess,
+        cod: cod,
+        nome: normNomeRc(row[cols.iNome]),
+      });
+    }
+    if (!linhas.length) {
+      return {
+        ok: false,
+        cabecalho: true,
+        erro: 'A folha não tem clientes de RC (nomes com Diogo são ignorados). O mapa de RC não foi alterado.',
+        linhas: [],
+        ignorados: ignorados,
+      };
+    }
+    return { ok: true, cabecalho: true, erro: '', linhas: linhas, ignorados: ignorados };
+  }
+
+  /**
+   * A folha é a lista nova completa. Código que não vem no ficheiro sai.
+   * Leitura inválida ou cifrada devolve o mapa anterior intacto.
+   */
+  function substituirMapaComissaoRc(anterior, leitura) {
+    var previo = normalizarMapaComissaoRc(anterior);
+    if (!leitura || leitura.ok !== true) {
+      var erro = leitura && leitura.erro
+        ? String(leitura.erro)
+        : 'Ficheiro inválido. O mapa de RC não foi alterado.';
+      if (!/não foi alterado/i.test(erro)) erro += ' O mapa de RC não foi alterado.';
+      return { substituido: false, mapa: previo, erro: erro };
+    }
+    var mapa = mapaDeLinhasComissaoRc(leitura.linhas);
+    if (!mapa.rcs.length) {
+      return {
+        substituido: false,
+        mapa: previo,
+        erro: 'A folha não tem clientes de RC (nomes com Diogo são ignorados). O mapa de RC não foi alterado.',
+      };
+    }
+    return { substituido: true, mapa: mapa, erro: '' };
+  }
+
+  function payloadMapaComissaoRc(mapa) {
+    var base = normalizarMapaComissaoRc(mapa);
+    return {
+      taxa: COMISSAO_RC_TAXA,
+      origem: 'Lista Completa',
+      nota: 'Atribuições cujo nome contém Diogo foram ignoradas. Cada RC fica com os códigos de cliente da coluna NOME VENDEDOR. A comissão é 4% da faturação mensal desses clientes.',
+      atualizado_em: new Date().toISOString(),
+      rcs: base.rcs,
+    };
+  }
+
+  async function lerCacheLocalComissaoRc() {
+    var local = null;
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem) {
+        local = JSON.parse(localStorage.getItem(COMISSAO_RC_LS_KEY) || 'null');
+      }
+    } catch (e) {}
+    if ((!local || !local.rcs) && typeof idbGet === 'function') {
+      try { local = await idbGet(COMISSAO_RC_LS_KEY); } catch (e2) {}
+    }
+    var norm = normalizarMapaComissaoRc(local);
+    return norm.rcs.length ? norm : null;
+  }
+
+  async function gravarCacheLocalComissaoRc(payload) {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.setItem) {
+        localStorage.setItem(COMISSAO_RC_LS_KEY, JSON.stringify(payload));
+      }
+    } catch (e) {}
+    try {
+      if (typeof idbSet === 'function') await idbSet(COMISSAO_RC_LS_KEY, payload);
+    } catch (e2) {}
+  }
+
   function clientesDoMesRc(mes) {
     if (!mes || typeof mes !== 'object') return {};
     if (mes.clientes && typeof mes.clientes === 'object') return mes.clientes;
@@ -281,26 +472,76 @@ function comissaoDeFaturacao(faturacao) {
     }
   }
 
-  async function lerMapaComissaoRc() {
-    var seed = seedMapaComissaoRc();
-    var url = typeof LISTA_CLIENTES_SUPA_URL !== 'undefined'
+  function urlListaClientesRc() {
+    return typeof LISTA_CLIENTES_SUPA_URL !== 'undefined'
       ? LISTA_CLIENTES_SUPA_URL
       : 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/lista_clientes';
+  }
+
+  /** A linha comissao_rc na nuvem ganha ao ficheiro empacotado quando tem RC. */
+  async function lerMapaComissaoRc() {
+    var seed = seedMapaComissaoRc();
     var key = typeof SUPA_KEY !== 'undefined' ? SUPA_KEY : '';
-    if (!key || typeof fetch !== 'function') return seed;
-    try {
-      var res = await fetch(url + '?id=eq.' + COMISSAO_RC_SUPA_ID + '&select=data', {
-        headers: { apikey: key, Authorization: 'Bearer ' + key },
-      });
-      if (!res.ok) return seed;
-      var rows = await res.json();
-      var data = rows && rows[0] && rows[0].data;
-      var remoto = normalizarMapaComissaoRc(data);
-      if (remoto.rcs.length) return remoto;
-    } catch (e) {
-      console.warn('lerMapaComissaoRc:', e && e.message ? e.message : e);
+    if (key && typeof fetch === 'function') {
+      try {
+        var res = await fetch(urlListaClientesRc() + '?id=eq.' + COMISSAO_RC_SUPA_ID + '&select=data', {
+          headers: { apikey: key, Authorization: 'Bearer ' + key },
+        });
+        if (res.ok) {
+          var rows = await res.json();
+          var data = rows && rows[0] && rows[0].data;
+          var remoto = normalizarMapaComissaoRc(data);
+          if (remoto.rcs.length) {
+            gravarCacheLocalComissaoRc(data && data.rcs ? data : remoto);
+            return remoto;
+          }
+        }
+      } catch (e) {
+        console.warn('lerMapaComissaoRc:', e && e.message ? e.message : e);
+      }
     }
+    var local = await lerCacheLocalComissaoRc();
+    if (local) return local;
     return seed;
+  }
+
+  /**
+   * Grava o mapa uma vez (carga de ficheiro, não autosave).
+   * Só a linha comissao_rc. Não mexe em vendas, NF nem na lista de clientes.
+   */
+  async function guardarMapaComissaoRc(mapa) {
+    var payload = payloadMapaComissaoRc(mapa);
+    if (!payload.rcs.length) {
+      return { ok: false, erro: 'Mapa de RC vazio. O mapa anterior mantém-se.' };
+    }
+    var key = typeof SUPA_KEY !== 'undefined' ? SUPA_KEY : '';
+    if (!key || typeof fetch !== 'function') {
+      return { ok: false, erro: 'Sem ligação para gravar o mapa de RC. O mapa anterior mantém-se.' };
+    }
+    try {
+      var res = await fetch(urlListaClientesRc(), {
+        method: 'POST',
+        headers: {
+          apikey: key,
+          Authorization: 'Bearer ' + key,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates,return=minimal',
+        },
+        body: JSON.stringify({
+          id: COMISSAO_RC_SUPA_ID,
+          data: payload,
+          atualizado_em: payload.atualizado_em,
+        }),
+      });
+      if (!res || !res.ok) {
+        return { ok: false, erro: 'Não foi possível gravar o mapa de RC (HTTP ' + (res && res.status) + '). O mapa anterior mantém-se.' };
+      }
+    } catch (e) {
+      return { ok: false, erro: 'Não foi possível gravar o mapa de RC. O mapa anterior mantém-se.' };
+    }
+    _crMapa = normalizarMapaComissaoRc(payload);
+    await gravarCacheLocalComissaoRc(payload);
+    return { ok: true, mapa: _crMapa };
   }
 
   function crNomeMes(ym) {
@@ -500,6 +741,11 @@ function comissaoDeFaturacao(faturacao) {
     pessoaEhDiogo: pessoaEhDiogo,
     normalizarMapaComissaoRc: normalizarMapaComissaoRc,
     mapaDeLinhasComissaoRc: mapaDeLinhasComissaoRc,
+    linhasDeTabelaComissaoRc: linhasDeTabelaComissaoRc,
+    substituirMapaComissaoRc: substituirMapaComissaoRc,
+    lerMapaComissaoRc: lerMapaComissaoRc,
+    guardarMapaComissaoRc: guardarMapaComissaoRc,
+    COMISSAO_RC_LS_KEY: COMISSAO_RC_LS_KEY,
     faturCodNoMes: faturCodNoMes,
     comissaoDeFaturacao: comissaoDeFaturacao,
     calcularComissaoRc: calcularComissaoRc,

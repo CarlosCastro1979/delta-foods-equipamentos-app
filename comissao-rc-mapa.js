@@ -325,6 +325,10 @@ var COMISSAO_RC_MAPA_SEED = {
       "nome": "RICARDO MIRANDA",
       "clientes": [
         {
+          "cod": "749002",
+          "nome": "Cencosud Brasil Comercial S.a"
+        },
+        {
           "cod": "749004",
           "nome": "Cencosud Brasil Comercial S.a"
         },
