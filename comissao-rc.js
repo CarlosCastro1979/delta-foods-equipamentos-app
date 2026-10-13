@@ -27,6 +27,8 @@
   var _crMes = null;
   var _crGen = 0;
   var _crDeepLinkUsado = false;
+  var _crVista = 'mensal';
+  var CR_MESES_NOME = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
   function normCodRc(cod) {
     var s = String(cod == null ? '' : cod).trim();
@@ -395,6 +397,198 @@ function comissaoDeFaturacao(faturacao) {
     };
   }
 
+  function centsDeReais(n) {
+    var v = Number(n);
+    if (!Number.isFinite(v)) v = 0;
+    var sign = v < 0 ? -1 : 1;
+    return sign * Math.round(Math.abs(v) * 100);
+  }
+
+  /**
+   * Dívida (saldo negativo) abate-se na comissão dos meses seguintes.
+   * Mês negativo: a pagar fica 0 e a dívida aumenta. Mês a zero não abate.
+   * Mês positivo: abate até zerar; o que sobra é a pagar. Saldo nunca fica positivo.
+   */
+  function aplicarCarryComissao(comissao, saldoAnterior) {
+    var com = centsDeReais(comissao);
+    var saldo = centsDeReais(saldoAnterior);
+    if (saldo > 0) saldo = 0;
+    var abat;
+    var pagar;
+    var novo;
+    if (com <= 0) {
+      abat = 0;
+      pagar = 0;
+      novo = saldo + com;
+    } else {
+      var divida = -saldo;
+      abat = com < divida ? com : divida;
+      pagar = com - abat;
+      novo = -(divida - abat);
+    }
+    return {
+      comissao: com / 100,
+      abatimento: abat / 100,
+      aPagar: pagar / 100,
+      saldo: novo / 100,
+    };
+  }
+
+  function mesesYmOrdenados(store) {
+    var meses = (store && store.meses) || {};
+    return Object.keys(meses).filter(function (ym) { return /^\d{4}-\d{2}$/.test(ym); }).sort();
+  }
+
+  /** Percorre só os meses que existem na faturação, por RC, em ordem cronológica. */
+  function serieCarryComissaoRc(mapa, store) {
+    var yms = mesesYmOrdenados(store);
+    var base = normalizarMapaComissaoRc(mapa);
+    var porNome = {};
+    for (var i = 0; i < base.rcs.length; i++) {
+      porNome[base.rcs[i].nome] = { saldo: 0, meses: {} };
+    }
+    for (var m = 0; m < yms.length; m++) {
+      var ym = yms[m];
+      var calc = calcularComissaoRc(base, (store.meses && store.meses[ym]) || { clientes: {} });
+      for (var j = 0; j < calc.linhas.length; j++) {
+        var linha = calc.linhas[j];
+        var bucket = porNome[linha.nome];
+        if (!bucket) bucket = porNome[linha.nome] = { saldo: 0, meses: {} };
+        var passo = aplicarCarryComissao(linha.comissao, bucket.saldo);
+        bucket.saldo = passo.saldo;
+        bucket.meses[ym] = {
+          nome: linha.nome,
+          ym: ym,
+          nClientes: linha.nClientes,
+          faturacao: linha.faturacao,
+          comissao: passo.comissao,
+          abatimento: passo.abatimento,
+          aPagar: passo.aPagar,
+          saldo: passo.saldo,
+          clientes: linha.clientes,
+        };
+      }
+    }
+    return { yms: yms, porNome: porNome, nomes: base.rcs.map(function (r) { return r.nome; }) };
+  }
+
+  function saldoAntesDeYm(bucket, ym) {
+    if (!bucket || !bucket.meses) return 0;
+    var keys = Object.keys(bucket.meses).filter(function (k) { return k < ym; }).sort();
+    if (!keys.length) return 0;
+    return bucket.meses[keys[keys.length - 1]].saldo;
+  }
+
+  /**
+   * Estado de um mês (mesmo que não exista na base: comissão 0, a dívida anterior mantém-se).
+   * A ordenação das linhas segue a faturação do mês, como no quadro mensal.
+   */
+  function estadoMensalComissaoRc(mapa, store, ym) {
+    var serie = serieCarryComissaoRc(mapa, store || { meses: {} });
+    var mes = (store && store.meses && store.meses[ym]) || { clientes: {} };
+    var calc = calcularComissaoRc(mapa, mes);
+    var linhas = [];
+    var totN = 0;
+    var totFat = 0;
+    var totCom = 0;
+    var totAbat = 0;
+    var totPagar = 0;
+    var totSaldo = 0;
+    for (var i = 0; i < calc.linhas.length; i++) {
+      var linha = calc.linhas[i];
+      var bucket = serie.porNome[linha.nome];
+      var estado = bucket && bucket.meses[ym];
+      if (!estado) {
+        var passo = aplicarCarryComissao(linha.comissao, saldoAntesDeYm(bucket, ym));
+        estado = {
+          nome: linha.nome,
+          ym: ym,
+          nClientes: linha.nClientes,
+          faturacao: linha.faturacao,
+          comissao: passo.comissao,
+          abatimento: passo.abatimento,
+          aPagar: passo.aPagar,
+          saldo: passo.saldo,
+          clientes: linha.clientes,
+        };
+      }
+      linhas.push(estado);
+      totN += estado.nClientes;
+      totFat += centsDeReais(estado.faturacao);
+      totCom += centsDeReais(estado.comissao);
+      totAbat += centsDeReais(estado.abatimento);
+      totPagar += centsDeReais(estado.aPagar);
+      totSaldo += centsDeReais(estado.saldo);
+    }
+    return {
+      ym: ym,
+      taxa: COMISSAO_RC_TAXA,
+      linhas: linhas,
+      total: {
+        nClientes: totN,
+        faturacao: totFat / 100,
+        comissao: totCom / 100,
+        abatimento: totAbat / 100,
+        aPagar: totPagar / 100,
+        saldo: totSaldo / 100,
+      },
+    };
+  }
+
+  /**
+   * Os 12 meses do ano Y, por RC (nome, depois mês).
+   * O saldo de abertura é a dívida no fim de Dezembro de Y-1 (ou do último mês anterior que exista).
+   * Mês sem faturação entra na mesma, com comissão 0, para a dívida continuar visível.
+   */
+  function resumoAnualComissaoRc(mapa, store, ano) {
+    var anoN = parseInt(ano, 10);
+    if (!anoN) anoN = new Date().getFullYear();
+    var serie = serieCarryComissaoRc(mapa, store || { meses: {} });
+    var inicio = anoN + '-01';
+    var linhas = [];
+    var totCom = 0;
+    var totAbat = 0;
+    var totPagar = 0;
+    var totSaldoDez = 0;
+    var nomes = serie.nomes || [];
+    for (var i = 0; i < nomes.length; i++) {
+      var nome = nomes[i];
+      var bucket = serie.porNome[nome] || { saldo: 0, meses: {} };
+      var saldo = saldoAntesDeYm(bucket, inicio);
+      for (var m = 1; m <= 12; m++) {
+        var ym = anoN + '-' + String(m).padStart(2, '0');
+        var existente = bucket.meses[ym];
+        var com = existente ? existente.comissao : 0;
+        var passo = aplicarCarryComissao(com, saldo);
+        saldo = passo.saldo;
+        linhas.push({
+          nome: nome,
+          ym: ym,
+          mes: m,
+          faturacao: existente ? existente.faturacao : 0,
+          comissao: passo.comissao,
+          abatimento: passo.abatimento,
+          aPagar: passo.aPagar,
+          saldo: passo.saldo,
+        });
+        totCom += centsDeReais(passo.comissao);
+        totAbat += centsDeReais(passo.abatimento);
+        totPagar += centsDeReais(passo.aPagar);
+      }
+      totSaldoDez += centsDeReais(saldo);
+    }
+    return {
+      ano: anoN,
+      linhas: linhas,
+      total: {
+        comissao: totCom / 100,
+        abatimento: totAbat / 100,
+        aPagar: totPagar / 100,
+        saldoDezembro: totSaldoDez / 100,
+      },
+    };
+  }
+
   function ultimoYmComFaturCliente(store) {
     var meses = (store && store.meses) || {};
     var keys = Object.keys(meses).filter(function (ym) { return /^\d{4}-\d{2}$/.test(ym); }).sort();
@@ -565,13 +759,52 @@ function comissaoDeFaturacao(faturacao) {
       encodeURIComponent(nome) + '\')">' + n + '</button>';
   }
 
-  function pintarComissaoRc(store) {
+  function crTdValor(n) {
+    var cls = n < 0 ? ' vq-var-neg' : '';
+    return '<td class="vq-num' + cls + '">' + crEsc(crRs(n)) + '</td>';
+  }
+
+  /** Saldo negativo é dívida que ainda vai ser abatida. O sinal fica explícito. */
+  function crTdSaldo(n) {
+    if (n < 0) {
+      return '<td class="vq-num vq-var-neg" title="Dívida a abater nos meses seguintes">' +
+        crEsc(crRs(n)) + ' em dívida</td>';
+    }
+    return '<td class="vq-num">' + crEsc(crRs(0)) + '</td>';
+  }
+
+  function crAplicarVistaDom() {
+    var mensal = document.getElementById('cr-sub-mensal');
+    var anual = document.getElementById('cr-sub-anual');
+    if (mensal) mensal.classList.toggle('active', _crVista !== 'anual');
+    if (anual) anual.classList.toggle('active', _crVista === 'anual');
+    var mesWrap = document.getElementById('cr-mes-wrap');
+    if (mesWrap) mesWrap.style.display = _crVista === 'anual' ? 'none' : '';
+    var emailBtn = document.getElementById('cr-btn-email');
+    if (emailBtn) emailBtn.style.display = _crVista === 'anual' ? 'none' : '';
+    var lead = document.getElementById('cr-lead');
+    if (lead) {
+      lead.textContent = _crVista === 'anual'
+        ? 'Visão do ano, por RC e por mês: comissão, o que se abate da dívida anterior e o que fica a pagar.'
+        : 'Faturação mensal da soma dos clientes de cada RC. A comissão é 4%. Uma comissão negativa fica em dívida e abate-se nos meses seguintes.';
+    }
+  }
+
+  function showComissaoRcSub(vista) {
+    _crVista = vista === 'anual' ? 'anual' : 'mensal';
+    crAplicarVistaDom();
+    renderComissaoRc();
+  }
+
+  var CR_NOTA_ABATIMENTO = 'Se a comissão do mês for negativa, o RC não devolve o dinheiro: a pagar fica a zero e o valor fica em dívida no saldo a transportar (a vermelho); nos meses seguintes esse saldo é abatido até zerar, e a dívida não se apaga em Janeiro.';
+
+  function pintarComissaoMensalRc(store) {
     var host = document.getElementById('cr-host');
     if (!host || !_crMapa) return;
     var periodo = crPeriodo();
     var mes = store && store.meses ? store.meses[periodo.ym] : null;
     _crMes = mes || { clientes: {} };
-    var modelo = calcularComissaoRc(_crMapa, _crMes);
+    var modelo = estadoMensalComissaoRc(_crMapa, store, periodo.ym);
     var filtro = _crFiltro;
     var linhaFiltro = null;
     if (filtro) {
@@ -595,17 +828,18 @@ function comissaoDeFaturacao(faturacao) {
     for (var r = 0; r < modelo.linhas.length; r++) {
       var row = modelo.linhas[r];
       var on = filtro === row.nome;
-      var clsFat = row.faturacao < 0 ? ' vq-var-neg' : '';
-      var clsCom = row.comissao < 0 ? ' vq-var-neg' : '';
       body += '<tr class="' + (on ? 'vq-emp' : 'vq-vend') + '">' +
         '<td>' + crBotaoNome(row.nome, row.nClientes, on) + '</td>' +
         '<td class="vq-num">' + crBotaoContagem(row.nClientes, row.nome) + '</td>' +
-        '<td class="vq-num' + clsFat + '">' + crEsc(crRs(row.faturacao)) + '</td>' +
-        '<td class="vq-num' + clsCom + '">' + crEsc(crRs(row.comissao)) + '</td>' +
+        crTdValor(row.faturacao) +
+        crTdValor(row.comissao) +
+        crTdValor(row.abatimento) +
+        crTdValor(row.aPagar) +
+        crTdSaldo(row.saldo) +
         '</tr>';
     }
     if (!modelo.linhas.length) {
-      body = '<tr><td colspan="4" class="vq-muted" style="padding:16px;">Sem RC no mapa (Diogo fica de fora).</td></tr>';
+      body = '<tr><td colspan="7" class="vq-muted" style="padding:16px;">Sem RC no mapa (Diogo fica de fora).</td></tr>';
     }
     var tot = modelo.total;
     var totalCount = tot.nClientes > 0
@@ -620,8 +854,9 @@ function comissaoDeFaturacao(faturacao) {
     } else {
       for (var d = 0; d < modelo.linhas.length; d++) {
         var ln = modelo.linhas[d];
-        for (var c = 0; c < ln.clientes.length; c++) {
-          var cli = ln.clientes[c];
+        var cls = ln.clientes || [];
+        for (var c = 0; c < cls.length; c++) {
+          var cli = cls[c];
           listaDet.push({ rc: ln.nome, cod: cli.cod, nome: cli.nome, faturacao: cli.faturacao, comissao: cli.comissao });
         }
       }
@@ -647,20 +882,65 @@ function comissaoDeFaturacao(faturacao) {
       '</tr></thead><tbody>' + detBody + '</tbody></table></div>';
 
     host.innerHTML = aviso + banner +
-      '<div class="vq-scroll vq-scroll-main"><table class="vq-table"><thead><tr>' +
-      '<th>RC</th><th class="vq-num">Clientes</th><th class="vq-num">Faturação</th><th class="vq-num">Comissão a pagar</th>' +
+      '<div class="vq-scroll vq-scroll-main"><table class="vq-table" style="min-width:1100px"><thead><tr>' +
+      '<th>RC</th><th class="vq-num">Clientes</th><th class="vq-num">Faturação</th>' +
+      '<th class="vq-num">Comissão do mês</th><th class="vq-num">Abatimento</th>' +
+      '<th class="vq-num">A pagar</th><th class="vq-num">Saldo a transportar</th>' +
       '</tr></thead><tbody>' + body +
       '<tr class="vq-total"><td>Total</td><td class="vq-num">' + totalCount + '</td>' +
-      '<td class="vq-num' + (tot.faturacao < 0 ? ' vq-var-neg' : '') + '">' + crEsc(crRs(tot.faturacao)) + '</td>' +
-      '<td class="vq-num' + (tot.comissao < 0 ? ' vq-var-neg' : '') + '">' + crEsc(crRs(tot.comissao)) + '</td></tr>' +
+      crTdValor(tot.faturacao) + crTdValor(tot.comissao) + crTdValor(tot.abatimento) +
+      crTdValor(tot.aPagar) + crTdSaldo(tot.saldo) + '</tr>' +
       '</tbody></table></div>' +
-      '<div class="vcob-note">Faturação = soma do Fatur. dos códigos atribuídos ao RC neste mês. Comissão = 4% dessa faturação. Devoluções (valor negativo) reduzem o total. Clientes sem movimento no mês ficam a zero e não aumentam a comissão.</div>' +
+      '<div class="vcob-note">' + crEsc(CR_NOTA_ABATIMENTO) + '</div>' +
       detalhe;
+  }
+
+  function pintarResumoAnualRc(store) {
+    var host = document.getElementById('cr-host');
+    if (!host || !_crMapa) return;
+    var anoEl = document.getElementById('cr-ano');
+    var ano = parseInt(anoEl && anoEl.value, 10) || new Date().getFullYear();
+    var modelo = resumoAnualComissaoRc(_crMapa, store, ano);
+    var body = '';
+    for (var i = 0; i < modelo.linhas.length; i++) {
+      var row = modelo.linhas[i];
+      var nomeMes = CR_MESES_NOME[row.mes - 1] || String(row.mes);
+      body += '<tr class="vq-vend">' +
+        '<td>' + crEsc(row.nome) + '</td>' +
+        '<td>' + crEsc(nomeMes) + '</td>' +
+        crTdValor(row.comissao) +
+        crTdValor(row.abatimento) +
+        crTdValor(row.aPagar) +
+        crTdSaldo(row.saldo) +
+        '</tr>';
+    }
+    if (!modelo.linhas.length) {
+      body = '<tr><td colspan="6" class="vq-muted" style="padding:16px;">Sem RC no mapa (Diogo fica de fora).</td></tr>';
+    }
+    var tot = modelo.total;
+    host.innerHTML =
+      '<div class="vq-scroll vq-scroll-main"><table class="vq-table" style="min-width:920px"><thead><tr>' +
+      '<th>RC</th><th>Mês</th><th class="vq-num">Comissão do mês</th><th class="vq-num">Abatimento</th>' +
+      '<th class="vq-num">A pagar</th><th class="vq-num">Saldo a transportar</th>' +
+      '</tr></thead><tbody>' + body +
+      '<tr class="vq-total"><td>Total</td><td class="vq-muted" title="O saldo de cada mês fica na linha desse mês">—</td>' +
+      crTdValor(tot.comissao) + crTdValor(tot.abatimento) + crTdValor(tot.aPagar) +
+      crTdSaldo(tot.saldoDezembro) + '</tr>' +
+      '</tbody></table></div>' +
+      '<div class="vcob-note">Os 12 meses de cada RC ficam no mesmo quadro, mesmo sem vendas. O saldo do total é o de Dezembro (o que ainda transita para o ano seguinte), não a soma dos meses. ' +
+      crEsc(CR_NOTA_ABATIMENTO) + '</div>';
+  }
+
+  function pintarComissaoRc(store) {
+    crAplicarVistaDom();
+    if (_crVista === 'anual') pintarResumoAnualRc(store);
+    else pintarComissaoMensalRc(store);
   }
 
   async function renderComissaoRc() {
     var host = document.getElementById('cr-host');
     preencherSelectsComissaoRc();
+    crAplicarVistaDom();
     var gen = ++_crGen;
     if (host && !_crMapa) host.innerHTML = '<div style="color:var(--muted);font-size:13px;">A ler mapa de RC e Fatur. por cliente…</div>';
     try {
@@ -734,6 +1014,373 @@ function comissaoDeFaturacao(faturacao) {
     if (typeof abrirAreaFinanceiraHome === 'function') abrirAreaFinanceiraHome();
   }
 
+  var COMISSAO_RC_EMAIL_TO = 'alice.menezes@bakertilly.com.br';
+  var COMISSAO_RC_EMAIL_CC = [
+    'andrea.albuquerque@deltafoodsbrasil.com.br',
+    'diego.silva@bakertilly.com.br',
+    'leticia.silva@bakertilly.com.br',
+    'christian.souza@deltafoodsbrasil.com.br',
+    'diogo.oliveira@deltafoodsbrasil.com.br',
+    'felipe.morgado@bakertilly.com.br',
+  ];
+  var COMISSAO_RC_MESES = [
+    'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+    'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
+  ];
+  var COMISSAO_RC_CARRY = [
+    { key: 'comissao', label: 'Comissão do mês', tipo: 'rs', keys: ['comissaoMes', 'comissaoDoMes', 'comissao'], detect: ['comissaoMes', 'comissaoDoMes'] },
+    { key: 'abatimento', label: 'Abatimento', tipo: 'rs', keys: ['abatimento'], detect: ['abatimento'] },
+    { key: 'aPagar', label: 'A pagar', tipo: 'rs', keys: ['aPagar', 'a_pagar'], detect: ['aPagar', 'a_pagar'] },
+    { key: 'saldo', label: 'Saldo a transportar', tipo: 'rs', keys: ['saldoTransportar', 'saldoATransportar', 'saldo'], detect: ['saldoTransportar', 'saldoATransportar', 'saldo'] },
+  ];
+
+  function nomeMesComissaoRc(mes) {
+    var n = parseInt(mes, 10);
+    return COMISSAO_RC_MESES[n - 1] || '';
+  }
+
+  function horaAmericaSaoPaulo(agora) {
+    var d = agora instanceof Date ? agora : new Date(agora || Date.now());
+    if (!(d instanceof Date) || Number.isNaN(d.getTime())) d = new Date();
+    try {
+      var parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Sao_Paulo',
+        hour: '2-digit',
+        hourCycle: 'h23',
+      }).formatToParts(d);
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i].type !== 'hour') continue;
+        var h = parseInt(parts[i].value, 10);
+        if (h === 24) h = 0;
+        if (h >= 0 && h <= 23) return h;
+      }
+    } catch (e) {}
+    var utc = d.getUTCHours() - 3;
+    if (utc < 0) utc += 24;
+    return utc;
+  }
+
+  /** Antes das 12:00 em São Paulo: Bom dia. Daí em diante: Boa tarde. */
+  function saudacaoComissaoRc(agora) {
+    return horaAmericaSaoPaulo(agora) < 12 ? 'Bom dia' : 'Boa tarde';
+  }
+
+  function campoNumerico(obj, keys) {
+    if (!obj) return null;
+    for (var i = 0; i < keys.length; i++) {
+      if (!Object.prototype.hasOwnProperty.call(obj, keys[i])) continue;
+      if (obj[keys[i]] == null || obj[keys[i]] === '') continue;
+      var n = Number(obj[keys[i]]);
+      return Number.isFinite(n) ? n : 0;
+    }
+    return null;
+  }
+
+  function apuramentoTemTransporte(modelo) {
+    var linhas = (modelo && modelo.linhas) || [];
+    var alvos = linhas.concat([(modelo && modelo.total) || {}]);
+    for (var c = 0; c < COMISSAO_RC_CARRY.length; c++) {
+      var detect = COMISSAO_RC_CARRY[c].detect || COMISSAO_RC_CARRY[c].keys;
+      for (var i = 0; i < alvos.length; i++) {
+        if (campoNumerico(alvos[i], detect) != null) return true;
+      }
+    }
+    return false;
+  }
+
+  function colunasApuramentoComissaoRc(modelo) {
+    var cols = [
+      { key: 'nome', label: 'RC', tipo: 'text' },
+      { key: 'nClientes', label: 'Clientes', tipo: 'int' },
+      { key: 'faturacao', label: 'Faturação', tipo: 'rs' },
+    ];
+    if (apuramentoTemTransporte(modelo)) {
+      for (var i = 0; i < COMISSAO_RC_CARRY.length; i++) cols.push(COMISSAO_RC_CARRY[i]);
+    } else {
+      cols.push({ key: 'comissao', label: 'Comissão a pagar', tipo: 'rs' });
+    }
+    return cols;
+  }
+
+  function lerCelulaApuramento(obj, col) {
+    if (col.tipo === 'text') return obj && obj[col.key] != null ? obj[col.key] : '';
+    var n = campoNumerico(obj, col.keys || [col.key]);
+    return n == null ? 0 : n;
+  }
+
+  function escEmailRc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function fmtRsEmail(n) {
+    var v = Number(n);
+    if (!Number.isFinite(v)) v = 0;
+    try {
+      return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    } catch (e) {
+      var neg = v < 0;
+      var abs = Math.abs(v).toFixed(2).replace('.', ',');
+      return (neg ? '-R$ ' : 'R$ ') + abs;
+    }
+  }
+
+  function fmtCelulaEmail(col, valor) {
+    if (col.tipo === 'rs') {
+      var s = fmtRsEmail(valor);
+      if ((col.key === 'saldo' || col.key === 'saldoTransportar') && Number(valor) < 0) s += ' em dívida';
+      return s;
+    }
+    if (col.tipo === 'int') return String(parseInt(valor, 10) || 0);
+    return String(valor == null ? '' : valor);
+  }
+
+  function fmtCelulaHtml(col, valor) {
+    var txt = escEmailRc(fmtCelulaEmail(col, valor));
+    if (col.tipo === 'rs') txt = txt.replace(/ /g, '&nbsp;').replace(/\u00a0/g, '&nbsp;');
+    if (col.tipo === 'rs' && Number(valor) < 0) {
+      return '<span style="color:#b91c1c;">' + txt + '</span>';
+    }
+    return txt;
+  }
+
+  function linhasDetalheComissaoRc(modelo) {
+    var out = [];
+    var linhas = (modelo && modelo.linhas) || [];
+    for (var i = 0; i < linhas.length; i++) {
+      var ln = linhas[i];
+      if (!ln || pessoaEhDiogo(ln.nome, 0)) continue;
+      var clientes = ln.clientes || [];
+      for (var j = 0; j < clientes.length; j++) {
+        var c = clientes[j] || {};
+        out.push({
+          rc: ln.nome,
+          cod: c.cod,
+          nome: c.nome || '',
+          faturacao: Number(c.faturacao) || 0,
+          comissao: Number(c.comissao) || 0,
+        });
+      }
+    }
+    return out;
+  }
+
+  function tabelaHtmlComissaoRc(cols, linhasVals, totalVals) {
+    var td = 'border:1px solid #d1d5db;padding:6px 10px;font-family:Calibri,Arial,sans-serif;font-size:12px;';
+    var th = td + 'background:#c8102e;color:#ffffff;font-weight:700;';
+    var head = cols.map(function (col) {
+      var align = col.tipo === 'text' ? 'left' : 'right';
+      return '<th style="' + th + 'text-align:' + align + ';">' + escEmailRc(col.label) + '</th>';
+    }).join('');
+    function tr(vals, extra) {
+      var cells = cols.map(function (col, i) {
+        var align = col.tipo === 'text' ? 'left' : 'right';
+        return '<td style="' + td + extra + 'text-align:' + align + ';white-space:nowrap;">' + fmtCelulaHtml(col, vals[i]) + '</td>';
+      }).join('');
+      return '<tr>' + cells + '</tr>';
+    }
+    var body = linhasVals.map(function (vals, idx) {
+      return tr(vals, idx % 2 ? 'background:#f9fafb;' : 'background:#ffffff;');
+    }).join('');
+    var foot = tr(totalVals, 'background:#f3f4f6;font-weight:700;');
+    return '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8102e;margin:12px 0;">' +
+      '<thead><tr>' + head + '</tr></thead><tbody>' + body + foot + '</tbody></table>';
+  }
+
+  function tabelaTextoComissaoRc(cols, linhasVals, totalVals) {
+    function formatLinha(vals) {
+      return vals.map(function (v, i) { return fmtCelulaEmail(cols[i], v); }).join(' | ');
+    }
+    var linhas = [cols.map(function (c) { return c.label; }).join(' | ')];
+    for (var i = 0; i < linhasVals.length; i++) linhas.push(formatLinha(linhasVals[i]));
+    linhas.push(formatLinha(totalVals));
+    return linhas.join('\n');
+  }
+
+  /**
+   * Payload do email da comissão do mês seleccionado.
+   * Não envia nada: o ecrã passa isto ao mesmo Outlook / .eml dos outros quadros.
+   */
+  function montarEmailComissaoRc(opts) {
+    var o = opts || {};
+    var modelo = o.modelo || { linhas: [], total: {} };
+    var mes = parseInt(o.mes, 10);
+    var ano = parseInt(o.ano, 10);
+    var nomeMes = nomeMesComissaoRc(mes);
+    var saudacao = saudacaoComissaoRc(o.agora);
+    var remetente = String(o.remetente == null ? '' : o.remetente).trim();
+    var frase = 'segue em anexo as comissões dos RC referente ao mês ' + nomeMes + ' de ' + ano + '.';
+    var fecho = 'Qualquer dúvida ou correção favor enviar a mesma para análise.';
+    var cols = colunasApuramentoComissaoRc(modelo);
+    var linhas = modelo.linhas || [];
+    var linhasVals = [];
+    for (var i = 0; i < linhas.length; i++) {
+      if (pessoaEhDiogo(linhas[i] && linhas[i].nome, 0)) continue;
+      linhasVals.push(cols.map(function (col) { return lerCelulaApuramento(linhas[i], col); }));
+    }
+    var totalSrc = Object.assign({ nome: 'Total' }, modelo.total || {});
+    var totalVals = cols.map(function (col, idx) {
+      if (idx === 0) return 'Total';
+      return lerCelulaApuramento(totalSrc, col);
+    });
+    var detalheCols = [
+      { key: 'rc', label: 'RC', tipo: 'text' },
+      { key: 'cod', label: 'Código do cliente', tipo: 'text' },
+      { key: 'nome', label: 'Nome do cliente', tipo: 'text' },
+      { key: 'faturacao', label: 'Faturação do mês', tipo: 'rs' },
+      { key: 'comissao', label: 'Comissão 4%', tipo: 'rs' },
+    ];
+    var detalhe = linhasDetalheComissaoRc(modelo);
+    var detalheVals = detalhe.map(function (row) {
+      return detalheCols.map(function (col) { return row[col.key]; });
+    });
+    var mm = String(mes || 0).padStart(2, '0');
+    var tituloMes = nomeMes ? (nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1)) : String(mes || '');
+    var html =
+      '<!DOCTYPE html>\n<html><head><meta charset="UTF-8"></head>\n' +
+      '<body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">\n' +
+      '<p>' + escEmailRc(saudacao) + ',</p>\n' +
+      '<p>' + escEmailRc(frase) + '</p>\n' +
+      tabelaHtmlComissaoRc(cols, linhasVals, totalVals) + '\n' +
+      '<p>' + escEmailRc(fecho) + '</p>\n' +
+      '<p>Muito obrigado,' + (remetente ? '<br>' + escEmailRc(remetente) : '') + '</p>\n' +
+      '</body></html>';
+    var textoLinhas = [
+      saudacao + ',',
+      '',
+      frase,
+      '',
+      tabelaTextoComissaoRc(cols, linhasVals, totalVals),
+      '',
+      fecho,
+      '',
+      'Muito obrigado,',
+    ];
+    if (remetente) textoLinhas.push(remetente);
+    var largurasAp = cols.map(function (col) {
+      if (col.tipo === 'text') return { wch: 28 };
+      if (col.tipo === 'int') return { wch: 12 };
+      return { wch: 22 };
+    });
+    return {
+      to: COMISSAO_RC_EMAIL_TO,
+      cc: COMISSAO_RC_EMAIL_CC.slice(),
+      subject: 'Comissões RC — ' + tituloMes + ' ' + ano,
+      saudacao: saudacao,
+      frase: frase,
+      fecho: fecho,
+      remetente: remetente,
+      html: html,
+      texto: textoLinhas.join('\n'),
+      filename: 'Comissao_RC_' + ano + '-' + mm + '.xlsx',
+      folhas: [
+        {
+          name: 'Apuramento',
+          tipos: cols.map(function (c) { return c.tipo; }),
+          cols: largurasAp,
+          rows: [cols.map(function (c) { return c.label; })].concat(linhasVals, [totalVals]),
+        },
+        {
+          name: 'Detalhe',
+          tipos: detalheCols.map(function (c) { return c.tipo; }),
+          cols: [{ wch: 28 }, { wch: 18 }, { wch: 42 }, { wch: 18 }, { wch: 16 }],
+          rows: [detalheCols.map(function (c) { return c.label; })].concat(detalheVals),
+        },
+      ],
+    };
+  }
+
+  function aplicarFormatoFolhaRc(ws, XLSX, tipos) {
+    if (!ws || !ws['!ref'] || !tipos || !XLSX.utils || !XLSX.utils.decode_range) return;
+    var range = XLSX.utils.decode_range(ws['!ref']);
+    for (var R = range.s.r + 1; R <= range.e.r; R++) {
+      for (var C = range.s.c; C <= range.e.c && C < tipos.length; C++) {
+        if (tipos[C] !== 'rs' && tipos[C] !== 'int') continue;
+        var addr = XLSX.utils.encode_cell({ r: R, c: C });
+        var cell = ws[addr];
+        if (!cell || typeof cell.v !== 'number') continue;
+        cell.z = tipos[C] === 'rs' ? '"R$"#,##0.00' : '0';
+      }
+    }
+  }
+
+  function blobXlsxComissaoRc(folhas) {
+    var XLSX = (typeof window !== 'undefined' && window.XLSX) ? window.XLSX : null;
+    if (!XLSX || !XLSX.utils) throw new Error('Excel indisponível');
+    var wb = XLSX.utils.book_new();
+    var lista = folhas || [];
+    for (var i = 0; i < lista.length; i++) {
+      var f = lista[i];
+      var ws = XLSX.utils.aoa_to_sheet(f.rows || []);
+      if (f.cols) ws['!cols'] = f.cols;
+      aplicarFormatoFolhaRc(ws, XLSX, f.tipos);
+      if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] };
+      XLSX.utils.book_append_sheet(wb, ws, f.name || ('Folha' + (i + 1)));
+    }
+    var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    return new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+
+  async function comissaoRcExportarEmail() {
+    var btn = typeof document !== 'undefined' ? document.getElementById('cr-btn-email') : null;
+    if (btn) btn.disabled = true;
+    try {
+      if (!_crMapa && typeof lerMapaComissaoRc === 'function') _crMapa = await lerMapaComissaoRc();
+      if (!_crMapa || !_crMapa.rcs || !_crMapa.rcs.length) {
+        if (typeof toast === 'function') toast('Sem mapa de RC para exportar.', 'warn');
+        return;
+      }
+      var periodo = crPeriodo();
+      var store = { meses: {} };
+      if (typeof lerVendasClientePersistida === 'function') {
+        try { store = (await lerVendasClientePersistida()) || store; } catch (e1) { store = { meses: {} }; }
+      }
+      var modelo = estadoMensalComissaoRc(_crMapa, store, periodo.ym);
+      var remetente = typeof getUtilizadorAtual === 'function' ? String(getUtilizadorAtual() || '').trim() : '';
+      var email = montarEmailComissaoRc({
+        modelo: modelo,
+        mes: periodo.mes,
+        ano: periodo.ano,
+        remetente: remetente,
+        agora: new Date(),
+      });
+      if (typeof toast === 'function') toast('A gerar Excel…');
+      if (typeof ensureXLSX === 'function') await ensureXLSX();
+      var blob = blobXlsxComissaoRc(email.folhas);
+      if (typeof outlookAbrirRascunho !== 'function') {
+        if (typeof triggerBlobDownload === 'function') triggerBlobDownload(blob, email.filename);
+        if (typeof toast === 'function') toast('Excel descarregado. O Outlook não está disponível neste ecrã.', 'warn');
+        return;
+      }
+      await outlookAbrirRascunho({
+        to: email.to,
+        cc: email.cc.join('; '),
+        subject: email.subject,
+        html: email.html,
+        attachments: [{
+          blob: blob,
+          filename: email.filename,
+          mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }],
+        draftName: email.filename.replace(/\.xlsx$/i, '') + '.eml',
+        toastMsg: '📧 Outlook aberto com o quadro das comissões no corpo e o Excel em anexo.',
+        mailtoFallback: {
+          body: email.texto,
+          toastMsg: '📧 Outlook a abrir. Anexa o Excel descarregado ao email.',
+        },
+        ccExact: true,
+      });
+    } catch (e) {
+      console.error('comissaoRcExportarEmail', e);
+      if (typeof toast === 'function') toast('Erro ao exportar o email: ' + (e && e.message ? e.message : e), 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   return {
     COMISSAO_RC_TAXA: COMISSAO_RC_TAXA,
     COMISSAO_RC_SUPA_ID: COMISSAO_RC_SUPA_ID,
@@ -749,13 +1396,23 @@ function comissaoDeFaturacao(faturacao) {
     faturCodNoMes: faturCodNoMes,
     comissaoDeFaturacao: comissaoDeFaturacao,
     calcularComissaoRc: calcularComissaoRc,
+    aplicarCarryComissao: aplicarCarryComissao,
+    estadoMensalComissaoRc: estadoMensalComissaoRc,
+    resumoAnualComissaoRc: resumoAnualComissaoRc,
     ultimoYmComFaturCliente: ultimoYmComFaturCliente,
     seedMapaComissaoRc: seedMapaComissaoRc,
     renderComissaoRc: renderComissaoRc,
+    showComissaoRcSub: showComissaoRcSub,
     crFiltrar: crFiltrar,
     crLimparFiltro: crLimparFiltro,
     comissaoRcPedidoNaUrl: comissaoRcPedidoNaUrl,
     subAreaFinanceiraInicial: subAreaFinanceiraInicial,
     tentarAbrirComissaoRcDeepLink: tentarAbrirComissaoRcDeepLink,
+    COMISSAO_RC_EMAIL_TO: COMISSAO_RC_EMAIL_TO,
+    COMISSAO_RC_EMAIL_CC: COMISSAO_RC_EMAIL_CC,
+    saudacaoComissaoRc: saudacaoComissaoRc,
+    nomeMesComissaoRc: nomeMesComissaoRc,
+    montarEmailComissaoRc: montarEmailComissaoRc,
+    comissaoRcExportarEmail: comissaoRcExportarEmail,
   };
 });

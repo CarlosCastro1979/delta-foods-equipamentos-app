@@ -17,8 +17,8 @@ function check(title, fn) {
 }
 
 const ctx = {
-  console, Math, Number, String, Object, Array, JSON, Date,
-  parseInt, decodeURIComponent, encodeURIComponent, isFinite,
+  console, Math, Number, String, Object, Array, JSON, Date, Intl,
+  parseInt, decodeURIComponent, encodeURIComponent, isFinite, isNaN,
 };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(root, 'comissao-rc-mapa.js'), 'utf8'), ctx);
@@ -35,6 +35,10 @@ const {
   lerMapaComissaoRc,
   guardarMapaComissaoRc,
   COMISSAO_RC_SUPA_ID,
+  aplicarCarryComissao,
+  estadoMensalComissaoRc,
+  resumoAnualComissaoRc,
+  montarEmailComissaoRc,
 } = ctx;
 
 check('nome Diogo e NPess 99520004 são ignorados', () => {
@@ -258,6 +262,311 @@ check('gravar a lista só escreve comissao_rc', async () => {
   assert.ok(/mantém-se|não foi/i.test(falha.erro));
 });
 
+function mesFatur(cod, valor) {
+  return { clientes: { [cod + '\t1']: { cod: String(cod), valor, nome: 'Cliente' } } };
+}
+
+check('abatimento: negativo não se paga, depois abate até zerar', () => {
+  const mapa = mapaDeLinhasComissaoRc([
+    { pessoa: 'RICARDO MIRANDA', cod: '5', nome: 'Devolução' },
+    { pessoa: 'JOCINEI NEVES', cod: '9', nome: 'Positivo' },
+  ]);
+  const store = {
+    meses: {
+      '2026-01': {
+        clientes: {
+          '5\t1': { cod: '5', valor: -250, nome: 'Devolução' },
+          '9\t1': { cod: '9', valor: 500, nome: 'Positivo' },
+        },
+      },
+      '2026-02': mesFatur('5', 100),
+      '2026-03': mesFatur('5', 500),
+      '2026-04': mesFatur('5', 200),
+    },
+  };
+  const a = estadoMensalComissaoRc(mapa, store, '2026-01').linhas.find(r => r.nome === 'RICARDO MIRANDA');
+  assert.equal(a.comissao, -10);
+  assert.equal(a.abatimento, 0);
+  assert.equal(a.aPagar, 0);
+  assert.equal(a.saldo, -10);
+  const joc = estadoMensalComissaoRc(mapa, store, '2026-01').linhas.find(r => r.nome === 'JOCINEI NEVES');
+  assert.equal(joc.comissao, 20);
+  assert.equal(joc.abatimento, 0);
+  assert.equal(joc.aPagar, 20);
+  assert.equal(joc.saldo, 0);
+
+  const b = estadoMensalComissaoRc(mapa, store, '2026-02').linhas.find(r => r.nome === 'RICARDO MIRANDA');
+  assert.equal(b.comissao, 4);
+  assert.equal(b.abatimento, 4);
+  assert.equal(b.aPagar, 0);
+  assert.equal(b.saldo, -6);
+
+  const c = estadoMensalComissaoRc(mapa, store, '2026-03').linhas.find(r => r.nome === 'RICARDO MIRANDA');
+  assert.equal(c.comissao, 20);
+  assert.equal(c.abatimento, 6);
+  assert.equal(c.aPagar, 14);
+  assert.equal(c.saldo, 0);
+
+  const d = estadoMensalComissaoRc(mapa, store, '2026-04').linhas.find(r => r.nome === 'RICARDO MIRANDA');
+  assert.equal(d.comissao, 8);
+  assert.equal(d.abatimento, 0);
+  assert.equal(d.aPagar, 8);
+  assert.equal(d.saldo, 0);
+  assert.equal(aplicarCarryComissao(8, 0).aPagar, 8);
+});
+
+check('dois meses negativos acumulam a dívida', () => {
+  const mapa = mapaDeLinhasComissaoRc([
+    { pessoa: 'RICARDO MIRANDA', cod: '5', nome: 'Devolução' },
+  ]);
+  const store = {
+    meses: {
+      '2026-01': mesFatur('5', -250),
+      '2026-02': mesFatur('5', -125),
+    },
+  };
+  const a = estadoMensalComissaoRc(mapa, store, '2026-01').linhas[0];
+  const b = estadoMensalComissaoRc(mapa, store, '2026-02').linhas[0];
+  assert.equal(a.comissao, -10);
+  assert.equal(a.aPagar, 0);
+  assert.equal(a.saldo, -10);
+  assert.equal(b.comissao, -5);
+  assert.equal(b.abatimento, 0);
+  assert.equal(b.aPagar, 0);
+  assert.equal(b.saldo, -15);
+});
+
+check('mês sem comissão não abate a dívida', () => {
+  const mapa = mapaDeLinhasComissaoRc([
+    { pessoa: 'RICARDO MIRANDA', cod: '5', nome: 'Devolução' },
+  ]);
+  const store = {
+    meses: {
+      '2026-01': mesFatur('5', -250),
+      '2026-02': mesFatur('5', 0),
+    },
+  };
+  const b = estadoMensalComissaoRc(mapa, store, '2026-02').linhas[0];
+  assert.equal(b.comissao, 0);
+  assert.equal(b.abatimento, 0);
+  assert.equal(b.aPagar, 0);
+  assert.equal(b.saldo, -10);
+});
+
+check('dívida do ano anterior abate em Janeiro', () => {
+  const mapa = mapaDeLinhasComissaoRc([
+    { pessoa: 'RICARDO MIRANDA', cod: '5', nome: 'Devolução' },
+    { pessoa: 'JOCINEI NEVES', cod: '9', nome: 'Outro' },
+  ]);
+  const store = {
+    meses: {
+      '2025-11': mesFatur('5', 1000),
+      '2025-12': mesFatur('5', -250),
+      '2026-02': mesFatur('5', 500),
+    },
+  };
+  const dez = estadoMensalComissaoRc(mapa, store, '2025-12').linhas.find(r => r.nome === 'RICARDO MIRANDA');
+  assert.equal(dez.comissao, -10);
+  assert.equal(dez.aPagar, 0);
+  assert.equal(dez.saldo, -10);
+
+  const jan = estadoMensalComissaoRc(mapa, store, '2026-01').linhas.find(r => r.nome === 'RICARDO MIRANDA');
+  assert.equal(jan.comissao, 0);
+  assert.equal(jan.abatimento, 0);
+  assert.equal(jan.aPagar, 0);
+  assert.equal(jan.saldo, -10);
+
+  const fev = estadoMensalComissaoRc(mapa, store, '2026-02').linhas.find(r => r.nome === 'RICARDO MIRANDA');
+  assert.equal(fev.comissao, 20);
+  assert.equal(fev.abatimento, 10);
+  assert.equal(fev.aPagar, 10);
+  assert.equal(fev.saldo, 0);
+
+  const anual = resumoAnualComissaoRc(mapa, store, 2026);
+  assert.equal(anual.linhas.length, 24);
+  const nomes = [];
+  for (const row of anual.linhas) {
+    if (nomes[nomes.length - 1] !== row.nome) nomes.push(row.nome);
+  }
+  assert.deepEqual(nomes, ['JOCINEI NEVES', 'RICARDO MIRANDA']);
+  const ric = anual.linhas.filter(r => r.nome === 'RICARDO MIRANDA');
+  assert.deepEqual(ric.map(r => r.mes), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.equal(ric[0].comissao, 0);
+  assert.equal(ric[0].aPagar, 0);
+  assert.equal(ric[0].saldo, -10);
+  assert.equal(ric[1].comissao, 20);
+  assert.equal(ric[1].abatimento, 10);
+  assert.equal(ric[1].aPagar, 10);
+  assert.equal(ric[1].saldo, 0);
+  assert.equal(ric[11].saldo, 0);
+  const jocAno = anual.linhas.filter(r => r.nome === 'JOCINEI NEVES');
+  assert.ok(jocAno.every(r => r.aPagar === 0 && r.saldo === 0 && r.comissao === 0));
+  assert.equal(anual.total.saldoDezembro, 0);
+});
+
+check('submenus mensal e anual e o carregador de RC mantêm-se', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(root, 'comissao-rc.js'), 'utf8');
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  const iTab = html.indexOf("showAreaFinanceira('comissao-rc')");
+  const iSec = html.indexOf('id="af-sec-comissao-rc"');
+  const iMensal = html.indexOf('id="cr-sub-mensal"');
+  const iAnual = html.indexOf('id="cr-sub-anual"');
+  assert.ok(iTab > 0 && iSec > iTab && iMensal > iSec && iAnual > iMensal);
+  assert.ok(html.includes('>Comissão de RC<'));
+  assert.ok(html.includes('>Comissão Mensal<'));
+  assert.ok(html.includes('>Resumo anual<'));
+  assert.ok(html.includes('id="cr-mes-wrap"'));
+  const iSap = html.indexOf('>Carregar Lista SAP<');
+  const iRc = html.indexOf('>Carregar lista de RC<');
+  assert.ok(iSap > 0 && iRc > iSap);
+  assert.ok(js.includes('Comissão do mês'));
+  assert.ok(js.includes('>Abatimento<'));
+  assert.ok(js.includes('>A pagar<'));
+  assert.ok(js.includes('Saldo a transportar'));
+  assert.ok(js.includes('>Mês<'));
+  assert.ok(js.includes('em dívida'));
+  assert.ok(js.includes('não se apaga em Janeiro'));
+  assert.ok(js.includes("n === 0 ? '0' : '—'"));
+  assert.ok(html.includes('id="cr-btn-email"'));
+  assert.ok(html.includes('Exportar e enviar email'));
+  const iBtn = html.indexOf('id="cr-btn-email"');
+  const iHost = html.indexOf('id="cr-host"');
+  assert.ok(iBtn > iMensal && iBtn < iHost);
+  assert.ok(js.includes('ccExact: true'));
+  assert.ok(js.includes('estadoMensalComissaoRc(_crMapa, store, periodo.ym)'));
+  assert.ok(js.includes("emailBtn.style.display = _crVista === 'anual' ? 'none' : ''"));
+  assert.ok(sw.includes('v2026-10-13-comissao-rc-resumo'));
+  assert.ok(html.includes('v2026-10-13-comissao-rc-resumo'));
+});
+
+check('email da comissão mensal: destinatários, saudação, quadro e detalhe 749002', () => {
+  const mapa = mapaDeLinhasComissaoRc([
+    { pessoa: 'RICARDO MIRANDA', cod: '749002', nome: 'Cencosud Brasil Comercial S.a' },
+    { pessoa: 'RICARDO MIRANDA', cod: '749004', nome: 'Cencosud Brasil Comercial S.a' },
+    { pessoa: 'DIOGO OLIVEIRA', cod: '749068', nome: 'Não entra' },
+    { pessoa: 'JOCINEI NEVES', cod: '9', nome: 'Positivo' },
+  ]);
+  const store = {
+    meses: {
+      '2026-08': { clientes: { '749002\t1': { cod: '749002', valor: -250, nome: 'Cencosud Brasil Comercial S.a' } } },
+      '2026-09': {
+        clientes: {
+          '749002\t1': { cod: '749002', valor: 1000, nome: 'Cencosud Brasil Comercial S.a' },
+          '9\t1': { cod: '9', valor: 500, nome: 'Positivo' },
+        },
+      },
+    },
+  };
+  const modelo = estadoMensalComissaoRc(mapa, store, '2026-09');
+  const manha = montarEmailComissaoRc({
+    modelo,
+    mes: 9,
+    ano: 2026,
+    remetente: 'Andrea Albuquerque',
+    agora: new Date('2026-09-15T14:30:00Z'),
+  });
+  assert.equal(manha.to, 'alice.menezes@bakertilly.com.br');
+  assert.deepEqual(manha.cc, [
+    'andrea.albuquerque@deltafoodsbrasil.com.br',
+    'diego.silva@bakertilly.com.br',
+    'leticia.silva@bakertilly.com.br',
+    'christian.souza@deltafoodsbrasil.com.br',
+    'diogo.oliveira@deltafoodsbrasil.com.br',
+    'felipe.morgado@bakertilly.com.br',
+  ]);
+  assert.equal(manha.saudacao, 'Bom dia');
+  assert.ok(manha.html.includes('Bom dia'));
+  assert.ok(manha.texto.includes('Bom dia'));
+  assert.ok(manha.html.includes('segue em anexo as comissões dos RC referente ao mês setembro de 2026.'));
+  assert.ok(manha.texto.includes('segue em anexo as comissões dos RC referente ao mês setembro de 2026.'));
+  assert.ok(manha.html.includes('Qualquer dúvida ou correção favor enviar a mesma para análise.'));
+  assert.ok(manha.texto.includes('Qualquer dúvida ou correção favor enviar a mesma para análise.'));
+  assert.ok(manha.html.includes('Muito obrigado,'));
+  assert.ok(manha.html.includes('Andrea Albuquerque'));
+  assert.ok(manha.texto.trim().endsWith('Andrea Albuquerque'));
+  assert.equal(manha.subject, 'Comissões RC — Setembro 2026');
+  assert.equal(manha.filename, 'Comissao_RC_2026-09.xlsx');
+  for (const col of ['RC', 'Clientes', 'Faturação', 'Comissão do mês', 'Abatimento', 'A pagar', 'Saldo a transportar']) {
+    assert.ok(manha.html.includes(col), col);
+  }
+  assert.ok(manha.html.includes('RICARDO MIRANDA'));
+  assert.ok(manha.html.includes('JOCINEI NEVES'));
+  assert.ok(!/diogo/i.test(manha.html));
+  assert.ok(!/diogo/i.test(manha.texto));
+
+  const ap = manha.folhas.find(f => f.name === 'Apuramento');
+  assert.deepEqual(ap.rows[0], ['RC', 'Clientes', 'Faturação', 'Comissão do mês', 'Abatimento', 'A pagar', 'Saldo a transportar']);
+  const ric = ap.rows.find(r => r[0] === 'RICARDO MIRANDA');
+  assert.deepEqual(ric, ['RICARDO MIRANDA', 2, 1000, 40, 10, 30, 0]);
+  const joc = ap.rows.find(r => r[0] === 'JOCINEI NEVES');
+  assert.equal(joc[3], 20);
+  assert.equal(joc[5], 20);
+  assert.equal(ap.rows[ap.rows.length - 1][0], 'Total');
+
+  const det = manha.folhas.find(f => f.name === 'Detalhe');
+  assert.deepEqual(det.rows[0], ['RC', 'Código do cliente', 'Nome do cliente', 'Faturação do mês', 'Comissão 4%']);
+  const cenco = det.rows.filter(r => String(r[1]) === '749002');
+  assert.equal(cenco.length, 1);
+  assert.equal(cenco[0][0], 'RICARDO MIRANDA');
+  assert.equal(cenco[0][2], 'Cencosud Brasil Comercial S.a');
+  assert.equal(cenco[0][3], 1000);
+  assert.equal(cenco[0][4], 40);
+  const zero = det.rows.find(r => String(r[1]) === '749004');
+  assert.ok(zero);
+  assert.equal(zero[0], 'RICARDO MIRANDA');
+  assert.equal(zero[3], 0);
+  assert.equal(zero[4], 0);
+  assert.ok(!det.rows.some(r => String(r[1]) === '749068' || /diogo/i.test(String(r[0]))));
+
+  const seed = seedMapaComissaoRc();
+  const modeloSeed = estadoMensalComissaoRc(seed, {
+    meses: {
+      '2026-09': { clientes: { '749002\t1': { cod: '749002', valor: 100, nome: 'Cencosud Brasil Comercial S.a' } } },
+    },
+  }, '2026-09');
+  const emailSeed = montarEmailComissaoRc({
+    modelo: modeloSeed,
+    mes: 9,
+    ano: 2026,
+    remetente: 'Christian Souza',
+    agora: new Date('2026-09-15T15:00:00Z'),
+  });
+  const detSeed = emailSeed.folhas.find(f => f.name === 'Detalhe').rows.find(r => String(r[1]) === '749002');
+  assert.equal(detSeed[0], 'RICARDO MIRANDA');
+  assert.equal(detSeed[2], 'Cencosud Brasil Comercial S.a');
+  const ricSeed = seed.rcs.find(r => r.nome === 'RICARDO MIRANDA');
+  for (const cli of ricSeed.clientes) {
+    assert.ok(emailSeed.folhas[1].rows.some(r => String(r[1]) === cli.cod && r[0] === 'RICARDO MIRANDA'), cli.cod);
+  }
+
+  assert.equal(montarEmailComissaoRc({
+    modelo, mes: 9, ano: 2026, remetente: 'Christian Souza', agora: new Date('2026-09-15T13:00:00Z'),
+  }).saudacao, 'Bom dia');
+  const tarde = montarEmailComissaoRc({
+    modelo, mes: 9, ano: 2026, remetente: 'Christian Souza', agora: new Date('2026-09-15T15:00:00Z'),
+  });
+  assert.equal(tarde.saudacao, 'Boa tarde');
+  assert.ok(tarde.html.includes('Boa tarde'));
+  assert.ok(tarde.html.includes('Christian Souza'));
+  assert.equal(montarEmailComissaoRc({
+    modelo, mes: 9, ano: 2026, remetente: 'Carlos Castro', agora: new Date('2026-10-13T14:59:00Z'),
+  }).saudacao, 'Bom dia');
+  assert.equal(montarEmailComissaoRc({
+    modelo, mes: 3, ano: 2026, remetente: 'Carlos Castro', agora: new Date('2026-03-01T02:30:00Z'),
+  }).saudacao, 'Boa tarde');
+
+  const simples = calcularComissaoRc(mapa, {
+    clientes: { '749002\t1': { cod: '749002', valor: 1000, nome: 'Cencosud Brasil Comercial S.a' } },
+  });
+  const semTransporte = montarEmailComissaoRc({
+    modelo: simples, mes: 1, ano: 2026, remetente: 'Carlos Castro', agora: new Date('2026-01-15T18:00:00Z'),
+  });
+  assert.ok(semTransporte.html.includes('Comissão a pagar'));
+  assert.ok(!semTransporte.html.includes('Saldo a transportar'));
+  assert.ok(semTransporte.html.includes('janeiro de 2026'));
+});
+
 check('o ecrã Dados tem o carregador por baixo da lista de clientes', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
@@ -290,8 +599,8 @@ check('o ecrã Dados tem o carregador por baixo da lista de clientes', () => {
   assert.ok(fn.includes("toast('Guardado')"));
   assert.ok(!fn.includes('publicarListaClientesSupabase'));
   assert.ok(!fn.includes('vendas_quadro'));
-  assert.ok(sw.includes('v2026-10-13-comissao-rc-carga'));
-  assert.ok(html.includes('v2026-10-13-comissao-rc-carga'));
+  assert.ok(sw.includes('v2026-10-13-comissao-rc-resumo'));
+  assert.ok(html.includes('v2026-10-13-comissao-rc-resumo'));
 });
 
 for (const [title, fn] of queue) {
