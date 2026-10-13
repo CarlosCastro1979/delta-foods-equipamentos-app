@@ -38,6 +38,7 @@ const {
   aplicarCarryComissao,
   estadoMensalComissaoRc,
   resumoAnualComissaoRc,
+  htmlResumoAnualComissaoRc,
   montarEmailComissaoRc,
 } = ctx;
 
@@ -383,25 +384,99 @@ check('dívida do ano anterior abate em Janeiro', () => {
   assert.equal(fev.saldo, 0);
 
   const anual = resumoAnualComissaoRc(mapa, store, 2026);
-  assert.equal(anual.linhas.length, 24);
-  const nomes = [];
-  for (const row of anual.linhas) {
-    if (nomes[nomes.length - 1] !== row.nome) nomes.push(row.nome);
-  }
-  assert.deepEqual(nomes, ['JOCINEI NEVES', 'RICARDO MIRANDA']);
-  const ric = anual.linhas.filter(r => r.nome === 'RICARDO MIRANDA');
-  assert.deepEqual(ric.map(r => r.mes), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-  assert.equal(ric[0].comissao, 0);
-  assert.equal(ric[0].aPagar, 0);
-  assert.equal(ric[0].saldo, -10);
-  assert.equal(ric[1].comissao, 20);
-  assert.equal(ric[1].abatimento, 10);
-  assert.equal(ric[1].aPagar, 10);
-  assert.equal(ric[1].saldo, 0);
-  assert.equal(ric[11].saldo, 0);
-  const jocAno = anual.linhas.filter(r => r.nome === 'JOCINEI NEVES');
-  assert.ok(jocAno.every(r => r.aPagar === 0 && r.saldo === 0 && r.comissao === 0));
+  const chavesAno = [];
+  for (let m = 1; m <= 12; m++) chavesAno.push('2026-' + String(m).padStart(2, '0'));
+  assert.deepEqual(Object.keys(anual.meses), chavesAno);
+  assert.deepEqual(anual.rcs, ['JOCINEI NEVES', 'RICARDO MIRANDA']);
+  assert.equal(anual.linhas, undefined);
+  const ric = (mes) => anual.meses['2026-' + String(mes).padStart(2, '0')].passos['RICARDO MIRANDA'];
+  assert.deepEqual(chavesAno.map(ym => anual.meses[ym].passos['RICARDO MIRANDA'].mes), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.equal(ric(1).comissao, 0);
+  assert.equal(ric(1).aPagar, 0);
+  assert.equal(anual.meses['2026-01'].aPagar['RICARDO MIRANDA'], 0);
+  assert.equal(ric(1).saldo, -10);
+  assert.equal(ric(2).comissao, 20);
+  assert.equal(ric(2).abatimento, 10);
+  assert.equal(ric(2).aPagar, 10);
+  assert.equal(anual.meses['2026-02'].aPagar['RICARDO MIRANDA'], 10);
+  assert.equal(ric(2).saldo, 0);
+  assert.equal(ric(12).saldo, 0);
+  assert.ok(chavesAno.every(ym => {
+    const r = anual.meses[ym].passos['JOCINEI NEVES'];
+    return r.aPagar === 0 && r.saldo === 0 && r.comissao === 0;
+  }));
   assert.equal(anual.total.saldoDezembro, 0);
+});
+
+check('resumo anual é meses × RC: 12 chaves, nomes nas colunas, célula = a pagar', () => {
+  const mapa = mapaDeLinhasComissaoRc([
+    { pessoa: 'RICARDO MIRANDA', cod: '5', nome: 'Devolução' },
+    { pessoa: 'ÁLVARO MESQUITA', cod: '6', nome: 'Positivo' },
+    { pessoa: 'DIOGO OLIVEIRA', cod: '7', nome: 'Fora' },
+  ]);
+  const store = {
+    meses: {
+      '2026-03': mesFatur('5', -250),
+      '2026-04': mesFatur('5', 1000),
+      '2026-05': mesFatur('6', 500),
+    },
+  };
+  const anual = resumoAnualComissaoRc(mapa, store, 2026);
+  const chaves = [];
+  for (let m = 1; m <= 12; m++) chaves.push('2026-' + String(m).padStart(2, '0'));
+  assert.equal(Object.keys(anual.meses).length, 12);
+  assert.deepEqual(Object.keys(anual.meses), chaves);
+  assert.deepEqual(anual.rcs, ['ÁLVARO MESQUITA', 'RICARDO MIRANDA']);
+  assert.equal(anual.linhas, undefined);
+  for (const ym of chaves) {
+    assert.deepEqual(Object.keys(anual.meses[ym].aPagar), anual.rcs);
+    assert.equal(anual.meses[ym].mes, Number(ym.slice(5)));
+  }
+  assert.equal(anual.meses['2026-03'].aPagar['RICARDO MIRANDA'], 0);
+  assert.equal(anual.meses['2026-03'].passos['RICARDO MIRANDA'].comissao, -10);
+  assert.equal(anual.meses['2026-03'].passos['RICARDO MIRANDA'].saldo, -10);
+  assert.equal(anual.meses['2026-04'].aPagar['RICARDO MIRANDA'], 30);
+  assert.equal(anual.meses['2026-04'].passos['RICARDO MIRANDA'].abatimento, 10);
+  assert.equal(anual.meses['2026-05'].aPagar['ÁLVARO MESQUITA'], 20);
+  assert.equal(anual.meses['2026-05'].aPagar['RICARDO MIRANDA'], 0);
+  assert.equal(anual.meses['2026-03'].total, 0);
+  assert.equal(anual.meses['2026-04'].total, 30);
+  assert.equal(anual.meses['2026-05'].total, 20);
+  assert.equal(anual.total.porRc['RICARDO MIRANDA'], 30);
+  assert.equal(anual.total.porRc['ÁLVARO MESQUITA'], 20);
+  assert.equal(anual.total.aPagar, 50);
+  assert.equal(anual.total.saldoDezembro, 0);
+  assert.deepEqual(anual.total.saldosDezembro, []);
+
+  const html = htmlResumoAnualComissaoRc(anual);
+  assert.equal((html.match(/<tr/g) || []).length, 14);
+  for (const mes of ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']) {
+    assert.equal(html.split(mes).length - 1, 1, mes);
+  }
+  assert.ok(html.indexOf('>Mês<') < html.indexOf('>ÁLVARO MESQUITA<'));
+  assert.ok(html.indexOf('>ÁLVARO MESQUITA<') < html.indexOf('>RICARDO MIRANDA<'));
+  assert.ok(html.indexOf('>RICARDO MIRANDA<') < html.indexOf('>Total<'));
+  assert.equal(html.split('ÁLVARO MESQUITA').length - 1, 1);
+  assert.equal(html.split('RICARDO MIRANDA').length - 1, 1);
+  assert.ok(!html.includes('Abatimento'));
+  assert.ok(!html.includes('Comissão do mês'));
+  assert.ok(!html.includes('<th>RC</th>'));
+  assert.ok(html.includes('Comissão negativa não é paga'));
+  assert.ok(!html.includes('Saldo a transportar em Dezembro'));
+  assert.ok(!/diogo/i.test(html));
+
+  const fim = resumoAnualComissaoRc(mapa, { meses: { '2026-11': mesFatur('5', -250) } }, 2026);
+  assert.equal(fim.meses['2026-11'].aPagar['RICARDO MIRANDA'], 0);
+  assert.equal(fim.meses['2026-12'].aPagar['RICARDO MIRANDA'], 0);
+  assert.equal(fim.meses['2026-12'].passos['RICARDO MIRANDA'].saldo, -10);
+  assert.deepEqual(fim.total.saldosDezembro, [{ nome: 'RICARDO MIRANDA', saldo: -10 }]);
+  const nota = htmlResumoAnualComissaoRc(fim);
+  assert.equal((nota.match(/<tr/g) || []).length, 14);
+  assert.equal(nota.split('RICARDO MIRANDA').length - 1, 2);
+  assert.ok(nota.includes('Saldo a transportar em Dezembro'));
+  assert.ok(nota.includes('vq-var-neg'));
+  assert.ok(nota.includes('10,00'));
+  assert.equal(nota.split('ÁLVARO MESQUITA').length - 1, 1);
 });
 
 check('submenus mensal e anual e o carregador de RC mantêm-se', () => {
@@ -436,8 +511,8 @@ check('submenus mensal e anual e o carregador de RC mantêm-se', () => {
   assert.ok(js.includes('ccExact: true'));
   assert.ok(js.includes('estadoMensalComissaoRc(_crMapa, store, periodo.ym)'));
   assert.ok(js.includes("emailBtn.style.display = _crVista === 'anual' ? 'none' : ''"));
-  assert.ok(sw.includes('v2026-10-13-comissao-rc-resumo'));
-  assert.ok(html.includes('v2026-10-13-comissao-rc-resumo'));
+  assert.ok(sw.includes('v2026-10-13-comissao-rc-anual-colunas'));
+  assert.ok(html.includes('v2026-10-13-comissao-rc-anual-colunas'));
 });
 
 check('email da comissão mensal: destinatários, saudação, quadro e detalhe 749002', () => {
@@ -599,8 +674,8 @@ check('o ecrã Dados tem o carregador por baixo da lista de clientes', () => {
   assert.ok(fn.includes("toast('Guardado')"));
   assert.ok(!fn.includes('publicarListaClientesSupabase'));
   assert.ok(!fn.includes('vendas_quadro'));
-  assert.ok(sw.includes('v2026-10-13-comissao-rc-resumo'));
-  assert.ok(html.includes('v2026-10-13-comissao-rc-resumo'));
+  assert.ok(sw.includes('v2026-10-13-comissao-rc-anual-colunas'));
+  assert.ok(html.includes('v2026-10-13-comissao-rc-anual-colunas'));
 });
 
 for (const [title, fn] of queue) {

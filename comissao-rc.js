@@ -536,55 +536,91 @@ function comissaoDeFaturacao(faturacao) {
   }
 
   /**
-   * Os 12 meses do ano Y, por RC (nome, depois mês).
-   * O saldo de abertura é a dívida no fim de Dezembro de Y-1 (ou do último mês anterior que exista).
-   * Mês sem faturação entra na mesma, com comissão 0, para a dívida continuar visível.
+   * Grelha do ano Y: 12 meses (chaves YYYY-MM) × colunas de RC.
+   * Cada célula é o «a pagar» depois da regra de transporte (comissão negativa
+   * não se paga; abate-se nos meses seguintes até zero).
+   * O saldo de abertura é a dívida no fim de Dezembro de Y-1.
+   * Mês sem faturação entra na mesma, com comissão 0, para a dívida continuar.
    */
   function resumoAnualComissaoRc(mapa, store, ano) {
     var anoN = parseInt(ano, 10);
     if (!anoN) anoN = new Date().getFullYear();
     var serie = serieCarryComissaoRc(mapa, store || { meses: {} });
     var inicio = anoN + '-01';
-    var linhas = [];
+    var nomes = (serie.nomes || []).slice().sort(function (a, b) {
+      return normNomeRc(a).localeCompare(normNomeRc(b), 'pt');
+    });
+    var passosPorRc = {};
     var totCom = 0;
     var totAbat = 0;
     var totPagar = 0;
     var totSaldoDez = 0;
-    var nomes = serie.nomes || [];
+    var totPorRc = {};
+    var saldosDezembro = [];
     for (var i = 0; i < nomes.length; i++) {
       var nome = nomes[i];
       var bucket = serie.porNome[nome] || { saldo: 0, meses: {} };
       var saldo = saldoAntesDeYm(bucket, inicio);
+      var lista = [];
+      var somaRc = 0;
       for (var m = 1; m <= 12; m++) {
         var ym = anoN + '-' + String(m).padStart(2, '0');
         var existente = bucket.meses[ym];
         var com = existente ? existente.comissao : 0;
         var passo = aplicarCarryComissao(com, saldo);
         saldo = passo.saldo;
-        linhas.push({
-          nome: nome,
-          ym: ym,
+        lista.push({
           mes: m,
+          ym: ym,
           faturacao: existente ? existente.faturacao : 0,
           comissao: passo.comissao,
           abatimento: passo.abatimento,
           aPagar: passo.aPagar,
           saldo: passo.saldo,
         });
+        somaRc += centsDeReais(passo.aPagar);
         totCom += centsDeReais(passo.comissao);
         totAbat += centsDeReais(passo.abatimento);
         totPagar += centsDeReais(passo.aPagar);
       }
+      passosPorRc[nome] = lista;
+      totPorRc[nome] = somaRc / 100;
       totSaldoDez += centsDeReais(saldo);
+      if (saldo < 0) saldosDezembro.push({ nome: nome, saldo: saldo });
+    }
+    var meses = {};
+    for (var m2 = 1; m2 <= 12; m2++) {
+      var ym2 = anoN + '-' + String(m2).padStart(2, '0');
+      var aPagar = {};
+      var passos = {};
+      var somaMes = 0;
+      for (var c = 0; c < nomes.length; c++) {
+        var nomeC = nomes[c];
+        var cel = passosPorRc[nomeC][m2 - 1];
+        aPagar[nomeC] = cel.aPagar;
+        passos[nomeC] = cel;
+        somaMes += centsDeReais(cel.aPagar);
+      }
+      meses[ym2] = {
+        mes: m2,
+        ym: ym2,
+        nome: CR_MESES_NOME[m2 - 1],
+        aPagar: aPagar,
+        passos: passos,
+        total: somaMes / 100,
+      };
     }
     return {
       ano: anoN,
-      linhas: linhas,
+      rcs: nomes,
+      meses: meses,
       total: {
         comissao: totCom / 100,
         abatimento: totAbat / 100,
         aPagar: totPagar / 100,
+        porRc: totPorRc,
         saldoDezembro: totSaldoDez / 100,
+        saldosDezembro: saldosDezembro,
       },
     };
   }
@@ -785,7 +821,7 @@ function comissaoDeFaturacao(faturacao) {
     var lead = document.getElementById('cr-lead');
     if (lead) {
       lead.textContent = _crVista === 'anual'
-        ? 'Visão do ano, por RC e por mês: comissão, o que se abate da dívida anterior e o que fica a pagar.'
+        ? 'A pagar de cada mês, com os nomes dos RC nas colunas.'
         : 'Faturação mensal da soma dos clientes de cada RC. A comissão é 4%. Uma comissão negativa fica em dívida e abate-se nos meses seguintes.';
     }
   }
@@ -797,6 +833,7 @@ function comissaoDeFaturacao(faturacao) {
   }
 
   var CR_NOTA_ABATIMENTO = 'Se a comissão do mês for negativa, o RC não devolve o dinheiro: a pagar fica a zero e o valor fica em dívida no saldo a transportar (a vermelho); nos meses seguintes esse saldo é abatido até zerar, e a dívida não se apaga em Janeiro.';
+  var CR_NOTA_ANUAL = 'Comissão negativa não é paga: a célula desse mês fica a zero e o valor abate-se nos meses seguintes até zerar.';
 
   function pintarComissaoMensalRc(store) {
     var host = document.getElementById('cr-host');
@@ -895,40 +932,60 @@ function comissaoDeFaturacao(faturacao) {
       detalhe;
   }
 
+  function notaResumoAnualComissaoRc(modelo) {
+    var html = crEsc(CR_NOTA_ANUAL);
+    var saldos = (modelo && modelo.total && modelo.total.saldosDezembro) || [];
+    if (!saldos.length) return html;
+    var partes = [];
+    for (var i = 0; i < saldos.length; i++) {
+      var s = saldos[i];
+      partes.push(crEsc(s.nome) + ' <span class="vq-var-neg">' + crEsc(crRs(s.saldo)) + '</span>');
+    }
+    return html + ' Saldo a transportar em Dezembro: ' + partes.join('; ') + '.';
+  }
+
+  /** Quadro único: meses na vertical, um RC por coluna, célula = a pagar. */
+  function htmlResumoAnualComissaoRc(modelo) {
+    var base = modelo || { rcs: [], meses: {}, total: {} };
+    var rcs = base.rcs || [];
+    var ano = base.ano || new Date().getFullYear();
+    var head = '<th class="vq-linha">Mês</th>';
+    for (var c = 0; c < rcs.length; c++) {
+      head += '<th class="vq-num">' + crEsc(rcs[c]) + '</th>';
+    }
+    head += '<th class="vq-num">Total</th>';
+    var body = '';
+    if (!rcs.length) {
+      body = '<tr><td colspan="2" class="vq-muted" style="padding:16px;">Sem RC no mapa (Diogo fica de fora).</td></tr>';
+    } else {
+      for (var m = 1; m <= 12; m++) {
+        var ym = ano + '-' + String(m).padStart(2, '0');
+        var mes = (base.meses && base.meses[ym]) || { nome: CR_MESES_NOME[m - 1], aPagar: {}, total: 0 };
+        body += '<tr class="vq-vend"><td class="vq-linha">' + crEsc(mes.nome || CR_MESES_NOME[m - 1]) + '</td>';
+        for (var i = 0; i < rcs.length; i++) {
+          body += crTdValor(mes.aPagar && mes.aPagar[rcs[i]] != null ? mes.aPagar[rcs[i]] : 0);
+        }
+        body += crTdValor(mes.total || 0) + '</tr>';
+      }
+      var tot = base.total || {};
+      var porRc = tot.porRc || {};
+      body += '<tr class="vq-total"><td class="vq-linha">Total</td>';
+      for (var t = 0; t < rcs.length; t++) body += crTdValor(porRc[rcs[t]] || 0);
+      body += crTdValor(tot.aPagar || 0) + '</tr>';
+    }
+    var minW = Math.max(720, 180 + rcs.length * 160);
+    return '<div class="vq-scroll vq-scroll-main"><table class="vq-table" style="min-width:' + minW + 'px"><thead><tr>' +
+      head + '</tr></thead><tbody>' + body + '</tbody></table></div>' +
+      '<div class="vcob-note">' + notaResumoAnualComissaoRc(base) + '</div>';
+  }
+
   function pintarResumoAnualRc(store) {
     var host = document.getElementById('cr-host');
     if (!host || !_crMapa) return;
     var anoEl = document.getElementById('cr-ano');
     var ano = parseInt(anoEl && anoEl.value, 10) || new Date().getFullYear();
     var modelo = resumoAnualComissaoRc(_crMapa, store, ano);
-    var body = '';
-    for (var i = 0; i < modelo.linhas.length; i++) {
-      var row = modelo.linhas[i];
-      var nomeMes = CR_MESES_NOME[row.mes - 1] || String(row.mes);
-      body += '<tr class="vq-vend">' +
-        '<td>' + crEsc(row.nome) + '</td>' +
-        '<td>' + crEsc(nomeMes) + '</td>' +
-        crTdValor(row.comissao) +
-        crTdValor(row.abatimento) +
-        crTdValor(row.aPagar) +
-        crTdSaldo(row.saldo) +
-        '</tr>';
-    }
-    if (!modelo.linhas.length) {
-      body = '<tr><td colspan="6" class="vq-muted" style="padding:16px;">Sem RC no mapa (Diogo fica de fora).</td></tr>';
-    }
-    var tot = modelo.total;
-    host.innerHTML =
-      '<div class="vq-scroll vq-scroll-main"><table class="vq-table" style="min-width:920px"><thead><tr>' +
-      '<th>RC</th><th>Mês</th><th class="vq-num">Comissão do mês</th><th class="vq-num">Abatimento</th>' +
-      '<th class="vq-num">A pagar</th><th class="vq-num">Saldo a transportar</th>' +
-      '</tr></thead><tbody>' + body +
-      '<tr class="vq-total"><td>Total</td><td class="vq-muted" title="O saldo de cada mês fica na linha desse mês">—</td>' +
-      crTdValor(tot.comissao) + crTdValor(tot.abatimento) + crTdValor(tot.aPagar) +
-      crTdSaldo(tot.saldoDezembro) + '</tr>' +
-      '</tbody></table></div>' +
-      '<div class="vcob-note">Os 12 meses de cada RC ficam no mesmo quadro, mesmo sem vendas. O saldo do total é o de Dezembro (o que ainda transita para o ano seguinte), não a soma dos meses. ' +
-      crEsc(CR_NOTA_ABATIMENTO) + '</div>';
+    host.innerHTML = htmlResumoAnualComissaoRc(modelo);
   }
 
   function pintarComissaoRc(store) {
@@ -1399,6 +1456,7 @@ function comissaoDeFaturacao(faturacao) {
     aplicarCarryComissao: aplicarCarryComissao,
     estadoMensalComissaoRc: estadoMensalComissaoRc,
     resumoAnualComissaoRc: resumoAnualComissaoRc,
+    htmlResumoAnualComissaoRc: htmlResumoAnualComissaoRc,
     ultimoYmComFaturCliente: ultimoYmComFaturCliente,
     seedMapaComissaoRc: seedMapaComissaoRc,
     renderComissaoRc: renderComissaoRc,
