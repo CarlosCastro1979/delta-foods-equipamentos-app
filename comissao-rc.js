@@ -818,6 +818,8 @@ function comissaoDeFaturacao(faturacao) {
     if (mesWrap) mesWrap.style.display = _crVista === 'anual' ? 'none' : '';
     var emailBtn = document.getElementById('cr-btn-email');
     if (emailBtn) emailBtn.style.display = _crVista === 'anual' ? 'none' : '';
+    var excelBtn = document.getElementById('cr-btn-excel');
+    if (excelBtn) excelBtn.style.display = _crVista === 'anual' ? '' : 'none';
     var lead = document.getElementById('cr-lead');
     if (lead) {
       lead.textContent = _crVista === 'anual'
@@ -1438,6 +1440,243 @@ function comissaoDeFaturacao(faturacao) {
     }
   }
 
+  /** Coluna Excel 1-based → A, B, … */
+  function colExcelRc(n) {
+    var s = '';
+    var c = n;
+    while (c > 0) {
+      c--;
+      s = String.fromCharCode(65 + (c % 26)) + s;
+      c = Math.floor(c / 26);
+    }
+    return s;
+  }
+
+  function nomeFicheiroResumoAnualComissaoRc(ano) {
+    var y = parseInt(ano, 10);
+    if (!y) y = new Date().getFullYear();
+    return 'Comissao_RC_resumo_anual_' + y + '.xlsx';
+  }
+
+  /**
+   * A mesma frase da nota do ecrã, em texto, só quando Dezembro ainda leva dívida.
+   */
+  function textoNotaResumoAnualExcelComissaoRc(modelo) {
+    var saldos = (modelo && modelo.total && modelo.total.saldosDezembro) || [];
+    if (!saldos.length) return '';
+    var partes = [];
+    for (var i = 0; i < saldos.length; i++) {
+      partes.push(saldos[i].nome + ' ' + crRs(saldos[i].saldo));
+    }
+    return CR_NOTA_ANUAL + ' Saldo a transportar em Dezembro: ' + partes.join('; ') + '.';
+  }
+
+  /** Moeda R$ com separadores pt-BR (milhar ponto, decimal vírgula) no Excel. */
+  var COMISSAO_RC_EXCEL_RS = '[$R$-416] #,##0.00';
+
+  function reaisExcelRc(n) {
+    var v = Number(n);
+    if (!Number.isFinite(v)) v = 0;
+    return Math.round(v * 100) / 100;
+  }
+
+  /**
+   * Preenche uma folha ExcelJS (ou um duplo com a mesma API) com o resumo anual.
+   * Células dos RC = líquido pago. Totais são fórmulas SUM.
+   */
+  function escreverFolhaResumoAnualComissaoRc(ws, modelo) {
+    var base = modelo || { rcs: [], meses: {}, total: {} };
+    var rcs = base.rcs || [];
+    var ano = parseInt(base.ano, 10) || new Date().getFullYear();
+    var nCols = Math.max(2, rcs.length + 2);
+    var headerRow = 2;
+    var firstData = 3;
+    var lastData = firstData + 11;
+    var totalRow = lastData + 1;
+    var thin = { style: 'thin', color: { argb: 'FFCBD5E1' } };
+    var borderAll = { top: thin, left: thin, bottom: thin, right: thin };
+
+    function linha(r) {
+      if (!ws || typeof ws.getRow !== 'function') return null;
+      return ws.getRow(r);
+    }
+    function coluna(c) {
+      if (!ws || typeof ws.getColumn !== 'function') return null;
+      return ws.getColumn(c);
+    }
+
+    ws.mergeCells(1, 1, 1, nCols);
+    var title = ws.getCell(1, 1);
+    title.value = 'Comissão de RC — resumo anual ' + ano;
+    title.font = { name: 'Calibri', size: 16, bold: true, color: { argb: 'FFC8102E' } };
+    title.alignment = { vertical: 'middle', horizontal: 'left' };
+    var titleRow = linha(1);
+    if (titleRow) titleRow.height = 26;
+
+    var headers = ['Mês'].concat(rcs, ['Total']);
+    for (var h = 0; h < headers.length; h++) {
+      var hc = ws.getCell(headerRow, h + 1);
+      hc.value = headers[h];
+      hc.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+      hc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+      hc.border = borderAll;
+      hc.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    }
+    var headRow = linha(headerRow);
+    if (headRow) headRow.height = 22;
+
+    function pintarTexto(cell, value, bold, fill) {
+      cell.value = value;
+      cell.font = { name: 'Calibri', size: 10, bold: !!bold, color: { argb: 'FF111827' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+      cell.border = borderAll;
+      cell.alignment = { vertical: 'middle', horizontal: 'left' };
+    }
+    function pintarNumero(cell, value, bold) {
+      cell.value = value;
+      cell.numFmt = COMISSAO_RC_EXCEL_RS;
+      cell.font = { name: 'Calibri', size: 10, bold: !!bold, color: { argb: 'FF111827' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bold ? 'FFE8EEF5' : 'FFFFFFFF' } };
+      cell.border = borderAll;
+      cell.alignment = { vertical: 'middle', horizontal: 'right' };
+    }
+
+    var firstRcCol = 2;
+    var lastRcCol = rcs.length ? (1 + rcs.length) : 1;
+    var totalCol = rcs.length + 2;
+    for (var m = 1; m <= 12; m++) {
+      var r = firstData + m - 1;
+      var ym = ano + '-' + String(m).padStart(2, '0');
+      var mes = (base.meses && base.meses[ym]) || { nome: CR_MESES_NOME[m - 1], aPagar: {}, total: 0 };
+      pintarTexto(ws.getCell(r, 1), mes.nome || CR_MESES_NOME[m - 1], false, 'FFFFFFFF');
+      var somaCents = 0;
+      for (var i = 0; i < rcs.length; i++) {
+        var bruto = mes.aPagar && mes.aPagar[rcs[i]] != null ? mes.aPagar[rcs[i]] : 0;
+        var v = reaisExcelRc(bruto);
+        somaCents += Math.round(v * 100);
+        pintarNumero(ws.getCell(r, firstRcCol + i), v, false);
+      }
+      var formulaMes = rcs.length
+        ? ('SUM(' + colExcelRc(firstRcCol) + r + ':' + colExcelRc(lastRcCol) + r + ')')
+        : null;
+      pintarNumero(ws.getCell(r, totalCol), formulaMes
+        ? { formula: formulaMes, result: somaCents / 100 }
+        : 0, false);
+      var dataRow = linha(r);
+      if (dataRow) dataRow.height = 18;
+    }
+
+    pintarTexto(ws.getCell(totalRow, 1), 'Total', true, 'FFE8EEF5');
+    var porRc = (base.total && base.total.porRc) || {};
+    for (var t = 0; t < rcs.length; t++) {
+      var col = firstRcCol + t;
+      var letra = colExcelRc(col);
+      pintarNumero(ws.getCell(totalRow, col), {
+        formula: 'SUM(' + letra + firstData + ':' + letra + lastData + ')',
+        result: reaisExcelRc(porRc[rcs[t]]),
+      }, true);
+    }
+    var letraTot = colExcelRc(totalCol);
+    pintarNumero(ws.getCell(totalRow, totalCol), {
+      formula: 'SUM(' + letraTot + firstData + ':' + letraTot + lastData + ')',
+      result: reaisExcelRc(base.total && base.total.aPagar),
+    }, true);
+    var totRow = linha(totalRow);
+    if (totRow) totRow.height = 20;
+
+    var colMes = coluna(1);
+    if (colMes) colMes.width = 16;
+    for (var w = 0; w < rcs.length; w++) {
+      var colW = coluna(firstRcCol + w);
+      if (!colW) continue;
+      var chars = String(rcs[w] || '').length;
+      colW.width = Math.max(18, Math.min(32, chars + 4));
+    }
+    var colTotal = coluna(totalCol);
+    if (colTotal) colTotal.width = 18;
+
+    ws.views = [{
+      state: 'frozen',
+      ySplit: headerRow,
+      topLeftCell: 'A3',
+      activeCell: 'B3',
+      showGridLines: true,
+    }];
+
+    var note = textoNotaResumoAnualExcelComissaoRc(base);
+    var noteRow = 0;
+    if (note) {
+      noteRow = totalRow + 2;
+      ws.mergeCells(noteRow, 1, noteRow, nCols);
+      var nc = ws.getCell(noteRow, 1);
+      nc.value = note;
+      nc.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
+      nc.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+      var noteH = linha(noteRow);
+      if (noteH) noteH.height = 36;
+    }
+
+    return {
+      filename: nomeFicheiroResumoAnualComissaoRc(ano),
+      sheetName: 'Resumo anual',
+      numFmt: COMISSAO_RC_EXCEL_RS,
+      nCols: nCols,
+      headerRow: headerRow,
+      firstDataRow: firstData,
+      lastDataRow: lastData,
+      totalRow: totalRow,
+      noteRow: noteRow,
+      note: note,
+    };
+  }
+
+  /**
+   * Descarrega o resumo anual do ano seleccionado.
+   * Não abre o Outlook e não usa o fluxo do email mensal.
+   */
+  async function comissaoRcExportarExcelAnual() {
+    var btn = typeof document !== 'undefined' ? document.getElementById('cr-btn-excel') : null;
+    if (btn) btn.disabled = true;
+    try {
+      if (!_crMapa && typeof lerMapaComissaoRc === 'function') _crMapa = await lerMapaComissaoRc();
+      if (!_crMapa || !_crMapa.rcs || !_crMapa.rcs.length) {
+        if (typeof toast === 'function') toast('Sem mapa de RC para exportar.', 'warn');
+        return;
+      }
+      var anoEl = typeof document !== 'undefined' ? document.getElementById('cr-ano') : null;
+      var ano = parseInt(anoEl && anoEl.value, 10) || new Date().getFullYear();
+      var store = { meses: {} };
+      if (typeof lerVendasClientePersistida === 'function') {
+        try { store = (await lerVendasClientePersistida()) || store; } catch (e1) { store = { meses: {} }; }
+      }
+      var modelo = resumoAnualComissaoRc(_crMapa, store, ano);
+      if (typeof toast === 'function') toast('A gerar Excel…');
+      if (typeof prosEnsureExcelJS === 'function') await prosEnsureExcelJS();
+      var ExcelJS = (typeof window !== 'undefined' && window.ExcelJS) ? window.ExcelJS : null;
+      if (!ExcelJS) throw new Error('Excel indisponível');
+      var wb = new ExcelJS.Workbook();
+      wb.creator = 'Delta Foods Brasil';
+      wb.created = new Date();
+      wb.calcProperties = wb.calcProperties || {};
+      wb.calcProperties.fullCalcOnLoad = true;
+      var ws = wb.addWorksheet('Resumo anual', {
+        views: [{ state: 'frozen', ySplit: 2, topLeftCell: 'A3', showGridLines: true }],
+        properties: { defaultRowHeight: 18 },
+      });
+      var meta = escreverFolhaResumoAnualComissaoRc(ws, modelo);
+      var buf = await wb.xlsx.writeBuffer();
+      var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      if (typeof triggerBlobDownload !== 'function') throw new Error('Download indisponível');
+      triggerBlobDownload(blob, meta.filename);
+      if (typeof toast === 'function') toast('Excel descarregado.');
+    } catch (e) {
+      console.error('comissaoRcExportarExcelAnual', e);
+      if (typeof toast === 'function') toast('Erro ao exportar o Excel: ' + (e && e.message ? e.message : e), 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   return {
     COMISSAO_RC_TAXA: COMISSAO_RC_TAXA,
     COMISSAO_RC_SUPA_ID: COMISSAO_RC_SUPA_ID,
@@ -1472,5 +1711,9 @@ function comissaoDeFaturacao(faturacao) {
     nomeMesComissaoRc: nomeMesComissaoRc,
     montarEmailComissaoRc: montarEmailComissaoRc,
     comissaoRcExportarEmail: comissaoRcExportarEmail,
+    nomeFicheiroResumoAnualComissaoRc: nomeFicheiroResumoAnualComissaoRc,
+    textoNotaResumoAnualExcelComissaoRc: textoNotaResumoAnualExcelComissaoRc,
+    escreverFolhaResumoAnualComissaoRc: escreverFolhaResumoAnualComissaoRc,
+    comissaoRcExportarExcelAnual: comissaoRcExportarExcelAnual,
   };
 });

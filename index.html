@@ -3979,6 +3979,7 @@ var _unused_placeholder = 1;
               <select id="cr-ano" class="form-input" style="height:36px;min-width:90px;margin-left:6px;" onchange="renderComissaoRc()"></select>
             </label>
             <button type="button" class="btn btn-primary btn-sm" id="cr-btn-email" onclick="comissaoRcExportarEmail()" style="min-height:36px;">Exportar e enviar email</button>
+            <button type="button" class="btn btn-primary btn-sm" id="cr-btn-excel" onclick="comissaoRcExportarExcelAnual()" style="min-height:36px;display:none;">Exportar para Excel</button>
           </div>
         </div>
         <div id="cr-host"><div style="color:var(--muted);font-size:13px;padding:12px 0;">A carregar…</div></div>
@@ -37331,7 +37332,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-13-comissao-rc-anual-colunas: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-13-comissao-rc-excel-anual: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

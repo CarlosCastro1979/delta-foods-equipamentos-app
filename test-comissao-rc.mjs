@@ -40,6 +40,9 @@ const {
   resumoAnualComissaoRc,
   htmlResumoAnualComissaoRc,
   montarEmailComissaoRc,
+  nomeFicheiroResumoAnualComissaoRc,
+  textoNotaResumoAnualExcelComissaoRc,
+  escreverFolhaResumoAnualComissaoRc,
 } = ctx;
 
 check('nome Diogo e NPess 99520004 são ignorados', () => {
@@ -511,8 +514,8 @@ check('submenus mensal e anual e o carregador de RC mantêm-se', () => {
   assert.ok(js.includes('ccExact: true'));
   assert.ok(js.includes('estadoMensalComissaoRc(_crMapa, store, periodo.ym)'));
   assert.ok(js.includes("emailBtn.style.display = _crVista === 'anual' ? 'none' : ''"));
-  assert.ok(sw.includes('v2026-10-13-comissao-rc-anual-colunas'));
-  assert.ok(html.includes('v2026-10-13-comissao-rc-anual-colunas'));
+  assert.ok(sw.includes('v2026-10-13-comissao-rc-excel-anual'));
+  assert.ok(html.includes('v2026-10-13-comissao-rc-excel-anual'));
 });
 
 check('email da comissão mensal: destinatários, saudação, quadro e detalhe 749002', () => {
@@ -674,8 +677,198 @@ check('o ecrã Dados tem o carregador por baixo da lista de clientes', () => {
   assert.ok(fn.includes("toast('Guardado')"));
   assert.ok(!fn.includes('publicarListaClientesSupabase'));
   assert.ok(!fn.includes('vendas_quadro'));
-  assert.ok(sw.includes('v2026-10-13-comissao-rc-anual-colunas'));
-  assert.ok(html.includes('v2026-10-13-comissao-rc-anual-colunas'));
+  assert.ok(sw.includes('v2026-10-13-comissao-rc-excel-anual'));
+  assert.ok(html.includes('v2026-10-13-comissao-rc-excel-anual'));
+});
+
+function folhaExcelFalsa() {
+  const cells = new Map();
+  const merges = [];
+  const cols = {};
+  const rows = {};
+  const ws = {
+    merges,
+    views: null,
+    getCell(r, c) {
+      const k = r + ',' + c;
+      if (!cells.has(k)) cells.set(k, {});
+      return cells.get(k);
+    },
+    mergeCells(r1, c1, r2, c2) { merges.push([r1, c1, r2, c2]); },
+    getColumn(c) {
+      if (!cols[c]) cols[c] = {};
+      return cols[c];
+    },
+    getRow(r) {
+      if (!rows[r]) rows[r] = {};
+      return rows[r];
+    },
+    cells,
+    cols,
+  };
+  return ws;
+}
+
+function valoresColuna(ws, col, ate) {
+  const out = [];
+  for (let r = 1; r <= ate; r++) {
+    const cell = ws.cells.get(r + ',' + col);
+    out.push(cell ? cell.value : undefined);
+  }
+  return out;
+}
+
+check('excel do resumo anual: 12 meses, colunas de RC, líquido pago numérico e totais', () => {
+  const mapa = mapaDeLinhasComissaoRc([
+    { pessoa: 'RICARDO MIRANDA', cod: '5', nome: 'Devolução' },
+    { pessoa: 'ÁLVARO MESQUITA', cod: '6', nome: 'Positivo' },
+    { pessoa: 'DIOGO OLIVEIRA', cod: '7', nome: 'Fora' },
+  ]);
+  const store = {
+    meses: {
+      '2026-03': mesFatur('5', -250),
+      '2026-04': mesFatur('5', 1000),
+      '2026-05': mesFatur('6', 500),
+    },
+  };
+  const anual = resumoAnualComissaoRc(mapa, store, 2026);
+  const ws = folhaExcelFalsa();
+  const meta = escreverFolhaResumoAnualComissaoRc(ws, anual);
+
+  assert.equal(meta.filename, 'Comissao_RC_resumo_anual_2026.xlsx');
+  assert.equal(nomeFicheiroResumoAnualComissaoRc(2026), 'Comissao_RC_resumo_anual_2026.xlsx');
+  assert.equal(nomeFicheiroResumoAnualComissaoRc(2025), 'Comissao_RC_resumo_anual_2025.xlsx');
+  assert.equal(meta.sheetName, 'Resumo anual');
+  assert.equal(ws.getCell(1, 1).value, 'Comissão de RC — resumo anual 2026');
+  assert.deepEqual(ws.merges[0], [1, 1, 1, 4]);
+
+  const cabecas = [1, 2, 3, 4].map(c => ws.getCell(2, c).value);
+  assert.deepEqual(cabecas, ['Mês', 'ÁLVARO MESQUITA', 'RICARDO MIRANDA', 'Total']);
+  for (const proibido of ['Comissão do mês', 'Abatimento', 'Saldo a transportar', 'Faturação', 'Clientes', 'A pagar', 'RC']) {
+    assert.ok(!cabecas.includes(proibido), proibido);
+  }
+  assert.ok(!cabecas.some(h => /diogo/i.test(String(h))));
+  for (const c of [1, 2, 3, 4]) {
+    const h = ws.getCell(2, c);
+    assert.equal(h.font.bold, true);
+    assert.equal(h.alignment.horizontal, 'center');
+    assert.equal(h.fill.pattern, 'solid');
+    assert.ok(h.fill.fgColor.argb);
+    assert.equal(h.border.top.style, 'thin');
+    assert.equal(h.border.bottom.style, 'thin');
+    assert.equal(h.border.left.style, 'thin');
+    assert.equal(h.border.right.style, 'thin');
+  }
+
+  const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const colMes = valoresColuna(ws, 1, 20);
+  assert.deepEqual(colMes.slice(2, 14), meses);
+  assert.equal(colMes[14], 'Total');
+  for (const mes of meses) assert.equal(colMes.filter(v => v === mes).length, 1, mes);
+
+  // Março é a 3.ª linha de dados (linha 5). Comissão −10 não entra: a célula é o líquido pago 0.
+  const marcoRic = ws.getCell(5, 3);
+  assert.equal(typeof marcoRic.value, 'number');
+  assert.equal(marcoRic.value, 0);
+  assert.equal(marcoRic.numFmt, meta.numFmt);
+  assert.ok(marcoRic.numFmt.includes('R$'));
+  assert.ok(marcoRic.numFmt.includes('#,##0.00'));
+  assert.notEqual(marcoRic.value, anual.meses['2026-03'].passos['RICARDO MIRANDA'].comissao);
+
+  const abrilRic = ws.getCell(6, 3);
+  assert.equal(abrilRic.value, 30);
+  assert.equal(typeof abrilRic.value, 'number');
+  assert.notEqual(abrilRic.value, anual.meses['2026-04'].passos['RICARDO MIRANDA'].comissao);
+  assert.notEqual(abrilRic.value, anual.meses['2026-04'].passos['RICARDO MIRANDA'].abatimento);
+
+  const maioAlv = ws.getCell(7, 2);
+  assert.equal(maioAlv.value, 20);
+  assert.equal(typeof maioAlv.value, 'number');
+
+  for (let r = 3; r <= 14; r++) {
+    for (let c = 2; c <= 3; c++) {
+      const cell = ws.getCell(r, c);
+      assert.equal(typeof cell.value, 'number', r + ',' + c);
+      assert.ok(!String(cell.value).includes('R$'));
+      assert.equal(cell.numFmt, meta.numFmt);
+      assert.equal(cell.border.top.style, 'thin');
+    }
+    const tot = ws.getCell(r, 4);
+    assert.equal(tot.value.formula, 'SUM(B' + r + ':C' + r + ')');
+    assert.equal(typeof tot.value.result, 'number');
+    assert.equal(tot.numFmt, meta.numFmt);
+  }
+  assert.equal(ws.getCell(5, 4).value.result, 0);
+  assert.equal(ws.getCell(6, 4).value.result, 30);
+  assert.equal(ws.getCell(7, 4).value.result, 20);
+
+  assert.equal(ws.getCell(15, 1).value, 'Total');
+  assert.equal(ws.getCell(15, 1).font.bold, true);
+  assert.equal(ws.getCell(15, 2).value.formula, 'SUM(B3:B14)');
+  assert.equal(ws.getCell(15, 2).value.result, 20);
+  assert.equal(ws.getCell(15, 2).font.bold, true);
+  assert.equal(ws.getCell(15, 3).value.formula, 'SUM(C3:C14)');
+  assert.equal(ws.getCell(15, 3).value.result, 30);
+  assert.equal(ws.getCell(15, 4).value.formula, 'SUM(D3:D14)');
+  assert.equal(ws.getCell(15, 4).value.result, 50);
+  assert.equal(ws.getCell(15, 4).font.bold, true);
+  assert.equal(ws.getCell(15, 4).numFmt, meta.numFmt);
+
+  assert.equal(meta.note, '');
+  assert.equal(meta.noteRow, 0);
+  const textos = [];
+  for (const cell of ws.cells.values()) {
+    if (typeof cell.value === 'string') textos.push(cell.value);
+  }
+  assert.ok(!textos.some(t => t.includes('Saldo a transportar')));
+  assert.ok(!textos.some(t => t.includes('Abatimento')));
+  assert.ok(!textos.some(t => t.includes('Comissão do mês')));
+
+  assert.equal(ws.views[0].state, 'frozen');
+  assert.equal(ws.views[0].ySplit, 2);
+  assert.ok(ws.cols[2].width >= 'ÁLVARO MESQUITA'.length);
+  assert.ok(ws.cols[3].width >= 'RICARDO MIRANDA'.length);
+  assert.ok(ws.cols[4].width >= 12);
+
+  const fim = resumoAnualComissaoRc(mapa, { meses: { '2026-11': mesFatur('5', -250) } }, 2026);
+  const wsFim = folhaExcelFalsa();
+  const metaFim = escreverFolhaResumoAnualComissaoRc(wsFim, fim);
+  assert.equal(wsFim.getCell(13, 3).value, 0);
+  assert.equal(wsFim.getCell(14, 3).value, 0);
+  assert.equal(fim.meses['2026-11'].passos['RICARDO MIRANDA'].saldo, -10);
+  assert.equal(metaFim.noteRow, 17);
+  assert.ok(metaFim.note.startsWith('Comissão negativa não é paga'));
+  assert.ok(metaFim.note.includes('Saldo a transportar em Dezembro: RICARDO MIRANDA '));
+  assert.equal(wsFim.getCell(17, 1).value, metaFim.note);
+  assert.equal(textoNotaResumoAnualExcelComissaoRc(fim), metaFim.note);
+  assert.deepEqual(wsFim.merges.find(m => m[0] === 17), [17, 1, 17, 4]);
+  assert.ok(wsFim.getCell(17, 1).alignment.wrapText);
+  const cabecasFim = [1, 2, 3, 4].map(c => wsFim.getCell(2, c).value);
+  assert.deepEqual(cabecasFim, ['Mês', 'ÁLVARO MESQUITA', 'RICARDO MIRANDA', 'Total']);
+
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(root, 'comissao-rc.js'), 'utf8');
+  const iAno = html.indexOf('id="cr-ano"');
+  const iEmail = html.indexOf('id="cr-btn-email"');
+  const iExcel = html.indexOf('id="cr-btn-excel"');
+  const iHost = html.indexOf('id="cr-host"');
+  assert.ok(iAno > 0 && iEmail > iAno && iExcel > iEmail && iExcel < iHost);
+  assert.ok(html.includes('>Exportar para Excel<'));
+  assert.ok(html.includes('comissaoRcExportarExcelAnual()'));
+  assert.ok(html.includes('id="cr-btn-excel"'));
+  assert.ok(js.includes("excelBtn.style.display = _crVista === 'anual' ? '' : 'none'"));
+  assert.ok(js.includes("emailBtn.style.display = _crVista === 'anual' ? 'none' : ''"));
+  const iFn = js.indexOf('async function comissaoRcExportarExcelAnual');
+  const iRet = js.indexOf('\n  return {', iFn);
+  const fn = js.slice(iFn, iRet);
+  assert.ok(fn.includes("addWorksheet('Resumo anual'"));
+  assert.ok(fn.includes('resumoAnualComissaoRc(_crMapa, store, ano)'));
+  assert.ok(fn.includes('prosEnsureExcelJS'));
+  assert.ok(fn.includes('triggerBlobDownload'));
+  assert.ok(!fn.includes('outlookAbrirRascunho'));
+  assert.ok(!fn.includes('montarEmailComissaoRc'));
+  assert.ok(!fn.includes('estadoMensalComissaoRc'));
+  assert.ok(!fn.includes('comissaoRcExportarEmail'));
 });
 
 for (const [title, fn] of queue) {
