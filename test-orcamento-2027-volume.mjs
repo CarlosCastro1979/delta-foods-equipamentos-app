@@ -146,7 +146,6 @@ const fns = [
   'vol27EhGrama',
   'vol27PesoKg',
   'vol27NumeroColuna',
-  'vol27ValorAA',
   'vol27Medida',
   'indiceColunaVolumeVenda',
   'indiceColunaPesoLiqVenda',
@@ -208,13 +207,11 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
   assert.equal(vm.runInContext('VOL27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_volume.json');
   assert.ok(!String(vm.runInContext('VOL27_CLOUD_PATH', ctx)).includes('mapas_v3'));
   assert.equal(vm.runInContext('ORC27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_canais.json');
-  assert.ok(sw.includes('v2026-10-14-volume-coluna-aa'));
-  assert.ok(html.includes('v2026-10-14-volume-coluna-aa'));
-  assert.ok(extractFn(html, 'vol27Medida').includes('vol27ValorAA'));
+  assert.ok(sw.includes('v2026-10-14-volume-maquinas'));
+  assert.ok(html.includes('v2026-10-14-volume-maquinas'));
   assert.ok(!extractFn(html, 'vol27Medida').includes('0.005'));
-  assert.ok(!extractFn(html, 'vol27Medida').includes('qtdBonifi'));
-  assert.ok(extractFn(html, 'vol27SubstituirJanela').includes("fonte = 'coluna-aa'"));
-  assert.ok(extractFn(html, 'vol27PrecisaHistorico').includes("fonte === 'coluna-aa'"));
+  assert.ok(extractFn(html, 'vol27Medida').includes('qtdBonifi'));
+  assert.ok(extractFn(html, 'vol27Medida').includes('qtdDoacao'));
   assert.ok(extractFn(html, 'vol27Agendar').includes('VOL27_DEBOUNCE_MS'));
   assert.ok(extractFn(html, 'vol27Flush').includes('clearTimeout(_vol27Timer)'));
   assert.ok(!extractFn(html, 'vol27Flush').includes('pvSaveData'));
