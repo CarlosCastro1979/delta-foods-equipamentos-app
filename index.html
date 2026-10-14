@@ -1490,6 +1490,7 @@
   .vq-indent-vend { display: inline-block; padding-left: 36px; font-weight: 400; }
   .vq-table tbody tr.vq-vend td { background: #fff; font-weight: 400; }
   .vq-table-menu { min-width: 980px; }
+  .vq-table-anual { min-width: 1480px; }
   .vq-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--text); }
   .vq-var-pos { color: #15803d; font-weight: 700; }
   .vq-var-neg { color: #dc2626; font-weight: 700; }
@@ -20709,6 +20710,110 @@ function linhasResumoQuadroPnL(quadro, mes, ano) {
   return { periodo, linhas };
 }
 
+function mesesAnoQuadro(ano) {
+  const y = parseInt(ano, 10);
+  const out = [];
+  if (!y) return out;
+  for (let m = 1; m <= 12; m++) out.push(y + '-' + String(m).padStart(2, '0'));
+  return out;
+}
+
+function fecharLinhaAnual(tipo, empresa, canal, meses) {
+  let total = 0;
+  let totalTem = false;
+  for (let i = 0; i < meses.length; i++) {
+    if (!meses[i] || !meses[i].tem) continue;
+    total = somarValorQuadro(total, meses[i].valor);
+    totalTem = true;
+  }
+  return { tipo: tipo, empresa: empresa, canal: canal || '', meses: meses, total: total, totalTem: totalTem };
+}
+
+function somarLinhasAnual(tipo, empresa, canal, linhas, yms) {
+  const meses = [];
+  const lista = Array.isArray(linhas) ? linhas : [];
+  for (let i = 0; i < yms.length; i++) {
+    let valor = 0;
+    let tem = false;
+    for (let r = 0; r < lista.length; r++) {
+      const m = lista[r] && lista[r].meses ? lista[r].meses[i] : null;
+      if (!m || !m.tem) continue;
+      valor = somarValorQuadro(valor, m.valor);
+      tem = true;
+    }
+    meses.push({ ym: yms[i], valor: valor, tem: tem });
+  }
+  return fecharLinhaAnual(tipo, empresa, canal, meses);
+}
+
+/**
+ * Resumo anual: as mesmas linhas do quadro mensal, colunas Jan–Dez e Total.
+ * Cada célula é só o N desse mês (faturação líquida). Sem N-1, sem objetivo, sem %.
+ * A empresa é a soma dos seus canais. O Total é a soma das empresas.
+ */
+function linhasResumoAnualQuadro(quadro, ano) {
+  const yms = mesesAnoQuadro(ano);
+  const mesesQ = (quadro && quadro.meses) || {};
+  const presentesPorEmp = new Map();
+  function garante(emp) {
+    if (!presentesPorEmp.has(emp)) presentesPorEmp.set(emp, new Set());
+    return presentesPorEmp.get(emp);
+  }
+  garante('Delta Foods Brasil');
+  garante('Q Brasil');
+  for (let i = 0; i < yms.length; i++) {
+    const mesObj = mesesQ[yms[i]];
+    if (!mesObj || !mesObj.celulas) continue;
+    const celulas = Object.values(mesObj.celulas);
+    for (let j = 0; j < celulas.length; j++) {
+      const c = celulas[j];
+      if (!c) continue;
+      const emp = c.empresa || 'Por classificar';
+      garante(emp);
+      if (c.canal) presentesPorEmp.get(emp).add(c.canal);
+    }
+  }
+  const fixas = ['Delta Foods Brasil', 'Q Brasil'];
+  const extras = [];
+  for (const emp of presentesPorEmp.keys()) {
+    if (fixas.indexOf(emp) < 0) extras.push(emp);
+  }
+  const empresas = fixas.concat(ordenarNomesQuadroPnL(extras));
+  const linhas = [];
+  const empresasLinhas = [];
+  for (let e = 0; e < empresas.length; e++) {
+    const emp = empresas[e];
+    const fixos = canaisFixosQuadroEmpresa(emp);
+    const presentes = presentesPorEmp.get(emp) || new Set();
+    const extraCan = [];
+    for (const can of presentes) {
+      if (fixos.indexOf(can) < 0) extraCan.push(can);
+    }
+    const canais = fixos.concat(ordenarNomesQuadroPnL(extraCan));
+    const canaisLinhas = [];
+    for (let c = 0; c < canais.length; c++) {
+      const can = canais[c];
+      const meses = [];
+      let algum = false;
+      for (let i = 0; i < yms.length; i++) {
+        const s = somarQuadroNosMeses(quadro, [yms[i]], { empresa: emp, canal: can });
+        if (s.tem) algum = true;
+        meses.push({ ym: yms[i], valor: s.valor, tem: s.tem });
+      }
+      if (fixos.indexOf(can) < 0 && !algum) continue;
+      canaisLinhas.push(fecharLinhaAnual('canal', emp, can, meses));
+    }
+    const empTem = canaisLinhas.some(row => row.meses.some(m => m.tem));
+    if (fixas.indexOf(emp) < 0 && !empTem) continue;
+    const empLinha = somarLinhasAnual('empresa', emp, '', canaisLinhas, yms);
+    linhas.push(empLinha);
+    empresasLinhas.push(empLinha);
+    for (let c = 0; c < canaisLinhas.length; c++) linhas.push(canaisLinhas[c]);
+  }
+  linhas.push(somarLinhasAnual('total', 'Total', '', empresasLinhas, yms));
+  return { ano: parseInt(ano, 10) || 0, yms: yms, linhas: linhas };
+}
+
 const PV_OBJETIVOS_CANAL = {
   "2026-01": {
     "": 2488269,
@@ -23364,6 +23469,141 @@ function limparFiltroVendasQuadro() {
   renderVendasQuadro();
 }
 
+function htmlCabecalhoResumoAnual() {
+  let h = '<th class="vq-linha">Empresa</th>';
+  const abrev = (typeof VENDAS_MES_ABREV !== 'undefined') ? VENDAS_MES_ABREV : [];
+  for (let i = 0; i < 12; i++) h += '<th class="vq-num">' + (abrev[i] || '') + '</th>';
+  h += '<th class="vq-num">Total</th>';
+  return h;
+}
+
+function htmlCelulaResumoAnual(valor, tem, filtro, ym) {
+  let html = htmlCelulaNumeroPnL(valor, tem, filtro, false);
+  if (ym && html.indexOf('data-vq-filtro') >= 0) {
+    html = html.replace('data-vq-filtro="1"', 'data-vq-filtro="1" data-vq-ym="' + ym + '"');
+  }
+  return { html: html, neg: !!tem && (+valor || 0) < 0 };
+}
+
+function htmlLinhaResumoAnual(row, escFn) {
+  const esc = typeof escFn === 'function' ? escFn : (s) => String(s == null ? '' : s);
+  let nome = 'Total';
+  if (row.tipo === 'canal') nome = '<span class="vq-indent">' + esc(row.canal) + '</span>';
+  else if (row.tipo === 'empresa') nome = esc(row.empresa);
+  const filtro = row.tipo === 'total' ? null : {
+    empresa: row.empresa || '',
+    canal: row.tipo === 'canal' ? (row.canal || '') : '',
+    vendedor: '',
+  };
+  let tds = '';
+  const meses = row.meses || [];
+  for (let i = 0; i < meses.length; i++) {
+    const m = meses[i];
+    const cel = htmlCelulaResumoAnual(m.valor, m.tem, filtro, m.ym);
+    tds += '<td class="vq-num' + (cel.neg ? ' vq-var-neg' : '') + '">' + cel.html + '</td>';
+  }
+  const tot = htmlCelulaResumoAnual(row.total, row.totalTem, null, '');
+  tds += '<td class="vq-num' + (tot.neg ? ' vq-var-neg' : '') + '">' + tot.html + '</td>';
+  const trCls = row.tipo === 'empresa' ? 'vq-emp' : (row.tipo === 'total' ? 'vq-total' : 'vq-can');
+  return '<tr class="' + trCls + '"><td class="vq-linha">' + nome + '</td>' + tds + '</tr>';
+}
+
+function vistaVendasQuadroActiva() {
+  return (typeof window !== 'undefined' && window && window._vqVista === 'anual') ? 'anual' : 'mes';
+}
+
+function marcarSubTabVendas(el, on) {
+  if (!el) return;
+  if (el.classList && el.classList.toggle) el.classList.toggle('active', !!on);
+}
+
+function showVendasQuadroSub(vista) {
+  const v = vista === 'anual' ? 'anual' : 'mes';
+  if (typeof window !== 'undefined' && window) window._vqVista = v;
+  marcarSubTabVendas(document.getElementById('vq-sub-mes'), v !== 'anual');
+  marcarSubTabVendas(document.getElementById('vq-sub-anual'), v === 'anual');
+  const mes = document.getElementById('vq-vista-mes');
+  const anual = document.getElementById('vq-vista-anual');
+  if (mes && mes.style) mes.style.display = v === 'anual' ? 'none' : '';
+  if (anual && anual.style) anual.style.display = v === 'anual' ? '' : 'none';
+  if (v === 'anual') renderVendasResumoAnual();
+  else renderVendasQuadro();
+}
+
+function preencherSelectAnoResumoAnual() {
+  const sel = document.getElementById('vq-ano-anual');
+  const agora = new Date().getFullYear();
+  if (typeof preencherSelectsQuadroVendas === 'function') preencherSelectsQuadroVendas();
+  if (!sel) return agora;
+  if (!sel.options || !sel.options.length) {
+    const inicio = (typeof VENDAS_COBERTURA_INICIO !== 'undefined' && VENDAS_COBERTURA_INICIO.y) || agora;
+    const anos = [];
+    for (let y = inicio; y <= agora; y++) anos.push(y);
+    sel.innerHTML = anos.map(y => '<option value="' + y + '">' + y + '</option>').join('');
+  }
+  if (!sel.dataset.ready) {
+    const mensal = document.getElementById('vq-ano');
+    const mem = (typeof _vqPeriodoMem !== 'undefined' && _vqPeriodoMem) ? _vqPeriodoMem : null;
+    const preferido = (mensal && mensal.value) || (mem && mem.ano) || agora;
+    sel.value = String(preferido);
+    sel.dataset.ready = '1';
+  }
+  return parseInt(sel.value, 10) || agora;
+}
+
+function renderVendasResumoAnual(quadroOpt) {
+  const el = document.getElementById('pv-vendas-anual');
+  if (!el) return;
+  let quadro = quadroOpt || (typeof window !== 'undefined' ? window._vendasQuadro : null);
+  if (!quadro || !quadro.meses) quadro = quadroVendasVazio();
+  else if (typeof quadroVistaVendas === 'function') quadro = quadroVistaVendas(quadro);
+  const ano = preencherSelectAnoResumoAnual();
+  const modelo = linhasResumoAnualQuadro(quadro, ano);
+  const esc = (s) => (typeof escHtml === 'function' ? escHtml(s) : String(s || ''));
+  const rows = (modelo.linhas || []).map(row => htmlLinhaResumoAnual(row, esc)).join('');
+  const tot = modelo.linhas.length ? modelo.linhas[modelo.linhas.length - 1] : null;
+  el.innerHTML = `
+    <div class="vcob-note" style="margin-bottom:8px;">Valores = vendas do ano ${esc(ano)} (faturação líquida). Sem N-1, sem objetivo e sem variação.</div>
+    <div class="vq-cards">
+      <div class="vq-card">
+        <div class="vq-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Total ${esc(ano)}</div>
+        <strong>${formatValorQuadroRs(tot ? tot.total : 0, !!(tot && tot.totalTem))}</strong>
+        <div class="vq-linhas">Janeiro até Dezembro</div>
+      </div>
+    </div>
+    <div class="vq-legenda">Cada coluna é o mês do ano ${esc(ano)}. Total = soma dos 12 meses. A linha da empresa é a soma dos canais. Clica num número para ver o detalhe desse canal nesse mês.</div>
+    <div class="vq-scroll vq-scroll-main">
+      <table class="vq-table vq-table-anual">
+        <thead><tr>${htmlCabecalhoResumoAnual()}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+  if (!el.dataset.vqAnualBound) {
+    el.dataset.vqAnualBound = '1';
+    el.addEventListener('click', onClickVendasResumoAnual);
+  }
+}
+
+function onClickVendasResumoAnual(ev) {
+  const t = ev.target;
+  const btn = t && t.closest ? t.closest('[data-vq-filtro]') : null;
+  if (!btn || !btn.getAttribute) return;
+  const ym = String(btn.getAttribute('data-vq-ym') || '');
+  if (!/^\d{4}-\d{2}$/.test(ym)) return;
+  if (typeof preencherSelectsQuadroVendas === 'function') preencherSelectsQuadroVendas();
+  const selM = document.getElementById('vq-mes');
+  const selA = document.getElementById('vq-ano');
+  if (selM) selM.value = String(parseInt(ym.slice(5), 10));
+  if (selA) selA.value = ym.slice(0, 4);
+  window._vqFiltro = {
+    empresa: btn.getAttribute('data-vq-empresa') || '',
+    canal: btn.getAttribute('data-vq-canal') || '',
+    vendedor: btn.getAttribute('data-vq-vendedor') || '',
+  };
+  showVendasQuadroSub('mes');
+}
+
 function pvMontarVistaVendas() {
   const host = document.getElementById('pv-canal-panels');
   if (!host) return;
@@ -23372,25 +23612,43 @@ function pvMontarVistaVendas() {
       ? '<button type="button" class="btn btn-secondary btn-sm" id="pv-vendas-quadro-btn" onclick="actualizarQuadroVendas()">Actualizar vendas</button>'
       : '';
     host.innerHTML = `
-      <div style="margin-bottom:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;">
-        <div>
-          <div style="font-size:16px;font-weight:700;">Vendas</div>
-          <div id="vq-atualizado-ate" style="font-size:14px;font-weight:700;color:#1e40af;margin-top:4px;"></div>
-          <div id="vq-subtitulo" style="font-size:12px;color:var(--muted);margin-top:2px;">mês, ano anterior (N-1) e acumulado até esse mês — vendas líquidas, como no Power BI</div>
+      <div class="sub-nav" id="vq-subnav" style="margin-bottom:12px;">
+        <button type="button" class="sub-tab active" id="vq-sub-mes" onclick="showVendasQuadroSub('mes')">Vendas Mês</button>
+        <button type="button" class="sub-tab" id="vq-sub-anual" onclick="showVendasQuadroSub('anual')">Resumo Anual</button>
+      </div>
+      <div id="vq-vista-mes">
+        <div style="margin-bottom:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;">
+          <div>
+            <div style="font-size:16px;font-weight:700;">Vendas Mês</div>
+            <div id="vq-atualizado-ate" style="font-size:14px;font-weight:700;color:#1e40af;margin-top:4px;"></div>
+            <div id="vq-subtitulo" style="font-size:12px;color:var(--muted);margin-top:2px;">mês, ano anterior (N-1) e acumulado até esse mês — vendas líquidas, como no Power BI</div>
+          </div>
+          ${adminBtn}
         </div>
-        ${adminBtn}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+          <label style="font-size:12px;color:var(--muted);">Mês
+            <select id="vq-mes" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasQuadro()"></select>
+          </label>
+          <label style="font-size:12px;color:var(--muted);">Ano
+            <select id="vq-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasQuadro()"></select>
+          </label>
+          <span id="vq-mes-actual" class="vq-mes-actual" style="display:none;">Mês actual</span>
+          <span id="vq-periodo" style="font-size:13px;font-weight:600;"></span>
+        </div>
+        <div id="pv-vendas-quadro"><div style="color:var(--muted);font-size:13px;">A ler o agregado guardado…</div></div>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
-        <label style="font-size:12px;color:var(--muted);">Mês
-          <select id="vq-mes" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasQuadro()"></select>
-        </label>
-        <label style="font-size:12px;color:var(--muted);">Ano
-          <select id="vq-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasQuadro()"></select>
-        </label>
-        <span id="vq-mes-actual" class="vq-mes-actual" style="display:none;">Mês actual</span>
-        <span id="vq-periodo" style="font-size:13px;font-weight:600;"></span>
+      <div id="vq-vista-anual" style="display:none;">
+        <div style="margin-bottom:12px;">
+          <div style="font-size:16px;font-weight:700;">Resumo Anual</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;">Vendas do ano N, mês a mês — faturação líquida, como no Power BI</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+          <label style="font-size:12px;color:var(--muted);">Ano
+            <select id="vq-ano-anual" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasResumoAnual()"></select>
+          </label>
+        </div>
+        <div id="pv-vendas-anual"><div style="color:var(--muted);font-size:13px;">A ler o agregado guardado…</div></div>
       </div>
-      <div id="pv-vendas-quadro"><div style="color:var(--muted);font-size:13px;">A ler o agregado guardado…</div></div>
     `;
   }
   loadVendasQuadro();
@@ -23403,7 +23661,8 @@ async function loadVendasQuadro() {
   try {
     const q = await lerVendasQuadroPersistida();
     try { if (typeof lerVendasCoberturaPersistida === 'function') await lerVendasCoberturaPersistida(); } catch (_) {}
-    renderVendasQuadro(q);
+    if (vistaVendasQuadroActiva() === 'anual') renderVendasResumoAnual(q);
+    else renderVendasQuadro(q);
   } catch (e) {
     el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao ler as vendas: ${e.message || e}</div>`;
   }
@@ -37674,7 +37933,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-14-vendas-ignorar-99520099: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-14-vendas-resumo-anual: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

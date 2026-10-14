@@ -315,46 +315,6 @@ check('NPess 99520099 é devolução e sai do quadro e de Por classificar', () =
   assert.ok(Math.abs(totalSet - 146838.16) > 1, 'Set/2026 não inclui 146.838,16');
   assert.ok(!JSON.stringify(q).includes('146838.16'));
   assert.ok(!JSON.stringify(q).includes('26638.72'));
-  const gravado = ctx.quadroVendasVazio();
-  gravado.meses['2026-09'] = { celulas: {
-    'Delta Foods Brasil\tPor classificar\tPor classificar': {
-      empresa: 'Delta Foods Brasil', canal: 'Por classificar', vendedor: 'Por classificar',
-      valor: 146838.16, linhas: 75, linhasComValor: 75,
-    },
-    'Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA': {
-      empresa: 'Delta Foods Brasil', canal: 'Retalho moderno', vendedor: 'DIOGO OLIVEIRA',
-      valor: 32732.16, linhas: 24, linhasComValor: 24,
-    },
-  } };
-  gravado.meses['2026-10'] = { celulas: {
-    'Delta Foods Brasil\tPor classificar\tPor classificar': {
-      empresa: 'Delta Foods Brasil', canal: 'Por classificar', vendedor: 'Por classificar',
-      valor: 26638.72, linhas: 31, linhasComValor: 31,
-    },
-    'Delta Foods Brasil\tLojas online\tMARCIO GORGA': {
-      empresa: 'Delta Foods Brasil', canal: 'Lojas online', vendedor: 'MARCIO GORGA',
-      valor: 500, linhas: 3, linhasComValor: 3,
-    },
-    'Q Brasil\tPor classificar\tPor classificar': {
-      empresa: 'Q Brasil', canal: 'Por classificar', vendedor: 'Por classificar',
-      valor: 0, linhas: 6, linhasComValor: 6,
-    },
-  } };
-  const limpo = ctx.quadroSemDevolucao99520099(gravado);
-  assert.equal(celula(limpo, '2026-09', 'Delta Foods Brasil', 'Por classificar', 'Por classificar'), null);
-  assert.equal(celula(limpo, '2026-10', 'Delta Foods Brasil', 'Por classificar', 'Por classificar'), null);
-  assert.equal(celula(limpo, '2026-09', 'Delta Foods Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA').valor, 32732.16);
-  assert.equal(celula(limpo, '2026-10', 'Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA').valor, 500);
-  assert.equal(celula(limpo, '2026-10', 'Q Brasil', 'Por classificar', 'Por classificar').valor, 0);
-  const maior = ctx.quadroVendasVazio();
-  maior.meses['2026-09'] = { celulas: {
-    'Delta Foods Brasil\tPor classificar\tPor classificar': {
-      empresa: 'Delta Foods Brasil', canal: 'Por classificar', vendedor: 'Por classificar',
-      valor: 146838.16 + 10, linhas: 76, linhasComValor: 76,
-    },
-  } };
-  const semAcerto = ctx.quadroSemDevolucao99520099(maior);
-  assert.equal(celula(semAcerto, '2026-09', 'Delta Foods Brasil', 'Por classificar', 'Por classificar').valor, 146848.16);
   const fat = ctx.agregarFaturClienteMes(rows);
   assert.equal(fat['2026-09'].clientes['445753\t99520099'], undefined);
   assert.equal(fat['2026-10'], undefined);
@@ -897,7 +857,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-14-vendas-ignorar-99520099'));
+  assert.ok(sw.includes('v2026-10-14-vendas-resumo-anual'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-vendas-1out'));
@@ -912,7 +872,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-14-vendas-ignorar-99520099'));
+  assert.ok(html.includes('v2026-10-14-vendas-resumo-anual'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
@@ -1567,6 +1527,200 @@ check('atualizado até 1 de outubro quando a cobertura tem esse dia', () => {
     'Atualizado até 30/09/2026'
   );
   assert.equal(ctx.textoAtualizacaoQuadroMes(ctx.quadroVendasVazio(), '2026-11', { hoje: '2026-10-01' }), 'sem vendas carregadas neste mês');
+});
+
+check('resumo anual: 12 meses + Total, só N, empresa = soma dos canais, 99520099 fica de fora', () => {
+  for (const name of [
+    'somarQuadroNosMeses', 'canaisFixosQuadroEmpresa', 'ordenarNomesQuadroPnL',
+    'metricasLinhaQuadro', 'linhasResumoQuadroPnL',
+    'formatNumeroQuadroPnL', 'htmlBotaoFiltroQuadro', 'htmlCelulaNumeroPnL',
+    'formatValorQuadroRs', 'preencherSelectsQuadroVendas', 'renderVendasQuadro',
+    'mesesAnoQuadro', 'fecharLinhaAnual', 'somarLinhasAnual', 'linhasResumoAnualQuadro',
+    'htmlCabecalhoResumoAnual', 'htmlCelulaResumoAnual', 'htmlLinhaResumoAnual',
+    'vistaVendasQuadroActiva', 'marcarSubTabVendas', 'showVendasQuadroSub',
+    'preencherSelectAnoResumoAnual', 'renderVendasResumoAnual', 'onClickVendasResumoAnual',
+  ]) {
+    if (typeof ctx[name] !== 'function') vm.runInContext(extractFn(html, name), ctx);
+  }
+  const bruto = ctx.quadroVendasVazio();
+  bruto.meses['2026-01'] = { celulas: {
+    'Delta Foods Brasil\tLojas online\tMARCIO GORGA': {
+      empresa: 'Delta Foods Brasil', canal: 'Lojas online', vendedor: 'MARCIO GORGA',
+      valor: 100.5, linhas: 2, linhasComValor: 2,
+    },
+    'Delta Foods Brasil\tSite próprio\tMARCIO GORGA': {
+      empresa: 'Delta Foods Brasil', canal: 'Site próprio', vendedor: 'MARCIO GORGA',
+      valor: 40, linhas: 1, linhasComValor: 1,
+    },
+    'Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA': {
+      empresa: 'Q Brasil', canal: 'Retalho moderno', vendedor: 'DIOGO OLIVEIRA',
+      valor: 7, linhas: 1, linhasComValor: 1,
+    },
+  } };
+  bruto.meses['2026-02'] = { celulas: {
+    'Delta Foods Brasil\tLojas online\tMARCIO GORGA': {
+      empresa: 'Delta Foods Brasil', canal: 'Lojas online', vendedor: 'MARCIO GORGA',
+      valor: -15, linhas: 1, linhasComValor: 1,
+    },
+  } };
+  bruto.meses['2026-09'] = { celulas: {
+    'Delta Foods Brasil\tPor classificar\tPor classificar': {
+      empresa: 'Delta Foods Brasil', canal: 'Por classificar', vendedor: 'Por classificar',
+      valor: 146838.16, linhas: 4, linhasComValor: 4,
+    },
+    'Delta Foods Brasil\tLojas online\tMARCIO GORGA': {
+      empresa: 'Delta Foods Brasil', canal: 'Lojas online', vendedor: 'MARCIO GORGA',
+      valor: 10, linhas: 1, linhasComValor: 1,
+    },
+  } };
+  bruto.meses['2026-10'] = { celulas: {
+    'Delta Foods Brasil\tPor classificar\tPor classificar': {
+      empresa: 'Delta Foods Brasil', canal: 'Por classificar', vendedor: 'Por classificar',
+      valor: 26638.72, linhas: 2, linhasComValor: 2,
+    },
+  } };
+  bruto.meses['2025-01'] = { celulas: {
+    'Delta Foods Brasil\tLojas online\tMARCIO GORGA': {
+      empresa: 'Delta Foods Brasil', canal: 'Lojas online', vendedor: 'MARCIO GORGA',
+      valor: 999, linhas: 9, linhasComValor: 9,
+    },
+  } };
+  const limpo = ctx.quadroSemDevolucao99520099(bruto);
+  assert.equal(celula(limpo, '2026-09', 'Delta Foods Brasil', 'Por classificar', 'Por classificar'), null);
+  assert.equal(celula(limpo, '2026-10', 'Delta Foods Brasil', 'Por classificar', 'Por classificar'), null);
+  assert.equal(celula(limpo, '2026-09', 'Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA').valor, 10);
+  const outraVez = ctx.quadroSemDevolucao99520099(limpo);
+  assert.equal(celula(outraVez, '2026-09', 'Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA').valor, 10);
+  assert.equal(celula(bruto, '2026-09', 'Delta Foods Brasil', 'Por classificar', 'Por classificar').valor, 146838.16, 'o agregado de origem não é reescrito');
+  const maior = ctx.quadroVendasVazio();
+  maior.meses['2026-09'] = { celulas: {
+    'Delta Foods Brasil\tPor classificar\tPor classificar': {
+      empresa: 'Delta Foods Brasil', canal: 'Por classificar', vendedor: 'Por classificar',
+      valor: 146858.16, linhas: 5, linhasComValor: 5,
+    },
+  } };
+  assert.equal(
+    celula(ctx.quadroSemDevolucao99520099(maior), '2026-09', 'Delta Foods Brasil', 'Por classificar', 'Por classificar').valor,
+    146858.16,
+    'outras vendas na mesma célula não são descontadas'
+  );
+
+  const modelo = ctx.linhasResumoAnualQuadro(limpo, 2026);
+  assert.equal(modelo.yms.length, 12);
+  assert.equal(modelo.yms[0], '2026-01');
+  assert.equal(modelo.yms[11], '2026-12');
+  const lojas = modelo.linhas.find(r => r.tipo === 'canal' && r.empresa === 'Delta Foods Brasil' && r.canal === 'Lojas online');
+  assert.ok(lojas);
+  assert.equal(lojas.meses.length, 12);
+  assert.equal(lojas.meses[0].valor, 100.5);
+  assert.equal(lojas.meses[1].valor, -15);
+  assert.equal(lojas.meses[1].tem, true);
+  assert.equal(lojas.meses[2].tem, false);
+  assert.equal(lojas.meses[8].valor, 10);
+  assert.equal(lojas.total, ctx.somarValorQuadro(ctx.somarValorQuadro(100.5, -15), 10));
+  assert.ok(!lojas.meses.some(m => m.valor === 999), 'N-1 não entra na célula do ano N');
+  const deltaCanais = modelo.linhas.filter(r => r.tipo === 'canal' && r.empresa === 'Delta Foods Brasil');
+  const delta = modelo.linhas.find(r => r.tipo === 'empresa' && r.empresa === 'Delta Foods Brasil');
+  for (let i = 0; i < 12; i++) {
+    let soma = 0;
+    let tem = false;
+    deltaCanais.forEach(row => {
+      if (!row.meses[i].tem) return;
+      soma = ctx.somarValorQuadro(soma, row.meses[i].valor);
+      tem = true;
+    });
+    assert.equal(delta.meses[i].tem, tem, 'mês ' + (i + 1));
+    assert.equal(delta.meses[i].valor, soma, 'empresa = soma dos canais no mês ' + (i + 1));
+  }
+  assert.equal(delta.meses[0].valor, 140.5);
+  assert.equal(delta.total, deltaCanais.reduce((s, row) => ctx.somarValorQuadro(s, row.totalTem ? row.total : 0), 0));
+  const por = modelo.linhas.find(r => r.canal === 'Por classificar');
+  assert.equal(por, undefined, 'Por classificar sem o 99520099 não aparece');
+  const total = modelo.linhas[modelo.linhas.length - 1];
+  assert.equal(total.tipo, 'total');
+  const empresas = modelo.linhas.filter(r => r.tipo === 'empresa');
+  assert.equal(total.total, empresas.reduce((s, row) => ctx.somarValorQuadro(s, row.totalTem ? row.total : 0), 0));
+  assert.equal(total.meses[0].valor, 147.5);
+  const nomes = modelo.linhas.filter(r => r.empresa === 'Delta Foods Brasil' && r.tipo === 'canal').map(r => r.canal);
+  assert.deepEqual(nomes.slice(0, 7), [
+    'Lojas online', 'Distribuidores regionais', 'Restauração', 'Distribuidores de retalho',
+    'Retalho moderno', 'Institucional', 'Site próprio',
+  ]);
+
+  if (!ctx.document || !ctx.document.getElementById) {
+    const els = {};
+    function makeEl() {
+      return {
+        options: [],
+        dataset: {},
+        value: '',
+        style: {},
+        innerHTML: '',
+        textContent: '',
+        classList: { toggle() {} },
+        addEventListener() {},
+      };
+    }
+    ctx.document = {
+      getElementById(id) {
+        if (!els[id]) els[id] = makeEl();
+        return els[id];
+      },
+    };
+  }
+  const anoEl = ctx.document.getElementById('vq-ano');
+  anoEl.value = '2026';
+  const anoAnual = ctx.document.getElementById('vq-ano-anual');
+  anoAnual.dataset.ready = '';
+  anoAnual.value = '';
+  ctx.window._vqVista = 'anual';
+  ctx.window._vendasQuadro = limpo;
+  ctx.renderVendasResumoAnual(limpo);
+  const out = ctx.document.getElementById('pv-vendas-anual').innerHTML;
+  assert.ok(out.includes('>Jan<') && out.includes('>Fev<') && out.includes('>Mar<'));
+  assert.ok(out.includes('>Abr<') && out.includes('>Mai<') && out.includes('>Jun<'));
+  assert.ok(out.includes('>Jul<') && out.includes('>Ago<') && out.includes('>Set<'));
+  assert.ok(out.includes('>Out<') && out.includes('>Nov<') && out.includes('>Dez<'));
+  assert.ok(out.includes('>Total<'));
+  assert.ok(!out.includes('>N-1<'), 'o resumo anual não tem coluna N-1');
+  assert.ok(!out.includes('Objetivo'));
+  assert.ok(!out.includes('146.838,16') && !out.includes('146838.16'));
+  assert.ok(!out.includes('26.638,72') && !out.includes('26638.72'));
+  assert.ok(!out.includes('>999<') && !out.includes('999,'));
+  assert.ok(out.includes('vq-var-neg'), 'negativo a vermelho');
+  assert.ok(out.includes('class="vq-link"'), 'número diferente de zero é clicável');
+  assert.ok(out.includes('vq-muted">—'), 'mês sem vendas fica —');
+  const botoes = [...out.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].map(m => m[1].replace(/\u00a0/g, ' ').trim());
+  assert.ok(botoes.length >= 1);
+  assert.ok(botoes.every(b => b !== '0' && b !== '—' && b !== '0,00'), 'zero e travessão não são botão');
+  assert.ok(out.includes('data-vq-ym="2026-01"'));
+  assert.ok(!out.includes('data-vq-ym="2026-03"'), 'mês vazio não filtra');
+  ctx.onClickVendasResumoAnual({
+    target: {
+      closest(sel) {
+        if (sel !== '[data-vq-filtro]') return null;
+        return {
+          getAttribute(name) {
+            if (name === 'data-vq-ym') return '2026-02';
+            if (name === 'data-vq-empresa') return 'Delta Foods Brasil';
+            if (name === 'data-vq-canal') return 'Lojas online';
+            return '';
+          },
+        };
+      },
+    },
+  });
+  assert.equal(ctx.window._vqFiltro.canal, 'Lojas online');
+  assert.equal(ctx.window._vqVista, 'mes');
+  assert.equal(String(ctx.document.getElementById('vq-mes').value), '2');
+  assert.equal(String(ctx.document.getElementById('vq-ano').value), '2026');
+  const mensal = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
+  assert.ok(mensal.includes('Filtro:'), 'o clique abre o detalhe do mês no quadro que já existe');
+  assert.ok(mensal.includes('N-1'), 'Vendas Mês mantém N-1');
+  assert.ok(html.includes('>Vendas Mês<'));
+  assert.ok(html.includes('>Resumo Anual<'));
+  assert.ok(html.includes('id="vq-ano-anual"'));
+  assert.ok(html.includes('onclick="actualizarQuadroVendas()"'));
 });
 
 if (process.exitCode) {
