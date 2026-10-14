@@ -19408,14 +19408,37 @@ function codClienteLojasOnlineBr(cod) {
 }
 
 /**
+ * Contas da Amazon (marketplace) são Lojas online no Power BI.
+ * O SAP grava-as às vezes com NPess 99520009, que no quadro é Site próprio.
+ * O nome começa por AMAZON (AMAZON SERV…); AMAZONAS não entra.
+ * Os códigos SAP destas contas também entram quando a linha só traz o código:
+ * 418893, 418897, 425233, 426555, 449796, 769716, 769717.
+ * Um cliente do site (pessoa ou outra empresa) fica em Site próprio.
+ */
+function codClienteLojasOnlineAmazon(cod, nome) {
+  const nomeTxt = String(nome || '').replace(/\u00a0/g, ' ').trim();
+  if (/^AMAZON\b/i.test(nomeTxt)) return true;
+  const raw = String(cod || '').replace(/\u00a0/g, ' ').trim();
+  if (!raw) return false;
+  const parts = raw.split(/\s+/);
+  const resto = parts.slice(1).join(' ');
+  if (resto && /^AMAZON\b/i.test(resto)) return true;
+  const token = parts[0];
+  const norm = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(token) : (String(token).replace(/^0+/, '') || token);
+  return norm === '418893' || norm === '418897' || norm === '425233'
+    || norm === '426555' || norm === '449796' || norm === '769716' || norm === '769717';
+}
+
+/**
  * Empresa / canal / vendedor a partir do NPess já mapeado.
  * Empresa: 9952 = Delta Foods Brasil, 9953 = Q Brasil. Sem prefixo → Por classificar.
  * Canal: linha do P&L (Power BI), não Ecommerce/Horeca/Varejo da app.
  * Vendedor: só o mapa passado (VENDEDORES_DEFAULT). Código sem nome → Por classificar.
  * NPess desconhecido em 2025–2026 fica visível em «Por classificar» (não se omite).
- * cod (opcional): BR0002/BR0003 (e BR00002/BR00003) ficam em Lojas online / Marcio.
+ * cod (opcional): BR0002/BR0003 e as contas Amazon ficam em Lojas online / Marcio.
+ * nome (opcional): nome que começa por AMAZON também é Lojas online.
  */
-function dimensoesVendaQuadro(npess, mapas, cod) {
+function dimensoesVendaQuadro(npess, mapas, cod, nome) {
   const n = parseInt(npess, 10);
   const conhecido = !!(n && !isNaN(n));
   let empresa = 'Por classificar';
@@ -19429,7 +19452,9 @@ function dimensoesVendaQuadro(npess, mapas, cod) {
   const vendMap = mapasOk.vendedorPorNpess || {};
   let canal = (conhecido && canalMap[n]) ? String(canalMap[n]) : 'Por classificar';
   let vendedor = (conhecido && vendMap[n]) ? String(vendMap[n]) : 'Por classificar';
-  if (typeof codClienteLojasOnlineBr === 'function' && codClienteLojasOnlineBr(cod)) {
+  const lojasBr = typeof codClienteLojasOnlineBr === 'function' && codClienteLojasOnlineBr(cod);
+  const lojasAmazon = typeof codClienteLojasOnlineAmazon === 'function' && codClienteLojasOnlineAmazon(cod, nome);
+  if (lojasBr || lojasAmazon) {
     empresa = 'Delta Foods Brasil';
     canal = 'Lojas online';
     if (!vendedor || vendedor === 'Por classificar') vendedor = 'MARCIO GORGA';
@@ -19537,7 +19562,7 @@ function agregarVendasQuadro(rows, opts) {
     if (!/^\d{4}-\d{2}$/.test(ym)) continue;
     const isoDia = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(row && row.data) : String(row && row.data || '').slice(0, 10);
     const npess = npessDaLinhaVendaQuadro(row, o.npessPorCod);
-    const dim = dimensoesVendaQuadro(npess, o.mapas, row && row.cod);
+    const dim = dimensoesVendaQuadro(npess, o.mapas, row && row.cod, row && row.nome);
     const key = chaveCelulaQuadro(dim);
     if (!out.meses[ym]) out.meses[ym] = { celulas: {} };
     if (/^\d{4}-\d{2}-\d{2}$/.test(isoDia) && isoDia.slice(0, 7) === ym) {
@@ -19780,6 +19805,7 @@ function linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpess, dataStr, iVolume
   if (aceite) {
     cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(codRaw) : codRaw;
   }
+  const nomeEmissor = emissor.split(/\s+/).slice(1).join(' ').trim();
   const valorLinha = iValor >= 0 ? parseValorVendaSap(row[iValor]) : null;
   const npessLinha = iNpess >= 0 ? npessDeCelulaExcel(row[iNpess]) : 0;
   const iVol = iVolume == null ? -1 : iVolume;
@@ -19791,6 +19817,7 @@ function linhaValorQuadroDeExcel(row, iEmissor, iValor, iNpess, dataStr, iVolume
     valor: valorLinha == null ? undefined : valorLinha,
     npess: npessLinha || undefined,
   };
+  if (nomeEmissor) linha.nome = nomeEmissor;
   if (volLinha != null) linha.volume = volLinha;
   return linha;
 }
@@ -22178,8 +22205,9 @@ function maioresPerdasMes(linhas, opts) {
       npess999Visto[cod][rowYm][npess] = arredondarRsPerdas((npess999Visto[cod][rowYm][npess] || 0) + valor);
     }
     if (canalId && canalLinha !== canalId) continue;
+    const nomeLinha = (nomesPorCod && (nomesPorCod[cod] || nomesPorCod[String(row.cod)])) || (row && row.nome) || '';
     const dim = typeof dimensoesVendaQuadro === 'function'
-      ? dimensoesVendaQuadro(npess, mapas, cod)
+      ? dimensoesVendaQuadro(npess, mapas, cod, nomeLinha)
       : { vendedor: 'Por classificar' };
     const vendedor = nomeExibicaoVendedorPerdas(dim && dim.vendedor);
     const key = cod;
@@ -22291,7 +22319,7 @@ function maioresPerdasMes(linhas, opts) {
     if (clienteAnuladoForaDasPerdas(b.cod, npessDono, tem2026, o)) continue;
     let aplicado = false;
     if (npessDono && typeof dimensoesVendaQuadro === 'function') {
-      const dimD = dimensoesVendaQuadro(npessDono, mapas, b.cod);
+      const dimD = dimensoesVendaQuadro(npessDono, mapas, b.cod, b.nome);
       const vendD = nomeExibicaoVendedorPerdas(dimD && dimD.vendedor);
       if (vendD && vendD !== 'Por classificar') {
         b.vendedor = vendD;
@@ -22654,8 +22682,10 @@ function agregarFaturClienteMes(linhas) {
     const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row.cod) : String(row.cod || '').trim();
     if (!cod) continue;
     let npess = typeof npessDeCelulaExcel === 'function' ? (npessDeCelulaExcel(row.npess) || 0) : (parseInt(row.npess, 10) || 0);
-    // BR0002/BR0003 (e BR00002/BR00003) são Lojas online. O NPess 99520009 é Site próprio.
-    if (typeof codClienteLojasOnlineBr === 'function' && codClienteLojasOnlineBr(cod) && (!npess || npess === 99520009)) {
+    // BR0002/BR0003 e as contas Amazon são Lojas online. O NPess 99520009 é Site próprio.
+    const lojasBr = typeof codClienteLojasOnlineBr === 'function' && codClienteLojasOnlineBr(cod);
+    const lojasAmazon = typeof codClienteLojasOnlineAmazon === 'function' && codClienteLojasOnlineAmazon(cod, row.nome);
+    if ((lojasBr || lojasAmazon) && (!npess || npess === 99520009)) {
       npess = 99520001;
     }
     const key = cod + '\t' + String(npess || 0);
@@ -37569,7 +37599,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-14-vendas-br-lojas: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-14-vendas-site-lojas: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
