@@ -19394,13 +19394,28 @@ function npessDeCelulaExcel(v) {
 }
 
 /**
+ * Cliente genérico das lojas online: BR0002 (CPF) e BR0003 (CNPJ).
+ * O SAP também grava BR00002 e BR00003 (zeros a mais depois de BR).
+ * Maiúsculas e espaços não contam. BR0002 não apanha BR00020 nem outro código.
+ * São Lojas online da Delta Foods Brasil, mesmo com NPess de Site próprio (99520009).
+ */
+function codClienteLojasOnlineBr(cod) {
+  const raw = String(cod || '').replace(/\u00a0/g, ' ').trim().toUpperCase();
+  if (!raw) return false;
+  if (/^BR0*[23]$/.test(raw.replace(/\s+/g, ''))) return true;
+  const token = raw.split(/\s+/)[0].replace(/\s+/g, '');
+  return /^BR0*[23]$/.test(token);
+}
+
+/**
  * Empresa / canal / vendedor a partir do NPess já mapeado.
  * Empresa: 9952 = Delta Foods Brasil, 9953 = Q Brasil. Sem prefixo → Por classificar.
  * Canal: linha do P&L (Power BI), não Ecommerce/Horeca/Varejo da app.
  * Vendedor: só o mapa passado (VENDEDORES_DEFAULT). Código sem nome → Por classificar.
  * NPess desconhecido em 2025–2026 fica visível em «Por classificar» (não se omite).
+ * cod (opcional): BR0002/BR0003 (e BR00002/BR00003) ficam em Lojas online / Marcio.
  */
-function dimensoesVendaQuadro(npess, mapas) {
+function dimensoesVendaQuadro(npess, mapas, cod) {
   const n = parseInt(npess, 10);
   const conhecido = !!(n && !isNaN(n));
   let empresa = 'Por classificar';
@@ -19412,8 +19427,13 @@ function dimensoesVendaQuadro(npess, mapas) {
   const mapasOk = mapas || {};
   const canalMap = mapasOk.canalPorNpess || {};
   const vendMap = mapasOk.vendedorPorNpess || {};
-  const canal = (conhecido && canalMap[n]) ? String(canalMap[n]) : 'Por classificar';
-  const vendedor = (conhecido && vendMap[n]) ? String(vendMap[n]) : 'Por classificar';
+  let canal = (conhecido && canalMap[n]) ? String(canalMap[n]) : 'Por classificar';
+  let vendedor = (conhecido && vendMap[n]) ? String(vendMap[n]) : 'Por classificar';
+  if (typeof codClienteLojasOnlineBr === 'function' && codClienteLojasOnlineBr(cod)) {
+    empresa = 'Delta Foods Brasil';
+    canal = 'Lojas online';
+    if (!vendedor || vendedor === 'Por classificar') vendedor = 'MARCIO GORGA';
+  }
   return { empresa, canal, vendedor, npess: conhecido ? n : 0 };
 }
 
@@ -19517,7 +19537,7 @@ function agregarVendasQuadro(rows, opts) {
     if (!/^\d{4}-\d{2}$/.test(ym)) continue;
     const isoDia = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(row && row.data) : String(row && row.data || '').slice(0, 10);
     const npess = npessDaLinhaVendaQuadro(row, o.npessPorCod);
-    const dim = dimensoesVendaQuadro(npess, o.mapas);
+    const dim = dimensoesVendaQuadro(npess, o.mapas, row && row.cod);
     const key = chaveCelulaQuadro(dim);
     if (!out.meses[ym]) out.meses[ym] = { celulas: {} };
     if (/^\d{4}-\d{2}-\d{2}$/.test(isoDia) && isoDia.slice(0, 7) === ym) {
@@ -22159,7 +22179,7 @@ function maioresPerdasMes(linhas, opts) {
     }
     if (canalId && canalLinha !== canalId) continue;
     const dim = typeof dimensoesVendaQuadro === 'function'
-      ? dimensoesVendaQuadro(npess, mapas)
+      ? dimensoesVendaQuadro(npess, mapas, cod)
       : { vendedor: 'Por classificar' };
     const vendedor = nomeExibicaoVendedorPerdas(dim && dim.vendedor);
     const key = cod;
@@ -22271,7 +22291,7 @@ function maioresPerdasMes(linhas, opts) {
     if (clienteAnuladoForaDasPerdas(b.cod, npessDono, tem2026, o)) continue;
     let aplicado = false;
     if (npessDono && typeof dimensoesVendaQuadro === 'function') {
-      const dimD = dimensoesVendaQuadro(npessDono, mapas);
+      const dimD = dimensoesVendaQuadro(npessDono, mapas, b.cod);
       const vendD = nomeExibicaoVendedorPerdas(dimD && dimD.vendedor);
       if (vendD && vendD !== 'Por classificar') {
         b.vendedor = vendD;
@@ -22633,7 +22653,11 @@ function agregarFaturClienteMes(linhas) {
     if (valor == null) continue;
     const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row.cod) : String(row.cod || '').trim();
     if (!cod) continue;
-    const npess = typeof npessDeCelulaExcel === 'function' ? (npessDeCelulaExcel(row.npess) || 0) : (parseInt(row.npess, 10) || 0);
+    let npess = typeof npessDeCelulaExcel === 'function' ? (npessDeCelulaExcel(row.npess) || 0) : (parseInt(row.npess, 10) || 0);
+    // BR0002/BR0003 (e BR00002/BR00003) são Lojas online. O NPess 99520009 é Site próprio.
+    if (typeof codClienteLojasOnlineBr === 'function' && codClienteLojasOnlineBr(cod) && (!npess || npess === 99520009)) {
+      npess = 99520001;
+    }
     const key = cod + '\t' + String(npess || 0);
     if (!meses[ym]) meses[ym] = { clientes: {} };
     if (!meses[ym].clientes[key]) {
@@ -37545,7 +37569,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-14-vendas-agosto: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-14-vendas-br-lojas: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

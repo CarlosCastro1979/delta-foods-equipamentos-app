@@ -87,6 +87,7 @@ const fns = [
   'indiceColunaNpessVenda',
   'npessDeCelulaExcel',
   'linhaValorQuadroDeExcel',
+  'codClienteLojasOnlineBr',
   'dimensoesVendaQuadro',
   'npessDaLinhaVendaQuadro',
   'chaveCelulaQuadro',
@@ -807,7 +808,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-14-vendas-agosto'));
+  assert.ok(sw.includes('v2026-10-14-vendas-br-lojas'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-vendas-1out'));
@@ -822,7 +823,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-14-vendas-agosto'));
+  assert.ok(html.includes('v2026-10-14-vendas-br-lojas'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
@@ -1292,6 +1293,39 @@ check('Horeca: o NPess do Filipe entra na linha dele e o objectivo reparte o Bud
   const ecom = ctx.htmlQuadroVendasMenuCanal(q, 9, 2026, 'ecommerce', null, ctx.escHtml);
   assert.ok(!ecom.includes('FILIPE NEVES'));
   assert.ok(ecom.includes('Lojas online'));
+});
+
+check('BR0002, BR00002, BR0003 e BR00003 são Lojas online, não Site próprio', () => {
+  ctx.VENDEDORES_DEFAULT = [
+    { cod: 99520001, nome: 'MARCIO GORGA' },
+    { cod: 99520009, nome: 'MARCIO GORGA' },
+  ];
+  const mapasBr = ctx.mapasVendasQuadro();
+  assert.equal(ctx.codClienteLojasOnlineBr('BR0002'), true);
+  assert.equal(ctx.codClienteLojasOnlineBr('BR00002'), true);
+  assert.equal(ctx.codClienteLojasOnlineBr('br0003'), true);
+  assert.equal(ctx.codClienteLojasOnlineBr('BR00003'), true);
+  assert.equal(ctx.codClienteLojasOnlineBr('BR 00002'), true);
+  assert.equal(ctx.codClienteLojasOnlineBr('BR00020'), false);
+  assert.equal(ctx.codClienteLojasOnlineBr('395635'), false);
+  assert.equal(ctx.dimensoesVendaQuadro(99520009, mapasBr, 'BR00002').canal, 'Lojas online');
+  assert.equal(ctx.dimensoesVendaQuadro(99520009, mapasBr, 'BR00003').canal, 'Lojas online');
+  assert.equal(ctx.dimensoesVendaQuadro(99520009, mapasBr, '395635').canal, 'Site próprio');
+  assert.equal(ctx.dimensoesVendaQuadro(99520009, mapasBr, 'BR00020').canal, 'Site próprio');
+  const q = ctx.agregarVendasQuadro([
+    { cod: 'BR0002', data: '2026-10-01', tipo: 'OUTRO', valor: 10, npess: 99520009 },
+    { cod: 'BR00002', data: '2026-10-01', tipo: 'OUTRO', valor: 500.12, npess: 99520009 },
+    { cod: 'BR0003', data: '2026-10-02', tipo: 'OUTRO', valor: 3, npess: 99520009 },
+    { cod: 'BR00003', data: '2026-10-02', tipo: 'OUTRO', valor: 4, npess: 99520001 },
+    { cod: '395635', data: '2026-10-03', tipo: 'OUTRO', valor: 100.94, npess: 99520009 },
+    { cod: 'BR00020', data: '2026-10-03', tipo: 'OUTRO', valor: 7, npess: 99520009 },
+  ], { mapas: mapasBr });
+  const lojas = celula(q, '2026-10', 'Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA');
+  const site = celula(q, '2026-10', 'Delta Foods Brasil', 'Site próprio', 'MARCIO GORGA');
+  assert.ok(lojas, 'família BR0002/BR0003 entra em Lojas online');
+  assert.equal(lojas.valor, 517.12);
+  assert.ok(site, 'cliente real de Site próprio fica em Site próprio');
+  assert.equal(site.valor, 107.94);
 });
 
 check('emissor alfanumérico entra; Total não', () => {
