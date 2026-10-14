@@ -16114,7 +16114,7 @@ function vol27NotaFora(ag) {
   });
   if (ag && ag.erro) partes.push('Não foi possível ler o histórico de volumes (' + String(ag.erro).slice(0, 140) + ').');
   if (!partes.length && !vol27TemMesHistorico(ag)) {
-    partes.push('2025 e Janeiro a Setembro de 2026 ainda não têm volume por família. A tabela de vendas tem peso, mas só separa grão, cápsulas e outro, sem o nome do produto nem o NPess, e repete linhas — não dá para somar isso sem inflacionar os kg. Moído, máquina e vinho não estão separados. A próxima carga do mês corrente e do anterior grava as cinco famílias a partir do Excel.');
+    partes.push('2025 e Janeiro a Setembro de 2026 ainda não têm volume por família. A tabela de vendas repete linhas (a mesma entrega com data ISO e outra vez em dd.mm.aaaa); essa cópia não entra na soma. Sem o nome do produto, moído, máquina e vinho continuam no resto até a carga do Excel. A próxima carga do mês corrente e do anterior grava as cinco famílias.');
   }
   return partes.join(' ');
 }
@@ -16510,10 +16510,78 @@ async function vol27SalvarAgregado(ag) {
 }
 
 function vol27PrecisaHistorico(ag) {
+  if (ag && ag.fonte === 'vendas-cloud') return true;
   const meses = (ag && ag.meses) || {};
   if (meses['2025-01'] || meses['2025-12'] || meses['2026-01']) return false;
-  if (ag && ag.fonte === 'vendas-cloud') return false;
+  if (ag && ag.fonte === 'vendas-dedup') return false;
   return true;
+}
+
+/** Dia de calendário. Aceita yyyy-mm-dd e dd.mm.aaaa — são a mesma entrega quando o resto coincide. */
+function vol27DiaISO(data) {
+  const s = String(data == null ? '' : data).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const m = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+  if (!m) return '';
+  const dd = String(parseInt(m[1], 10)).padStart(2, '0');
+  const mm = String(parseInt(m[2], 10)).padStart(2, '0');
+  if (mm < '01' || mm > '12' || dd < '01' || dd > '31') return '';
+  return m[3] + '-' + mm + '-' + dd;
+}
+
+function vol27ChaveCopia(row, dia) {
+  const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row && row.cod) : String((row && row.cod) || '').trim();
+  const tipo = String((row && row.tipo) || '').trim();
+  const peso = vol27Round(row && row.peso);
+  return cod + '|' + dia + '|' + tipo + '|' + peso;
+}
+
+/**
+ * A mesma entrega não entra duas vezes.
+ * A tabela gravou a linha com data ISO e outra vez em dd.mm.aaaa (ids diferentes).
+ * Duas linhas ISO com o mesmo peso no mesmo dia ficam as duas: são linhas do ficheiro, não a cópia.
+ * O id repetido (a mesma linha lida por dois filtros) também sai.
+ */
+function vol27SemCopiaDeData(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const iso = [];
+  const outras = [];
+  const seenId = new Set();
+  for (let i = 0; i < list.length; i++) {
+    const row = list[i];
+    if (!row) continue;
+    if (row.id != null && row.id !== '' && seenId.has(row.id)) continue;
+    if (row.id != null && row.id !== '') seenId.add(row.id);
+    const dia = vol27DiaISO(row.data);
+    const isoFmt = /^\d{4}-\d{2}-\d{2}/.test(String(row.data == null ? '' : row.data).trim());
+    if (isoFmt && dia) iso.push({ row: row, dia: dia });
+    else outras.push({ row: row, dia: dia });
+  }
+  const stock = {};
+  for (let i = 0; i < iso.length; i++) {
+    const k = vol27ChaveCopia(iso[i].row, iso[i].dia);
+    stock[k] = (stock[k] || 0) + 1;
+  }
+  const out = [];
+  for (let i = 0; i < iso.length; i++) {
+    const copy = Object.assign({}, iso[i].row);
+    copy.data = iso[i].dia;
+    out.push(copy);
+  }
+  for (let i = 0; i < outras.length; i++) {
+    const item = outras[i];
+    if (item.dia) {
+      const k = vol27ChaveCopia(item.row, item.dia);
+      if (stock[k]) {
+        stock[k] -= 1;
+        continue;
+      }
+    }
+    const copy = Object.assign({}, item.row);
+    if (item.dia) copy.data = item.dia;
+    out.push(copy);
+  }
+  return out;
 }
 
 function vol27MapaNpessDeCliente(doc) {
@@ -16548,7 +16616,7 @@ function vol27MapaNpessDeCliente(doc) {
 
 function vol27LinhasCloudParaAgregar(rows, mapa) {
   const out = [];
-  const list = Array.isArray(rows) ? rows : [];
+  const list = vol27SemCopiaDeData(rows);
   const mp = mapa || {};
   for (let i = 0; i < list.length; i++) {
     const row = list[i];
@@ -16587,7 +16655,7 @@ async function vol27FetchVendasFiltro(filtro, rotulo) {
     : { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY };
   while (true) {
     const to = from + pageSize - 1;
-    const url = SUPA_VENDAS + '?select=cod,data,tipo,peso,qty&' + filtro + '&order=id.asc';
+    const url = SUPA_VENDAS + '?select=id,cod,data,tipo,peso,qty&' + filtro + '&order=id.asc';
     const headers = Object.assign({}, headersBase, { Range: from + '-' + to });
     const res = await fetch(url, { headers: headers });
     if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -16603,8 +16671,9 @@ async function vol27FetchVendasFiltro(filtro, rotulo) {
 }
 
 /**
- * Soma possível a partir da tabela vendas. Não corre ao abrir o Volume:
- * a mesma chave cliente+dia+tipo está repetida e não há família nem NPess.
+ * Soma a tabela vendas uma vez por entrega.
+ * A mesma linha está gravada com data ISO e em dd.mm.aaaa; a cópia não entra.
+ * Não há nome de produto: moído, máquina e vinho ficam de fora (tipo OUTRO).
  */
 async function vol27ConstruirDeVendasCloud() {
   let cliente = null;
@@ -16626,21 +16695,33 @@ async function vol27ConstruirDeVendasCloud() {
   }
   const linhas = vol27LinhasCloudParaAgregar(rows, mapa);
   const ag = vol27AgregarLinhas(linhas);
-  ag.fonte = 'vendas-cloud';
+  ag.fonte = 'vendas-dedup';
   ag.linhasLidas = linhas.length;
   return ag;
 }
 
 /**
- * Não soma a tabela vendas ao abrir.
- * O peso está lá, mas a linha não traz família nem NPess, e o mesmo cliente/dia/tipo
- * está gravado mais de uma vez (data ISO e dd.mm.aaaa). Somar isso inflacionava os kg.
- * O Excel da carga (mês corrente e anterior) é que grava as cinco famílias.
+ * O agregado antigo (fonte vendas-cloud) somou a cópia ISO + dd.mm.aaaa e inflacionava os kg.
+ * Esse agregado recalcula-se sem a cópia. O Excel do mês corrente e do anterior continua a gravar as cinco famílias.
  */
 async function vol27Preparar() {
   try { await vol27HidrateManual(); } catch (e) { console.warn('vol27 manual', e); }
-  const local = await vol27LerAgregado();
-  _vol27Agregado = local && local.meses ? local : { version: 1, meses: {}, fonte: '' };
+  let ag = await vol27LerAgregado();
+  if (!ag || !ag.meses) ag = { version: 1, meses: {}, fonte: '' };
+  if (vol27PrecisaHistorico(ag)) {
+    try {
+      const built = await vol27ConstruirDeVendasCloud();
+      if (built && built.meses && Object.keys(built.meses).length) {
+        ag = await vol27SalvarAgregado(built);
+      }
+    } catch (e) {
+      console.warn('vol27 dedup', e);
+      if (ag && ag.fonte === 'vendas-cloud') {
+        ag = { version: 1, meses: {}, fonte: '', erro: 'A tabela de vendas repete linhas. A cópia não foi somada.' };
+      }
+    }
+  }
+  _vol27Agregado = ag && ag.meses ? ag : { version: 1, meses: {}, fonte: '' };
   _vol27Pronto = true;
   return _vol27Agregado;
 }
@@ -16653,7 +16734,8 @@ async function vol27SubstituirJanela(linhas, hoje, cargaCtx) {
   });
   const antes = await vol27LerAgregado();
   const merged = vol27FundirMeses(antes, delta, yms);
-  merged.fonte = (antes && antes.fonte) || 'excel';
+  const fonteAntes = antes && antes.fonte;
+  merged.fonte = (fonteAntes && fonteAntes !== 'vendas-cloud') ? fonteAntes : 'excel';
   const saved = await vol27SalvarAgregado(merged);
   if (_orc27Sub === 'volume' && _pvView === 'orcamento' && _vol27Pronto) orc27Pintar();
   return saved;
@@ -39896,7 +39978,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-14-orcamento-volume: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-14-volume-grao: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

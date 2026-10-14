@@ -146,6 +146,9 @@ const fns = [
   'vol27EhGrama',
   'vol27PesoKg',
   'vol27Medida',
+  'vol27DiaISO',
+  'vol27ChaveCopia',
+  'vol27SemCopiaDeData',
   'vol27IdsFolha',
   'vol27CanalIdDeLinha',
   'vol27MesVazio',
@@ -200,14 +203,17 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
   assert.equal(vm.runInContext('VOL27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_volume.json');
   assert.ok(!String(vm.runInContext('VOL27_CLOUD_PATH', ctx)).includes('mapas_v3'));
   assert.equal(vm.runInContext('ORC27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_canais.json');
-  assert.ok(sw.includes('v2026-10-14-orcamento-volume'));
-  assert.ok(html.includes('v2026-10-14-orcamento-volume'));
+  assert.ok(sw.includes('v2026-10-14-volume-grao'));
+  assert.ok(html.includes('v2026-10-14-volume-grao'));
   assert.ok(extractFn(html, 'vol27Agendar').includes('VOL27_DEBOUNCE_MS'));
   assert.ok(extractFn(html, 'vol27Flush').includes('clearTimeout(_vol27Timer)'));
   assert.ok(!extractFn(html, 'vol27Flush').includes('pvSaveData'));
   assert.ok(html.includes('vol27SubstituirJanela(linhasJanela'));
-  assert.ok(!extractFn(html, 'vol27Preparar').includes('vol27ConstruirDeVendasCloud'));
+  assert.ok(extractFn(html, 'vol27Preparar').includes('vol27ConstruirDeVendasCloud'));
+  assert.ok(extractFn(html, 'vol27Preparar').includes("fonte === 'vendas-cloud'"));
   assert.ok(extractFn(html, 'vol27NotaFora').includes('repete linhas'));
+  assert.ok(extractFn(html, 'vol27LinhasCloudParaAgregar').includes('vol27SemCopiaDeData'));
+  assert.ok(!extractFn(html, 'vol27SubstituirJanela').includes('vol27SemCopiaDeData'));
 });
 
 check('cápsulas = peso/0,005; grão e moído ficam em kg; uma linha não entra em duas famílias', () => {
@@ -343,6 +349,37 @@ check('vinho só em litros; máquina em unidades; 99520099 e o filtro de canal',
   assert.ok(!vistaLojas.includes('data-vol-fam="total"'));
   const vistaEmp = ctx.vol27RenderHtml(true, ag, doc, 'dfb');
   assert.ok(!vistaEmp.includes('data-vol-campo'));
+});
+
+check('cópia ISO e dd.mm.aaaa não soma duas vezes; moído não é grão; o grão do fixture fica no kg certo', () => {
+  const brutas = [
+    { id: 1, cod: '404215', data: '2026-01-15', tipo: 'GRÃO', peso: 10, qty: 10 },
+    { id: 2, cod: '404215', data: '15.01.2026', tipo: 'GRÃO', peso: 10, qty: 10 },
+    { id: 1, cod: '404215', data: '2026-01-15', tipo: 'GRÃO', peso: 10, qty: 10 },
+    { id: 3, cod: '404215', data: '2026-01-15', tipo: 'GRÃO', peso: 4, qty: 4 },
+    { id: 4, cod: '404215', data: '2026-02-02', hierarq: 'CAFÉ MOÍDO', tipo: 'OUTRO', peso: 7, qty: 0 },
+    { id: 5, cod: '404215', data: '2026-03-01', tipo: 'GRÃO', peso: 150, qty: 150 },
+    { id: 6, cod: '404215', data: '2026-03-01', tipo: 'GRÃO', peso: 150, qty: 150 },
+    { id: 7, cod: '404215', data: '2026-04-01', tipo: 'GRÃO', peso: 20, qty: 20 },
+    { id: 8, cod: '404215', data: '2026-04-02', tipo: 'GRÃO', peso: -5, qty: -5 },
+    { id: 9, cod: '1', data: '2026-05-01', hierarq: 'CÁPSULAS DE GRÃO', tipo: 'GRÃO', peso: 1, npess: 99520003 },
+  ];
+  const linhas = ctx.vol27SemCopiaDeData(brutas);
+  assert.equal(linhas.length, 8);
+  assert.equal(ctx.vol27DiaISO('15.01.2026'), '2026-01-15');
+  assert.equal(ctx.vol27DiaISO('2026-01-15'), '2026-01-15');
+  const comCanal = linhas.map(r => Object.assign({ npess: 99520003 }, r));
+  const ag = ctx.vol27AgregarLinhas(comCanal);
+  perto(fam(ag, '2026-01', 'dfb_dist_reg', 'grao'), 14);
+  perto(fam(ag, '2026-02', 'dfb_dist_reg', 'moido'), 7);
+  assert.equal(fam(ag, '2026-02', 'dfb_dist_reg', 'grao'), 0);
+  perto(fam(ag, '2026-03', 'dfb_dist_reg', 'grao'), 300);
+  perto(fam(ag, '2026-04', 'dfb_dist_reg', 'grao'), 15);
+  assert.equal(fam(ag, '2026-05', 'dfb_dist_reg', 'grao'), 0);
+  perto(fam(ag, '2026-05', 'dfb_dist_reg', 'capsulas'), 200);
+  const ytd = ctx.vol27Somar(ag, ctx.orc27PeriodoYtd(), ['dfb_dist_reg'], 'grao', false);
+  perto(ytd.valor, 329);
+  assert.notEqual(ytd.valor, 329 + 10);
 });
 
 check('previsão vazia fica vazia; um clear não dispara duas vezes; empresa não se edita', () => {
