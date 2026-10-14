@@ -2141,7 +2141,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
+          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas, Orçamento 2027 e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -4003,7 +4003,7 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR · NF emitidas — autosave local + cloud (só direcção).
+            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR · Orçamento 2027 · NF emitidas — autosave local + cloud (só direcção).
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
@@ -4041,6 +4041,7 @@ var _unused_placeholder = 1;
         <button type="button" class="sub-tab" id="pv-tab-vendas" onclick="pvShowView('vendas')">Vendas</button>
         <button type="button" class="sub-tab" id="pv-tab-perdas" onclick="pvShowView('perdas')">Maiores perdas mês</button>
         <button type="button" class="sub-tab" id="pv-tab-nfe" onclick="pvShowView('nfe')">NF emitidas</button>
+        <button type="button" class="sub-tab" id="pv-tab-orcamento" onclick="pvShowView('orcamento')">Orçamento 2027</button>
       </div>
 
       <div id="pv-readonly-banner" style="display:none;padding:10px 14px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:12px;color:#9a3412;margin-bottom:12px;">
@@ -11943,7 +11944,7 @@ function pvSeedLinhas(ano, mes) {
 }
 
 let _pvData = null;
-let _pvView = 'mapa'; // 'mapa' | 'accuracy' | 'vendas'
+let _pvView = 'mapa'; // 'mapa' | 'accuracy' | 'vendas' | 'orcamento'
 /** Filtro do detalhe Accuracy: nome do vendedor, '__incerto__', ou ''. Só nesta vista. */
 let _pvAccFiltro = '';
 
@@ -13060,11 +13061,13 @@ async function abrirPrevisaoVendasHome() {
     const tabV = document.getElementById('pv-tab-vendas');
     const tabP = document.getElementById('pv-tab-perdas');
     const tabN = document.getElementById('pv-tab-nfe');
+    const tabO = document.getElementById('pv-tab-orcamento');
     if (tabM) tabM.classList.add('active');
     if (tabA) tabA.classList.remove('active');
     if (tabV) tabV.classList.remove('active');
     if (tabP) tabP.classList.remove('active');
     if (tabN) tabN.classList.remove('active');
+    if (tabO) tabO.classList.remove('active');
     const mesWrap = document.getElementById('pv-mes-wrap');
     if (mesWrap) mesWrap.style.display = '';
     const anoWrap = document.getElementById('pv-ano-wrap');
@@ -13097,7 +13100,9 @@ function pvPct(a, b) {
 }
 
 function pvShowView(view) {
-  _pvView = (view === 'accuracy' || view === 'vendas' || view === 'nfe' || view === 'perdas') ? view : 'mapa';
+  const next = (view === 'accuracy' || view === 'vendas' || view === 'nfe' || view === 'perdas' || view === 'orcamento') ? view : 'mapa';
+  if (_pvView === 'orcamento' && next !== 'orcamento' && typeof orc27Flush === 'function') orc27Flush();
+  _pvView = next;
   if (_pvView !== 'accuracy') _pvAccFiltro = '';
   const tabs = {
     mapa: 'pv-tab-mapa',
@@ -13105,18 +13110,28 @@ function pvShowView(view) {
     vendas: 'pv-tab-vendas',
     perdas: 'pv-tab-perdas',
     nfe: 'pv-tab-nfe',
+    orcamento: 'pv-tab-orcamento',
   };
   Object.keys(tabs).forEach(k => {
     const el = document.getElementById(tabs[k]);
     if (el) el.classList.toggle('active', _pvView === k);
   });
-  const semMapa = _pvView === 'vendas' || _pvView === 'nfe' || _pvView === 'perdas';
+  const roBanner = document.getElementById('pv-readonly-banner');
+  if (roBanner && _pvView !== 'orcamento') {
+    roBanner.innerHTML = '<strong>Só consulta</strong> — a previsão é editada pela direcção.';
+  }
+  const semMapa = _pvView === 'vendas' || _pvView === 'nfe' || _pvView === 'perdas' || _pvView === 'orcamento';
   const mesWrap = document.getElementById('pv-mes-wrap');
   if (mesWrap) mesWrap.style.display = _pvView === 'mapa' ? '' : 'none';
   const anoWrap = document.getElementById('pv-ano-wrap');
   if (anoWrap) anoWrap.style.display = semMapa ? 'none' : '';
   const excelBtn = document.getElementById('pv-btn-excel');
   if (excelBtn) excelBtn.style.display = semMapa ? 'none' : '';
+  if (_pvView === 'orcamento') {
+    if (typeof orc27PrepararChrome === 'function') orc27PrepararChrome();
+    const hostOrc = document.getElementById('pv-canal-panels');
+    if (hostOrc) hostOrc.innerHTML = '<p style="color:var(--muted);font-size:13px;">A carregar orçamento…</p>';
+  }
   pvEnsureCloudThenRender();
 }
 
@@ -14354,6 +14369,11 @@ function pvRender(opts) {
     pvMontarVistaPerdas();
     return;
   }
+  if (_pvView === 'orcamento') {
+    if (typeof orc27PrepararChrome === 'function') orc27PrepararChrome();
+    if (typeof orc27MontarVista === 'function') orc27MontarVista();
+    return;
+  }
   if (_pvView === 'vendas') {
     const modoV = document.getElementById('pv-modo-label');
     if (modoV) {
@@ -14866,6 +14886,735 @@ function pvPrepararLinhasMapa(linhas, ano, mes, quadroOpt) {
   pvFixarTotaisNVendas(linhas, ano, mes, quadro);
   pvFixarBudgetTotais(linhas, ano, mes);
   return linhas;
+}
+
+/**
+ * Orçamento 2027 · Canais.
+ * Separado do mapa mensal: não grava prevFecho nem mexe em previsao/mapas_v3.json.
+ * Total N-1 = Fatur. Jan–Dez 2025. YTD = Fatur. Jan–Set 2026 (Outubro não entra).
+ * Previsão Out–Dez e Orçamento 2027 são manuais, só nas folhas, com autosave.
+ */
+const ORC27_LS_KEY = 'dfb_orcamento_2027_canais_v1';
+const ORC27_CLOUD_PATH = 'previsao/orcamento_2027_canais.json';
+const ORC27_DEBOUNCE_MS = 1000;
+let _orc27Doc = { version: 1, canais: {} };
+let _orc27Linhas = [];
+let _orc27Dirty = false;
+let _orc27Timer = null;
+let _orc27HintTimer = null;
+let _orc27CloudCache = null;
+let _orc27CloudFetchedAt = 0;
+let _orc27Gen = 0;
+let _orc27Life = false;
+let _orc27Fila = Promise.resolve();
+let _orc27Sub = 'canais';
+
+function orc27CloudUrl() {
+  return 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/public/contratos/' + ORC27_CLOUD_PATH;
+}
+
+function orc27Yms(ano, mesDe, mesAte) {
+  const out = [];
+  const y = parseInt(ano, 10);
+  const a = parseInt(mesDe, 10);
+  const b = parseInt(mesAte, 10);
+  if (!y || !Number.isFinite(a) || !Number.isFinite(b) || a < 1 || b > 12 || a > b) return out;
+  for (let m = a; m <= b; m++) out.push(y + '-' + String(m).padStart(2, '0'));
+  return out;
+}
+
+/** Janeiro a Dezembro de 2025. Não é um mês só. */
+function orc27PeriodoN1() { return orc27Yms(2025, 1, 12); }
+
+/** Janeiro a Setembro de 2026. Outubro não entra, mesmo que esteja carregado. */
+function orc27PeriodoYtd() { return orc27Yms(2026, 1, 9); }
+
+function orc27TemNumero(v) {
+  if (v == null || v === '' || typeof v === 'boolean') return false;
+  const n = Number(v);
+  return Number.isFinite(n);
+}
+
+function orc27LinhasBase() {
+  const src = (typeof PV_SEED_AGOSTO_2026 !== 'undefined' && PV_SEED_AGOSTO_2026 && Array.isArray(PV_SEED_AGOSTO_2026.linhas))
+    ? PV_SEED_AGOSTO_2026.linhas
+    : [];
+  return src.map(r => {
+    const o = { id: r.id, empresa: r.empresa, tipo: r.tipo };
+    if (r.parent) o.parent = r.parent;
+    return o;
+  });
+}
+
+function orc27IdFolha(id) {
+  if (!id) return false;
+  const linhas = orc27LinhasBase();
+  for (let i = 0; i < linhas.length; i++) {
+    if (linhas[i].id === id && linhas[i].tipo === 'canal') return true;
+  }
+  return false;
+}
+
+/** 99520099 é devolução: não entra na soma. Não altera o quadro. */
+function orc27CelulaDevolucao(cell) {
+  if (!cell || typeof npessVendaIgnorado !== 'function') return false;
+  if (npessVendaIgnorado(cell.npess)) return true;
+  if (npessVendaIgnorado(cell.vendedor)) return true;
+  return false;
+}
+
+function orc27SomarFaturYm(quadro, ym, empresa, canal, lado) {
+  const mes = quadro && quadro.meses && quadro.meses[ym];
+  if (!mes || !mes.celulas) return { tem: false, valor: 0 };
+  let valor = 0;
+  let tem = false;
+  const celulas = Object.values(mes.celulas);
+  for (let i = 0; i < celulas.length; i++) {
+    const c = celulas[i];
+    if (!c || orc27CelulaDevolucao(c)) continue;
+    if (empresa && c.empresa !== empresa) continue;
+    if (canal && c.canal !== canal) continue;
+    if (lado && typeof pvLadoInstitucionalCelula === 'function' && pvLadoInstitucionalCelula(c) !== lado) continue;
+    const v = Number(c.valor);
+    if (!Number.isFinite(v)) continue;
+    valor += v;
+    tem = true;
+  }
+  return { tem: tem, valor: pvCentavosMapa(valor) };
+}
+
+function orc27SomarPeriodo(quadro, yms, empresa, canal, lado) {
+  let valor = 0;
+  let tem = false;
+  const lista = Array.isArray(yms) ? yms : [];
+  for (let i = 0; i < lista.length; i++) {
+    const s = orc27SomarFaturYm(quadro, lista[i], empresa, canal, lado);
+    if (!s.tem) continue;
+    tem = true;
+    valor += Number(s.valor) || 0;
+  }
+  return { tem: tem, valor: tem ? pvCentavosMapa(valor) : 0 };
+}
+
+/** Total 2026 = YTD + Previsão. Previsão vazia conta 0 só nesta soma. Sem YTD e sem previsão → vazio. */
+function orc27Total2026(ytd, ytdTem, prev) {
+  const hasPrev = orc27TemNumero(prev);
+  const hasYtd = !!ytdTem && orc27TemNumero(ytd);
+  if (!hasYtd && !hasPrev) return { tem: false, valor: null };
+  const y = hasYtd ? Number(ytd) : 0;
+  const p = hasPrev ? Number(prev) : 0;
+  return { tem: true, valor: pvCentavosMapa(y + p) };
+}
+
+/** (Total 2026 − Total N-1) / Total N-1. — se N-1 for 0 ou não existir. */
+function orc27VarPct(total, totalTem, n1, n1Tem) {
+  if (!n1Tem || !orc27TemNumero(n1) || Number(n1) === 0) return null;
+  const t = (totalTem && orc27TemNumero(total)) ? Number(total) : 0;
+  return ((t - Number(n1)) / Number(n1)) * 100;
+}
+
+/** (Orçamento 2027 − Total 2026) / Total 2026. — se o orçamento estiver vazio ou o total for 0. */
+function orc27Pct27(orcamento, total, totalTem) {
+  if (!orc27TemNumero(orcamento)) return null;
+  if (!totalTem || !orc27TemNumero(total) || Number(total) === 0) return null;
+  return ((Number(orcamento) - Number(total)) / Number(total)) * 100;
+}
+
+function orc27FecharLinha(row) {
+  const tot = orc27Total2026(row.ytd, row.ytdTem, row.prevOutDez);
+  row.total2026 = tot.valor;
+  row.totalTem = tot.tem;
+  row.varPct = orc27VarPct(row.total2026, row.totalTem, row.n1, row.n1Tem);
+  row.pct27 = orc27Pct27(row.orcamento, row.total2026, row.totalTem);
+}
+
+function orc27SomaTem(filhos, campo, temCampo) {
+  let tem = false;
+  let valor = 0;
+  (filhos || []).forEach(c => {
+    if (!c || !c[temCampo] || !orc27TemNumero(c[campo])) return;
+    tem = true;
+    valor += Number(c[campo]);
+  });
+  return { tem: tem, valor: pvCentavosMapa(valor) };
+}
+
+function orc27SomaManual(filhos, campo) {
+  let any = false;
+  let sum = 0;
+  (filhos || []).forEach(c => {
+    if (!c || !orc27TemNumero(c[campo])) return;
+    any = true;
+    sum += Number(c[campo]);
+  });
+  return any ? pvCentavosMapa(sum) : null;
+}
+
+function orc27FilhosDe(row, linhas) {
+  if (!row) return [];
+  if (row.tipo === 'total') return (linhas || []).filter(r => r && r.tipo === 'grupo' && !r.parent);
+  if (row.tipo !== 'grupo') return [];
+  return (linhas || []).filter(c => c && c.parent === row.id && (c.tipo === 'canal' || c.tipo === 'grupo'));
+}
+
+/** Empresa e Institucional = soma dos filhos. O que foi escrito no pai não conta. */
+function orc27AplicarSomas(linhas) {
+  const seen = {};
+  function recalc(row) {
+    if (!row || !row.id || seen[row.id]) return;
+    seen[row.id] = true;
+    const filhos = orc27FilhosDe(row, linhas);
+    if (!filhos.length) return;
+    filhos.forEach(f => { if (f.tipo === 'grupo') recalc(f); });
+    const n1 = orc27SomaTem(filhos, 'n1', 'n1Tem');
+    const ytd = orc27SomaTem(filhos, 'ytd', 'ytdTem');
+    row.n1 = n1.tem ? n1.valor : null;
+    row.n1Tem = !!n1.tem;
+    row.ytd = ytd.tem ? ytd.valor : null;
+    row.ytdTem = !!ytd.tem;
+    row.prevOutDez = orc27SomaManual(filhos, 'prevOutDez');
+    row.orcamento = orc27SomaManual(filhos, 'orcamento');
+    orc27FecharLinha(row);
+  }
+  (linhas || []).forEach(row => {
+    if (row && row.tipo === 'grupo' && !row.parent) recalc(row);
+  });
+  const total = (linhas || []).find(r => r && r.tipo === 'total');
+  if (total) recalc(total);
+}
+
+function orc27ValorManual(manual, id, campo) {
+  if (!manual || !manual[id] || !orc27IdFolha(id)) return null;
+  const v = manual[id][campo];
+  return orc27TemNumero(v) ? Number(v) : null;
+}
+
+function orc27Montar(quadro, manual) {
+  const linhas = orc27LinhasBase();
+  const n1Yms = orc27PeriodoN1();
+  const ytdYms = orc27PeriodoYtd();
+  linhas.forEach(row => {
+    row.editavel = row.tipo === 'canal';
+    row.n1 = null;
+    row.n1Tem = false;
+    row.ytd = null;
+    row.ytdTem = false;
+    row.prevOutDez = null;
+    row.orcamento = null;
+    if (!row.editavel) return;
+    const spec = (typeof PV_MAPA_CANAL_VENDA !== 'undefined') ? PV_MAPA_CANAL_VENDA[row.id] : null;
+    if (spec) {
+      const n1 = orc27SomarPeriodo(quadro, n1Yms, spec[0], spec[1], spec[2]);
+      const ytd = orc27SomarPeriodo(quadro, ytdYms, spec[0], spec[1], spec[2]);
+      row.n1 = n1.tem ? n1.valor : null;
+      row.n1Tem = !!n1.tem;
+      row.ytd = ytd.tem ? ytd.valor : null;
+      row.ytdTem = !!ytd.tem;
+    }
+    row.prevOutDez = orc27ValorManual(manual, row.id, 'prevOutDez');
+    row.orcamento = orc27ValorManual(manual, row.id, 'orcamento');
+    orc27FecharLinha(row);
+  });
+  orc27AplicarSomas(linhas);
+  return linhas;
+}
+
+/**
+ * Last-write-wins por campo. Vazio sem data não apaga um valor.
+ * Um clear explícito (null com data mais recente) ganha uma vez.
+ */
+function orc27PickCampo(localVal, localTs, cloudVal, cloudTs) {
+  const lOk = orc27TemNumero(localVal);
+  const cOk = orc27TemNumero(cloudVal);
+  const lMs = typeof pvTsMs === 'function' ? pvTsMs(localTs) : 0;
+  const cMs = typeof pvTsMs === 'function' ? pvTsMs(cloudTs) : 0;
+  if (lOk && cOk) {
+    if (cMs > lMs) return { value: Number(cloudVal), ts: cloudTs };
+    return { value: Number(localVal), ts: localTs || cloudTs || null };
+  }
+  if (lOk && !cOk) {
+    if (cloudTs && cMs > lMs) return { value: null, ts: cloudTs };
+    return { value: Number(localVal), ts: localTs || null };
+  }
+  if (cOk && !lOk) {
+    if (localTs && lMs > cMs) return { value: null, ts: localTs };
+    return { value: Number(cloudVal), ts: cloudTs || null };
+  }
+  if (localTs || cloudTs) {
+    if (cMs > lMs) return { value: null, ts: cloudTs };
+    return { value: null, ts: localTs || cloudTs };
+  }
+  return { value: null, ts: null };
+}
+
+function orc27MergeCanais(localCanais, cloudCanais) {
+  const local = localCanais && typeof localCanais === 'object' ? localCanais : {};
+  const cloud = cloudCanais && typeof cloudCanais === 'object' ? cloudCanais : {};
+  const out = {};
+  const ids = orc27LinhasBase().filter(r => r.tipo === 'canal').map(r => r.id);
+  ids.forEach(id => {
+    const l = local[id] || {};
+    const c = cloud[id] || {};
+    const lTs = l.cellTs || {};
+    const cTs = c.cellTs || {};
+    const prev = orc27PickCampo(l.prevOutDez, lTs.prevOutDez, c.prevOutDez, cTs.prevOutDez);
+    const orc = orc27PickCampo(l.orcamento, lTs.orcamento, c.orcamento, cTs.orcamento);
+    if (!prev.ts && !orc.ts) return;
+    const rec = { cellTs: {} };
+    if (prev.ts) {
+      rec.cellTs.prevOutDez = prev.ts;
+      rec.prevOutDez = prev.value;
+    }
+    if (orc.ts) {
+      rec.cellTs.orcamento = orc.ts;
+      rec.orcamento = orc.value;
+    }
+    out[id] = rec;
+  });
+  return out;
+}
+
+function orc27LocalPrecisaNuvem(localCanais, cloudCanais) {
+  const local = localCanais && typeof localCanais === 'object' ? localCanais : {};
+  const cloud = cloudCanais && typeof cloudCanais === 'object' ? cloudCanais : {};
+  const ids = orc27LinhasBase().filter(r => r.tipo === 'canal').map(r => r.id);
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    const lTs = (local[id] && local[id].cellTs) || {};
+    const cTs = (cloud[id] && cloud[id].cellTs) || {};
+    if (pvTsMs(lTs.prevOutDez) > pvTsMs(cTs.prevOutDez)) return true;
+    if (pvTsMs(lTs.orcamento) > pvTsMs(cTs.orcamento)) return true;
+  }
+  return false;
+}
+
+/** Segunda escrita do mesmo número, ou do mesmo vazio, não muda a data. Evita um segundo clear. */
+function orc27AplicarEdicao(doc, id, campo, valor, agoraIso) {
+  const base = doc && typeof doc === 'object' ? doc : { canais: {} };
+  const canais = Object.assign({}, base.canais || {});
+  const out = {
+    version: 1,
+    canais: canais,
+    actualizadoEm: base.actualizadoEm || null,
+    actualizadoPor: base.actualizadoPor || '',
+  };
+  if (!orc27IdFolha(id)) return { doc: out, changed: false };
+  if (campo !== 'prevOutDez' && campo !== 'orcamento') return { doc: out, changed: false };
+  const rec0 = canais[id] || {};
+  const cellTs0 = rec0.cellTs || {};
+  const prev = orc27TemNumero(rec0[campo]) ? Number(rec0[campo]) : null;
+  const next = orc27TemNumero(valor) ? Number(valor) : null;
+  const jaTs = !!cellTs0[campo];
+  if (prev === next && (jaTs || next == null)) return { doc: out, changed: false };
+  const rec = {
+    cellTs: Object.assign({}, cellTs0),
+  };
+  if (orc27TemNumero(rec0.prevOutDez)) rec.prevOutDez = Number(rec0.prevOutDez);
+  else if (cellTs0.prevOutDez) rec.prevOutDez = null;
+  if (orc27TemNumero(rec0.orcamento)) rec.orcamento = Number(rec0.orcamento);
+  else if (cellTs0.orcamento) rec.orcamento = null;
+  rec[campo] = next;
+  rec.cellTs[campo] = agoraIso || new Date().toISOString();
+  canais[id] = rec;
+  out.canais = canais;
+  return { doc: out, changed: true };
+}
+
+function orc27FmtRs(v, tem) {
+  if (!tem || !orc27TemNumero(v)) return '—';
+  const n = Number(v);
+  let txt;
+  try {
+    txt = n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  } catch (e) {
+    txt = 'R$ ' + n.toFixed(2);
+  }
+  if (n < 0) return '<span style="color:#b91c1c;font-weight:600;">' + txt + '</span>';
+  return txt;
+}
+
+function orc27FmtPct(v) {
+  if (v == null || !Number.isFinite(Number(v))) return '—';
+  const n = Math.round(Number(v) * 10) / 10;
+  const txt = (n > 0 ? '+' : '') + n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+  const color = n > 0 ? '#15803d' : (n < 0 ? '#b91c1c' : 'inherit');
+  return '<span style="color:' + color + ';font-weight:600;">' + txt + '</span>';
+}
+
+function orc27FmtInput(v) {
+  if (!orc27TemNumero(v)) return '';
+  return Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
+function orc27Esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function orc27CelulaManualHtml(row, campo, edit) {
+  const tem = orc27TemNumero(row[campo]);
+  if (!row.editavel || !edit) return tem ? orc27FmtRs(row[campo], true) : '—';
+  const val = orc27FmtInput(row[campo]);
+  const titulo = campo === 'prevOutDez' ? 'Previsão Out a Dez (autosave)' : 'Orçamento 2027 (autosave)';
+  const bg = campo === 'prevOutDez' ? '#eff6ff' : '#f5f3ff';
+  return '<input type="text" inputmode="decimal" class="form-input orc27-input" data-orc-id="'
+    + orc27Esc(row.id) + '" data-orc-campo="' + campo + '" value="' + orc27Esc(val)
+    + '" placeholder="—" title="' + titulo
+    + '" style="height:32px;width:100%;min-width:110px;text-align:right;padding:4px 6px;background:'
+    + bg + ';font-variant-numeric:tabular-nums;" oninput="orc27OnInput(this)" onblur="orc27OnBlur(this)">';
+}
+
+function orc27RenderHtml(edit, linhas) {
+  const rows = Array.isArray(linhas) ? linhas : [];
+  let body = '';
+  rows.forEach(row => {
+    const isGrupo = row.tipo === 'grupo' || row.tipo === 'total';
+    const bg = row.tipo === 'total' ? '#f1f5f9' : (row.tipo === 'grupo' ? '#f8fafc' : 'transparent');
+    const weight = isGrupo ? '700' : '400';
+    const pad = typeof pvMapaPadLeft === 'function' ? pvMapaPadLeft(row, rows) : '8px';
+    body += '<tr data-orc-id="' + orc27Esc(row.id) + '" style="background:' + bg + ';font-weight:' + weight + ';">'
+      + '<td style="text-align:left;padding-left:' + pad + ';white-space:nowrap;">' + orc27Esc(row.empresa) + '</td>'
+      + '<td class="orc27-n1" style="text-align:right;font-variant-numeric:tabular-nums;">' + orc27FmtRs(row.n1, row.n1Tem) + '</td>'
+      + '<td class="orc27-ytd" style="text-align:right;font-variant-numeric:tabular-nums;">' + orc27FmtRs(row.ytd, row.ytdTem) + '</td>'
+      + '<td class="orc27-prev" style="text-align:right;background:#eff6ff;font-variant-numeric:tabular-nums;">' + orc27CelulaManualHtml(row, 'prevOutDez', edit) + '</td>'
+      + '<td class="orc27-total" style="text-align:right;font-variant-numeric:tabular-nums;">' + orc27FmtRs(row.total2026, row.totalTem) + '</td>'
+      + '<td class="orc27-var" style="text-align:right;">' + orc27FmtPct(row.varPct) + '</td>'
+      + '<td class="orc27-orc" style="text-align:right;background:#f5f3ff;font-variant-numeric:tabular-nums;">' + orc27CelulaManualHtml(row, 'orcamento', edit) + '</td>'
+      + '<td class="orc27-pct" style="text-align:right;">' + orc27FmtPct(row.pct27) + '</td>'
+      + '</tr>';
+  });
+  return '<div class="sub-nav" style="margin-bottom:12px;flex-wrap:wrap;">'
+    + '<button type="button" class="sub-tab active" id="orc27-sub-canais" onclick="orc27ShowSub(\'canais\')">Canais</button>'
+    + '</div>'
+    + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
+    + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Canais'
+    + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Total 2026 = YTD até Set + Previsão Out a Dez · Var % vs 2025 = (Total 2026 − N-1) / N-1 · % 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026</span>'
+    + '</div>'
+    + '<table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1180px;">'
+    + '<thead><tr>'
+    + '<th style="text-align:left;">Empresa</th>'
+    + '<th style="text-align:right;">Total N-1 até Dez</th>'
+    + '<th style="text-align:right;">YTD 2026 até Set</th>'
+    + '<th style="text-align:right;background:#dbeafe;">Previsão Out a Dez</th>'
+    + '<th style="text-align:right;">Total 2026</th>'
+    + '<th style="text-align:right;">Var % vs 2025</th>'
+    + '<th style="text-align:right;background:#ede9fe;">Orçamento 2027</th>'
+    + '<th style="text-align:right;">% 27 vs fecho 26</th>'
+    + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+}
+
+function orc27CanaisDePayload(data) {
+  if (!data || typeof data !== 'object') return {};
+  if (data.canais && typeof data.canais === 'object' && !Array.isArray(data.canais)) return data.canais;
+  return {};
+}
+
+function orc27LerLocal() {
+  try {
+    const raw = localStorage.getItem(ORC27_LS_KEY);
+    if (!raw) return { canais: {} };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return { canais: {} };
+    return parsed;
+  } catch (_) {
+    return { canais: {} };
+  }
+}
+
+async function orc27FetchCloud(force) {
+  const now = Date.now();
+  if (!force && _orc27CloudCache && !_orc27CloudCache.fetchFailed && (now - _orc27CloudFetchedAt) < 30000) {
+    return _orc27CloudCache;
+  }
+  try {
+    const res = await fetch(orc27CloudUrl() + '?t=' + now, { cache: 'no-store' });
+    if (res.status === 404) {
+      _orc27CloudCache = { canais: {}, fetchFailed: false, actualizadoEm: null };
+      _orc27CloudFetchedAt = now;
+      return _orc27CloudCache;
+    }
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      if (res.status === 400 && /not found|object not found|404/i.test(txt)) {
+        _orc27CloudCache = { canais: {}, fetchFailed: false, actualizadoEm: null };
+        _orc27CloudFetchedAt = now;
+        return _orc27CloudCache;
+      }
+      console.warn('orc27FetchCloud HTTP', res.status);
+      if (_orc27CloudCache && _orc27CloudCache.canais && !_orc27CloudCache.fetchFailed) return _orc27CloudCache;
+      return { canais: {}, fetchFailed: true };
+    }
+    const data = await res.json();
+    _orc27CloudCache = {
+      canais: orc27CanaisDePayload(data),
+      actualizadoEm: data && data.actualizadoEm ? data.actualizadoEm : null,
+      actualizadoPor: data && data.actualizadoPor ? data.actualizadoPor : '',
+      fetchFailed: false,
+    };
+    _orc27CloudFetchedAt = now;
+    return _orc27CloudCache;
+  } catch (e) {
+    console.warn('orc27FetchCloud', e);
+    if (_orc27CloudCache && _orc27CloudCache.canais) {
+      _orc27CloudCache.fetchFailed = true;
+      return _orc27CloudCache;
+    }
+    return { canais: {}, fetchFailed: true };
+  }
+}
+
+async function orc27Upload(payload) {
+  const base = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
+  const res = await fetch(base + '/contratos/' + ORC27_CLOUD_PATH, {
+    method: 'POST',
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      'x-upsert': 'true',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errTxt = await res.text().catch(() => '');
+    throw new Error('Upload orçamento (' + res.status + '): ' + errTxt.slice(0, 180));
+  }
+  return payload;
+}
+
+async function orc27EnviarCorpo() {
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  const cloud = await orc27FetchCloud(true);
+  if (cloud && cloud.fetchFailed) return false;
+  const localCanais = (_orc27Doc && _orc27Doc.canais) || {};
+  const cloudCanais = (cloud && cloud.canais) || {};
+  if (!orc27LocalPrecisaNuvem(localCanais, cloudCanais)) return false;
+  const canais = orc27MergeCanais(localCanais, cloudCanais);
+  const payload = {
+    version: 1,
+    actualizadoEm: new Date().toISOString(),
+    actualizadoPor: typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '',
+    canais: canais,
+  };
+  await orc27Upload(payload);
+  _orc27CloudCache = {
+    canais: canais,
+    actualizadoEm: payload.actualizadoEm,
+    actualizadoPor: payload.actualizadoPor,
+    fetchFailed: false,
+  };
+  _orc27CloudFetchedAt = Date.now();
+  if (_orc27Dirty) {
+    _orc27Doc.canais = orc27MergeCanais(_orc27Doc.canais, canais);
+  } else {
+    _orc27Doc = {
+      version: 1,
+      canais: canais,
+      actualizadoEm: payload.actualizadoEm,
+      actualizadoPor: payload.actualizadoPor,
+    };
+  }
+  try { localStorage.setItem(ORC27_LS_KEY, JSON.stringify(_orc27Doc)); } catch (_) {}
+  if (_orc27Dirty) orc27Agendar();
+  return true;
+}
+
+function orc27PedirNuvem() {
+  _orc27Fila = _orc27Fila.then(() => orc27EnviarCorpo()).catch(e => { console.warn('orc27 nuvem', e); });
+  return _orc27Fila;
+}
+
+async function orc27Hidrate() {
+  const local = orc27LerLocal();
+  const cloud = await orc27FetchCloud(false);
+  const canais = orc27MergeCanais(local && local.canais, cloud && cloud.canais);
+  _orc27Doc = {
+    version: 1,
+    canais: canais,
+    actualizadoEm: (local && local.actualizadoEm) || (cloud && cloud.actualizadoEm) || null,
+    actualizadoPor: (local && local.actualizadoPor) || (cloud && cloud.actualizadoPor) || '',
+  };
+  if (typeof pvPodeEditar === 'function' && pvPodeEditar()) {
+    try { localStorage.setItem(ORC27_LS_KEY, JSON.stringify(_orc27Doc)); } catch (_) {}
+    if (cloud && !cloud.fetchFailed && orc27LocalPrecisaNuvem(local && local.canais, cloud && cloud.canais)) {
+      orc27PedirNuvem();
+    }
+  }
+}
+
+function orc27QuadroActual() {
+  if (typeof pvLerQuadroParaMapa === 'function') return pvLerQuadroParaMapa();
+  return null;
+}
+
+function orc27PrepararChrome() {
+  const edit = typeof pvPodeEditar === 'function' && pvPodeEditar();
+  const modo = document.getElementById('pv-modo-label');
+  if (modo) {
+    modo.textContent = edit ? '· Edição com autosave' : '· Só consulta';
+    modo.style.color = edit ? '#166534' : '#9a3412';
+  }
+  const ro = document.getElementById('pv-readonly-banner');
+  if (ro) {
+    ro.style.display = edit ? 'none' : '';
+    ro.innerHTML = '<strong>Só consulta</strong> — o orçamento é editado pela direcção.';
+  }
+  const pub = document.getElementById('pv-btn-publicar');
+  if (pub) pub.style.display = 'none';
+  const excel = document.getElementById('pv-btn-excel');
+  if (excel) excel.style.display = 'none';
+  const mesWrap = document.getElementById('pv-mes-wrap');
+  if (mesWrap) mesWrap.style.display = 'none';
+  const anoWrap = document.getElementById('pv-ano-wrap');
+  if (anoWrap) anoWrap.style.display = 'none';
+  const banner = document.getElementById('pv-banner');
+  if (banner) {
+    banner.innerHTML = '<strong>Orçamento 2027 · Canais</strong> — '
+      + 'Total N-1 até Dez = Fatur. líquido de Janeiro a Dezembro de 2025. '
+      + 'YTD 2026 até Set = Fatur. de Janeiro a Setembro de 2026 (Outubro não entra). '
+      + 'Previsão Out a Dez e Orçamento 2027 preenchem-se à mão, só nos canais, com autosave. '
+      + 'Total 2026 = YTD + Previsão (vazio conta 0 só nesta soma). '
+      + 'Var % vs 2025 = (Total 2026 − N-1) / N-1. '
+      + '% 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026. '
+      + '<span id="orc27-autosave-hint" style="margin-left:8px;color:#15803d;font-weight:600;"></span>';
+  }
+}
+
+function orc27Pintar() {
+  const host = document.getElementById('pv-canal-panels');
+  if (!host || _pvView !== 'orcamento') return;
+  const edit = typeof pvPodeEditar === 'function' && pvPodeEditar();
+  _orc27Linhas = orc27Montar(orc27QuadroActual(), (_orc27Doc && _orc27Doc.canais) || {});
+  host.innerHTML = orc27RenderHtml(edit, _orc27Linhas);
+}
+
+function orc27PatchCalculos() {
+  _orc27Linhas = orc27Montar(orc27QuadroActual(), (_orc27Doc && _orc27Doc.canais) || {});
+  _orc27Linhas.forEach(row => {
+    const tr = document.querySelector('tr[data-orc-id="' + row.id + '"]');
+    if (!tr) return;
+    function set(cls, html) {
+      const el = tr.querySelector('td.' + cls);
+      if (el) el.innerHTML = html;
+    }
+    set('orc27-n1', orc27FmtRs(row.n1, row.n1Tem));
+    set('orc27-ytd', orc27FmtRs(row.ytd, row.ytdTem));
+    set('orc27-total', orc27FmtRs(row.total2026, row.totalTem));
+    set('orc27-var', orc27FmtPct(row.varPct));
+    set('orc27-pct', orc27FmtPct(row.pct27));
+    if (!row.editavel) {
+      set('orc27-prev', orc27FmtRs(row.prevOutDez, orc27TemNumero(row.prevOutDez)));
+      set('orc27-orc', orc27FmtRs(row.orcamento, orc27TemNumero(row.orcamento)));
+    }
+  });
+}
+
+function orc27Flash(ok) {
+  const hint = document.getElementById('orc27-autosave-hint');
+  if (!hint) return;
+  hint.textContent = ok ? 'Guardado' : 'Erro ao guardar';
+  hint.style.color = ok ? '#15803d' : '#b91c1c';
+  clearTimeout(_orc27HintTimer);
+  _orc27HintTimer = setTimeout(() => { hint.textContent = ''; }, 1600);
+}
+
+function orc27Agendar() {
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return;
+  clearTimeout(_orc27Timer);
+  _orc27Timer = setTimeout(() => { orc27Flush(); }, ORC27_DEBOUNCE_MS);
+}
+
+function orc27Flush() {
+  clearTimeout(_orc27Timer);
+  if (!_orc27Dirty) return false;
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  _orc27Dirty = false;
+  if (_orc27Doc) {
+    _orc27Doc.actualizadoEm = new Date().toISOString();
+    _orc27Doc.actualizadoPor = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
+  }
+  let ok = false;
+  try {
+    localStorage.setItem(ORC27_LS_KEY, JSON.stringify(_orc27Doc || { version: 1, canais: {} }));
+    ok = true;
+  } catch (e) {
+    console.warn('orc27Flush', e);
+  }
+  orc27Flash(ok);
+  if (ok) orc27PedirNuvem();
+  return ok;
+}
+
+function orc27BindLifecycle() {
+  if (_orc27Life) return;
+  _orc27Life = true;
+  const flush = () => { if (typeof orc27Flush === 'function') orc27Flush(); };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush();
+  });
+  window.addEventListener('pagehide', flush);
+}
+
+/** Vazio limpa. «-» ou vírgula a meio da escrita ainda não é um número nem um clear. */
+function orc27EntradaPronta(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (s === '' || s === '—') return { ok: true, valor: null };
+  if (!/[0-9]/.test(s)) return { ok: false, valor: null };
+  const v = typeof pvParseNumInput === 'function' ? pvParseNumInput(s) : Number(s);
+  if (v == null || Number.isNaN(v)) return { ok: false, valor: null };
+  return { ok: true, valor: v };
+}
+
+function orc27OnInput(el) {
+  if (!el || (typeof pvPodeEditar === 'function' && !pvPodeEditar())) return;
+  const id = el.getAttribute('data-orc-id');
+  const campo = el.getAttribute('data-orc-campo');
+  const ent = orc27EntradaPronta(el.value);
+  if (!ent.ok) return;
+  const r = orc27AplicarEdicao(_orc27Doc, id, campo, ent.valor, new Date().toISOString());
+  if (r.changed) {
+    _orc27Doc = r.doc;
+    _orc27Dirty = true;
+    orc27Agendar();
+  }
+  orc27PatchCalculos();
+}
+
+function orc27OnBlur(el) {
+  if (!el || (typeof pvPodeEditar === 'function' && !pvPodeEditar())) return;
+  const id = el.getAttribute('data-orc-id');
+  const campo = el.getAttribute('data-orc-campo');
+  const ent = orc27EntradaPronta(el.value);
+  const v = ent.ok ? ent.valor : null;
+  const r = orc27AplicarEdicao(_orc27Doc, id, campo, v, new Date().toISOString());
+  if (r.changed) {
+    _orc27Doc = r.doc;
+    _orc27Dirty = true;
+  }
+  el.value = orc27FmtInput(v);
+  orc27PatchCalculos();
+  if (_orc27Dirty) orc27Flush();
+}
+
+function orc27ShowSub(sub) {
+  _orc27Sub = sub === 'canais' ? 'canais' : 'canais';
+  if (_pvView === 'orcamento') orc27Pintar();
+}
+
+async function orc27MontarVista() {
+  const gen = ++_orc27Gen;
+  orc27BindLifecycle();
+  const host = document.getElementById('pv-canal-panels');
+  if (host) host.innerHTML = '<p style="color:var(--muted);font-size:13px;">A carregar orçamento…</p>';
+  try {
+    if (typeof lerVendasQuadroPersistida === 'function') await lerVendasQuadroPersistida();
+  } catch (_) {}
+  try { await orc27Hidrate(); } catch (e) { console.warn('orc27', e); }
+  if (gen !== _orc27Gen || _pvView !== 'orcamento') return;
+  orc27Pintar();
 }
 
 function pvActualizarMapaComVendas() {
@@ -15429,6 +16178,7 @@ async function pvExportarExcel() {
 
 function voltarHome() {
   if (typeof pvFlushAutosave === 'function') pvFlushAutosave();
+  if (typeof orc27Flush === 'function') orc27Flush();
   _canalActivo = null;
   _canalPinOk = null;
   _canalPinPendente = null;
@@ -37933,7 +38683,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-14-vendas-resumo-anual: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-14-orcamento-2027: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
