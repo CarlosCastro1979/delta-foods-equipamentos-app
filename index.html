@@ -15479,8 +15479,8 @@ function orc27PrepararChrome() {
     banner.innerHTML = _orc27Sub === 'volume'
       ? ('<strong>Orçamento 2027 · Volume</strong> — '
       + 'Mesmas colunas do Orç Valor, na unidade de cada produto. '
-      + 'Grão, café moído, cápsulas e vinho: coluna AA (Peso líq.), a somar como está. Sem ÷ 0,005 e sem conversão de unidade. '
-      + 'Máquina = QtFaturada + Qtd Bonifi + Qtd Doação (colunas M, U e Y), só nas linhas de máquina. Não usa o peso. '
+      + 'Grão, café moído e vinho: coluna AA (Peso líq.), sem conversão. Cápsulas = AA ÷ 0,005. '
+      + 'Máquina = QtFaturada + Qtd Bonifi + Qtd Doação (colunas M, U e Y). Não usa o peso. '
       + 'O filtro escolhe o canal. Todos os canais soma o mesmo produto — não soma grão com cápsulas. '
       + 'Previsão Out a Dez e Orçamento 2027 preenchem-se à mão, por canal e produto, com autosave. '
       + '<span id="orc27-autosave-hint" style="margin-left:8px;color:#15803d;font-weight:600;"></span>')
@@ -15650,10 +15650,10 @@ async function orc27MontarVista() {
 /**
  * Orçamento 2027 · Volume.
  * As mesmas sete colunas do Orç Valor, na unidade da família.
- * Grão, café moído, cápsulas e vinho: coluna AA (Peso líq.), somada como está.
- * Não se divide por 0,005 nem se converte a unidade.
+ * Grão, café moído e vinho: coluna AA (Peso líq.), sem conversão.
+ * Cápsulas: AA / 0,005 (0,005 kg = uma cápsula).
  * Máquina: coluna M (QtFaturada) + U (Qtd Bonifi) + Y (Qtd Doação). Não usa AA.
- * No Excel a família máquina é a hierarquia MF (e o texto máquina). M, U e Y também vêm noutras linhas; aí não entram.
+ * Neste ficheiro SAP a hierarquia das máquinas é o token MF.
  * Uma linha entra numa família só. O que não se reconhece fica de fora — não vai para o grão.
  * 99520099 não entra. Previsão e orçamento são manuais, por canal e família, com autosave.
  */
@@ -15661,7 +15661,7 @@ const VOL27_CAPSULA_KG = 0.005;
 const VOL27_FAMILIAS = [
   { id: 'grao', nome: 'Grão (Kg)', unidade: 'kg' },
   { id: 'moido', nome: 'Café Moído (Kg)', unidade: 'kg' },
-  { id: 'capsulas', nome: 'Cápsulas (Kg)', unidade: 'kg' },
+  { id: 'capsulas', nome: 'Cápsulas (Un)', unidade: 'un' },
   { id: 'maquina', nome: 'Máquina (Un)', unidade: 'un' },
   { id: 'vinho', nome: 'Vinho (Kg)', unidade: 'kg' },
 ];
@@ -15812,17 +15812,23 @@ function vol27NumeroColuna(v) {
 
 /**
  * Medida na unidade da família, pelas colunas do Excel de vendas.
- * AA (Peso líq.): grão, moído, cápsulas e vinho, o número tal como está.
+ * AA (Peso líq.): grão, moído e vinho, o número tal como está.
+ * Cápsulas: esse mesmo AA / 0,005. Não se usa a quantidade antiga (peso / 0,0055).
  * Máquina: M + U + Y. O peso (AA) da máquina não entra.
  */
 function vol27Medida(row) {
   const o = row || {};
   const familia = vol27FamiliaDaLinha(o);
   if (!familia) return { familia: '', medida: null, semMedida: '' };
-  if (familia === 'grao' || familia === 'moido' || familia === 'vinho' || familia === 'capsulas') {
+  if (familia === 'grao' || familia === 'moido' || familia === 'vinho') {
     const aa = vol27NumeroColuna(o.peso);
     if (aa == null) return { familia: familia, medida: null, semMedida: familia };
     return { familia: familia, medida: aa, semMedida: '' };
+  }
+  if (familia === 'capsulas') {
+    const aa = vol27NumeroColuna(o.peso);
+    if (aa == null) return { familia: familia, medida: null, semMedida: 'capsulas' };
+    return { familia: familia, medida: aa / VOL27_CAPSULA_KG, semMedida: '' };
   }
   if (familia === 'maquina') {
     const m = vol27NumeroColuna(o.volume);
@@ -16102,10 +16108,10 @@ function vol27NotaFora(ag) {
     partes.push(f.vinhoSemLitro + ' linhas de vinho sem Peso líq. (coluna AA).');
   }
   if (f.maquinaSemUn > 0) {
-    partes.push(f.maquinaSemUn + ' linhas de máquina sem QtFaturada, Qtd Bonifi nem Qtd Doação.');
+    partes.push(f.maquinaSemUn + ' linhas de máquina sem Peso líq. (coluna AA).');
   }
   const nomesSem = { grao: 'Grão', moido: 'Café moído', capsulas: 'Cápsulas', maquina: 'Máquina', vinho: 'Vinho' };
-  const unSem = { grao: 'kg', moido: 'kg', capsulas: 'un', maquina: 'un', vinho: 'L' };
+  const unSem = { grao: 'kg', moido: 'kg', capsulas: 'un', maquina: 'un', vinho: 'kg' };
   Object.keys(f.semCanal).forEach(function (fam) {
     if (!orc27TemNumero(f.semCanal[fam]) || Number(f.semCanal[fam]) === 0) return;
     partes.push(nomesSem[fam] + ' sem canal: ' + vol27FmtPlano(f.semCanal[fam]) + ' ' + unSem[fam] + '. Entra em Todos os canais e fica de fora ao escolher um canal.');
@@ -16187,7 +16193,7 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
     + '<label for="vol27-filtro" style="font-size:13px;font-weight:600;">Canal</label>'
     + '<select id="vol27-filtro" class="form-input" style="height:36px;min-width:260px;font-size:13px;" onchange="vol27OnFiltro(this)">'
     + opts + '</select>'
-    + '<span style="font-size:12px;color:var(--muted);">Grão, moído, cápsulas e vinho = Peso líq. (AA) · máquina = QtFaturada + Qtd Bonifi + Qtd Doação. Sem linha de total.</span>'
+    + '<span style="font-size:12px;color:var(--muted);">Grão, moído e vinho = Peso líq. (AA) · cápsulas = AA ÷ 0,005 · máquina = QtFaturada + Qtd Bonifi + Qtd Doação. Sem linha de total.</span>'
     + '</div>'
     + notaHtml
     + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
@@ -16680,7 +16686,7 @@ async function vol27FetchVendasFiltro(filtro, rotulo) {
  * Soma a tabela vendas uma vez por entrega.
  * A mesma linha está gravada com data ISO e em dd.mm.aaaa; a cópia não entra.
  * A tabela não traz hierarquia: moído, máquina e vinho ficam de fora (tipo OUTRO).
- * Grão, moído, cápsulas e vinho usam o peso (AA), sem ÷ 0,005. Máquina não está nesta tabela. Outubro entra no mês; a coluna YTD até Set não o soma.
+ * Grão usa o peso (AA). Cápsulas usam peso / 0,005. Outubro entra no mês; a coluna YTD até Set não o soma.
  */
 async function vol27ConstruirDeVendasCloud() {
   let cliente = null;
@@ -40023,7 +40029,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-14-volume-maquinas: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-14-volume-capsulas: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
