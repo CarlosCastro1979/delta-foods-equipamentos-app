@@ -104,6 +104,9 @@ const fns = [
   'agregarVendasQuadro',
   'nomeVendedorQuadroMarcio',
   'quadroComMarcioIdentificado',
+  'ajustesDevolucao99520099',
+  'quadroSemDevolucao99520099',
+  'quadroVistaVendas',
   'somarQuadrosVendas',
   'aplicarCargaAoQuadro',
   'completarQuadroDesdeBase',
@@ -312,6 +315,46 @@ check('NPess 99520099 é devolução e sai do quadro e de Por classificar', () =
   assert.ok(Math.abs(totalSet - 146838.16) > 1, 'Set/2026 não inclui 146.838,16');
   assert.ok(!JSON.stringify(q).includes('146838.16'));
   assert.ok(!JSON.stringify(q).includes('26638.72'));
+  const gravado = ctx.quadroVendasVazio();
+  gravado.meses['2026-09'] = { celulas: {
+    'Delta Foods Brasil\tPor classificar\tPor classificar': {
+      empresa: 'Delta Foods Brasil', canal: 'Por classificar', vendedor: 'Por classificar',
+      valor: 146838.16, linhas: 75, linhasComValor: 75,
+    },
+    'Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA': {
+      empresa: 'Delta Foods Brasil', canal: 'Retalho moderno', vendedor: 'DIOGO OLIVEIRA',
+      valor: 32732.16, linhas: 24, linhasComValor: 24,
+    },
+  } };
+  gravado.meses['2026-10'] = { celulas: {
+    'Delta Foods Brasil\tPor classificar\tPor classificar': {
+      empresa: 'Delta Foods Brasil', canal: 'Por classificar', vendedor: 'Por classificar',
+      valor: 26638.72, linhas: 31, linhasComValor: 31,
+    },
+    'Delta Foods Brasil\tLojas online\tMARCIO GORGA': {
+      empresa: 'Delta Foods Brasil', canal: 'Lojas online', vendedor: 'MARCIO GORGA',
+      valor: 500, linhas: 3, linhasComValor: 3,
+    },
+    'Q Brasil\tPor classificar\tPor classificar': {
+      empresa: 'Q Brasil', canal: 'Por classificar', vendedor: 'Por classificar',
+      valor: 0, linhas: 6, linhasComValor: 6,
+    },
+  } };
+  const limpo = ctx.quadroSemDevolucao99520099(gravado);
+  assert.equal(celula(limpo, '2026-09', 'Delta Foods Brasil', 'Por classificar', 'Por classificar'), null);
+  assert.equal(celula(limpo, '2026-10', 'Delta Foods Brasil', 'Por classificar', 'Por classificar'), null);
+  assert.equal(celula(limpo, '2026-09', 'Delta Foods Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA').valor, 32732.16);
+  assert.equal(celula(limpo, '2026-10', 'Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA').valor, 500);
+  assert.equal(celula(limpo, '2026-10', 'Q Brasil', 'Por classificar', 'Por classificar').valor, 0);
+  const maior = ctx.quadroVendasVazio();
+  maior.meses['2026-09'] = { celulas: {
+    'Delta Foods Brasil\tPor classificar\tPor classificar': {
+      empresa: 'Delta Foods Brasil', canal: 'Por classificar', vendedor: 'Por classificar',
+      valor: 146838.16 + 10, linhas: 76, linhasComValor: 76,
+    },
+  } };
+  const semAcerto = ctx.quadroSemDevolucao99520099(maior);
+  assert.equal(celula(semAcerto, '2026-09', 'Delta Foods Brasil', 'Por classificar', 'Por classificar').valor, 146848.16);
   const fat = ctx.agregarFaturClienteMes(rows);
   assert.equal(fat['2026-09'].clientes['445753\t99520099'], undefined);
   assert.equal(fat['2026-10'], undefined);

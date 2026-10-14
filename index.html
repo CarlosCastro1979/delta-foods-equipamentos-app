@@ -14673,7 +14673,7 @@ function pvCentavosMapa(n) {
 function pvLerQuadroParaMapa() {
   try {
     if (typeof window !== 'undefined' && window._vendasQuadro && window._vendasQuadro.meses) {
-      return window._vendasQuadro;
+      return pvQuadroSemDevolucao99520099(window._vendasQuadro);
     }
   } catch (_) {}
   try {
@@ -14681,11 +14681,16 @@ function pvLerQuadroParaMapa() {
       const raw = localStorage.getItem(VENDAS_QUADRO_LS_KEY);
       if (raw) {
         const q = JSON.parse(raw);
-        if (q && q.meses) return q;
+        if (q && q.meses) return pvQuadroSemDevolucao99520099(q);
       }
     }
   } catch (_) {}
   return null;
+}
+
+function pvQuadroSemDevolucao99520099(quadro) {
+  if (quadro && typeof quadroSemDevolucao99520099 === 'function') return quadroSemDevolucao99520099(quadro);
+  return quadro;
 }
 
 function pvMesTemVendas(quadro, ym) {
@@ -19492,8 +19497,10 @@ function chaveCelulaQuadro(dim) {
 }
 
 /**
- * R$ já gravados no agregado que são só o 99520099 (Set e Out/2026).
- * Se a célula ainda os tiver, saem. Se já foram retirados, não se tira outra vez.
+ * Células já gravadas que são só a devolução 99520099 (Set e Out/2026).
+ * Saem quando o R$ da célula Delta «Por classificar» é exactamente esse valor.
+ * Não se desconta um parcial: isso meteria um acerto por cima de outras vendas.
+ * Se a célula já não está, não se mexe em mais nada.
  */
 function ajustesDevolucao99520099() {
   return {
@@ -19512,30 +19519,23 @@ function quadroSemDevolucao99520099(quadro) {
     const ym = chaves[i];
     const mes = meses[ym];
     if (!mes || !mes.celulas) continue;
+    const key = 'Delta Foods Brasil\tPor classificar\tPor classificar';
+    const c = mes.celulas[key];
+    if (!c) continue;
     const alvo = +ajustes[ym];
-    if (!(alvo > 0)) continue;
-    const celulas = mes.celulas;
-    let key = 'Delta Foods Brasil\tPor classificar\tPor classificar';
-    if (!celulas[key]) {
-      key = '';
-      const nomes = Object.keys(celulas);
-      for (let j = 0; j < nomes.length; j++) {
-        const c = celulas[nomes[j]];
-        if (!c || c.canal !== 'Por classificar') continue;
-        if (Math.abs((+c.valor || 0) - alvo) < 0.02) { key = nomes[j]; break; }
-      }
-    }
-    if (!key || !celulas[key]) continue;
-    const c = celulas[key];
-    const valor = +c.valor || 0;
-    if (valor + 0.001 < alvo) continue;
-    if (Math.abs(valor - alvo) < 0.02) {
-      delete celulas[key];
-      continue;
-    }
-    c.valor = somarValorQuadro(valor, -alvo);
+    if (Math.abs((+c.valor || 0) - alvo) < 0.02) delete mes.celulas[key];
   }
   return out;
+}
+
+/** Quadro que a vista mostra: sem a devolução 99520099 já gravada, e com o Marcio identificado. */
+function quadroVistaVendas(quadro) {
+  const semDev = (typeof quadroSemDevolucao99520099 === 'function')
+    ? quadroSemDevolucao99520099(quadro)
+    : quadro;
+  return (typeof quadroComMarcioIdentificado === 'function')
+    ? quadroComMarcioIdentificado(semDev)
+    : semDev;
 }
 
 /**
@@ -22041,7 +22041,7 @@ function renderVendasMenuCanal(quadroOpt) {
   if (!el) return;
   let quadro = quadroOpt || (typeof window !== 'undefined' ? window._vendasQuadro : null);
   if (!quadro || !quadro.meses) quadro = quadroVendasVazio();
-  else quadro = quadroComMarcioIdentificado(quadro);
+  else quadro = (typeof quadroVistaVendas === 'function') ? quadroVistaVendas(quadro) : quadroComMarcioIdentificado(quadro);
   const periodo = periodoVendasMenuSelecionado();
   const canalId = (typeof resolveCanalActivoId === 'function') ? resolveCanalActivoId() : (typeof _canalActivo !== 'undefined' ? _canalActivo : null);
   const titulo = document.getElementById('canal-vendas-titulo');
@@ -23177,7 +23177,7 @@ function renderVendasQuadro(quadroOpt) {
     quadro = quadroVendasVazio();
     semAgregado = true;
   } else {
-    quadro = quadroComMarcioIdentificado(quadro);
+    quadro = (typeof quadroVistaVendas === 'function') ? quadroVistaVendas(quadro) : quadroComMarcioIdentificado(quadro);
   }
   preencherSelectsQuadroVendas();
   const { mes, ano, ym } = periodoQuadroSelecionado();
