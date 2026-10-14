@@ -15480,8 +15480,8 @@ function orc27PrepararChrome() {
     banner.innerHTML = _orc27Sub === 'volume'
       ? ('<strong>Orçamento 2027 · Volume</strong> — '
       + 'Mesmas colunas do Orç Valor, na unidade de cada produto. '
-      + 'Grão e café moído: coluna AA (Peso líq.) em kg, sem conversão. Vinho: a mesma coluna AA, em litros. Cápsulas = AA ÷ 0,005. '
-      + 'Máquina = QtFaturada + Qtd Bonifi + Qtd Doação (colunas M, U e Y). Não usa o peso. '
+      + 'As cinco famílias somam a coluna AA (Peso líq.), o número tal como está. '
+      + 'Sem ÷ 0,005, sem QtFaturada e sem converter kg, gramas ou litros. '
       + 'O filtro escolhe o canal. Todos os canais soma o mesmo produto — não soma grão com cápsulas. '
       + 'Previsão Out a Dez e Orçamento 2027 preenchem-se à mão, por canal e produto, com autosave. '
       + '<span id="orc27-autosave-hint" style="margin-left:8px;color:#15803d;font-weight:600;"></span>')
@@ -15651,11 +15651,9 @@ async function orc27MontarVista() {
 /**
  * Orçamento 2027 · Volume.
  * As mesmas sete colunas do Orç Valor, na unidade da família.
- * Grão e café moído: coluna AA (Peso líq.) em kg, sem conversão.
- * Vinho: coluna AA, em litros, sem conversão.
- * Cápsulas: AA / 0,005 (0,005 kg = uma cápsula).
- * Máquina: coluna M (QtFaturada) + U (Qtd Bonifi) + Y (Qtd Doação). Não usa AA.
- * Neste ficheiro SAP a hierarquia das máquinas é o token MF.
+ * As cinco famílias somam a coluna AA (Peso líq.), o número tal como está.
+ * Não se divide por 0,005, não se usa QtFaturada e não se converte kg, gramas ou litros.
+ * Neste ficheiro SAP a hierarquia das máquinas é o token MF; o volume dessa linha é o AA.
  * Uma linha entra numa família só. O que não se reconhece fica de fora — não vai para o grão.
  * 99520099 não entra. Previsão e orçamento são manuais, por canal e família, com autosave.
  */
@@ -15664,9 +15662,9 @@ const VOL27_EXCEL_AA = '2026-10-14';
 const VOL27_FAMILIAS = [
   { id: 'grao', nome: 'Grão (Kg)', unidade: 'kg' },
   { id: 'moido', nome: 'Café Moído (Kg)', unidade: 'kg' },
-  { id: 'capsulas', nome: 'Cápsulas (Un)', unidade: 'un' },
-  { id: 'maquina', nome: 'Máquina (Un)', unidade: 'un' },
-  { id: 'vinho', nome: 'Vinho (L)', unidade: 'l' },
+  { id: 'capsulas', nome: 'Cápsulas (Kg)', unidade: 'kg' },
+  { id: 'maquina', nome: 'Máquina (Kg)', unidade: 'kg' },
+  { id: 'vinho', nome: 'Vinho (Kg)', unidade: 'kg' },
 ];
 const VOL27_ROTULOS = {
   todos: 'Todos os canais',
@@ -15813,34 +15811,27 @@ function vol27NumeroColuna(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Coluna AA (Peso líq.), o número tal como está. `aa` ganha a `peso` quando a carga já separou a célula. */
+function vol27ValorAA(row) {
+  const o = row || {};
+  if (o.aa != null && o.aa !== '') return vol27NumeroColuna(o.aa);
+  return vol27NumeroColuna(o.peso);
+}
+
 /**
- * Medida na unidade da família, pelas colunas do Excel de vendas.
- * AA (Peso líq.): grão, moído e vinho, o número tal como está.
- * Cápsulas: esse mesmo AA / 0,005. Não se usa a quantidade antiga (peso / 0,0055).
- * Máquina: M + U + Y. O peso (AA) da máquina não entra.
+ * Medida da família = soma da coluna AA, sem conversão.
+ * Grão, moído, cápsulas, máquina e vinho usam o mesmo número. Célula vazia não vira zero.
  */
 function vol27Medida(row) {
   const o = row || {};
   const familia = vol27FamiliaDaLinha(o);
   if (!familia) return { familia: '', medida: null, semMedida: '' };
-  if (familia === 'grao' || familia === 'moido' || familia === 'vinho') {
-    const aa = vol27NumeroColuna(o.peso);
-    if (aa == null) return { familia: familia, medida: null, semMedida: familia };
-    return { familia: familia, medida: aa, semMedida: '' };
+  const aa = vol27ValorAA(o);
+  if (aa == null) {
+    const sem = (familia === 'maquina') ? 'maquina' : ((familia === 'vinho') ? 'vinho' : familia);
+    return { familia: familia, medida: null, semMedida: sem };
   }
-  if (familia === 'capsulas') {
-    const aa = vol27NumeroColuna(o.peso);
-    if (aa == null) return { familia: familia, medida: null, semMedida: 'capsulas' };
-    return { familia: familia, medida: aa / VOL27_CAPSULA_KG, semMedida: '' };
-  }
-  if (familia === 'maquina') {
-    const m = vol27NumeroColuna(o.volume);
-    const u = vol27NumeroColuna(o.qtdBonifi);
-    const y = vol27NumeroColuna(o.qtdDoacao);
-    if (m == null && u == null && y == null) return { familia: familia, medida: null, semMedida: 'maquina' };
-    return { familia: familia, medida: (m || 0) + (u || 0) + (y || 0), semMedida: '' };
-  }
-  return { familia: '', medida: null, semMedida: '' };
+  return { familia: familia, medida: aa, semMedida: '' };
 }
 
 function vol27IdsFolha() {
@@ -16115,10 +16106,10 @@ function vol27NotaFora(ag) {
     partes.push(f.vinhoSemLitro + ' linhas de vinho sem Peso líq. (coluna AA).');
   }
   if (f.maquinaSemUn > 0) {
-    partes.push(f.maquinaSemUn + ' linhas de máquina sem QtFaturada, Qtd Bonifi e Qtd Doação (colunas M, U e Y).');
+    partes.push(f.maquinaSemUn + ' linhas de máquina sem Peso líq. (coluna AA).');
   }
   const nomesSem = { grao: 'Grão', moido: 'Café moído', capsulas: 'Cápsulas', maquina: 'Máquina', vinho: 'Vinho' };
-  const unSem = { grao: 'kg', moido: 'kg', capsulas: 'un', maquina: 'un', vinho: 'L' };
+  const unSem = { grao: 'kg', moido: 'kg', capsulas: 'kg', maquina: 'kg', vinho: 'kg' };
   Object.keys(f.semCanal).forEach(function (fam) {
     if (!orc27TemNumero(f.semCanal[fam]) || Number(f.semCanal[fam]) === 0) return;
     partes.push(nomesSem[fam] + ' sem canal: ' + vol27FmtPlano(f.semCanal[fam]) + ' ' + unSem[fam] + '. Entra em Todos os canais e fica de fora ao escolher um canal.');
@@ -16200,7 +16191,7 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
     + '<label for="vol27-filtro" style="font-size:13px;font-weight:600;">Canal</label>'
     + '<select id="vol27-filtro" class="form-input" style="height:36px;min-width:260px;font-size:13px;" onchange="vol27OnFiltro(this)">'
     + opts + '</select>'
-    + '<span style="font-size:12px;color:var(--muted);">Grão e moído = Peso líq. (AA) em kg · vinho = AA em litros, sem conversão · cápsulas = AA ÷ 0,005 · máquina = QtFaturada + Qtd Bonifi + Qtd Doação (não usa AA). Sem linha de total.</span>'
+    + '<span style="font-size:12px;color:var(--muted);">As cinco famílias somam a coluna AA (Peso líq.), como está no Excel. Sem linha de total.</span>'
     + '</div>'
     + notaHtml
     + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
@@ -16528,6 +16519,7 @@ async function vol27SalvarAgregado(ag) {
 }
 
 function vol27PrecisaHistorico(ag) {
+  if (ag && (ag.fonte === 'coluna-aa' || ag.fonte === 'excel-aa')) return false;
   if (ag && ag.fonte === 'vendas-cloud') return true;
   const meses = (ag && ag.meses) || {};
   if (meses['2025-01'] || meses['2025-12'] || meses['2026-01']) return false;
@@ -16735,14 +16727,14 @@ function vol27SeedExcelAa() {
 }
 
 function vol27AgregadoEhExcelAa(ag) {
-  if (!ag || ag.fonte !== 'excel-aa' || ag.excelAa !== VOL27_EXCEL_AA) return false;
+  if (!ag || (ag.fonte !== 'coluna-aa' && ag.fonte !== 'excel-aa')) return false;
   const meses = ag.meses || {};
   return !!(meses['2025-01'] && meses['2026-09']);
 }
 
 /**
  * O agregado antigo (fonte vendas-cloud) somou a cópia ISO + dd.mm.aaaa e inflacionava os kg.
- * A base do Excel (coluna AA, cápsulas AA/0,005, máquina M+U+Y) substitui esse agregado.
+ * A base do Excel soma a coluna AA, sem ÷ 0,005 e sem M+U+Y, e substitui esse agregado.
  * O Excel do mês corrente e do anterior continua a gravar por cima desses meses.
  */
 async function vol27Preparar() {
@@ -16756,7 +16748,7 @@ async function vol27Preparar() {
       const manterUpload = fonte === 'excel' || fonte === 'excel-aa';
       const yms = manterUpload ? Object.keys(ag.meses || {}) : [];
       const merged = vol27FundirMeses(seed, manterUpload ? ag : seed, yms);
-      merged.fonte = 'excel-aa';
+      merged.fonte = 'coluna-aa';
       merged.excelAa = VOL27_EXCEL_AA;
       merged.ultimaData = seed.ultimaData || merged.ultimaData || '';
       if (manterUpload && ag.ultimaData && ag.ultimaData > merged.ultimaData) merged.ultimaData = ag.ultimaData;
@@ -16790,9 +16782,7 @@ async function vol27SubstituirJanela(linhas, hoje, cargaCtx) {
   });
   const antes = await vol27LerAgregado();
   const merged = vol27FundirMeses(antes, delta, yms);
-  const fonteAntes = antes && antes.fonte;
-  const fonteRuim = !fonteAntes || fonteAntes === 'vendas-cloud' || fonteAntes === 'vendas-dedup';
-  merged.fonte = fonteRuim ? 'excel-aa' : fonteAntes;
+  merged.fonte = 'coluna-aa';
   if (!merged.excelAa) merged.excelAa = VOL27_EXCEL_AA;
   let ultima = merged.ultimaData || (antes && antes.ultimaData) || '';
   const listaJanela = Array.isArray(linhas) ? linhas : [];
@@ -26273,8 +26263,10 @@ async function processVendasFile(event) {
         const bonifiLinha = iBonifi >= 0 ? parseValorVendaSap(row[iBonifi]) : null;
         const doacaoLinha = iDoacao >= 0 ? parseValorVendaSap(row[iDoacao]) : null;
         const nomeEmissor = emissor.slice(codRaw.length).replace(/\s+/g, ' ').trim().slice(0, 80);
+        const aaNum = Number.isFinite(peso) ? peso : null;
         const linhaAberta = {
           cod, data: dataStr, tipo, qty, peso: isNaN(peso) ? 0 : peso,
+          aa: aaNum == null ? undefined : aaNum,
           valor: valorLinha == null ? undefined : valorLinha,
           npess: npessLinha || undefined,
           nome: nomeEmissor || undefined,
@@ -40081,7 +40073,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-14-volume-excel-aa: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-14-volume-coluna-aa: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

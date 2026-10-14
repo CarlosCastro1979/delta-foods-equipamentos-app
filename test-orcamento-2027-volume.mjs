@@ -147,6 +147,7 @@ const fns = [
   'vol27EhGrama',
   'vol27PesoKg',
   'vol27NumeroColuna',
+  'vol27ValorAA',
   'vol27Medida',
   'indiceColunaVolumeVenda',
   'indiceColunaPesoLiqVenda',
@@ -200,17 +201,17 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
   assert.deepEqual(nomes, [
     'Grão (Kg)',
     'Café Moído (Kg)',
-    'Cápsulas (Un)',
-    'Máquina (Un)',
-    'Vinho (L)',
+    'Cápsulas (Kg)',
+    'Máquina (Kg)',
+    'Vinho (Kg)',
   ]);
   assert.equal(vm.runInContext('VOL27_CAPSULA_KG', ctx), 0.005);
   assert.equal(vm.runInContext('VOL27_DEBOUNCE_MS', ctx), 1000);
   assert.equal(vm.runInContext('VOL27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_volume.json');
   assert.ok(!String(vm.runInContext('VOL27_CLOUD_PATH', ctx)).includes('mapas_v3'));
   assert.equal(vm.runInContext('ORC27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_canais.json');
-  assert.ok(sw.includes('v2026-10-14-volume-excel-aa'));
-  assert.ok(html.includes('v2026-10-14-volume-excel-aa'));
+  assert.ok(sw.includes('v2026-10-14-volume-coluna-aa'));
+  assert.ok(html.includes('v2026-10-14-volume-coluna-aa'));
   assert.ok(extractFn(html, 'vol27Agendar').includes('VOL27_DEBOUNCE_MS'));
   assert.ok(extractFn(html, 'vol27Flush').includes('clearTimeout(_vol27Timer)'));
   assert.ok(!extractFn(html, 'vol27Flush').includes('pvSaveData'));
@@ -225,9 +226,9 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
 check('cápsulas = AA/0,005; grão e moído ficam em AA; máquina é M+U+Y e não AA', () => {
   const cap = ctx.vol27Medida({ tipo: 'CAPSULAS', peso: 10, qty: Math.round(10 / 0.0055) });
   assert.equal(cap.familia, 'capsulas');
-  perto(cap.medida, 10 / 0.005);
+  perto(cap.medida, 10);
+  assert.notEqual(cap.medida, 10 / 0.005);
   assert.notEqual(cap.medida, Math.round(10 / 0.0055));
-  assert.notEqual(cap.medida, 10);
 
   const grao = ctx.vol27Medida({ tipo: 'GRÃO', peso: 12.5 });
   assert.equal(grao.familia, 'grao');
@@ -236,10 +237,16 @@ check('cápsulas = AA/0,005; grão e moído ficam em AA; máquina é M+U+Y e nã
   const moido = ctx.vol27Medida({ hierarq: 'CAFÉ MOÍDO 250g', peso: 2.5, tipo: 'OUTRO' });
   assert.equal(moido.familia, 'moido');
   perto(moido.medida, 2.5);
+  const moidoAa = ctx.vol27Medida({ hierarq: 'MOÍDOS', peso: 100, aa: 5.071 });
+  perto(moidoAa.medida, 5.071);
+  assert.notEqual(moidoAa.medida, 100 / 0.005);
+  const capAa = ctx.vol27Medida({ hierarq: 'CÁPSULAS', peso: 10, aa: 40 });
+  perto(capAa.medida, 40);
+  assert.notEqual(capAa.medida, 10 / 0.005);
 
   const ambos = ctx.vol27Medida({ hierarq: 'CÁPSULAS DE GRÃO', peso: 1, tipo: 'GRÃO' });
   assert.equal(ambos.familia, 'capsulas');
-  perto(ambos.medida, 200);
+  perto(ambos.medida, 1);
   assert.notEqual(ctx.vol27FamiliaNoTexto('CÁPSULAS DE GRÃO'), 'grao');
 
   const maq = ctx.vol27Medida({
@@ -251,11 +258,11 @@ check('cápsulas = AA/0,005; grão e moído ficam em AA; máquina é M+U+Y e nã
     unidadeQty: 'UN',
   });
   assert.equal(maq.familia, 'maquina');
-  perto(maq.medida, 7);
-  assert.notEqual(maq.medida, 40);
+  perto(maq.medida, 40);
+  assert.notEqual(maq.medida, 7);
   const maqSoPeso = ctx.vol27Medida({ hierarq: 'MÁQUINAS', peso: 40 });
   assert.equal(maqSoPeso.familia, 'maquina');
-  assert.equal(maqSoPeso.medida, null);
+  perto(maqSoPeso.medida, 40);
 
   const REAL = ['Organização vendas', 'Canal distribuição', 'Emissor da ordem', 'Doc.faturamento', 'Escritório de vendas', 'Equipe de vendas', 'Material', 'Representante de vendas', 'Hierarq.produtos', 'Data', 'Fatur.', 'Fatur.', 'QtFaturada', 'QtFaturada', 'VendasBrut', 'VendasBrut', 'Desc.Com.', 'Desc.Com.', 'Valor Boni', 'Valor Boni', 'Qtd Bonifi', 'Qtd Bonifi', 'Valor Doaç', 'Valor Doaç', 'Qtd Doação', 'Qtd Doação', 'Peso líq.', 'Peso líq.'];
   assert.equal(ctx.indiceColunaVolumeVenda(REAL), 12, 'M = QtFaturada');
@@ -270,8 +277,8 @@ check('cápsulas = AA/0,005; grão e moído ficam em AA; máquina é M+U+Y e nã
   assert.equal(ctx.vol27FamiliaNoTexto('ESMGNB050000400001 MF'), 'maquina');
   const mf = ctx.vol27Medida({ hierarq: 'ESMGNB050000400001 MF', peso: 8, volume: 1, qtdBonifi: 0, qtdDoacao: 0 });
   assert.equal(mf.familia, 'maquina');
-  perto(mf.medida, 1);
-  assert.notEqual(mf.medida, 8);
+  perto(mf.medida, 8);
+  assert.notEqual(mf.medida, 1);
   assert.equal(ctx.vol27FamiliaNoTexto('ENCAPSULADO'), '');
   assert.equal(ctx.vol27FamiliaNoTexto('MOINHO'), '');
   assert.equal(ctx.vol27FamiliaNoTexto('GRAOSTE'), '');
@@ -319,12 +326,12 @@ check('vinho é a coluna AA sem conversão; 99520099 e o filtro de canal', () =>
   assert.equal(ag.ignoradas, 1);
   perto(fam(ag, '2025-01', 'dfb_lojas', 'grao'), 8);
   assert.equal(fam(ag, '2025-01', 'dfb_lojas', 'capsulas'), 0);
-  perto(fam(ag, '2025-02', 'dfb_lojas', 'capsulas'), 2000);
+  perto(fam(ag, '2025-02', 'dfb_lojas', 'capsulas'), 10);
   perto(fam(ag, '2025-02', 'dfb_rest', 'moido'), 2.5);
   assert.equal(fam(ag, '2025-02', 'dfb_rest', 'grao'), 0);
-  perto(fam(ag, '2025-03', 'dfb_lojas', 'capsulas'), 200);
+  perto(fam(ag, '2025-03', 'dfb_lojas', 'capsulas'), 1);
   assert.equal(fam(ag, '2025-03', 'dfb_lojas', 'grao'), 0);
-  perto(fam(ag, '2025-04', 'dfb_ret_mod', 'maquina'), 3);
+  perto(fam(ag, '2025-04', 'dfb_ret_mod', 'maquina'), 40);
   assert.equal(fam(ag, '2025-04', 'dfb_ret_mod', 'grao'), 0);
   perto(fam(ag, '2025-05', 'dfb_lojas', 'vinho'), 12);
   assert.equal(ag.meses['2025-05'].fora.vinhoSemLitro, 0);
@@ -372,9 +379,9 @@ check('vinho é a coluna AA sem conversão; 99520099 e o filtro de canal', () =>
   const vistaTodos = ctx.vol27RenderHtml(true, ag, doc, 'todos');
   assert.ok(vistaTodos.includes('Grão (Kg)'));
   assert.ok(vistaTodos.includes('Café Moído (Kg)'));
-  assert.ok(vistaTodos.includes('Cápsulas (Un)'));
-  assert.ok(vistaTodos.includes('Máquina (Un)'));
-  assert.ok(vistaTodos.includes('Vinho (L)'));
+  assert.ok(vistaTodos.includes('Cápsulas (Kg)'));
+  assert.ok(vistaTodos.includes('Máquina (Kg)'));
+  assert.ok(vistaTodos.includes('Vinho (Kg)'));
   assert.ok(!vistaTodos.includes('data-vol-campo'));
   assert.ok(vistaTodos.includes('Todos os canais'));
   const vistaLojas = ctx.vol27RenderHtml(true, ag, doc, 'dfb_lojas');
@@ -410,7 +417,7 @@ check('cópia ISO e dd.mm.aaaa não soma duas vezes; moído não é grão; o gr�
   perto(fam(ag, '2026-03', 'dfb_dist_reg', 'grao'), 300);
   perto(fam(ag, '2026-04', 'dfb_dist_reg', 'grao'), 15);
   assert.equal(fam(ag, '2026-05', 'dfb_dist_reg', 'grao'), 0);
-  perto(fam(ag, '2026-05', 'dfb_dist_reg', 'capsulas'), 200);
+  perto(fam(ag, '2026-05', 'dfb_dist_reg', 'capsulas'), 1);
   const ytd = ctx.vol27Somar(ag, ctx.orc27PeriodoYtd(), ['dfb_dist_reg'], 'grao', false);
   perto(ytd.valor, 329);
   assert.notEqual(ytd.valor, 329 + 10);
@@ -455,7 +462,7 @@ check('seed do Excel: AA, cápsulas ÷ 0,005, máquina M+U+Y, YTD só até Set',
   vm.createContext(seedCtx);
   vm.runInContext(fs.readFileSync(path.join(root, 'vendas-volume-familias.js'), 'utf8'), seedCtx);
   const seed = seedCtx.VOL27_SEED_EXCEL;
-  assert.equal(seed.fonte, 'excel-aa');
+  assert.equal(seed.fonte, 'coluna-aa');
   assert.equal(seed.excelAa, '2026-10-14');
   assert.equal(seed.ultimaData, '2026-09-30');
   assert.ok(seed.meses['2025-01'] && seed.meses['2026-09']);
@@ -471,24 +478,25 @@ check('seed do Excel: AA, cápsulas ÷ 0,005, máquina M+U+Y, YTD só até Set',
   perto(somar(ytd, 'moido', dist).valor, 3326.89);
   perto(somar(n1, 'grao', dist).valor, 106338.5);
   perto(somar(ytd, 'grao', dist).valor, 61534.5);
-  perto(somar(n1, 'capsulas', dist).valor, 1810787);
-  perto(somar(ytd, 'capsulas', dist).valor, 969575);
-  perto(somar(n1, 'maquina', dist).valor, 3649);
-  perto(somar(ytd, 'maquina', dist).valor, 2449);
+  perto(somar(n1, 'capsulas', dist).valor, 8982.435);
+  perto(somar(ytd, 'capsulas', dist).valor, 4841.375);
+  perto(somar(n1, 'maquina', dist).valor, 10284);
+  perto(somar(ytd, 'maquina', dist).valor, 8234.35);
   perto(somar(n1, 'vinho', dist).valor, 4832.25);
   perto(somar(ytd, 'vinho', dist).valor, 2854.5);
   assert.equal(somar(n1, 'moido', ['dfb_dist_reg']).valor, somar(n1, 'moido', dist).valor);
   assert.equal(somar(n1, 'moido', ['qb_dist_reg']).tem, false);
   assert.equal(somar(ytd, 'moido', ['qb_dist_reg']).tem, false);
   assert.ok(html.includes('vendas-volume-familias.js'));
-  assert.ok(extractFn(html, 'vol27Medida').includes('VOL27_CAPSULA_KG'));
-  assert.ok(extractFn(html, 'vol27Medida').includes('qtdBonifi'));
+  assert.ok(extractFn(html, 'vol27Medida').includes('vol27ValorAA'));
+  assert.ok(!extractFn(html, 'vol27Medida').includes('VOL27_CAPSULA_KG'));
+  assert.ok(!extractFn(html, 'vol27Medida').includes('qtdBonifi'));
   assert.ok(extractFn(html, 'vol27Preparar').includes('vol27SeedExcelAa'));
   assert.ok(extractFn(html, 'vol27Preparar').includes('vol27ConstruirDeVendasCloud'));
   const vista = ctx.vol27RenderHtml(false, seed, { celulas: {} }, 'dfb_dist_reg');
   assert.ok(vista.includes('6.107'));
   assert.ok(vista.includes('3.326,9'));
-  assert.ok(vista.includes('1.810.787'));
+  assert.ok(vista.includes('8.982,4'));
   assert.ok(vista.includes('Ficheiro até 30/09/2026'));
   assert.equal((vista.match(/data-vol-fam=/g) || []).length, 5);
   assert.ok(!vista.includes('>Total</td>'));
