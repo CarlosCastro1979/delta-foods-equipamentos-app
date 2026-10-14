@@ -108,6 +108,10 @@ const fns = [
   'vendasYmAnterior',
   'mesesJanelaCargaVendas',
   'vendaDataNaJanelaCarga',
+  'mesQuadroTemFatur',
+  'mesClienteTemFaturGuardado',
+  'mesVendasJaTemValor',
+  'mesAntigoEmFaltaPodeCarregar',
   'vendaDataCaiEmMesFechado',
   'vendaDataEntraNaCarga',
   'vendaDataAntesDe2025',
@@ -732,11 +736,56 @@ check('ficheiro com 2019, Setembro e Outubro só corrige esses dois meses e soma
   assert.equal(totalMes(q2, '2026-08'), 800);
 });
 
+check('carga de Out/2026 não apaga Agosto com Fatur. e grava um mês antigo que está vazio', () => {
+  const hoje = '2026-10-14';
+  const base = ctx.quadroVendasVazio();
+  base.meses['2026-08'] = {
+    ultima_data: '2026-08-31',
+    celulas: {
+      'Delta Foods Brasil\tLojas online\tMARCIO GORGA': {
+        empresa: 'Delta Foods Brasil', canal: 'Lojas online', vendedor: 'MARCIO GORGA',
+        valor: 2533844.39, linhas: 2583, linhasComValor: 2583,
+      },
+    },
+  };
+  base.meses['2026-10'] = {
+    celulas: {
+      'Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA': {
+        empresa: 'Delta Foods Brasil', canal: 'Distribuidores de retalho', vendedor: 'DIOGO OLIVEIRA',
+        valor: -157751.58, linhas: 4, linhasComValor: 4,
+      },
+    },
+  };
+  const fontes = {
+    fontesLidas: true,
+    cobertura: new Map(),
+    quadro: base,
+    cliente: { meses: { '2026-08': { clientes: { '1\t1': { cod: '1', valor: 1 } } } } },
+  };
+  assert.equal(ctx.vendaMesQuadroSubstituivel('2026-08', new Set(), hoje, fontes), false);
+  assert.equal(ctx.vendaMesQuadroSubstituivel('2026-05', new Set(), hoje, fontes), true);
+  assert.equal(ctx.vendaMesQuadroSubstituivel('2026-10', new Set(), hoje, fontes), true);
+  const ficheiro = [
+    { cod: '1', data: '2026-08-20', tipo: 'OUTRO', valor: 1, npess: 99520001 },
+    { cod: '2', data: '2026-05-10', tipo: 'OUTRO', valor: 40, npess: 99520010 },
+    { cod: '3', data: '2026-10-13', tipo: 'OUTRO', valor: 15, npess: 99520001 },
+    { cod: '4', data: '2026-09-30', tipo: 'OUTRO', valor: 70, npess: 99520003 },
+  ];
+  const q = ctx.substituirValorMesesFechadosNoQuadro(base, ficheiro, {
+    mapas, hoje, mesesFechados: new Set(), cargaCtx: fontes,
+  });
+  assert.equal(totalMes(q, '2026-08'), 2533844.39, 'Agosto com Fatur. não é substituído');
+  assert.equal(totalMes(q, '2026-05'), 40, 'mês antigo vazio entra');
+  assert.equal(totalMes(q, '2026-09'), 70);
+  assert.equal(totalMes(q, '2026-10'), 15, 'mês corrente continua a ser substituído');
+  assert.notEqual(totalMes(q, '2026-10'), -157751.58 + 15);
+});
+
 check('processVendasFile actualiza o quadro sem varrer a base', () => {
   const proc = extractFn(html, 'processVendasFile');
-  assert.ok(proc.includes('substituirValorMesesJanelaNoQuadro(linhasJanela, hoje)'));
-  assert.ok(proc.indexOf('substituirValorMesesJanelaNoQuadro(linhasJanela, hoje)') < proc.indexOf('getVendasDedupKeySet'));
-  assert.ok(proc.indexOf('substituirValorMesesJanelaNoQuadro(linhasJanela, hoje)') < proc.indexOf('fundirLinhasVendaMesmoDia(linhasJanela)'));
+  assert.ok(proc.includes('substituirValorMesesJanelaNoQuadro(linhasJanela, hoje, cargaCtx)'));
+  assert.ok(proc.indexOf('substituirValorMesesJanelaNoQuadro(linhasJanela, hoje, cargaCtx)') < proc.indexOf('getVendasDedupKeySet'));
+  assert.ok(proc.indexOf('substituirValorMesesJanelaNoQuadro(linhasJanela, hoje, cargaCtx)') < proc.indexOf('fundirLinhasVendaMesmoDia(linhasJanela)'));
   assert.ok(proc.includes('fundirLinhasVendaMesmoDia(linhasJanela)'));
   assert.ok(proc.includes('meses: mesesDedup'));
   assert.ok(!proc.includes('aplicarFaturDoDiaAoQuadro'));
@@ -758,7 +807,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-13-comissao-rc'));
+  assert.ok(sw.includes('v2026-10-14-vendas-agosto'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-vendas-1out'));
@@ -773,7 +822,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-13-comissao-rc'));
+  assert.ok(html.includes('v2026-10-14-vendas-agosto'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));

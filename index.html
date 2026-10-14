@@ -2970,7 +2970,7 @@ var _unused_placeholder = 1;
       <div id="vendas-upload-step" style="display:none">
         <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--muted);line-height:1.5">
           <strong>Importação do mês corrente e do mês anterior</strong> (data local deste computador):<br>
-          • A carga só lê e corrige esses dois meses. 2019 até ao mês antes do anterior fica como está<br>
+          • A carga normal lê esses dois meses. Um mês antigo que esteja mesmo em falta pode ser carregado. Um mês antigo que já tem valores não é apagado nem fica em falta<br>
           • O Fatur. do ficheiro substitui o R$ desses meses — não soma por cima do que já estava. Devoluções entram com sinal negativo<br>
           • Várias linhas do mesmo cliente, dia e tipo somam o Fatur. Não se deita nenhuma fora<br>
           • «Atualizado até» acompanha o último dia que o ficheiro trouxe nesses dois meses<br>
@@ -4072,8 +4072,8 @@ var _unused_placeholder = 1;
             <div style="font-weight:600;font-size:15px;">Carregar Vendas</div>
             <div style="font-size:12px;color:var(--muted);line-height:1.5;">
               Excel SAP de vendas (podes escolher <strong>vários ficheiros</strong>).<br>
-              A carga só lê e corrige o <strong>mês corrente e o mês anterior</strong> (data local deste computador). O Fatur. desses dois meses substitui o R$ já gravado — não soma por cima.<br>
-              Várias linhas do mesmo cliente, dia e tipo somam. Meses mais antigos no ficheiro são ignorados e não são relidos.<br>
+              A carga normal lê e corrige o <strong>mês corrente e o mês anterior</strong> (data local deste computador). O Fatur. desses dois meses substitui o R$ já gravado — não soma por cima.<br>
+              Um mês antigo que esteja mesmo em falta pode ser carregado. Um mês antigo que já tem valores não é apagado nem fica em falta.<br>
               A coluna de valor é Fatur. (não Valor Boni nem Valor Doação). O vendedor vem de Representante de vendas.<br>
               «Nenhuma carga efectuada neste browser» só significa que <em>este</em> PC ainda não concluiu uma carga (o servidor pode já ter dados).
             </div>
@@ -4097,8 +4097,8 @@ var _unused_placeholder = 1;
               <div style="font-weight:600;font-size:15px;">Cobertura temporal de vendas</div>
               <div style="font-size:12px;color:var(--muted);line-height:1.5;">
                 Resumo guardado do histórico (continua visível; a carga não o relê linha a linha).<br>
-                Ao carregar o Excel, só se lêem e corrigem o <strong>mês corrente e o mês anterior</strong> (data local deste computador). O Fatur. desses dois meses substitui o R$ já gravado.<br>
-                Os meses mais antigos ficam como estão e não passam a pendentes por não serem relidos.
+                Ao carregar o Excel, a carga normal lê e corrige o <strong>mês corrente e o mês anterior</strong> (data local deste computador). O Fatur. desses dois meses substitui o R$ já gravado.<br>
+                Um mês antigo que esteja mesmo em falta pode ser carregado. Um mês antigo que já tem valores não é apagado nem fica em falta. Os meses mais antigos ficam como estão.
               </div>
             </div>
           </div>
@@ -18400,7 +18400,11 @@ function ultimoDiaUtilMes(ym) {
  */
 function statusVendasCoberturaMes(ym, info, hojeOpt) {
   const linhas = +(info?.linhas || 0);
-  if (linhas <= 0) return 'falta';
+  const temFatur = !!(info && info.temFatur);
+  // Sem linhas e sem Fatur. gravado: o mês está mesmo em falta.
+  // Fatur. já guardado (quadro ou cliente) não pode aparecer como em falta
+  // só porque o resumo de linhas não tem a chave ou a carga já não o relê.
+  if (linhas <= 0 && !temFatur) return 'falta';
   const janela = mesesJanelaCargaVendas(hojeOpt);
   // Meses anteriores ao mês passado já estão gravados. Com dados ficam fechados:
   // não passam a pendentes só porque esta carga já não os relê.
@@ -18451,11 +18455,72 @@ function mesesJanelaCargaVendas(hojeOpt) {
   return { hoje, atual, anterior, set };
 }
 
-/** true se a data cai no mês corrente ou no mês anterior. */
-function vendaDataNaJanelaCarga(dataStr, hojeOpt) {
+/**
+ * true se o quadro desse mês já tem Fatur. ou linhas gravadas.
+ * Célula a zero sem linhas não conta: o mês continua vazio.
+ */
+function mesQuadroTemFatur(quadro, ym) {
+  const mes = quadro && quadro.meses && quadro.meses[ym];
+  const cel = (mes && mes.celulas) || null;
+  if (!cel) return false;
+  const keys = Object.keys(cel);
+  for (let i = 0; i < keys.length; i++) {
+    const c = cel[keys[i]];
+    if (!c) continue;
+    if (Math.abs(+c.valor || 0) > 0.004) return true;
+    if ((+c.linhas || 0) > 0) return true;
+    if ((+c.linhasComValor || 0) > 0) return true;
+  }
+  return false;
+}
+
+/** true se o Fatur. por cliente desse mês já tem pelo menos um cliente. */
+function mesClienteTemFaturGuardado(cliente, ym) {
+  const mes = cliente && cliente.meses && cliente.meses[ym];
+  if (!mes || !mes.clientes) return false;
+  return Object.keys(mes.clientes).length > 0;
+}
+
+/**
+ * Mês que já tem valores: linhas no resumo, Fatur. no quadro ou Fatur. por cliente.
+ * Não se substitui nem se marca em falta.
+ */
+function mesVendasJaTemValor(ym, ctx) {
+  const o = ctx || {};
+  const cob = o.cobertura;
+  let info = null;
+  if (cob && typeof cob.get === 'function') info = cob.get(ym);
+  else if (cob && typeof cob === 'object') info = cob[ym];
+  if (+(info && info.linhas) > 0) return true;
+  if (info && info.temFatur) return true;
+  if (mesQuadroTemFatur(o.quadro, ym)) return true;
+  if (mesClienteTemFaturGuardado(o.cliente, ym)) return true;
+  return false;
+}
+
+/**
+ * Mês anterior à janela, de 2025 em diante, sem Fatur. e sem linhas.
+ * Só entra na carga quando o quadro e o Fatur. por cliente foram lidos
+ * (fontesLidas). Sem essa leitura não se arrisca a regravar um mês que já tem valores.
+ */
+function mesAntigoEmFaltaPodeCarregar(ym, ctx) {
+  if (!/^\d{4}-\d{2}$/.test(String(ym || ''))) return false;
+  const y = parseInt(String(ym).slice(0, 4), 10);
+  if (!(y >= 2025)) return false;
+  if (!ctx || !ctx.fontesLidas) return false;
+  return !mesVendasJaTemValor(ym, ctx);
+}
+
+/**
+ * true se a data cai no mês corrente ou no mês anterior.
+ * Com contexto da carga, um mês antigo que esteja mesmo em falta também entra.
+ * Mês antigo que já tem valores fica de fora.
+ */
+function vendaDataNaJanelaCarga(dataStr, hojeOpt, ctx) {
   const ym = vendasYmFromISO(dataStr);
   if (!ym) return false;
-  return mesesJanelaCargaVendas(hojeOpt).set.has(ym);
+  if (mesesJanelaCargaVendas(hojeOpt).set.has(ym)) return true;
+  return mesAntigoEmFaltaPodeCarregar(ym, ctx);
 }
 
 /** true se a data cai num mês já fechado no resumo — a linha não entra no modelo. */
@@ -18468,8 +18533,8 @@ function vendaDataCaiEmMesFechado(dataStr, mesesFechados) {
  * A carga lê o mês corrente e o mês anterior (data local).
  * Fora dessa janela a linha não entra.
  */
-function vendaDataEntraNaCarga(dataStr, hojeOpt) {
-  return vendaDataNaJanelaCarga(dataStr, hojeOpt);
+function vendaDataEntraNaCarga(dataStr, hojeOpt, ctx) {
+  return vendaDataNaJanelaCarga(dataStr, hojeOpt, ctx);
 }
 
 /**
@@ -18493,9 +18558,8 @@ function mesesFechadosFromCobertura(map, hojeOpt) {
  * Só entram linhas do mês corrente e do mês anterior. O resto do ficheiro é ignorado
  * e não marca meses antigos como pendentes.
  */
-function filtrarLinhasVendasMesesAbertos(rows, mesesFechados, hojeOpt) {
+function filtrarLinhasVendasMesesAbertos(rows, mesesFechados, hojeOpt, ctx) {
   const hoje = hojeOpt || vendasHojeISO();
-  const janela = mesesJanelaCargaVendas(hoje);
   const aceites = [];
   let ignoradas = 0;
   let semData = 0;
@@ -18505,7 +18569,7 @@ function filtrarLinhasVendasMesesAbertos(rows, mesesFechados, hojeOpt) {
   for (const row of list) {
     const ym = vendasYmFromISO(row && row.data);
     if (!ym) { semData++; continue; }
-    if (janela.set.has(ym)) {
+    if (vendaDataNaJanelaCarga(row && row.data, hoje, ctx)) {
       aceites.push(row);
       mesesAbertos.add(ym);
       continue;
@@ -18526,26 +18590,30 @@ function filtrarLinhasVendasMesesAbertos(rows, mesesFechados, hojeOpt) {
 }
 
 /**
- * Depois da carga: só o mês corrente e o mês anterior podem mudar.
- * Meses mais antigos ficam com os números já guardados — não passam a pendentes.
- * ultima_data desses dois meses é o último dia que o ficheiro trouxe.
+ * Depois da carga: mudam o mês corrente, o mês anterior, e um mês antigo
+ * que esteja mesmo em falta (cargaCtx.fontesLidas).
+ * Mês antigo que já tem valores fica com os números já guardados — não é apagado.
  */
-function mergeCoberturaVendasMesesAbertos(anterior, agregadoLinhasNovas, hojeOpt) {
+function mergeCoberturaVendasMesesAbertos(anterior, agregadoLinhasNovas, hojeOpt, cargaCtx) {
   const out = new Map();
   const prev = anterior instanceof Map ? anterior : vendasCoberturaObjToMap(anterior || {});
   for (const [ym, info] of prev) {
-    out.set(ym, {
+    const copia = {
       linhas: +(info?.linhas || 0),
       clientes: +(info?.clientes || 0),
       ultima_data: info?.ultima_data || null,
-    });
+    };
+    if (info && info.temFatur) copia.temFatur = true;
+    out.set(ym, copia);
   }
   const janela = mesesJanelaCargaVendas(hojeOpt);
   const novos = agregadoLinhasNovas instanceof Map
     ? agregadoLinhasNovas
     : vendasCoberturaObjToMap(agregadoLinhasNovas || {});
   for (const [ym, info] of novos) {
-    if (!janela.set.has(ym)) continue;
+    // Janela (corrente + anterior) ou mês antigo que estava mesmo em falta.
+    // Mês que já tem valores não entra: não soma, não substitui, não apaga.
+    if (!janela.set.has(ym) && !mesAntigoEmFaltaPodeCarregar(ym, cargaCtx)) continue;
     const prevInfo = out.get(ym);
     const base = prevInfo || { linhas: 0, clientes: 0, ultima_data: null };
     const ultFicheiro = info?.ultima_data || null;
@@ -18558,12 +18626,16 @@ function mergeCoberturaVendasMesesAbertos(anterior, agregadoLinhasNovas, hojeOpt
   return out;
 }
 
-/** «Atualizado até» dos dois meses da janela = último dia presente nestas linhas. Não mexe nos outros meses. */
-function fixarUltimaDataCoberturaJanela(map, linhas, hojeOpt) {
+/** «Atualizado até» dos meses escritos nesta carga. Não mexe nos outros meses. */
+function fixarUltimaDataCoberturaJanela(map, linhas, hojeOpt, mesesExtra) {
   if (!(map instanceof Map)) return map;
   const janela = mesesJanelaCargaVendas(hojeOpt);
+  const alvos = new Set(janela.set);
+  if (mesesExtra && typeof mesesExtra.forEach === 'function') {
+    mesesExtra.forEach(ym => { if (/^\d{4}-\d{2}$/.test(String(ym || ''))) alvos.add(String(ym)); });
+  }
   const agg = aggregateVendasPorMes(linhas);
-  for (const ym of janela.set) {
+  for (const ym of alvos) {
     const info = agg.get(ym);
     if (!info || !info.ultima_data) continue;
     const prev = map.get(ym) || { linhas: 0, clientes: 0, ultima_data: null };
@@ -18631,11 +18703,13 @@ function vendasCoberturaMapToObj(map) {
   const o = {};
   if (!map) return o;
   for (const [ym, v] of map) {
-    o[ym] = {
+    const item = {
       linhas: +(v?.linhas || 0),
       clientes: +(v?.clientes || 0),
       ultima_data: v?.ultima_data || null,
     };
+    if (v && v.temFatur) item.temFatur = true;
+    o[ym] = item;
   }
   return o;
 }
@@ -18645,17 +18719,123 @@ function vendasCoberturaObjToMap(obj) {
   if (!obj || typeof obj !== 'object') return map;
   for (const [ym, v] of Object.entries(obj)) {
     if (!/^\d{4}-\d{2}$/.test(ym)) continue;
-    map.set(ym, {
+    const item = {
       linhas: +(v?.linhas || 0),
       clientes: +(v?.clientes || 0),
       ultima_data: v?.ultima_data || null,
-    });
+    };
+    if (v && v.temFatur) item.temFatur = true;
+    map.set(ym, item);
   }
   return map;
 }
 
+/** Soma das linhas do quadro (Excel) num mês. 0 se o mês não existe. */
+function somarLinhasQuadroMes(quadro, ym) {
+  const mes = quadro && quadro.meses && quadro.meses[ym];
+  const cel = (mes && mes.celulas) || null;
+  if (!cel) return 0;
+  let n = 0;
+  const keys = Object.keys(cel);
+  for (let i = 0; i < keys.length; i++) n += +(cel[keys[i]] && cel[keys[i]].linhas) || 0;
+  return n;
+}
+
+/**
+ * Não deixa uma gravação do resumo apagar um mês que o servidor já tem com linhas.
+ * O browser pode ter um cache sem Ago/26; gravar esse cache por cima apagava o mês.
+ */
+async function fundirCoberturaRemotaSemApagar(map) {
+  if (!(map instanceof Map)) return map;
+  try {
+    const res = await fetch(
+      `${LISTA_CLIENTES_SUPA_URL}?id=eq.${VENDAS_COBERTURA_SUPA_ID}&select=data`,
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+    );
+    if (!res || !res.ok) return map;
+    const rows = await res.json();
+    const meses = rows && rows[0] && rows[0].data && rows[0].data.meses;
+    if (!meses) return map;
+    for (const ym of Object.keys(meses)) {
+      if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+      const info = meses[ym] || {};
+      if (+(info.linhas || 0) <= 0) continue;
+      const local = map.get(ym);
+      if (+(local && local.linhas) > 0) continue;
+      const item = {
+        linhas: +(info.linhas || 0),
+        clientes: +(info.clientes || 0),
+        ultima_data: info.ultima_data || null,
+      };
+      if (info.temFatur) item.temFatur = true;
+      map.set(ym, item);
+    }
+  } catch (e) {
+    console.warn('fundirCoberturaRemotaSemApagar:', e.message || e);
+  }
+  return map;
+}
+
+/**
+ * Mês sem linhas no resumo: se a tabela de vendas tem linhas, repõe a contagem.
+ * Se não tem linhas mas o Fatur. está no quadro ou por cliente, o mês não fica em falta.
+ * Não mexe em meses que já têm linhas (Julho «até 17» fica como está).
+ */
+async function reconciliarCoberturaMesesComValor(map) {
+  if (!(map instanceof Map)) return false;
+  const meses = listVendasCoberturaMeses();
+  const semLinhas = [];
+  let mudou = false;
+  for (let i = 0; i < meses.length; i++) {
+    const ym = meses[i];
+    const prev = map.get(ym) || { linhas: 0, clientes: 0, ultima_data: null };
+    if (+prev.linhas > 0) continue;
+    let n = null;
+    let ultima = null;
+    try {
+      n = await countVendasMes(ym);
+      if (n > 0) ultima = await fetchUltimaVendaMes(ym);
+    } catch (e) {
+      console.warn('reconciliar cobertura', ym, e.message || e);
+      n = null;
+    }
+    if (n > 0) {
+      map.set(ym, {
+        linhas: n,
+        clientes: +(prev.clientes || 0),
+        ultima_data: ultima || prev.ultima_data || null,
+      });
+      mudou = true;
+      continue;
+    }
+    semLinhas.push(ym);
+  }
+  if (!semLinhas.length) return mudou;
+  let quadro = null;
+  let cliente = null;
+  try { quadro = await lerVendasQuadroPersistida(); } catch (_) {}
+  try { cliente = await lerVendasClientePersistida(); } catch (_) {}
+  const ctx = { fontesLidas: !!(quadro && cliente), quadro: quadro, cliente: cliente, cobertura: map };
+  for (let i = 0; i < semLinhas.length; i++) {
+    const ym = semLinhas[i];
+    if (!mesVendasJaTemValor(ym, ctx)) continue;
+    const prev = map.get(ym) || { linhas: 0, clientes: 0, ultima_data: null };
+    const qLinhas = somarLinhasQuadroMes(quadro, ym);
+    const qMes = quadro && quadro.meses && quadro.meses[ym];
+    map.set(ym, {
+      linhas: qLinhas > 0 ? qLinhas : 0,
+      clientes: +(prev.clientes || 0),
+      ultima_data: (qMes && qMes.ultima_data) || prev.ultima_data || null,
+      temFatur: true,
+    });
+    mudou = true;
+  }
+  return mudou;
+}
+
 /** Guarda o resumo mensal (local + Supabase) — evita reler 500k linhas. */
 async function salvarVendasCoberturaPersistida(map) {
+  await fundirCoberturaRemotaSemApagar(map);
   const payload = {
     atualizado_em: new Date().toISOString(),
     meses: vendasCoberturaMapToObj(map),
@@ -18874,7 +19054,7 @@ function renderVendasCobertura(map, opts = {}) {
     const info = map.get(ym) || { linhas: 0, clientes: 0 };
     const n = info.linhas || 0;
     totalLinhas += n;
-    if (n > 0) comDados++;
+    if (n > 0 || info.temFatur) comDados++;
     const st = statusVendasCoberturaMes(ym, info);
     if (st === 'falta') faltas.push(ym);
     else if (st === 'pendente') pendentes.push(ym);
@@ -18921,7 +19101,7 @@ function renderVendasCobertura(map, opts = {}) {
       cells.push(
         `<div class="vcob-cell ${cls}" title="${title.replace(/"/g, '&quot;')}">
           <span class="vcob-mes">${VENDAS_MES_ABREV[parseInt(ym.slice(5), 10) - 1]}</span>
-          <span class="vcob-n">${info.linhas > 0 ? formatVendasCountShort(info.linhas) : '—'}</span>
+          <span class="vcob-n">${info.linhas > 0 ? formatVendasCountShort(info.linhas) : (info.temFatur ? 'R$' : '—')}</span>
           <span class="vcob-sub">${sub}</span>
         </div>`
       );
@@ -18943,7 +19123,7 @@ function renderVendasCobertura(map, opts = {}) {
         const ult = map.get(ym)?.ultima_data || '—';
         return `${formatVendasMesLabel(ym)} (última ${ult})`;
       }).join('; ')}.`
-      + ` A carga só lê e corrige esses dois meses. Os meses mais antigos não ficam pendentes por não serem relidos.</div>`
+      + ` A carga normal lê o mês corrente e o anterior. Um mês antigo que esteja mesmo em falta pode ser carregado. Um mês antigo que já tem valores não é apagado nem fica em falta.</div>`
     );
   }
 
@@ -18965,8 +19145,8 @@ function renderVendasCobertura(map, opts = {}) {
     ${gridHtml}
     ${alertas.join('')}
     <div class="vcob-note">${fonteTxt}<br>
-      A carga só lê e corrige o mês corrente e o mês anterior (data local deste computador). O Fatur. desses dois meses substitui o R$ já gravado.<br>
-      O histórico já gravado continua visível. Meses anteriores a esses dois não são relidos nem ficam pendentes por isso.</div>
+      A carga normal lê e corrige o mês corrente e o mês anterior (data local deste computador). O Fatur. desses dois meses substitui o R$ já gravado.<br>
+      Um mês antigo que esteja mesmo em falta pode ser carregado. Um mês antigo que já tem valores não é apagado nem fica em falta.</div>
   `;
 }
 
@@ -18984,9 +19164,18 @@ async function loadVendasCobertura(forceRefresh = false) {
     if (!forceRefresh) {
       const persisted = await lerVendasCoberturaPersistida();
       if (persisted?.map?.size) {
+        let mudouResumo = false;
+        try { mudouResumo = await reconciliarCoberturaMesesComValor(persisted.map); } catch (e) {
+          console.warn('reconciliar cobertura:', e.message || e);
+        }
+        if (mudouResumo) {
+          try { await salvarVendasCoberturaPersistida(persisted.map); } catch (e) {
+            console.warn('gravar cobertura reconciliada:', e.message || e);
+          }
+        }
         renderVendasCobertura(persisted.map, {
           fromCache: true,
-          atualizado_em: persisted.atualizado_em,
+          atualizado_em: window._vendasCoberturaMeta?.atualizado_em || persisted.atualizado_em,
           fonte: persisted.fonte,
         });
         // Actualiza só o mês corrente e o anterior em background (rápido)
@@ -19004,6 +19193,9 @@ async function loadVendasCobertura(forceRefresh = false) {
       const persisted = await lerVendasCoberturaPersistida();
       if (persisted?.map?.size) {
         el.innerHTML = `<div style="color:var(--muted);font-size:13px;"><span class="spinner"></span> A actualizar só o mês corrente e o mês anterior…</div>`;
+        try { await reconciliarCoberturaMesesComValor(persisted.map); } catch (e) {
+          console.warn('reconciliar cobertura:', e.message || e);
+        }
         const map = await refreshVendasCoberturaDatasLeves(persisted.map);
         const meta = await salvarVendasCoberturaPersistida(map);
         renderVendasCobertura(map, {
@@ -19510,17 +19702,18 @@ function vendaDataAntesDe2025(dataStr) {
  * Só o mês corrente e o mês anterior é que o Excel pode substituir.
  * 2019 até ao mês antes do anterior não entra — o agregado desses meses fica.
  */
-function vendaMesQuadroSubstituivel(ym, mesesFechados, hojeOpt) {
+function vendaMesQuadroSubstituivel(ym, mesesFechados, hojeOpt, ctx) {
   if (!/^\d{4}-\d{2}$/.test(String(ym || ''))) return false;
-  return mesesJanelaCargaVendas(hojeOpt).set.has(String(ym));
+  if (mesesJanelaCargaVendas(hojeOpt).set.has(String(ym))) return true;
+  return mesAntigoEmFaltaPodeCarregar(String(ym), ctx);
 }
 
 /**
  * Linha do mês corrente ou do mês anterior: o Fatur. entra na correcção do R$.
  * Fora dessa janela a linha não mexe no quadro.
  */
-function vendaLinhaEntraValorHistorico(dataStr, mesesFechados, hojeOpt) {
-  return vendaDataNaJanelaCarga(dataStr, hojeOpt);
+function vendaLinhaEntraValorHistorico(dataStr, mesesFechados, hojeOpt, ctx) {
+  return vendaDataNaJanelaCarga(dataStr, hojeOpt, ctx);
 }
 
 /**
@@ -19529,7 +19722,7 @@ function vendaLinhaEntraValorHistorico(dataStr, mesesFechados, hojeOpt) {
  * O dedup cliente+data+tipo não corre aqui — a segunda linha do mesmo cliente soma no Fatur.
  * Fora desses dois meses a linha é ignorada e não altera o agregado.
  */
-function classificarLinhasCargaVendas(rows, mesesFechados, hojeOpt) {
+function classificarLinhasCargaVendas(rows, mesesFechados, hojeOpt, ctx) {
   const hoje = hojeOpt || (typeof vendasHojeISO === 'function' ? vendasHojeISO() : '');
   const janela = [];
   let ignoradasAntes2025 = 0;
@@ -19538,7 +19731,7 @@ function classificarLinhasCargaVendas(rows, mesesFechados, hojeOpt) {
   for (const row of list) {
     const dataStr = String(row && row.data || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dataStr)) continue;
-    if (!vendaDataNaJanelaCarga(dataStr, hoje)) {
+    if (!vendaDataNaJanelaCarga(dataStr, hoje, ctx)) {
       if (vendaDataAntesDe2025(dataStr)) ignoradasAntes2025++;
       else ignoradasOutroDia++;
       continue;
@@ -19593,15 +19786,16 @@ function substituirValorMesesFechadosNoQuadro(quadro, linhas, opts) {
   const o = opts || {};
   const hoje = String(o.hoje || '').slice(0, 10);
   const fechados = o.mesesFechados;
+  const cargaCtx = o.cargaCtx || null;
   const historicas = (Array.isArray(linhas) ? linhas : []).filter(r =>
-    vendaLinhaEntraValorHistorico(r && r.data, fechados, hoje)
+    vendaLinhaEntraValorHistorico(r && r.data, fechados, hoje, cargaCtx)
   );
   if (!historicas.length) return quadroVendasClone(quadro);
   const delta = agregarVendasQuadro(historicas, o);
   const out = quadroVendasClone(quadro);
   let substituiu = false;
   for (const ym of Object.keys(delta.meses || {})) {
-    if (!vendaMesQuadroSubstituivel(ym, fechados, hoje)) continue;
+    if (!vendaMesQuadroSubstituivel(ym, fechados, hoje, cargaCtx)) continue;
     const src = (delta.meses[ym] && delta.meses[ym].celulas) || {};
     const celulas = {};
     for (const key of Object.keys(src)) {
@@ -20135,7 +20329,7 @@ async function aplicarNovasLinhasAoQuadro(novasLinhas, hoje, mesesFechados) {
  * Mês corrente e mês anterior: o Fatur. completo do ficheiro substitui o R$.
  * Corre antes do dedup cliente+data+tipo, para a segunda linha do mesmo cliente somar.
  */
-async function substituirValorMesesJanelaNoQuadro(linhas, hoje) {
+async function substituirValorMesesJanelaNoQuadro(linhas, hoje, cargaCtx) {
   const list = Array.isArray(linhas) ? linhas : [];
   if (!list.length) return null;
   const antes = (await lerVendasQuadroPersistida()) || quadroVendasVazio();
@@ -20147,6 +20341,7 @@ async function substituirValorMesesJanelaNoQuadro(linhas, hoje) {
     mesesFechados: new Set(),
     mapas,
     npessPorCod: npessPorCodDeLista(lista),
+    cargaCtx: cargaCtx || null,
   });
   merged.valor_na_base = window._vendasColunasExtra
     ? !!window._vendasColunasExtra.valor
@@ -22462,7 +22657,7 @@ function agregarFaturClienteMes(linhas) {
  * Substitui só os meses da janela (corrente e anterior) que vieram nestas linhas.
  * 2025-01 até ao mês anterior à janela fica como estava. Linha fora da janela não entra.
  */
-function substituirClientesMesesJanela(antes, linhas, hoje) {
+function substituirClientesMesesJanela(antes, linhas, hoje, cargaCtx) {
   const janela = typeof mesesJanelaCargaVendas === 'function' ? mesesJanelaCargaVendas(hoje) : { set: new Set() };
   const delta = agregarFaturClienteMes(linhas);
   const out = vendasClienteVazio();
@@ -22476,7 +22671,8 @@ function substituirClientesMesesJanela(antes, linhas, hoje) {
   const deltaKeys = Object.keys(delta);
   for (let i = 0; i < deltaKeys.length; i++) {
     const ym = deltaKeys[i];
-    if (!janela.set || !janela.set.has(ym)) continue;
+    const naJanela = !!(janela.set && janela.set.has(ym));
+    if (!naJanela && !mesAntigoEmFaltaPodeCarregar(ym, cargaCtx)) continue;
     out.meses[ym] = delta[ym];
   }
   return out;
@@ -22575,10 +22771,10 @@ async function lerVendasClientePersistida() {
   }
 }
 
-async function substituirClientesMesesJanelaNoStore(linhas, hoje) {
+async function substituirClientesMesesJanelaNoStore(linhas, hoje, cargaCtx) {
   const antes = await lerVendasClientePersistida();
   if (!antes) throw new Error('Não foi possível ler o Fatur. por cliente já gravado.');
-  const merged = substituirClientesMesesJanela(antes, linhas, hoje);
+  const merged = substituirClientesMesesJanela(antes, linhas, hoje, cargaCtx);
   return salvarVendasClientePersistida(merged);
 }
 
@@ -23455,11 +23651,24 @@ async function processVendasFile(event) {
     const hoje = vendasHojeISO();
     const janela = mesesJanelaCargaVendas(hoje);
     const janelaTxt = [janela.anterior, janela.atual].filter(Boolean).map(formatVendasMesLabel).join(' e ');
+    let cargaCtx = { fontesLidas: false, cobertura: (coberturaAntes && coberturaAntes.map) || null, quadro: null, cliente: null };
+    try {
+      const quadroAntes = await lerVendasQuadroPersistida();
+      const clienteAntes = await lerVendasClientePersistida();
+      cargaCtx = {
+        fontesLidas: !!(quadroAntes && quadroAntes.meses && clienteAntes && clienteAntes.meses),
+        cobertura: (coberturaAntes && coberturaAntes.map) || null,
+        quadro: quadroAntes,
+        cliente: clienteAntes,
+      };
+    } catch (e) {
+      console.warn('contexto da carga:', e.message || e);
+    }
 
     for (let fIdx = 0; fIdx < files.length; fIdx++) {
       const file = files[fIdx];
       nomesFicheiros.push(file.name);
-      setStatus(`<div style="color:var(--muted);font-size:12px">⏳ A ler ficheiro ${fIdx + 1}/${files.length}: <strong>${file.name}</strong> — só ${janelaTxt}. Meses anteriores não são lidos nem alterados.</div>`);
+      setStatus(`<div style="color:var(--muted);font-size:12px">⏳ A ler ficheiro ${fIdx + 1}/${files.length}: <strong>${file.name}</strong> — ${janelaTxt}. Um mês antigo em falta também entra. Meses que já têm valores não são alterados.</div>`);
 
       const buf = await file.arrayBuffer();
       const wb = window.XLSX.read(buf, { type: 'array' });
@@ -23522,8 +23731,9 @@ async function processVendasFile(event) {
         if (!dt) continue;
         const dataStr = formatDateISOLocal(dt);
         if (!dataStr) continue;
-        // Fora do mês corrente e do mês anterior: não se lê o resto da linha nem se regrava o mês.
-        if (!vendaDataNaJanelaCarga(dataStr, hoje)) {
+        // Fora da janela: só entra um mês antigo que esteja mesmo em falta.
+        // Mês que já tem Fatur. ou linhas não se lê nem se regrava.
+        if (!vendaDataNaJanelaCarga(dataStr, hoje, cargaCtx)) {
           if (vendaDataAntesDe2025(dataStr)) linhasIgnoradasAntes2025++;
           else linhasIgnoradasFora++;
           mesesIgnoradosSet.add(dataStr.slice(0, 7));
@@ -23611,7 +23821,7 @@ async function processVendasFile(event) {
     // Quadro antes do dedup: o Fatur. de todas as linhas (incluindo repetidas) substitui o R$.
     let quadroMsg = '';
     try {
-      await substituirValorMesesJanelaNoQuadro(linhasJanela, hoje);
+      await substituirValorMesesJanelaNoQuadro(linhasJanela, hoje, cargaCtx);
       const remotoErro = window._vendasQuadroRemotoErro ? String(window._vendasQuadroRemotoErro).slice(0, 180) : '';
       quadroMsg = remotoErro
         ? `<br>• Vendas substituídas neste browser em ${janelaTxt}, mas o servidor não gravou (${remotoErro}).`
@@ -23623,7 +23833,7 @@ async function processVendasFile(event) {
 
     try {
       if (typeof substituirClientesMesesJanelaNoStore === 'function') {
-        await substituirClientesMesesJanelaNoStore(linhasJanela, hoje);
+        await substituirClientesMesesJanelaNoStore(linhasJanela, hoje, cargaCtx);
         quadroMsg += `<br>• Fatur. e Nº pessoal por cliente gravados em ${janelaTxt} (maiores perdas lê isto; meses fora destes dois ficam como estão)`;
       }
     } catch (e) {
@@ -23636,6 +23846,9 @@ async function processVendasFile(event) {
       + `<br><span style="font-size:11px">Meses anteriores não são lidos.</span></div>`
     );
     const mesesDedup = [janela.anterior, janela.atual].filter(Boolean);
+    for (let iDedup = 0; iDedup < mesesAbertosArr.length; iDedup++) {
+      if (mesesDedup.indexOf(mesesAbertosArr[iDedup]) < 0) mesesDedup.push(mesesAbertosArr[iDedup]);
+    }
     const { keys: existingKeys, count: existingInRange } = await getVendasDedupKeySet({
       meses: mesesDedup,
       onProgress: (loaded) => {
@@ -23698,8 +23911,8 @@ async function processVendasFile(event) {
     try {
       const agregadoNovos = aggregateVendasPorMes(newVendas);
       const baseMap = (coberturaAntes && coberturaAntes.map) ? coberturaAntes.map : new Map();
-      const coberturaMerged = mergeCoberturaVendasMesesAbertos(baseMap, agregadoNovos, hoje);
-      fixarUltimaDataCoberturaJanela(coberturaMerged, linhasJanela, hoje);
+      const coberturaMerged = mergeCoberturaVendasMesesAbertos(baseMap, agregadoNovos, hoje, cargaCtx);
+      fixarUltimaDataCoberturaJanela(coberturaMerged, linhasJanela, hoje, mesesAbertosSet);
       const coberturaMeta = await salvarVendasCoberturaPersistida(coberturaMerged);
       renderVendasCobertura(coberturaMerged, {
         fromCache: false,
@@ -37332,7 +37545,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-13-comissao-rc-excel-anual: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-14-vendas-agosto: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

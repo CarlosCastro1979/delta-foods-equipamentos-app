@@ -92,6 +92,10 @@ const fns = [
   'vendasYmAnterior',
   'mesesJanelaCargaVendas',
   'vendaDataNaJanelaCarga',
+  'mesQuadroTemFatur',
+  'mesClienteTemFaturGuardado',
+  'mesVendasJaTemValor',
+  'mesAntigoEmFaltaPodeCarregar',
   'vendaDataCaiEmMesFechado',
   'vendaDataEntraNaCarga',
   'mesesFechadosFromCobertura',
@@ -379,13 +383,13 @@ check('processVendasFile não relê a base, não apaga meses antigos, não recal
   assert.ok(proc.includes('mesesJanelaCargaVendas(hoje)'));
   assert.ok(proc.includes('vendaDataNaJanelaCarga'));
   assert.ok(proc.includes('vendasHojeISO()'));
-  assert.ok(proc.includes('mergeCoberturaVendasMesesAbertos(baseMap, agregadoNovos, hoje)'));
+  assert.ok(proc.includes('mergeCoberturaVendasMesesAbertos(baseMap, agregadoNovos, hoje, cargaCtx)'));
   assert.ok(proc.includes('meses: mesesDedup'));
   assert.ok(!proc.includes('meses: mesesAbertosArr'));
   assert.ok(!proc.includes('dia: diaAlvo'));
   const entraAt = proc.indexOf('vendaDataNaJanelaCarga');
   assert.ok(entraAt > 0 && entraAt < pesoAt, 'a janela é decidida antes de gravar o modelo');
-  assert.ok(proc.indexOf('substituirValorMesesJanelaNoQuadro(linhasJanela, hoje)') < proc.indexOf('getVendasDedupKeySet'));
+  assert.ok(proc.indexOf('substituirValorMesesJanelaNoQuadro(linhasJanela, hoje, cargaCtx)') < proc.indexOf('getVendasDedupKeySet'));
   const hojeFn = extractFn(html, 'vendasHojeISO');
   assert.ok(hojeFn.includes('getFullYear') && hojeFn.includes('getDate'));
   assert.ok(!hojeFn.includes('toISOString'));
@@ -403,13 +407,76 @@ check('processVendasFile não relê a base, não apaga meses antigos, não recal
   assert.ok(dedup.indexOf('if (mesesSet)') < dedup.indexOf('data=lte.'));
 });
 
+check('mês fora da janela com Fatur. gravado não fica em falta; mês vazio antigo pode entrar; a carga não apaga os outros', () => {
+  const hoje = '2026-10-14';
+  assert.equal(ctx.statusVendasCoberturaMes('2026-08', { linhas: 0, temFatur: true }, hoje), 'ok');
+  assert.equal(ctx.statusVendasCoberturaMes('2026-08', { linhas: 0 }, hoje), 'falta');
+  assert.equal(ctx.statusVendasCoberturaMes('2026-08', { linhas: 618, ultima_data: '2026-08-31' }, hoje), 'ok');
+  assert.equal(ctx.statusVendasCoberturaMes('2026-07', { linhas: 1422, ultima_data: '2026-07-17' }, hoje), 'ok');
+
+  const antes = coberturaInicial();
+  const agoAntes = snap(antes, '2026-08');
+  const junAntes = snap(antes, '2026-06');
+  const julAntes = snap(antes, '2026-07');
+  const fontes = {
+    fontesLidas: true,
+    cobertura: antes,
+    quadro: {
+      meses: {
+        '2026-08': { celulas: { a: { valor: 2533844.39, linhas: 2583, linhasComValor: 2583 } } },
+      },
+    },
+    cliente: { meses: { '2026-08': { clientes: { '1\t1': { cod: '1', valor: 10 } } } } },
+  };
+  assert.equal(ctx.mesVendasJaTemValor('2026-08', fontes), true);
+  assert.equal(ctx.mesAntigoEmFaltaPodeCarregar('2026-08', fontes), false);
+  assert.equal(ctx.mesAntigoEmFaltaPodeCarregar('2026-05', fontes), true);
+  assert.equal(ctx.mesAntigoEmFaltaPodeCarregar('2024-03', fontes), false);
+  assert.equal(ctx.vendaDataNaJanelaCarga('2026-08-15', hoje, fontes), false);
+  assert.equal(ctx.vendaDataNaJanelaCarga('2026-05-10', hoje, fontes), true);
+  assert.equal(ctx.vendaDataNaJanelaCarga('2026-09-30', hoje, fontes), true);
+  assert.equal(ctx.vendaDataNaJanelaCarga('2026-10-13', hoje, fontes), true);
+  assert.equal(ctx.vendaDataNaJanelaCarga('2026-05-10', hoje), false);
+
+  const filtrado = ctx.filtrarLinhasVendasMesesAbertos([
+    linha('2026-05-10', '1'),
+    linha('2026-08-15', '2'),
+    linha('2026-06-15', '3'),
+    linha('2024-03-02', '4'),
+    linha('2026-09-30', '5'),
+    linha('2026-10-13', '6'),
+  ], new Set(), hoje, fontes);
+  assert.deepEqual(filtrado.mesesAbertos, ['2026-05', '2026-09', '2026-10']);
+  assert.ok(filtrado.mesesIgnorados.includes('2026-08'));
+  assert.ok(filtrado.mesesIgnorados.includes('2026-06'));
+  assert.ok(filtrado.mesesIgnorados.includes('2024-03'));
+
+  const depois = ctx.mergeCoberturaVendasMesesAbertos(
+    antes,
+    ctx.aggregateVendasPorMes(filtrado.aceites.concat([
+      linha('2026-08-15', '9'),
+      linha('2026-06-15', '8'),
+    ])),
+    hoje,
+    fontes
+  );
+  assert.deepEqual(snap(depois, '2026-08'), agoAntes);
+  assert.deepEqual(snap(depois, '2026-06'), junAntes);
+  assert.deepEqual(snap(depois, '2026-07'), julAntes);
+  assert.equal(depois.get('2026-09').linhas, 458 + 1);
+  assert.equal(depois.get('2026-10').linhas, 1);
+  assert.equal(depois.get('2026-05').linhas, 1);
+  assert.equal(depois.get('2020-01').linhas, 6400);
+  assert.equal(ctx.statusVendasCoberturaMes('2026-05', { linhas: 0 }, hoje), 'falta');
+});
+
 check('texto da cobertura diz que a carga só lê o mês corrente e o anterior', () => {
   assert.ok(html.includes('A carga só lê e corrige o mês corrente e o mês anterior'));
   assert.ok(html.includes('mês corrente e o mês anterior'));
   assert.ok(!html.includes('só entram linhas do dia local de hoje'));
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('desde 2019'));
-  assert.ok(html.includes('v2026-10-13-comissao-rc'));
+  assert.ok(html.includes('v2026-10-14-vendas-agosto'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
@@ -424,9 +491,12 @@ check('texto da cobertura diz que a carga só lê o mês corrente e o anterior',
   assert.ok(!html.includes('v2026-10-01-vendas-so-hoje'));
   assert.ok(!html.includes('v2026-10-01-vendas-dia-util'));
   assert.ok(html.includes('Os meses mais antigos ficam como estão'));
+  assert.ok(html.includes('Um mês antigo que esteja mesmo em falta pode ser carregado'));
+  assert.ok(html.includes('não é apagado nem fica em falta'));
+  assert.ok(!html.includes('são relidos nem ficam pendentes'));
   assert.ok(!html.includes('Até Jun/2026 = fechado. De Jul/2026 em diante'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-13-comissao-rc'));
+  assert.ok(sw.includes('v2026-10-14-vendas-agosto'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));

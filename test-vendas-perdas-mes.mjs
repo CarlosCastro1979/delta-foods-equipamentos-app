@@ -122,6 +122,10 @@ vm.createContext(ctx);
   'getCanalIdPorVendedorCod',
   'vendasYmAnterior',
   'mesesJanelaCargaVendas',
+  'mesQuadroTemFatur',
+  'mesClienteTemFaturGuardado',
+  'mesVendasJaTemValor',
+  'mesAntigoEmFaltaPodeCarregar',
   'agregarFaturClienteMes',
   'vendasClienteVazio',
   'substituirClientesMesesJanela',
@@ -361,8 +365,8 @@ check('a carga grava Fatur. por cliente só no mês corrente e no anterior', () 
   assert.equal(modelo.grupos[0].linhas[0].nome, 'Cliente Alfa');
   assert.equal(modelo.grupos[0].linhas[0].perda, 30);
   const proc = extractFn(html, 'processVendasFile');
-  assert.ok(proc.includes('substituirClientesMesesJanelaNoStore(linhasJanela, hoje)'));
-  assert.ok(proc.indexOf('substituirClientesMesesJanelaNoStore(linhasJanela, hoje)') < proc.indexOf('getVendasDedupKeySet'));
+  assert.ok(proc.includes('substituirClientesMesesJanelaNoStore(linhasJanela, hoje, cargaCtx)'));
+  assert.ok(proc.indexOf('substituirClientesMesesJanelaNoStore(linhasJanela, hoje, cargaCtx)') < proc.indexOf('getVendasDedupKeySet'));
   assert.ok(!proc.includes('getVendas('));
   const aviso = ctx.textoCriterioPerdas({ criterio: 'sem-fatur', motivo: 'por-gravar' });
   assert.ok(aviso.includes('próxima carga'));
@@ -552,8 +556,8 @@ check('o filtro do vendedor grava no localStorage', () => {
   assert.equal(saved.porCanal.horeca, '');
   assert.equal(saved.geral, 'Filipe Neves');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-13-comissao-rc'));
-  assert.ok(html.includes('v2026-10-13-comissao-rc'));
+  assert.ok(sw.includes('v2026-10-14-vendas-agosto'));
+  assert.ok(html.includes('v2026-10-14-vendas-agosto'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);
