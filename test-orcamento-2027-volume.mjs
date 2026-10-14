@@ -462,6 +462,49 @@ check('previsão vazia fica vazia; um clear não dispara duas vezes; empresa nã
   perto(fundido.meses['2026-09'].canais.dfb_lojas.moido, 4);
 });
 
+check('seed do Excel: AA sem ÷ 0,005, máquina M+U+Y, YTD só até Set', () => {
+  const seedCtx = {};
+  vm.createContext(seedCtx);
+  vm.runInContext(fs.readFileSync(path.join(root, 'vendas-volume-familias.js'), 'utf8'), seedCtx);
+  const seed = seedCtx.VOL27_SEED_EXCEL;
+  assert.equal(seed.fonte, 'excel-aa');
+  assert.equal(seed.excelAa, '2026-10-14-muy');
+  assert.equal(seed.ultimaData, '2026-09-30');
+  assert.ok(seed.meses['2025-01'] && seed.meses['2026-09']);
+  assert.ok(!seed.meses['2026-10']);
+  const ytd = ctx.orc27PeriodoYtd();
+  assert.equal(ytd[0], '2026-01');
+  assert.equal(ytd[ytd.length - 1], '2026-09');
+  assert.ok(ytd.indexOf('2026-10') < 0);
+  const dist = ['dfb_dist_reg', 'qb_dist_reg'];
+  const n1 = ctx.orc27PeriodoN1();
+  const somar = (periodo, fam, canais) => ctx.vol27Somar(seed, periodo, canais, fam, false);
+  perto(somar(n1, 'moido', dist).valor, 6107.009);
+  perto(somar(ytd, 'moido', dist).valor, 3326.89);
+  perto(somar(n1, 'grao', dist).valor, 106338.5);
+  perto(somar(ytd, 'grao', dist).valor, 61534.5);
+  perto(somar(n1, 'capsulas', dist).valor, 9053.935);
+  perto(somar(ytd, 'capsulas', dist).valor, 4847.875);
+  perto(somar(n1, 'maquina', dist).valor, 3649);
+  perto(somar(ytd, 'maquina', dist).valor, 2449);
+  perto(somar(n1, 'vinho', dist).valor, 4832.25);
+  perto(somar(ytd, 'vinho', dist).valor, 2854.5);
+  assert.equal(somar(n1, 'moido', ['dfb_dist_reg']).valor, somar(n1, 'moido', dist).valor);
+  assert.equal(somar(n1, 'moido', ['qb_dist_reg']).tem, false);
+  assert.equal(somar(ytd, 'moido', ['qb_dist_reg']).tem, false);
+  assert.ok(html.includes('vendas-volume-familias.js'));
+    assert.ok(extractFn(html, 'vol27Medida').includes('qtdBonifi'));
+  assert.ok(extractFn(html, 'vol27Preparar').includes('vol27SeedExcelAa'));
+  assert.ok(extractFn(html, 'vol27Preparar').includes('vol27ConstruirDeVendasCloud'));
+  const vista = ctx.vol27RenderHtml(false, seed, { celulas: {} }, 'dfb_dist_reg');
+  assert.ok(vista.includes('6.107'));
+  assert.ok(vista.includes('3.326,9'));
+  assert.ok(vista.includes('9.053,9'));
+  assert.ok(vista.includes('Ficheiro até 30/09/2026'));
+  assert.equal((vista.match(/data-vol-fam=/g) || []).length, 5);
+  assert.ok(!vista.includes('>Total</td>'));
+});
+
 if (process.exitCode) {
   console.error('test-orcamento-2027-volume: falhou');
   process.exit(process.exitCode);
