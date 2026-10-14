@@ -372,8 +372,11 @@ check('merge não apaga e um clear explícito não dispara duas vezes', () => {
 
 check('ecrã, autosave separado e cache do service worker', () => {
   assert.ok(html.includes("onclick=\"pvShowView('orcamento')\">Orçamento 2027</button>"));
-  assert.ok(html.includes('id="orc27-sub-canais"'));
-  assert.ok(html.includes('>Canais</button>'));
+  assert.ok(html.includes('id="orc27-sub-valor"'));
+  assert.ok(html.includes('>Orç Valor</button>'));
+  assert.ok(html.includes('id="orc27-sub-volume"'));
+  assert.ok(html.includes('>Volume</button>'));
+  assert.ok(!html.includes('id="orc27-sub-canais"'));
   assert.ok(html.includes('Total N-1 até Dez'));
   assert.ok(html.includes('YTD 2026 até Set'));
   assert.ok(html.includes('Previsão Out a Dez'));
@@ -390,8 +393,8 @@ check('ecrã, autosave separado e cache do service worker', () => {
   assert.ok(!extractFn(html, 'orc27Flush').includes('pvSaveData'));
   assert.ok(extractFn(html, 'orc27Agendar').includes('ORC27_DEBOUNCE_MS'));
   assert.ok(extractFn(html, 'orc27Flush').includes('clearTimeout(_orc27Timer)'));
-  assert.ok(sw.includes('v2026-10-14-orcamento-2027'));
-  assert.ok(html.includes('v2026-10-14-orcamento-2027'));
+  assert.ok(sw.includes('v2026-10-14-orcamento-volume'));
+  assert.ok(html.includes('v2026-10-14-orcamento-volume'));
 
   const linhas = ctx.orc27Montar(quadro, { dfb_lojas: { prevOutDez: null, orcamento: null } });
   const vista = ctx.orc27RenderHtml(true, linhas);

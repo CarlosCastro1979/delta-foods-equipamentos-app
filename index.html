@@ -13101,7 +13101,10 @@ function pvPct(a, b) {
 
 function pvShowView(view) {
   const next = (view === 'accuracy' || view === 'vendas' || view === 'nfe' || view === 'perdas' || view === 'orcamento') ? view : 'mapa';
-  if (_pvView === 'orcamento' && next !== 'orcamento' && typeof orc27Flush === 'function') orc27Flush();
+  if (_pvView === 'orcamento' && next !== 'orcamento') {
+    if (typeof orc27Flush === 'function') orc27Flush();
+    if (typeof vol27Flush === 'function') vol27Flush();
+  }
   _pvView = next;
   if (_pvView !== 'accuracy') _pvAccFiltro = '';
   const tabs = {
@@ -14889,7 +14892,7 @@ function pvPrepararLinhasMapa(linhas, ano, mes, quadroOpt) {
 }
 
 /**
- * Orçamento 2027 · Canais.
+ * Orçamento 2027 · Orç Valor (o submenu chamava-se Canais).
  * Separado do mapa mensal: não grava prevFecho nem mexe em previsao/mapas_v3.json.
  * Total N-1 = Fatur. Jan–Dez 2025. YTD = Fatur. Jan–Set 2026 (Outubro não entra).
  * Previsão Out–Dez e Orçamento 2027 são manuais, só nas folhas, com autosave.
@@ -14907,7 +14910,7 @@ let _orc27CloudFetchedAt = 0;
 let _orc27Gen = 0;
 let _orc27Life = false;
 let _orc27Fila = Promise.resolve();
-let _orc27Sub = 'canais';
+let _orc27Sub = 'valor';
 
 function orc27CloudUrl() {
   return 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/public/contratos/' + ORC27_CLOUD_PATH;
@@ -15287,10 +15290,11 @@ function orc27RenderHtml(edit, linhas) {
       + '</tr>';
   });
   return '<div class="sub-nav" style="margin-bottom:12px;flex-wrap:wrap;">'
-    + '<button type="button" class="sub-tab active" id="orc27-sub-canais" onclick="orc27ShowSub(\'canais\')">Canais</button>'
+    + '<button type="button" class="sub-tab active" id="orc27-sub-valor" onclick="orc27ShowSub(\'valor\')">Orç Valor</button>'
+    + '<button type="button" class="sub-tab" id="orc27-sub-volume" onclick="orc27ShowSub(\'volume\')">Volume</button>'
     + '</div>'
     + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
-    + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Canais'
+    + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Orç Valor'
     + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Total 2026 = YTD até Set + Previsão Out a Dez · Var % vs 2025 = (Total 2026 − N-1) / N-1 · % 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026</span>'
     + '</div>'
     + '<table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1180px;">'
@@ -15472,14 +15476,22 @@ function orc27PrepararChrome() {
   if (anoWrap) anoWrap.style.display = 'none';
   const banner = document.getElementById('pv-banner');
   if (banner) {
-    banner.innerHTML = '<strong>Orçamento 2027 · Canais</strong> — '
+    banner.innerHTML = _orc27Sub === 'volume'
+      ? ('<strong>Orçamento 2027 · Volume</strong> — '
+      + 'Mesmas colunas do Orç Valor, na unidade de cada produto. '
+      + 'Grão e café moído em kg (peso líquido). Cápsulas = peso líquido ÷ 0,005. '
+      + 'Máquina em unidades. Vinho em litros, só quando o ficheiro traz a unidade litro. '
+      + 'O filtro escolhe o canal. Todos os canais soma o mesmo produto — não soma grão com cápsulas. '
+      + 'Previsão Out a Dez e Orçamento 2027 preenchem-se à mão, por canal e produto, com autosave. '
+      + '<span id="orc27-autosave-hint" style="margin-left:8px;color:#15803d;font-weight:600;"></span>')
+      : ('<strong>Orçamento 2027 · Orç Valor</strong> — '
       + 'Total N-1 até Dez = Fatur. líquido de Janeiro a Dezembro de 2025. '
       + 'YTD 2026 até Set = Fatur. de Janeiro a Setembro de 2026 (Outubro não entra). '
       + 'Previsão Out a Dez e Orçamento 2027 preenchem-se à mão, só nos canais, com autosave. '
       + 'Total 2026 = YTD + Previsão (vazio conta 0 só nesta soma). '
       + 'Var % vs 2025 = (Total 2026 − N-1) / N-1. '
       + '% 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026. '
-      + '<span id="orc27-autosave-hint" style="margin-left:8px;color:#15803d;font-weight:600;"></span>';
+      + '<span id="orc27-autosave-hint" style="margin-left:8px;color:#15803d;font-weight:600;"></span>');
   }
 }
 
@@ -15487,6 +15499,14 @@ function orc27Pintar() {
   const host = document.getElementById('pv-canal-panels');
   if (!host || _pvView !== 'orcamento') return;
   const edit = typeof pvPodeEditar === 'function' && pvPodeEditar();
+  if (_orc27Sub === 'volume') {
+    if (!_vol27Pronto) {
+      if (typeof vol27Abrir === 'function') vol27Abrir(false);
+      return;
+    }
+    host.innerHTML = vol27RenderHtml(edit, _vol27Agregado, _vol27Doc, _vol27Filtro);
+    return;
+  }
   _orc27Linhas = orc27Montar(orc27QuadroActual(), (_orc27Doc && _orc27Doc.canais) || {});
   host.innerHTML = orc27RenderHtml(edit, _orc27Linhas);
 }
@@ -15551,7 +15571,10 @@ function orc27Flush() {
 function orc27BindLifecycle() {
   if (_orc27Life) return;
   _orc27Life = true;
-  const flush = () => { if (typeof orc27Flush === 'function') orc27Flush(); };
+  const flush = () => {
+    if (typeof orc27Flush === 'function') orc27Flush();
+    if (typeof vol27Flush === 'function') vol27Flush();
+  };
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flush();
   });
@@ -15600,8 +15623,14 @@ function orc27OnBlur(el) {
 }
 
 function orc27ShowSub(sub) {
-  _orc27Sub = sub === 'canais' ? 'canais' : 'canais';
-  if (_pvView === 'orcamento') orc27Pintar();
+  const next = sub === 'volume' ? 'volume' : 'valor';
+  if (_orc27Sub === 'volume' && next !== 'volume' && typeof vol27Flush === 'function') vol27Flush();
+  if (_orc27Sub !== 'volume' && next === 'volume' && typeof orc27Flush === 'function') orc27Flush();
+  _orc27Sub = next;
+  if (_pvView !== 'orcamento') return;
+  if (typeof orc27PrepararChrome === 'function') orc27PrepararChrome();
+  if (next === 'volume' && typeof vol27Abrir === 'function') vol27Abrir(false);
+  else orc27Pintar();
 }
 
 async function orc27MontarVista() {
@@ -15614,7 +15643,1142 @@ async function orc27MontarVista() {
   } catch (_) {}
   try { await orc27Hidrate(); } catch (e) { console.warn('orc27', e); }
   if (gen !== _orc27Gen || _pvView !== 'orcamento') return;
-  orc27Pintar();
+  if (_orc27Sub === 'volume' && typeof vol27Abrir === 'function') vol27Abrir(true);
+  else orc27Pintar();
+}
+
+/**
+ * Orçamento 2027 · Volume.
+ * As mesmas sete colunas do Orç Valor, na unidade da família.
+ * Grão e moído: peso líquido (kg). Cápsulas: peso líquido / 0,005 (unidades).
+ * Máquina: QtFaturada (un). Vinho: litros, só quando a unidade do ficheiro é litro.
+ * Uma linha entra numa família só. O que não se reconhece fica de fora — não vai para o grão.
+ * 99520099 não entra. Previsão e orçamento são manuais, por canal e família, com autosave.
+ */
+const VOL27_CAPSULA_KG = 0.005;
+const VOL27_FAMILIAS = [
+  { id: 'grao', nome: 'Grão (Kg)', unidade: 'kg' },
+  { id: 'moido', nome: 'Café Moído (Kg)', unidade: 'kg' },
+  { id: 'capsulas', nome: 'Cápsulas (Un)', unidade: 'un' },
+  { id: 'maquina', nome: 'Máquina (Un)', unidade: 'un' },
+  { id: 'vinho', nome: 'Vinho (L)', unidade: 'l' },
+];
+const VOL27_ROTULOS = {
+  todos: 'Todos os canais',
+  dfb: 'Delta Foods Brasil',
+  qb: 'Q Brasil',
+  dfb_lojas: 'Delta · Lojas online',
+  dfb_dist_reg: 'Delta · Distribuidores regionais',
+  dfb_rest: 'Delta · Restauração',
+  dfb_dist_ret: 'Delta · Distribuidores de retalho',
+  dfb_ret_mod: 'Delta · Retalho moderno',
+  dfb_site: 'Delta · Site próprio',
+  dfb_inst_balcao: 'Delta · Institucional Balcão',
+  dfb_inst_horeca: 'Delta · Institucional Horeca',
+  qb_ret_mod: 'Q Brasil · Retalho moderno',
+  qb_dist_ret: 'Q Brasil · Distribuidores de retalho',
+  qb_rest: 'Q Brasil · Restauração',
+  qb_dist_reg: 'Q Brasil · Distribuidores regionais',
+};
+const VOL27_AGREGADO_LS = 'dfb_vendas_volume_familias_v1';
+const VOL27_AGREGADO_ID = 'vendas_volume_familias';
+const VOL27_LS_KEY = 'dfb_orcamento_2027_volume_v1';
+const VOL27_CLOUD_PATH = 'previsao/orcamento_2027_volume.json';
+const VOL27_DEBOUNCE_MS = 1000;
+let _vol27Doc = { version: 1, celulas: {} };
+let _vol27Agregado = { version: 1, meses: {} };
+let _vol27Filtro = 'todos';
+let _vol27Dirty = false;
+let _vol27Timer = null;
+let _vol27HintTimer = null;
+let _vol27Pronto = false;
+let _vol27Carga = null;
+let _vol27CloudCache = null;
+let _vol27CloudFetchedAt = 0;
+let _vol27Fila = Promise.resolve();
+
+function vol27Round(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 0;
+  return Math.round((x + Number.EPSILON) * 1000) / 1000;
+}
+
+function vol27NormTexto(s) {
+  return String(s == null ? '' : s)
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function vol27TemToken(texto, palavras) {
+  const n = vol27NormTexto(texto);
+  if (!n) return false;
+  const tokens = n.split(' ');
+  for (let i = 0; i < tokens.length; i++) {
+    if (palavras.indexOf(tokens[i]) >= 0) return true;
+  }
+  return false;
+}
+
+/** Uma família por texto. Cápsula ganha a grão; moído ganha a grão; máquina ganha a grão. */
+function vol27FamiliaNoTexto(texto) {
+  if (vol27TemToken(texto, ['CAPSULA', 'CAPSULAS'])) return 'capsulas';
+  if (vol27TemToken(texto, ['MOIDO', 'MOIDOS'])) return 'moido';
+  if (vol27TemToken(texto, ['MAQUINA', 'MAQUINAS'])) return 'maquina';
+  if (vol27TemToken(texto, ['VINHO', 'VINHOS'])) return 'vinho';
+  if (vol27TemToken(texto, ['GRAO', 'GRAOS'])) return 'grao';
+  return '';
+}
+
+function vol27FamiliaDeCampos(hierarq, material, descricao, cat) {
+  const h = vol27FamiliaNoTexto(hierarq);
+  if (h) return h;
+  const c = vol27FamiliaNoTexto(cat);
+  if (c) return c;
+  const d = vol27FamiliaNoTexto(descricao);
+  if (d) return d;
+  const m = vol27FamiliaNoTexto(material);
+  if (m) return m;
+  return '';
+}
+
+/** Tipo já gravado na tabela vendas (GRÃO / CAPSULAS / OUTRO). OUTRO não é grão. */
+function vol27FamiliaDeTipoGuardado(tipo) {
+  const t = vol27NormTexto(tipo).replace(/ /g, '');
+  if (t === 'GRAO' || t === 'GRAOS') return 'grao';
+  if (t === 'CAPSULA' || t === 'CAPSULAS') return 'capsulas';
+  if (t === 'MOIDO' || t === 'MOIDOS') return 'moido';
+  if (t === 'MAQUINA' || t === 'MAQUINAS') return 'maquina';
+  if (t === 'VINHO' || t === 'VINHOS') return 'vinho';
+  return '';
+}
+
+function vol27FamiliaDaLinha(row) {
+  const o = row || {};
+  if (o.familia && vol27FamiliaDeTipoGuardado(o.familia)) return vol27FamiliaDeTipoGuardado(o.familia);
+  if (o.familia && VOL27_FAMILIAS.some(function (f) { return f.id === o.familia; })) return o.familia;
+  const porTexto = vol27FamiliaDeCampos(o.hierarq, o.material, o.descricao, o.cat);
+  if (porTexto) return porTexto;
+  const temTexto = !!(o.hierarq || o.material || o.descricao || o.cat);
+  if (temTexto) return '';
+  return vol27FamiliaDeTipoGuardado(o.tipo);
+}
+
+function vol27EhLitro(u) {
+  const n = vol27NormTexto(u).replace(/ /g, '');
+  return n === 'L' || n === 'LT' || n === 'LTS' || n === 'LITRO' || n === 'LITROS';
+}
+
+function vol27EhUnidade(u) {
+  const n = vol27NormTexto(u).replace(/ /g, '');
+  if (!n) return true;
+  return n === 'UN' || n === 'UND' || n === 'UNID' || n === 'UNIDADE' || n === 'UNIDADES'
+    || n === 'PC' || n === 'PEC' || n === 'PECA' || n === 'PECAS' || n === 'CX';
+}
+
+function vol27EhKg(u) {
+  const n = vol27NormTexto(u).replace(/ /g, '');
+  if (!n) return true;
+  return n === 'KG' || n === 'KGS' || n === 'QUILOGRAMA' || n === 'QUILOGRAMAS';
+}
+
+function vol27EhGrama(u) {
+  const n = vol27NormTexto(u).replace(/ /g, '');
+  return n === 'G' || n === 'GR' || n === 'GRAMA' || n === 'GRAMAS';
+}
+
+/** Peso líquido em kg. Unidade vazia neste SAP é kg. Litro não se trata como kg. */
+function vol27PesoKg(peso, unidadePeso) {
+  const p = Number(peso);
+  if (!Number.isFinite(p)) return null;
+  if (vol27EhGrama(unidadePeso)) return p / 1000;
+  if (vol27EhLitro(unidadePeso)) return null;
+  if (!vol27EhKg(unidadePeso)) return null;
+  return p;
+}
+
+/**
+ * Medida na unidade da família. Cápsulas = kg / 0,005.
+ * Vinho só conta com unidade litro — não se inventa densidade.
+ * Máquina usa a quantidade (QtFaturada), não o peso.
+ */
+function vol27Medida(row) {
+  const o = row || {};
+  const familia = vol27FamiliaDaLinha(o);
+  if (!familia) return { familia: '', medida: null, semMedida: '' };
+  if (familia === 'grao' || familia === 'moido') {
+    const kg = vol27PesoKg(o.peso, o.unidadePeso);
+    if (kg == null) return { familia: familia, medida: null, semMedida: familia };
+    return { familia: familia, medida: kg, semMedida: '' };
+  }
+  if (familia === 'capsulas') {
+    const kg = vol27PesoKg(o.peso, o.unidadePeso);
+    if (kg == null) return { familia: familia, medida: null, semMedida: 'capsulas' };
+    return { familia: familia, medida: kg / VOL27_CAPSULA_KG, semMedida: '' };
+  }
+  if (familia === 'maquina') {
+    const bruto = (o.volume != null && o.volume !== '') ? o.volume : null;
+    const q = bruto == null ? NaN : Number(bruto);
+    if (!Number.isFinite(q)) return { familia: familia, medida: null, semMedida: 'maquina' };
+    if (o.unidadeQty && !vol27EhUnidade(o.unidadeQty)) return { familia: familia, medida: null, semMedida: 'maquina' };
+    return { familia: familia, medida: q, semMedida: '' };
+  }
+  if (familia === 'vinho') {
+    const q = (o.volume != null && o.volume !== '') ? Number(o.volume) : NaN;
+    if (vol27EhLitro(o.unidadeQty) && Number.isFinite(q)) return { familia: familia, medida: q, semMedida: '' };
+    const p = Number(o.peso);
+    if (vol27EhLitro(o.unidadePeso) && Number.isFinite(p)) return { familia: familia, medida: p, semMedida: '' };
+    return { familia: familia, medida: null, semMedida: 'vinho' };
+  }
+  return { familia: '', medida: null, semMedida: '' };
+}
+
+function vol27IdsFolha() {
+  const linhas = typeof orc27LinhasBase === 'function' ? orc27LinhasBase() : [];
+  const out = [];
+  for (let i = 0; i < linhas.length; i++) {
+    if (linhas[i] && linhas[i].tipo === 'canal') out.push(linhas[i].id);
+  }
+  return out;
+}
+
+function vol27CanalIdDeLinha(row) {
+  if (!row) return '';
+  if (typeof npessVendaIgnorado === 'function' && (npessVendaIgnorado(row.npess) || npessVendaIgnorado(row.vendedor))) return '';
+  const mapas = typeof mapasVendasQuadro === 'function' ? mapasVendasQuadro() : {};
+  const dim = typeof dimensoesVendaQuadro === 'function'
+    ? dimensoesVendaQuadro(row.npess, mapas, row.cod, row.nome)
+    : null;
+  if (!dim || !dim.canal || dim.canal === 'Por classificar') return '';
+  let lado = '';
+  if (dim.canal === 'Institucional' && typeof pvLadoInstitucionalCelula === 'function') {
+    lado = pvLadoInstitucionalCelula({ npess: dim.npess, vendedor: dim.vendedor }) || '';
+  }
+  const mapa = (typeof PV_MAPA_CANAL_VENDA !== 'undefined') ? PV_MAPA_CANAL_VENDA : null;
+  if (!mapa) return '';
+  const ids = Object.keys(mapa);
+  for (let i = 0; i < ids.length; i++) {
+    const s = mapa[ids[i]];
+    if (!s) continue;
+    if (s[0] === dim.empresa && s[1] === dim.canal && (s[2] || '') === lado) return ids[i];
+  }
+  return '';
+}
+
+function vol27MesVazio() {
+  return { canais: {}, semCanal: {}, fora: { kg: 0, un: 0, linhas: 0, vinhoSemLitro: 0, maquinaSemUn: 0 } };
+}
+
+function vol27AgregarLinhas(linhas) {
+  const meses = {};
+  let ignoradas = 0;
+  const list = Array.isArray(linhas) ? linhas : [];
+  for (let i = 0; i < list.length; i++) {
+    const row = list[i];
+    if (!row) continue;
+    if (typeof npessVendaIgnorado === 'function' && (npessVendaIgnorado(row.npess) || npessVendaIgnorado(row.vendedor))) {
+      ignoradas++;
+      continue;
+    }
+    const ym = typeof ymLinhaPerdas === 'function'
+      ? ymLinhaPerdas(row.data)
+      : String(row.data || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+    if (!meses[ym]) meses[ym] = vol27MesVazio();
+    const mes = meses[ym];
+    const med = vol27Medida(row);
+    if (!med.familia || med.medida == null || !Number.isFinite(Number(med.medida))) {
+      if (!med.familia) {
+        const kg = vol27PesoKg(row.peso, row.unidadePeso);
+        if (kg != null) mes.fora.kg = vol27Round(mes.fora.kg + kg);
+        const q = Number(row.qty);
+        if (Number.isFinite(q) && q !== 0 && !vol27EhLitro(row.unidadeQty)) mes.fora.un = vol27Round(mes.fora.un + q);
+        mes.fora.linhas += 1;
+      } else if (med.semMedida === 'vinho') mes.fora.vinhoSemLitro += 1;
+      else if (med.semMedida === 'maquina') mes.fora.maquinaSemUn += 1;
+      continue;
+    }
+    const canal = vol27CanalIdDeLinha(row);
+    if (!canal) {
+      mes.semCanal[med.familia] = vol27Round((mes.semCanal[med.familia] || 0) + Number(med.medida));
+    } else {
+      if (!mes.canais[canal]) mes.canais[canal] = {};
+      mes.canais[canal][med.familia] = vol27Round((mes.canais[canal][med.familia] || 0) + Number(med.medida));
+    }
+  }
+  return { meses: meses, ignoradas: ignoradas };
+}
+
+function vol27FundirMeses(base, porCima, yms) {
+  const out = {
+    version: 1,
+    atualizado_em: (porCima && porCima.atualizado_em) || (base && base.atualizado_em) || null,
+    fonte: (base && base.fonte) || '',
+    meses: {},
+  };
+  const bm = (base && base.meses) || {};
+  Object.keys(bm).forEach(function (ym) { out.meses[ym] = bm[ym]; });
+  const pm = (porCima && porCima.meses) || {};
+  const lista = Array.isArray(yms) ? yms : Object.keys(pm);
+  lista.forEach(function (ym) {
+    if (pm[ym]) out.meses[ym] = pm[ym];
+  });
+  return out;
+}
+
+function vol27CanaisDoFiltro(filtro) {
+  const folhas = vol27IdsFolha();
+  const f = filtro || 'todos';
+  if (f === 'todos') return folhas.slice();
+  if (f === 'dfb') return folhas.filter(function (id) { return id.indexOf('dfb_') === 0; });
+  if (f === 'qb') return folhas.filter(function (id) { return id.indexOf('qb_') === 0; });
+  if (folhas.indexOf(f) >= 0) return [f];
+  return folhas.slice();
+}
+
+function vol27FiltroFolha(filtro) {
+  return vol27IdsFolha().indexOf(filtro || '') >= 0;
+}
+
+function vol27Somar(ag, yms, canalIds, familia, incluirSemCanal) {
+  let tem = false;
+  let valor = 0;
+  const meses = (ag && ag.meses) || {};
+  const ids = Array.isArray(canalIds) ? canalIds : [];
+  const lista = Array.isArray(yms) ? yms : [];
+  for (let i = 0; i < lista.length; i++) {
+    const mes = meses[lista[i]];
+    if (!mes) continue;
+    const canais = mes.canais || {};
+    for (let c = 0; c < ids.length; c++) {
+      const v = canais[ids[c]] && canais[ids[c]][familia];
+      if (!orc27TemNumero(v)) continue;
+      tem = true;
+      valor += Number(v);
+    }
+    if (incluirSemCanal && mes.semCanal && orc27TemNumero(mes.semCanal[familia])) {
+      tem = true;
+      valor += Number(mes.semCanal[familia]);
+    }
+  }
+  return { tem: tem, valor: tem ? vol27Round(valor) : 0 };
+}
+
+function vol27Total2026(ytd, ytdTem, prev) {
+  const hasPrev = orc27TemNumero(prev);
+  const hasYtd = !!ytdTem && orc27TemNumero(ytd);
+  if (!hasYtd && !hasPrev) return { tem: false, valor: null };
+  const y = hasYtd ? Number(ytd) : 0;
+  const p = hasPrev ? Number(prev) : 0;
+  return { tem: true, valor: vol27Round(y + p) };
+}
+
+function vol27Chave(canal, familia) {
+  return String(canal || '') + '|' + String(familia || '');
+}
+
+function vol27ChaveValida(canal, familia) {
+  if (vol27IdsFolha().indexOf(canal) < 0) return false;
+  for (let i = 0; i < VOL27_FAMILIAS.length; i++) {
+    if (VOL27_FAMILIAS[i].id === familia) return true;
+  }
+  return false;
+}
+
+function vol27ManualValor(doc, canal, familia, campo) {
+  if (!doc || !doc.celulas) return null;
+  const rec = doc.celulas[vol27Chave(canal, familia)];
+  if (!rec || !orc27TemNumero(rec[campo])) return null;
+  return Number(rec[campo]);
+}
+
+function vol27ManualSoma(doc, canais, familia, campo) {
+  let any = false;
+  let sum = 0;
+  const ids = Array.isArray(canais) ? canais : [];
+  for (let i = 0; i < ids.length; i++) {
+    const v = vol27ManualValor(doc, ids[i], familia, campo);
+    if (v == null) continue;
+    any = true;
+    sum += v;
+  }
+  return any ? vol27Round(sum) : null;
+}
+
+function vol27Montar(ag, doc, filtro) {
+  const canais = vol27CanaisDoFiltro(filtro);
+  const todos = !filtro || filtro === 'todos';
+  const editavel = vol27FiltroFolha(filtro);
+  const n1Yms = orc27PeriodoN1();
+  const ytdYms = orc27PeriodoYtd();
+  const rows = [];
+  for (let i = 0; i < VOL27_FAMILIAS.length; i++) {
+    const fam = VOL27_FAMILIAS[i];
+    const n1 = vol27Somar(ag, n1Yms, canais, fam.id, todos);
+    const ytd = vol27Somar(ag, ytdYms, canais, fam.id, todos);
+    const prev = vol27ManualSoma(doc, canais, fam.id, 'prevOutDez');
+    const orc = vol27ManualSoma(doc, canais, fam.id, 'orcamento');
+    const row = {
+      id: fam.id,
+      nome: fam.nome,
+      unidade: fam.unidade,
+      editavel: editavel,
+      n1: n1.tem ? n1.valor : null,
+      n1Tem: !!n1.tem,
+      ytd: ytd.tem ? ytd.valor : null,
+      ytdTem: !!ytd.tem,
+      prevOutDez: prev,
+      orcamento: orc,
+    };
+    const tot = vol27Total2026(row.ytd, row.ytdTem, row.prevOutDez);
+    row.total2026 = tot.valor;
+    row.totalTem = tot.tem;
+    row.varPct = orc27VarPct(row.total2026, row.totalTem, row.n1, row.n1Tem);
+    row.pct27 = orc27Pct27(row.orcamento, row.total2026, row.totalTem);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function vol27ResumoFora(ag) {
+  const yms = orc27PeriodoN1().concat(orc27PeriodoYtd());
+  const acc = { kg: 0, un: 0, linhas: 0, vinhoSemLitro: 0, maquinaSemUn: 0, semCanal: {} };
+  const meses = (ag && ag.meses) || {};
+  for (let i = 0; i < yms.length; i++) {
+    const mes = meses[yms[i]];
+    if (!mes || !mes.fora) continue;
+    acc.kg = vol27Round(acc.kg + (Number(mes.fora.kg) || 0));
+    acc.un = vol27Round(acc.un + (Number(mes.fora.un) || 0));
+    acc.linhas += Number(mes.fora.linhas) || 0;
+    acc.vinhoSemLitro += Number(mes.fora.vinhoSemLitro) || 0;
+    acc.maquinaSemUn += Number(mes.fora.maquinaSemUn) || 0;
+    const sc = mes.semCanal || {};
+    Object.keys(sc).forEach(function (fam) {
+      if (!orc27TemNumero(sc[fam])) return;
+      acc.semCanal[fam] = vol27Round((acc.semCanal[fam] || 0) + Number(sc[fam]));
+    });
+  }
+  return acc;
+}
+
+function vol27FmtPlano(n) {
+  if (!orc27TemNumero(n)) return '—';
+  const v = Number(n);
+  const inteiro = Math.abs(v - Math.round(v)) < 0.001;
+  try {
+    return v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: inteiro ? 0 : 1 });
+  } catch (e) {
+    return inteiro ? String(Math.round(v)) : v.toFixed(1);
+  }
+}
+
+function vol27FmtQtd(v, tem) {
+  if (!tem || !orc27TemNumero(v)) return '—';
+  const n = Number(v);
+  const txt = vol27FmtPlano(n);
+  if (n < 0) return '<span style="color:#b91c1c;font-weight:600;">' + txt + '</span>';
+  return txt;
+}
+
+function vol27FmtInput(v) {
+  if (!orc27TemNumero(v)) return '';
+  const n = Number(v);
+  const inteiro = Math.abs(n - Math.round(n)) < 0.001;
+  try {
+    return n.toLocaleString('pt-BR', { maximumFractionDigits: inteiro ? 0 : 3 });
+  } catch (e) {
+    return inteiro ? String(Math.round(n)) : String(n);
+  }
+}
+
+function vol27NotaFora(ag) {
+  const f = vol27ResumoFora(ag);
+  const partes = [];
+  if (f.linhas > 0) {
+    partes.push('Fora das cinco famílias: ' + vol27FmtPlano(f.kg) + ' kg e ' + vol27FmtPlano(f.un) + ' un (' + f.linhas.toLocaleString('pt-BR') + ' linhas). Não entram no grão. A base gravada só separa grão e cápsulas; moído, máquina e vinho ficam neste resto até a próxima carga do mês corrente e do anterior.');
+  }
+  if (f.vinhoSemLitro > 0) {
+    partes.push(f.vinhoSemLitro + ' linhas de vinho sem litros no ficheiro — o peso em kg não foi convertido.');
+  }
+  if (f.maquinaSemUn > 0) {
+    partes.push(f.maquinaSemUn + ' linhas de máquina sem unidades (QtFaturada).');
+  }
+  const nomesSem = { grao: 'Grão', moido: 'Café moído', capsulas: 'Cápsulas', maquina: 'Máquina', vinho: 'Vinho' };
+  const unSem = { grao: 'kg', moido: 'kg', capsulas: 'un', maquina: 'un', vinho: 'L' };
+  Object.keys(f.semCanal).forEach(function (fam) {
+    if (!orc27TemNumero(f.semCanal[fam]) || Number(f.semCanal[fam]) === 0) return;
+    partes.push(nomesSem[fam] + ' sem canal: ' + vol27FmtPlano(f.semCanal[fam]) + ' ' + unSem[fam] + '. Entra em Todos os canais e fica de fora ao escolher um canal.');
+  });
+  if (ag && ag.erro) partes.push('Não foi possível ler o histórico de volumes (' + String(ag.erro).slice(0, 140) + ').');
+  if (!partes.length && !vol27TemMesHistorico(ag)) {
+    partes.push('2025 e Janeiro a Setembro de 2026 ainda não têm volume por família. A tabela de vendas tem peso, mas só separa grão, cápsulas e outro, sem o nome do produto nem o NPess, e repete linhas — não dá para somar isso sem inflacionar os kg. Moído, máquina e vinho não estão separados. A próxima carga do mês corrente e do anterior grava as cinco famílias a partir do Excel.');
+  }
+  return partes.join(' ');
+}
+
+function vol27TemMesHistorico(ag) {
+  const meses = (ag && ag.meses) || {};
+  const yms = Object.keys(meses);
+  for (let i = 0; i < yms.length; i++) {
+    if (yms[i] >= '2025-01' && yms[i] <= '2026-09') return true;
+  }
+  return false;
+}
+
+function vol27OpcoesFiltro() {
+  const folhas = vol27IdsFolha();
+  const out = [{ id: 'todos', nome: VOL27_ROTULOS.todos }];
+  out.push({ id: 'dfb', nome: VOL27_ROTULOS.dfb });
+  folhas.forEach(function (id) {
+    if (id.indexOf('dfb_') === 0) out.push({ id: id, nome: VOL27_ROTULOS[id] || id });
+  });
+  out.push({ id: 'qb', nome: VOL27_ROTULOS.qb });
+  folhas.forEach(function (id) {
+    if (id.indexOf('qb_') === 0) out.push({ id: id, nome: VOL27_ROTULOS[id] || id });
+  });
+  return out;
+}
+
+function vol27CelulaManualHtml(row, campo, edit) {
+  const tem = orc27TemNumero(row[campo]);
+  if (!row.editavel || !edit) return tem ? vol27FmtQtd(row[campo], true) : '—';
+  const val = vol27FmtInput(row[campo]);
+  const titulo = campo === 'prevOutDez' ? 'Previsão Out a Dez (autosave)' : 'Orçamento 2027 (autosave)';
+  const bg = campo === 'prevOutDez' ? '#eff6ff' : '#f5f3ff';
+  return '<input type="text" inputmode="decimal" class="form-input vol27-input" data-vol-canal="'
+    + orc27Esc(_vol27Filtro) + '" data-vol-fam="' + orc27Esc(row.id) + '" data-vol-campo="' + campo
+    + '" value="' + orc27Esc(val) + '" placeholder="—" title="' + titulo
+    + '" style="height:32px;width:100%;min-width:110px;text-align:right;padding:4px 6px;background:'
+    + bg + ';font-variant-numeric:tabular-nums;" oninput="vol27OnInput(this)" onblur="vol27OnBlur(this)">';
+}
+
+function vol27RenderHtml(edit, ag, doc, filtro) {
+  const f = filtro || 'todos';
+  _vol27Filtro = f;
+  const rows = vol27Montar(ag, doc, f);
+  let body = '';
+  rows.forEach(function (row) {
+    body += '<tr data-vol-fam="' + orc27Esc(row.id) + '">'
+      + '<td style="text-align:left;padding-left:8px;white-space:nowrap;">' + orc27Esc(row.nome) + '</td>'
+      + '<td class="vol27-n1" style="text-align:right;font-variant-numeric:tabular-nums;">' + vol27FmtQtd(row.n1, row.n1Tem) + '</td>'
+      + '<td class="vol27-ytd" style="text-align:right;font-variant-numeric:tabular-nums;">' + vol27FmtQtd(row.ytd, row.ytdTem) + '</td>'
+      + '<td class="vol27-prev" style="text-align:right;background:#eff6ff;font-variant-numeric:tabular-nums;">' + vol27CelulaManualHtml(row, 'prevOutDez', edit) + '</td>'
+      + '<td class="vol27-total" style="text-align:right;font-variant-numeric:tabular-nums;">' + vol27FmtQtd(row.total2026, row.totalTem) + '</td>'
+      + '<td class="vol27-var" style="text-align:right;">' + orc27FmtPct(row.varPct) + '</td>'
+      + '<td class="vol27-orc" style="text-align:right;background:#f5f3ff;font-variant-numeric:tabular-nums;">' + vol27CelulaManualHtml(row, 'orcamento', edit) + '</td>'
+      + '<td class="vol27-pct" style="text-align:right;">' + orc27FmtPct(row.pct27) + '</td>'
+      + '</tr>';
+  });
+  let opts = '';
+  vol27OpcoesFiltro().forEach(function (op) {
+    const sel = op.id === f ? ' selected' : '';
+    opts += '<option value="' + orc27Esc(op.id) + '"' + sel + '>' + orc27Esc(op.nome) + '</option>';
+  });
+  const nota = vol27NotaFora(ag);
+  const notaHtml = nota
+    ? '<div id="vol27-nota" style="margin:0 0 10px;font-size:12px;color:#9a3412;line-height:1.45;">' + orc27Esc(nota) + '</div>'
+    : '<div id="vol27-nota" style="display:none;"></div>';
+  return '<div class="sub-nav" style="margin-bottom:12px;flex-wrap:wrap;">'
+    + '<button type="button" class="sub-tab" id="orc27-sub-valor" onclick="orc27ShowSub(\'valor\')">Orç Valor</button>'
+    + '<button type="button" class="sub-tab active" id="orc27-sub-volume" onclick="orc27ShowSub(\'volume\')">Volume</button>'
+    + '</div>'
+    + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">'
+    + '<label for="vol27-filtro" style="font-size:13px;font-weight:600;">Canal</label>'
+    + '<select id="vol27-filtro" class="form-input" style="height:36px;min-width:260px;font-size:13px;" onchange="vol27OnFiltro(this)">'
+    + opts + '</select>'
+    + '<span style="font-size:12px;color:var(--muted);">Grão e moído em kg · cápsulas = peso ÷ 0,005 · máquina em un · vinho em litros. Sem linha de total.</span>'
+    + '</div>'
+    + notaHtml
+    + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
+    + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Volume'
+    + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Total 2026 = YTD até Set + Previsão Out a Dez · Var % vs 2025 = (Total 2026 − N-1) / N-1 · % 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026</span>'
+    + '</div>'
+    + '<table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1180px;">'
+    + '<thead><tr>'
+    + '<th style="text-align:left;">Produto</th>'
+    + '<th style="text-align:right;">Total N-1 até Dez</th>'
+    + '<th style="text-align:right;">YTD 2026 até Set</th>'
+    + '<th style="text-align:right;background:#dbeafe;">Previsão Out a Dez</th>'
+    + '<th style="text-align:right;">Total 2026</th>'
+    + '<th style="text-align:right;">Var % vs 2025</th>'
+    + '<th style="text-align:right;background:#ede9fe;">Orçamento 2027</th>'
+    + '<th style="text-align:right;">% 27 vs fecho 26</th>'
+    + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+}
+
+function vol27PickCampo(localVal, localTs, cloudVal, cloudTs) {
+  return orc27PickCampo(localVal, localTs, cloudVal, cloudTs);
+}
+
+function vol27MergeCelulas(localCelulas, cloudCelulas) {
+  const local = localCelulas && typeof localCelulas === 'object' ? localCelulas : {};
+  const cloud = cloudCelulas && typeof cloudCelulas === 'object' ? cloudCelulas : {};
+  const out = {};
+  const folhas = vol27IdsFolha();
+  folhas.forEach(function (canal) {
+    VOL27_FAMILIAS.forEach(function (fam) {
+      const k = vol27Chave(canal, fam.id);
+      const l = local[k] || {};
+      const c = cloud[k] || {};
+      const lTs = l.cellTs || {};
+      const cTs = c.cellTs || {};
+      const prev = vol27PickCampo(l.prevOutDez, lTs.prevOutDez, c.prevOutDez, cTs.prevOutDez);
+      const orc = vol27PickCampo(l.orcamento, lTs.orcamento, c.orcamento, cTs.orcamento);
+      if (!prev.ts && !orc.ts) return;
+      const rec = { cellTs: {} };
+      if (prev.ts) {
+        rec.cellTs.prevOutDez = prev.ts;
+        rec.prevOutDez = prev.value;
+      }
+      if (orc.ts) {
+        rec.cellTs.orcamento = orc.ts;
+        rec.orcamento = orc.value;
+      }
+      out[k] = rec;
+    });
+  });
+  return out;
+}
+
+function vol27LocalPrecisaNuvem(localCelulas, cloudCelulas) {
+  const local = localCelulas && typeof localCelulas === 'object' ? localCelulas : {};
+  const cloud = cloudCelulas && typeof cloudCelulas === 'object' ? cloudCelulas : {};
+  const folhas = vol27IdsFolha();
+  for (let i = 0; i < folhas.length; i++) {
+    for (let j = 0; j < VOL27_FAMILIAS.length; j++) {
+      const k = vol27Chave(folhas[i], VOL27_FAMILIAS[j].id);
+      const lTs = (local[k] && local[k].cellTs) || {};
+      const cTs = (cloud[k] && cloud[k].cellTs) || {};
+      if (pvTsMs(lTs.prevOutDez) > pvTsMs(cTs.prevOutDez)) return true;
+      if (pvTsMs(lTs.orcamento) > pvTsMs(cTs.orcamento)) return true;
+    }
+  }
+  return false;
+}
+
+function vol27AplicarEdicao(doc, canal, familia, campo, valor, agoraIso) {
+  const base = doc && typeof doc === 'object' ? doc : { celulas: {} };
+  const celulas = Object.assign({}, base.celulas || {});
+  const out = {
+    version: 1,
+    celulas: celulas,
+    actualizadoEm: base.actualizadoEm || null,
+    actualizadoPor: base.actualizadoPor || '',
+  };
+  if (!vol27ChaveValida(canal, familia)) return { doc: out, changed: false };
+  if (campo !== 'prevOutDez' && campo !== 'orcamento') return { doc: out, changed: false };
+  const k = vol27Chave(canal, familia);
+  const rec0 = celulas[k] || {};
+  const cellTs0 = rec0.cellTs || {};
+  const prev = orc27TemNumero(rec0[campo]) ? Number(rec0[campo]) : null;
+  const next = orc27TemNumero(valor) ? Number(valor) : null;
+  const jaTs = !!cellTs0[campo];
+  if (prev === next && (jaTs || next == null)) return { doc: out, changed: false };
+  const rec = { cellTs: Object.assign({}, cellTs0) };
+  if (orc27TemNumero(rec0.prevOutDez)) rec.prevOutDez = Number(rec0.prevOutDez);
+  else if (cellTs0.prevOutDez) rec.prevOutDez = null;
+  if (orc27TemNumero(rec0.orcamento)) rec.orcamento = Number(rec0.orcamento);
+  else if (cellTs0.orcamento) rec.orcamento = null;
+  rec[campo] = next;
+  rec.cellTs[campo] = agoraIso || new Date().toISOString();
+  celulas[k] = rec;
+  out.celulas = celulas;
+  return { doc: out, changed: true };
+}
+
+function vol27CloudUrl() {
+  return 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/public/contratos/' + VOL27_CLOUD_PATH;
+}
+
+function vol27LerLocal() {
+  try {
+    const raw = localStorage.getItem(VOL27_LS_KEY);
+    if (!raw) return { celulas: {} };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return { celulas: {} };
+    return parsed;
+  } catch (_) {
+    return { celulas: {} };
+  }
+}
+
+function vol27CelulasDePayload(data) {
+  if (!data || typeof data !== 'object') return {};
+  if (data.celulas && typeof data.celulas === 'object' && !Array.isArray(data.celulas)) return data.celulas;
+  return {};
+}
+
+async function vol27FetchCloud(force) {
+  const now = Date.now();
+  if (!force && _vol27CloudCache && !_vol27CloudCache.fetchFailed && (now - _vol27CloudFetchedAt) < 30000) {
+    return _vol27CloudCache;
+  }
+  try {
+    const res = await fetch(vol27CloudUrl() + '?t=' + now, { cache: 'no-store' });
+    if (res.status === 404) {
+      _vol27CloudCache = { celulas: {}, fetchFailed: false, actualizadoEm: null };
+      _vol27CloudFetchedAt = now;
+      return _vol27CloudCache;
+    }
+    if (!res.ok) {
+      const txt = await res.text().catch(function () { return ''; });
+      if (res.status === 400 && /not found|object not found|404/i.test(txt)) {
+        _vol27CloudCache = { celulas: {}, fetchFailed: false, actualizadoEm: null };
+        _vol27CloudFetchedAt = now;
+        return _vol27CloudCache;
+      }
+      console.warn('vol27FetchCloud HTTP', res.status);
+      if (_vol27CloudCache && _vol27CloudCache.celulas && !_vol27CloudCache.fetchFailed) return _vol27CloudCache;
+      return { celulas: {}, fetchFailed: true };
+    }
+    const data = await res.json();
+    _vol27CloudCache = {
+      celulas: vol27CelulasDePayload(data),
+      actualizadoEm: data && data.actualizadoEm ? data.actualizadoEm : null,
+      actualizadoPor: data && data.actualizadoPor ? data.actualizadoPor : '',
+      fetchFailed: false,
+    };
+    _vol27CloudFetchedAt = now;
+    return _vol27CloudCache;
+  } catch (e) {
+    console.warn('vol27FetchCloud', e);
+    if (_vol27CloudCache && _vol27CloudCache.celulas) {
+      _vol27CloudCache.fetchFailed = true;
+      return _vol27CloudCache;
+    }
+    return { celulas: {}, fetchFailed: true };
+  }
+}
+
+async function vol27Upload(payload) {
+  const base = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
+  const res = await fetch(base + '/contratos/' + VOL27_CLOUD_PATH, {
+    method: 'POST',
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      'x-upsert': 'true',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errTxt = await res.text().catch(function () { return ''; });
+    throw new Error('Upload volume (' + res.status + '): ' + errTxt.slice(0, 180));
+  }
+  return payload;
+}
+
+async function vol27EnviarCorpo() {
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  const cloud = await vol27FetchCloud(true);
+  if (cloud && cloud.fetchFailed) return false;
+  const localCelulas = (_vol27Doc && _vol27Doc.celulas) || {};
+  const cloudCelulas = (cloud && cloud.celulas) || {};
+  if (!vol27LocalPrecisaNuvem(localCelulas, cloudCelulas)) return false;
+  const celulas = vol27MergeCelulas(localCelulas, cloudCelulas);
+  const payload = {
+    version: 1,
+    actualizadoEm: new Date().toISOString(),
+    actualizadoPor: typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '',
+    celulas: celulas,
+  };
+  await vol27Upload(payload);
+  _vol27CloudCache = {
+    celulas: celulas,
+    actualizadoEm: payload.actualizadoEm,
+    actualizadoPor: payload.actualizadoPor,
+    fetchFailed: false,
+  };
+  _vol27CloudFetchedAt = Date.now();
+  if (_vol27Dirty) {
+    _vol27Doc.celulas = vol27MergeCelulas(_vol27Doc.celulas, celulas);
+  } else {
+    _vol27Doc = {
+      version: 1,
+      celulas: celulas,
+      actualizadoEm: payload.actualizadoEm,
+      actualizadoPor: payload.actualizadoPor,
+    };
+  }
+  try { localStorage.setItem(VOL27_LS_KEY, JSON.stringify(_vol27Doc)); } catch (_) {}
+  if (_vol27Dirty) vol27Agendar();
+  return true;
+}
+
+function vol27PedirNuvem() {
+  _vol27Fila = _vol27Fila.then(function () { return vol27EnviarCorpo(); }).catch(function (e) { console.warn('vol27 nuvem', e); });
+  return _vol27Fila;
+}
+
+async function vol27HidrateManual() {
+  const local = vol27LerLocal();
+  const cloud = await vol27FetchCloud(false);
+  const celulas = vol27MergeCelulas(local && local.celulas, cloud && cloud.celulas);
+  _vol27Doc = {
+    version: 1,
+    celulas: celulas,
+    actualizadoEm: (local && local.actualizadoEm) || (cloud && cloud.actualizadoEm) || null,
+    actualizadoPor: (local && local.actualizadoPor) || (cloud && cloud.actualizadoPor) || '',
+  };
+  if (typeof pvPodeEditar === 'function' && pvPodeEditar()) {
+    try { localStorage.setItem(VOL27_LS_KEY, JSON.stringify(_vol27Doc)); } catch (_) {}
+    if (cloud && !cloud.fetchFailed && vol27LocalPrecisaNuvem(local && local.celulas, cloud && cloud.celulas)) {
+      vol27PedirNuvem();
+    }
+  }
+}
+
+function vol27Instante(ag) {
+  const t = Date.parse(ag && ag.atualizado_em || '');
+  return Number.isFinite(t) ? t : 0;
+}
+
+function vol27NormalizarAgregado(raw) {
+  if (!raw || typeof raw !== 'object' || !raw.meses) return null;
+  return {
+    version: 1,
+    atualizado_em: raw.atualizado_em || null,
+    fonte: raw.fonte || '',
+    erro: raw.erro || '',
+    meses: raw.meses,
+  };
+}
+
+async function vol27LerAgregado() {
+  const candidatos = [];
+  if (_vol27Agregado && _vol27Agregado.meses && Object.keys(_vol27Agregado.meses).length) candidatos.push(_vol27Agregado);
+  try {
+    const raw = JSON.parse(localStorage.getItem(VOL27_AGREGADO_LS) || 'null');
+    const n = vol27NormalizarAgregado(raw);
+    if (n) candidatos.push(n);
+  } catch (_) {}
+  try {
+    const res = await fetch(
+      LISTA_CLIENTES_SUPA_URL + '?id=eq.' + VOL27_AGREGADO_ID + '&select=data,atualizado_em',
+      { headers: typeof registosReadHeaders === 'function' ? registosReadHeaders() : { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      const data = rows && rows[0] && rows[0].data;
+      if (data && data.meses) {
+        if (!data.atualizado_em && rows[0].atualizado_em) data.atualizado_em = rows[0].atualizado_em;
+        const n = vol27NormalizarAgregado(data);
+        if (n) candidatos.push(n);
+      }
+    }
+  } catch (e) {
+    console.warn('vol27LerAgregado', e);
+  }
+  let best = null;
+  let bestT = -1;
+  for (let i = 0; i < candidatos.length; i++) {
+    const t = vol27Instante(candidatos[i]);
+    if (!best || t >= bestT) { best = candidatos[i]; bestT = t; }
+  }
+  if (!best) return { version: 1, meses: {}, fonte: '' };
+  _vol27Agregado = best;
+  try { localStorage.setItem(VOL27_AGREGADO_LS, JSON.stringify(best)); } catch (_) {}
+  return best;
+}
+
+async function vol27SalvarAgregado(ag) {
+  const payload = vol27NormalizarAgregado(ag) || { version: 1, meses: {}, fonte: '' };
+  payload.atualizado_em = new Date().toISOString();
+  payload.fonte = (ag && ag.fonte) || payload.fonte || '';
+  payload.version = 1;
+  _vol27Agregado = payload;
+  try { localStorage.setItem(VOL27_AGREGADO_LS, JSON.stringify(payload)); } catch (_) {}
+  try {
+    const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
+      method: 'POST',
+      headers: Object.assign({}, HEADERS, { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify({ id: VOL27_AGREGADO_ID, data: payload, atualizado_em: payload.atualizado_em }),
+    });
+    if (!res || !res.ok) {
+      let detalhe = 'HTTP ' + (res && res.status);
+      try { detalhe += ' ' + String(await res.text()).slice(0, 160); } catch (_) {}
+      console.warn('vol27SalvarAgregado', detalhe.trim());
+    }
+  } catch (e) {
+    console.warn('vol27SalvarAgregado', e.message || e);
+  }
+  return payload;
+}
+
+function vol27PrecisaHistorico(ag) {
+  const meses = (ag && ag.meses) || {};
+  if (meses['2025-01'] || meses['2025-12'] || meses['2026-01']) return false;
+  if (ag && ag.fonte === 'vendas-cloud') return false;
+  return true;
+}
+
+function vol27MapaNpessDeCliente(doc) {
+  const out = {};
+  const meses = (doc && doc.meses) || {};
+  const yms = Object.keys(meses);
+  for (let i = 0; i < yms.length; i++) {
+    const ym = yms[i];
+    const clientes = (meses[ym] && meses[ym].clientes) || {};
+    const porCod = {};
+    const keys = Object.keys(clientes);
+    for (let k = 0; k < keys.length; k++) {
+      const c = clientes[keys[k]];
+      if (!c || !c.cod) continue;
+      const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(c.cod) : String(c.cod || '').trim();
+      if (!cod) continue;
+      if (!porCod[cod]) porCod[cod] = [];
+      porCod[cod].push(c);
+    }
+    out[ym] = {};
+    const cods = Object.keys(porCod);
+    for (let c = 0; c < cods.length; c++) {
+      const lista = porCod[cods[c]];
+      if (lista.length !== 1) continue;
+      const np = parseInt(lista[0].npess, 10) || 0;
+      if (typeof npessVendaIgnorado === 'function' && npessVendaIgnorado(np)) continue;
+      out[ym][cods[c]] = { npess: np, nome: String(lista[0].nome || '') };
+    }
+  }
+  return out;
+}
+
+function vol27LinhasCloudParaAgregar(rows, mapa) {
+  const out = [];
+  const list = Array.isArray(rows) ? rows : [];
+  const mp = mapa || {};
+  for (let i = 0; i < list.length; i++) {
+    const row = list[i];
+    if (!row) continue;
+    const ym = typeof ymLinhaPerdas === 'function' ? ymLinhaPerdas(row.data) : '';
+    if (!/^\d{4}-\d{2}$/.test(ym) || ym < '2025-01' || ym > '2026-09') continue;
+    const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row.cod) : String(row.cod || '').trim();
+    const info = mp[ym] && mp[ym][cod];
+    out.push({
+      data: ym + '-01',
+      cod: cod,
+      tipo: row.tipo,
+      peso: row.peso,
+      qty: row.qty,
+      npess: info ? info.npess : 0,
+      nome: info ? info.nome : '',
+    });
+  }
+  return out;
+}
+
+function vol27Dizer(txt) {
+  try {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById('vol27-status');
+    if (el) el.textContent = txt;
+  } catch (_) {}
+}
+
+async function vol27FetchVendasFiltro(filtro, rotulo) {
+  const pageSize = 1000;
+  const out = [];
+  let from = 0;
+  const headersBase = typeof registosReadHeaders === 'function'
+    ? registosReadHeaders()
+    : { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY };
+  while (true) {
+    const to = from + pageSize - 1;
+    const url = SUPA_VENDAS + '?select=cod,data,tipo,peso,qty&' + filtro + '&order=id.asc';
+    const headers = Object.assign({}, headersBase, { Range: from + '-' + to });
+    const res = await fetch(url, { headers: headers });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const page = await res.json();
+    if (!Array.isArray(page) || !page.length) break;
+    for (let i = 0; i < page.length; i++) out.push(page[i]);
+    from += page.length;
+    vol27Dizer('A ler volumes (' + rotulo + '): ' + from.toLocaleString('pt-BR') + ' linhas…');
+    if (page.length < pageSize) break;
+    if (from > 200000) break;
+  }
+  return out;
+}
+
+/**
+ * Soma possível a partir da tabela vendas. Não corre ao abrir o Volume:
+ * a mesma chave cliente+dia+tipo está repetida e não há família nem NPess.
+ */
+async function vol27ConstruirDeVendasCloud() {
+  let cliente = null;
+  try {
+    cliente = typeof lerVendasClientePersistida === 'function' ? await lerVendasClientePersistida() : null;
+  } catch (e) {
+    console.warn('vol27 cliente', e);
+  }
+  const mapa = vol27MapaNpessDeCliente(cliente);
+  const filtros = [
+    ['data=gte.2025-01-01&data=lt.2026-10-01', 'datas ISO'],
+    ['data=like.*.2025', '2025'],
+    ['data=like.*.2026', '2026'],
+  ];
+  const rows = [];
+  for (let i = 0; i < filtros.length; i++) {
+    const parte = await vol27FetchVendasFiltro(filtros[i][0], filtros[i][1]);
+    for (let j = 0; j < parte.length; j++) rows.push(parte[j]);
+  }
+  const linhas = vol27LinhasCloudParaAgregar(rows, mapa);
+  const ag = vol27AgregarLinhas(linhas);
+  ag.fonte = 'vendas-cloud';
+  ag.linhasLidas = linhas.length;
+  return ag;
+}
+
+/**
+ * Não soma a tabela vendas ao abrir.
+ * O peso está lá, mas a linha não traz família nem NPess, e o mesmo cliente/dia/tipo
+ * está gravado mais de uma vez (data ISO e dd.mm.aaaa). Somar isso inflacionava os kg.
+ * O Excel da carga (mês corrente e anterior) é que grava as cinco famílias.
+ */
+async function vol27Preparar() {
+  try { await vol27HidrateManual(); } catch (e) { console.warn('vol27 manual', e); }
+  const local = await vol27LerAgregado();
+  _vol27Agregado = local && local.meses ? local : { version: 1, meses: {}, fonte: '' };
+  _vol27Pronto = true;
+  return _vol27Agregado;
+}
+
+async function vol27SubstituirJanela(linhas, hoje, cargaCtx) {
+  const delta = vol27AgregarLinhas(linhas || []);
+  const yms = Object.keys(delta.meses).filter(function (ym) {
+    if (typeof vendaMesQuadroSubstituivel === 'function') return vendaMesQuadroSubstituivel(ym, null, hoje, cargaCtx);
+    return true;
+  });
+  const antes = await vol27LerAgregado();
+  const merged = vol27FundirMeses(antes, delta, yms);
+  merged.fonte = (antes && antes.fonte) || 'excel';
+  const saved = await vol27SalvarAgregado(merged);
+  if (_orc27Sub === 'volume' && _pvView === 'orcamento' && _vol27Pronto) orc27Pintar();
+  return saved;
+}
+
+function vol27PatchCalculos() {
+  const linhas = vol27Montar(_vol27Agregado, _vol27Doc, _vol27Filtro);
+  linhas.forEach(function (row) {
+    const tr = document.querySelector('tr[data-vol-fam="' + row.id + '"]');
+    if (!tr) return;
+    function set(cls, html) {
+      const el = tr.querySelector('td.' + cls);
+      if (el) el.innerHTML = html;
+    }
+    set('vol27-n1', vol27FmtQtd(row.n1, row.n1Tem));
+    set('vol27-ytd', vol27FmtQtd(row.ytd, row.ytdTem));
+    set('vol27-total', vol27FmtQtd(row.total2026, row.totalTem));
+    set('vol27-var', orc27FmtPct(row.varPct));
+    set('vol27-pct', orc27FmtPct(row.pct27));
+    if (!row.editavel) {
+      set('vol27-prev', vol27FmtQtd(row.prevOutDez, orc27TemNumero(row.prevOutDez)));
+      set('vol27-orc', vol27FmtQtd(row.orcamento, orc27TemNumero(row.orcamento)));
+    }
+  });
+}
+
+function vol27Flash(ok) {
+  const hint = document.getElementById('orc27-autosave-hint');
+  if (!hint) return;
+  hint.textContent = ok ? 'Guardado' : 'Erro ao guardar';
+  hint.style.color = ok ? '#15803d' : '#b91c1c';
+  clearTimeout(_vol27HintTimer);
+  _vol27HintTimer = setTimeout(function () { hint.textContent = ''; }, 1600);
+}
+
+function vol27Agendar() {
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return;
+  clearTimeout(_vol27Timer);
+  _vol27Timer = setTimeout(function () { vol27Flush(); }, VOL27_DEBOUNCE_MS);
+}
+
+function vol27Flush() {
+  clearTimeout(_vol27Timer);
+  if (!_vol27Dirty) return false;
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  _vol27Dirty = false;
+  if (_vol27Doc) {
+    _vol27Doc.actualizadoEm = new Date().toISOString();
+    _vol27Doc.actualizadoPor = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
+  }
+  let ok = false;
+  try {
+    localStorage.setItem(VOL27_LS_KEY, JSON.stringify(_vol27Doc || { version: 1, celulas: {} }));
+    ok = true;
+  } catch (e) {
+    console.warn('vol27Flush', e);
+  }
+  vol27Flash(ok);
+  if (ok) vol27PedirNuvem();
+  return ok;
+}
+
+function vol27OnFiltro(el) {
+  const v = el && el.value ? String(el.value) : 'todos';
+  _vol27Filtro = v || 'todos';
+  if (_orc27Sub === 'volume' && _pvView === 'orcamento') orc27Pintar();
+}
+
+function vol27OnInput(el) {
+  if (!el || (typeof pvPodeEditar === 'function' && !pvPodeEditar())) return;
+  if (!vol27FiltroFolha(_vol27Filtro)) return;
+  const fam = el.getAttribute('data-vol-fam');
+  const campo = el.getAttribute('data-vol-campo');
+  const ent = orc27EntradaPronta(el.value);
+  if (!ent.ok) return;
+  const r = vol27AplicarEdicao(_vol27Doc, _vol27Filtro, fam, campo, ent.valor, new Date().toISOString());
+  if (r.changed) {
+    _vol27Doc = r.doc;
+    _vol27Dirty = true;
+    vol27Agendar();
+  }
+  vol27PatchCalculos();
+}
+
+function vol27OnBlur(el) {
+  if (!el || (typeof pvPodeEditar === 'function' && !pvPodeEditar())) return;
+  if (!vol27FiltroFolha(_vol27Filtro)) return;
+  const fam = el.getAttribute('data-vol-fam');
+  const campo = el.getAttribute('data-vol-campo');
+  const ent = orc27EntradaPronta(el.value);
+  const v = ent.ok ? ent.valor : null;
+  const r = vol27AplicarEdicao(_vol27Doc, _vol27Filtro, fam, campo, v, new Date().toISOString());
+  if (r.changed) {
+    _vol27Doc = r.doc;
+    _vol27Dirty = true;
+  }
+  el.value = vol27FmtInput(v);
+  vol27PatchCalculos();
+  if (_vol27Dirty) vol27Flush();
+}
+
+function vol27Abrir(force) {
+  const host = document.getElementById('pv-canal-panels');
+  if (force) _vol27Pronto = false;
+  if (_vol27Pronto) {
+    orc27Pintar();
+    return;
+  }
+  if (_vol27Carga) return;
+  if (host) {
+    host.innerHTML = '<div class="sub-nav" style="margin-bottom:12px;">'
+      + '<button type="button" class="sub-tab" id="orc27-sub-valor" onclick="orc27ShowSub(\'valor\')">Orç Valor</button>'
+      + '<button type="button" class="sub-tab active" id="orc27-sub-volume" onclick="orc27ShowSub(\'volume\')">Volume</button>'
+      + '</div><p id="vol27-status" style="color:var(--muted);font-size:13px;padding:8px 0;">A carregar volumes…</p>';
+  }
+  _vol27Carga = vol27Preparar().then(function () {
+    _vol27Pronto = true;
+    if (_orc27Sub === 'volume' && _pvView === 'orcamento') orc27Pintar();
+  }).catch(function (e) {
+    console.warn('vol27', e);
+    _vol27Pronto = true;
+    if (!_vol27Agregado || !_vol27Agregado.meses) _vol27Agregado = { version: 1, meses: {}, erro: String(e.message || e) };
+    else _vol27Agregado.erro = String(e.message || e);
+    if (_orc27Sub === 'volume' && _pvView === 'orcamento') orc27Pintar();
+  }).then(function () { _vol27Carga = null; });
 }
 
 function pvActualizarMapaComVendas() {
@@ -20096,6 +21260,36 @@ function indiceColunaVolumeVenda(headers) {
     if (!h) continue;
     const compact = h.replace(/[^a-z0-9]+/g, '');
     if (compact === 'qtfaturada' || compact === 'qtdfaturada' || compact === 'quantidadefaturada') return i;
+  }
+  return -1;
+}
+
+/** A coluna a seguir, quando o SAP repete o cabeçalho, é a unidade (KG, UN, L). */
+function indiceUnidadeAoLado(headers, iNum) {
+  const list = Array.isArray(headers) ? headers : [];
+  const i = iNum == null ? -1 : iNum;
+  if (i < 0 || i + 1 >= list.length) return -1;
+  const norm = (raw) => String(raw || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const a = norm(list[i]);
+  const b = norm(list[i + 1]);
+  if (!a || a !== b) return -1;
+  return i + 1;
+}
+
+function indiceColunaMaterialVenda(headers) {
+  const list = Array.isArray(headers) ? headers : [];
+  for (let i = 0; i < list.length; i++) {
+    const c = String(list[i] || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+    if (c === 'material') return i;
+  }
+  return -1;
+}
+
+function indiceColunaDescricaoVenda(headers) {
+  const list = Array.isArray(headers) ? headers : [];
+  for (let i = 0; i < list.length; i++) {
+    const c = String(list[i] || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+    if (c === 'descricao' || c === 'denominacao' || c === 'textobrevematerial' || c === 'txtbrevematerial') return i;
   }
   return -1;
 }
@@ -24819,6 +26013,10 @@ async function processVendasFile(event) {
       const iValor = indiceColunaValorVenda(headers); // só vendas líquidas (não peso, qtd, bruto, unitário, imposto)
       const iVolume = indiceColunaVolumeVenda(headers); // QtFaturada; não é Fatur. nem peso
       const iNpessVenda = indiceColunaNpessVenda(headers);
+      const iMaterial = indiceColunaMaterialVenda(headers);
+      const iDescProd = indiceColunaDescricaoVenda(headers);
+      const iUnQty = indiceUnidadeAoLado(headers, iVolume);
+      const iUnPeso = indiceUnidadeAoLado(headers, iPeso);
       const vistosCab = headers.map(h => String(h || '').trim()).filter(Boolean);
       const txtVistos = vistosCab.length ? vistosCab.join(' | ') : '(nenhum cabeçalho)';
 
@@ -24898,6 +26096,11 @@ async function processVendasFile(event) {
           npess: npessLinha || undefined,
           nome: nomeEmissor || undefined,
           volume: volLinha == null ? undefined : volLinha,
+          hierarq: hierarq,
+          material: iMaterial >= 0 ? String(row[iMaterial] || '') : '',
+          descricao: iDescProd >= 0 ? String(row[iDescProd] || '') : '',
+          unidadeQty: iUnQty >= 0 ? String(row[iUnQty] || '') : '',
+          unidadePeso: iUnPeso >= 0 ? String(row[iUnPeso] || '') : '',
         };
         linhasValidas++;
         mesesAbertosSet.add(dataStr.slice(0, 7));
@@ -24966,6 +26169,16 @@ async function processVendasFile(event) {
     } catch (e) {
       console.warn('quadro janela:', e.message || e);
       quadroMsg = `<br>• Vendas não actualizadas: ${String(e.message || e).slice(0, 160)}`;
+    }
+
+    try {
+      if (typeof vol27SubstituirJanela === 'function') {
+        await vol27SubstituirJanela(linhasJanela, hoje, cargaCtx);
+        quadroMsg += `<br>• Volumes por família (grão, moído, cápsulas, máquina, vinho) gravados em ${janelaTxt}`;
+      }
+    } catch (e) {
+      console.warn('volume familias:', e.message || e);
+      quadroMsg += `<br>• Volumes por família não gravados: ${String(e.message || e).slice(0, 160)}`;
     }
 
     try {
@@ -38683,7 +39896,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-14-orcamento-2027: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-14-orcamento-volume: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
