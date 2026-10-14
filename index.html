@@ -1983,6 +1983,7 @@ var _unused_placeholder = 1;
 <script src="nfe-emitidas.js"></script>
 <script src="comissao-rc-mapa.js"></script>
 <script src="comissao-rc.js"></script>
+<script src="vendas-volume-familias.js"></script>
 </head>
 <body class="view-home">
 
@@ -15479,7 +15480,7 @@ function orc27PrepararChrome() {
     banner.innerHTML = _orc27Sub === 'volume'
       ? ('<strong>Orçamento 2027 · Volume</strong> — '
       + 'Mesmas colunas do Orç Valor, na unidade de cada produto. '
-      + 'Grão, café moído e vinho: coluna AA (Peso líq.), sem conversão. Cápsulas = AA ÷ 0,005. '
+      + 'Grão e café moído: coluna AA (Peso líq.) em kg, sem conversão. Vinho: a mesma coluna AA, em litros. Cápsulas = AA ÷ 0,005. '
       + 'Máquina = QtFaturada + Qtd Bonifi + Qtd Doação (colunas M, U e Y). Não usa o peso. '
       + 'O filtro escolhe o canal. Todos os canais soma o mesmo produto — não soma grão com cápsulas. '
       + 'Previsão Out a Dez e Orçamento 2027 preenchem-se à mão, por canal e produto, com autosave. '
@@ -15650,7 +15651,8 @@ async function orc27MontarVista() {
 /**
  * Orçamento 2027 · Volume.
  * As mesmas sete colunas do Orç Valor, na unidade da família.
- * Grão, café moído e vinho: coluna AA (Peso líq.), sem conversão.
+ * Grão e café moído: coluna AA (Peso líq.) em kg, sem conversão.
+ * Vinho: coluna AA, em litros, sem conversão.
  * Cápsulas: AA / 0,005 (0,005 kg = uma cápsula).
  * Máquina: coluna M (QtFaturada) + U (Qtd Bonifi) + Y (Qtd Doação). Não usa AA.
  * Neste ficheiro SAP a hierarquia das máquinas é o token MF.
@@ -15658,12 +15660,13 @@ async function orc27MontarVista() {
  * 99520099 não entra. Previsão e orçamento são manuais, por canal e família, com autosave.
  */
 const VOL27_CAPSULA_KG = 0.005;
+const VOL27_EXCEL_AA = '2026-10-14';
 const VOL27_FAMILIAS = [
   { id: 'grao', nome: 'Grão (Kg)', unidade: 'kg' },
   { id: 'moido', nome: 'Café Moído (Kg)', unidade: 'kg' },
   { id: 'capsulas', nome: 'Cápsulas (Un)', unidade: 'un' },
   { id: 'maquina', nome: 'Máquina (Un)', unidade: 'un' },
-  { id: 'vinho', nome: 'Vinho (Kg)', unidade: 'kg' },
+  { id: 'vinho', nome: 'Vinho (L)', unidade: 'l' },
 ];
 const VOL27_ROTULOS = {
   todos: 'Todos os canais',
@@ -15921,8 +15924,12 @@ function vol27FundirMeses(base, porCima, yms) {
     version: 1,
     atualizado_em: (porCima && porCima.atualizado_em) || (base && base.atualizado_em) || null,
     fonte: (base && base.fonte) || '',
+    excelAa: (base && base.excelAa) || (porCima && porCima.excelAa) || '',
+    ultimaData: (base && base.ultimaData) || (porCima && porCima.ultimaData) || '',
     meses: {},
   };
+  if (!out.excelAa) delete out.excelAa;
+  if (!out.ultimaData) delete out.ultimaData;
   const bm = (base && base.meses) || {};
   Object.keys(bm).forEach(function (ym) { out.meses[ym] = bm[ym]; });
   const pm = (porCima && porCima.meses) || {};
@@ -16102,16 +16109,16 @@ function vol27NotaFora(ag) {
   const f = vol27ResumoFora(ag);
   const partes = [];
   if (f.linhas > 0) {
-    partes.push('Fora das cinco famílias: ' + vol27FmtPlano(f.kg) + ' kg e ' + vol27FmtPlano(f.un) + ' un (' + f.linhas.toLocaleString('pt-BR') + ' linhas). Não entram no grão. A base gravada só separa grão e cápsulas; moído, máquina e vinho ficam neste resto até a próxima carga do mês corrente e do anterior.');
+    partes.push('Fora das cinco famílias: ' + vol27FmtPlano(f.kg) + ' kg e ' + vol27FmtPlano(f.un) + ' un (' + f.linhas.toLocaleString('pt-BR') + ' linhas). Não entram no grão.');
   }
   if (f.vinhoSemLitro > 0) {
     partes.push(f.vinhoSemLitro + ' linhas de vinho sem Peso líq. (coluna AA).');
   }
   if (f.maquinaSemUn > 0) {
-    partes.push(f.maquinaSemUn + ' linhas de máquina sem Peso líq. (coluna AA).');
+    partes.push(f.maquinaSemUn + ' linhas de máquina sem QtFaturada, Qtd Bonifi e Qtd Doação (colunas M, U e Y).');
   }
   const nomesSem = { grao: 'Grão', moido: 'Café moído', capsulas: 'Cápsulas', maquina: 'Máquina', vinho: 'Vinho' };
-  const unSem = { grao: 'kg', moido: 'kg', capsulas: 'un', maquina: 'un', vinho: 'kg' };
+  const unSem = { grao: 'kg', moido: 'kg', capsulas: 'un', maquina: 'un', vinho: 'L' };
   Object.keys(f.semCanal).forEach(function (fam) {
     if (!orc27TemNumero(f.semCanal[fam]) || Number(f.semCanal[fam]) === 0) return;
     partes.push(nomesSem[fam] + ' sem canal: ' + vol27FmtPlano(f.semCanal[fam]) + ' ' + unSem[fam] + '. Entra em Todos os canais e fica de fora ao escolher um canal.');
@@ -16193,12 +16200,14 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
     + '<label for="vol27-filtro" style="font-size:13px;font-weight:600;">Canal</label>'
     + '<select id="vol27-filtro" class="form-input" style="height:36px;min-width:260px;font-size:13px;" onchange="vol27OnFiltro(this)">'
     + opts + '</select>'
-    + '<span style="font-size:12px;color:var(--muted);">Grão, moído e vinho = Peso líq. (AA) · cápsulas = AA ÷ 0,005 · máquina = QtFaturada + Qtd Bonifi + Qtd Doação. Sem linha de total.</span>'
+    + '<span style="font-size:12px;color:var(--muted);">Grão e moído = Peso líq. (AA) em kg · vinho = AA em litros, sem conversão · cápsulas = AA ÷ 0,005 · máquina = QtFaturada + Qtd Bonifi + Qtd Doação (não usa AA). Sem linha de total.</span>'
     + '</div>'
     + notaHtml
     + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
     + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Volume'
-    + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Total 2026 = YTD até Set + Previsão Out a Dez · Var % vs 2025 = (Total 2026 − N-1) / N-1 · % 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026</span>'
+    + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Total 2026 = YTD até Set + Previsão Out a Dez · Var % vs 2025 = (Total 2026 − N-1) / N-1 · % 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026'
+    + (ag && ag.ultimaData ? (' · Ficheiro até ' + String(ag.ultimaData).split('-').reverse().join('/') + '. YTD até Set é só Janeiro a Setembro' + (ag.ultimaData <= '2026-09-30' ? ' e cobre o ficheiro até ao último dia.' : '.')) : '')
+    + '</span>'
     + '</div>'
     + '<table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1180px;">'
     + '<thead><tr>'
@@ -16443,13 +16452,16 @@ function vol27Instante(ag) {
 
 function vol27NormalizarAgregado(raw) {
   if (!raw || typeof raw !== 'object' || !raw.meses) return null;
-  return {
+  const out = {
     version: 1,
     atualizado_em: raw.atualizado_em || null,
     fonte: raw.fonte || '',
     erro: raw.erro || '',
     meses: raw.meses,
   };
+  if (raw.excelAa) out.excelAa = raw.excelAa;
+  if (raw.ultimaData) out.ultimaData = raw.ultimaData;
+  return out;
 }
 
 async function vol27LerAgregado() {
@@ -16494,6 +16506,8 @@ async function vol27SalvarAgregado(ag) {
   payload.atualizado_em = new Date().toISOString();
   payload.fonte = (ag && ag.fonte) || payload.fonte || '';
   payload.version = 1;
+  if (ag && ag.excelAa) payload.excelAa = ag.excelAa;
+  if (ag && ag.ultimaData) payload.ultimaData = ag.ultimaData;
   _vol27Agregado = payload;
   try { localStorage.setItem(VOL27_AGREGADO_LS, JSON.stringify(payload)); } catch (_) {}
   try {
@@ -16686,7 +16700,7 @@ async function vol27FetchVendasFiltro(filtro, rotulo) {
  * Soma a tabela vendas uma vez por entrega.
  * A mesma linha está gravada com data ISO e em dd.mm.aaaa; a cópia não entra.
  * A tabela não traz hierarquia: moído, máquina e vinho ficam de fora (tipo OUTRO).
- * Grão usa o peso (AA). Cápsulas usam peso / 0,005. Outubro entra no mês; a coluna YTD até Set não o soma.
+ * Grão e moído usam o peso (AA). Vinho usa AA em litros. Cápsulas usam AA / 0,005. Máquina não está nesta tabela (no Excel é M+U+Y). Outubro entra no mês; a coluna YTD até Set não o soma.
  */
 async function vol27ConstruirDeVendasCloud() {
   let cliente = null;
@@ -16713,14 +16727,43 @@ async function vol27ConstruirDeVendasCloud() {
   return ag;
 }
 
+function vol27SeedExcelAa() {
+  const root = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : null);
+  const raw = root && root.VOL27_SEED_EXCEL;
+  if (!raw || !raw.meses) return null;
+  try { return JSON.parse(JSON.stringify(raw)); } catch (e) { return null; }
+}
+
+function vol27AgregadoEhExcelAa(ag) {
+  if (!ag || ag.fonte !== 'excel-aa' || ag.excelAa !== VOL27_EXCEL_AA) return false;
+  const meses = ag.meses || {};
+  return !!(meses['2025-01'] && meses['2026-09']);
+}
+
 /**
  * O agregado antigo (fonte vendas-cloud) somou a cópia ISO + dd.mm.aaaa e inflacionava os kg.
- * Esse agregado recalcula-se sem a cópia. O Excel do mês corrente e do anterior continua a gravar as cinco famílias.
+ * A base do Excel (coluna AA, cápsulas AA/0,005, máquina M+U+Y) substitui esse agregado.
+ * O Excel do mês corrente e do anterior continua a gravar por cima desses meses.
  */
 async function vol27Preparar() {
   try { await vol27HidrateManual(); } catch (e) { console.warn('vol27 manual', e); }
   let ag = await vol27LerAgregado();
   if (!ag || !ag.meses) ag = { version: 1, meses: {}, fonte: '' };
+  if (!vol27AgregadoEhExcelAa(ag)) {
+    const seed = vol27SeedExcelAa();
+    if (seed) {
+      const fonte = ag && ag.fonte;
+      const manterUpload = fonte === 'excel' || fonte === 'excel-aa';
+      const yms = manterUpload ? Object.keys(ag.meses || {}) : [];
+      const merged = vol27FundirMeses(seed, manterUpload ? ag : seed, yms);
+      merged.fonte = 'excel-aa';
+      merged.excelAa = VOL27_EXCEL_AA;
+      merged.ultimaData = seed.ultimaData || merged.ultimaData || '';
+      if (manterUpload && ag.ultimaData && ag.ultimaData > merged.ultimaData) merged.ultimaData = ag.ultimaData;
+      ag = await vol27SalvarAgregado(merged);
+    }
+  }
+  if (ag && ag.fonte === 'vendas-cloud') { /* o histórico inflacionado recalcula-se abaixo */ }
   if (vol27PrecisaHistorico(ag)) {
     try {
       const built = await vol27ConstruirDeVendasCloud();
@@ -16748,7 +16791,16 @@ async function vol27SubstituirJanela(linhas, hoje, cargaCtx) {
   const antes = await vol27LerAgregado();
   const merged = vol27FundirMeses(antes, delta, yms);
   const fonteAntes = antes && antes.fonte;
-  merged.fonte = (fonteAntes && fonteAntes !== 'vendas-cloud') ? fonteAntes : 'excel';
+  const fonteRuim = !fonteAntes || fonteAntes === 'vendas-cloud' || fonteAntes === 'vendas-dedup';
+  merged.fonte = fonteRuim ? 'excel-aa' : fonteAntes;
+  if (!merged.excelAa) merged.excelAa = VOL27_EXCEL_AA;
+  let ultima = merged.ultimaData || (antes && antes.ultimaData) || '';
+  const listaJanela = Array.isArray(linhas) ? linhas : [];
+  for (let i = 0; i < listaJanela.length; i++) {
+    const dia = vol27DiaISO(listaJanela[i] && listaJanela[i].data);
+    if (dia && dia > ultima) ultima = dia;
+  }
+  if (ultima) merged.ultimaData = ultima;
   const saved = await vol27SalvarAgregado(merged);
   if (_orc27Sub === 'volume' && _pvView === 'orcamento' && _vol27Pronto) orc27Pintar();
   return saved;
@@ -40029,7 +40081,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-14-volume-capsulas: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-14-volume-excel-aa: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

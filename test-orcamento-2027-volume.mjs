@@ -202,15 +202,15 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
     'Café Moído (Kg)',
     'Cápsulas (Un)',
     'Máquina (Un)',
-    'Vinho (Kg)',
+    'Vinho (L)',
   ]);
   assert.equal(vm.runInContext('VOL27_CAPSULA_KG', ctx), 0.005);
   assert.equal(vm.runInContext('VOL27_DEBOUNCE_MS', ctx), 1000);
   assert.equal(vm.runInContext('VOL27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_volume.json');
   assert.ok(!String(vm.runInContext('VOL27_CLOUD_PATH', ctx)).includes('mapas_v3'));
   assert.equal(vm.runInContext('ORC27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_canais.json');
-  assert.ok(sw.includes('v2026-10-14-volume-capsulas'));
-  assert.ok(html.includes('v2026-10-14-volume-capsulas'));
+  assert.ok(sw.includes('v2026-10-14-volume-excel-aa'));
+  assert.ok(html.includes('v2026-10-14-volume-excel-aa'));
   assert.ok(extractFn(html, 'vol27Agendar').includes('VOL27_DEBOUNCE_MS'));
   assert.ok(extractFn(html, 'vol27Flush').includes('clearTimeout(_vol27Timer)'));
   assert.ok(!extractFn(html, 'vol27Flush').includes('pvSaveData'));
@@ -374,7 +374,7 @@ check('vinho é a coluna AA sem conversão; 99520099 e o filtro de canal', () =>
   assert.ok(vistaTodos.includes('Café Moído (Kg)'));
   assert.ok(vistaTodos.includes('Cápsulas (Un)'));
   assert.ok(vistaTodos.includes('Máquina (Un)'));
-  assert.ok(vistaTodos.includes('Vinho (Kg)'));
+  assert.ok(vistaTodos.includes('Vinho (L)'));
   assert.ok(!vistaTodos.includes('data-vol-campo'));
   assert.ok(vistaTodos.includes('Todos os canais'));
   const vistaLojas = ctx.vol27RenderHtml(true, ag, doc, 'dfb_lojas');
@@ -448,6 +448,50 @@ check('previsão vazia fica vazia; um clear não dispara duas vezes; empresa nã
   const fundido = ctx.vol27FundirMeses(base, excel, ['2026-09']);
   perto(fundido.meses['2025-01'].canais.dfb_lojas.grao, 1);
   perto(fundido.meses['2026-09'].canais.dfb_lojas.moido, 4);
+});
+
+check('seed do Excel: AA, cápsulas ÷ 0,005, máquina M+U+Y, YTD só até Set', () => {
+  const seedCtx = {};
+  vm.createContext(seedCtx);
+  vm.runInContext(fs.readFileSync(path.join(root, 'vendas-volume-familias.js'), 'utf8'), seedCtx);
+  const seed = seedCtx.VOL27_SEED_EXCEL;
+  assert.equal(seed.fonte, 'excel-aa');
+  assert.equal(seed.excelAa, '2026-10-14');
+  assert.equal(seed.ultimaData, '2026-09-30');
+  assert.ok(seed.meses['2025-01'] && seed.meses['2026-09']);
+  assert.ok(!seed.meses['2026-10']);
+  const ytd = ctx.orc27PeriodoYtd();
+  assert.equal(ytd[0], '2026-01');
+  assert.equal(ytd[ytd.length - 1], '2026-09');
+  assert.ok(ytd.indexOf('2026-10') < 0);
+  const dist = ['dfb_dist_reg', 'qb_dist_reg'];
+  const n1 = ctx.orc27PeriodoN1();
+  const somar = (periodo, fam, canais) => ctx.vol27Somar(seed, periodo, canais, fam, false);
+  perto(somar(n1, 'moido', dist).valor, 6107.009);
+  perto(somar(ytd, 'moido', dist).valor, 3326.89);
+  perto(somar(n1, 'grao', dist).valor, 106338.5);
+  perto(somar(ytd, 'grao', dist).valor, 61534.5);
+  perto(somar(n1, 'capsulas', dist).valor, 1810787);
+  perto(somar(ytd, 'capsulas', dist).valor, 969575);
+  perto(somar(n1, 'maquina', dist).valor, 3649);
+  perto(somar(ytd, 'maquina', dist).valor, 2449);
+  perto(somar(n1, 'vinho', dist).valor, 4832.25);
+  perto(somar(ytd, 'vinho', dist).valor, 2854.5);
+  assert.equal(somar(n1, 'moido', ['dfb_dist_reg']).valor, somar(n1, 'moido', dist).valor);
+  assert.equal(somar(n1, 'moido', ['qb_dist_reg']).tem, false);
+  assert.equal(somar(ytd, 'moido', ['qb_dist_reg']).tem, false);
+  assert.ok(html.includes('vendas-volume-familias.js'));
+  assert.ok(extractFn(html, 'vol27Medida').includes('VOL27_CAPSULA_KG'));
+  assert.ok(extractFn(html, 'vol27Medida').includes('qtdBonifi'));
+  assert.ok(extractFn(html, 'vol27Preparar').includes('vol27SeedExcelAa'));
+  assert.ok(extractFn(html, 'vol27Preparar').includes('vol27ConstruirDeVendasCloud'));
+  const vista = ctx.vol27RenderHtml(false, seed, { celulas: {} }, 'dfb_dist_reg');
+  assert.ok(vista.includes('6.107'));
+  assert.ok(vista.includes('3.326,9'));
+  assert.ok(vista.includes('1.810.787'));
+  assert.ok(vista.includes('Ficheiro até 30/09/2026'));
+  assert.equal((vista.match(/data-vol-fam=/g) || []).length, 5);
+  assert.ok(!vista.includes('>Total</td>'));
 });
 
 if (process.exitCode) {
