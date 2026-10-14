@@ -2,7 +2,8 @@
 /**
  * Orçamento 2027 · Volume.
  * Orç Valor é o antigo submenu Canais. Volume tem cinco famílias, na unidade de cada uma.
- * Cápsulas = peso / 0,005. Grão e moído ficam em kg. Uma linha, uma família.
+ * Cápsulas = coluna AA / 0,005. Grão, moído e vinho = AA sem conversão.
+ * Máquina = QtFaturada + Qtd Bonifi + Qtd Doação, e não o peso. Uma linha, uma família.
  * 99520099 não entra. O filtro de canal muda os números. Total = YTD + previsão.
  */
 import fs from 'fs';
@@ -145,7 +146,12 @@ const fns = [
   'vol27EhKg',
   'vol27EhGrama',
   'vol27PesoKg',
+  'vol27NumeroColuna',
   'vol27Medida',
+  'indiceColunaVolumeVenda',
+  'indiceColunaPesoLiqVenda',
+  'indiceColunaQtdBonifiVenda',
+  'indiceColunaQtdDoacaoVenda',
   'vol27DiaISO',
   'vol27ChaveCopia',
   'vol27SemCopiaDeData',
@@ -196,15 +202,15 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
     'Café Moído (Kg)',
     'Cápsulas (Un)',
     'Máquina (Un)',
-    'Vinho (L)',
+    'Vinho (Kg)',
   ]);
   assert.equal(vm.runInContext('VOL27_CAPSULA_KG', ctx), 0.005);
   assert.equal(vm.runInContext('VOL27_DEBOUNCE_MS', ctx), 1000);
   assert.equal(vm.runInContext('VOL27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_volume.json');
   assert.ok(!String(vm.runInContext('VOL27_CLOUD_PATH', ctx)).includes('mapas_v3'));
   assert.equal(vm.runInContext('ORC27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_canais.json');
-  assert.ok(sw.includes('v2026-10-14-volume-grao'));
-  assert.ok(html.includes('v2026-10-14-volume-grao'));
+  assert.ok(sw.includes('v2026-10-14-volume-capsulas'));
+  assert.ok(html.includes('v2026-10-14-volume-capsulas'));
   assert.ok(extractFn(html, 'vol27Agendar').includes('VOL27_DEBOUNCE_MS'));
   assert.ok(extractFn(html, 'vol27Flush').includes('clearTimeout(_vol27Timer)'));
   assert.ok(!extractFn(html, 'vol27Flush').includes('pvSaveData'));
@@ -216,11 +222,12 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
   assert.ok(!extractFn(html, 'vol27SubstituirJanela').includes('vol27SemCopiaDeData'));
 });
 
-check('cápsulas = peso/0,005; grão e moído ficam em kg; uma linha não entra em duas famílias', () => {
-  const cap = ctx.vol27Medida({ tipo: 'CAPSULAS', peso: 10 });
+check('cápsulas = AA/0,005; grão e moído ficam em AA; máquina é M+U+Y e não AA', () => {
+  const cap = ctx.vol27Medida({ tipo: 'CAPSULAS', peso: 10, qty: Math.round(10 / 0.0055) });
   assert.equal(cap.familia, 'capsulas');
   perto(cap.medida, 10 / 0.005);
   assert.notEqual(cap.medida, Math.round(10 / 0.0055));
+  assert.notEqual(cap.medida, 10);
 
   const grao = ctx.vol27Medida({ tipo: 'GRÃO', peso: 12.5 });
   assert.equal(grao.familia, 'grao');
@@ -235,10 +242,36 @@ check('cápsulas = peso/0,005; grão e moído ficam em kg; uma linha não entra 
   perto(ambos.medida, 200);
   assert.notEqual(ctx.vol27FamiliaNoTexto('CÁPSULAS DE GRÃO'), 'grao');
 
-  const maq = ctx.vol27Medida({ hierarq: 'MÁQUINA DE CAFÉ EM GRÃO', peso: 40, volume: 3, unidadeQty: 'UN' });
+  const maq = ctx.vol27Medida({
+    hierarq: 'MÁQUINA DE CAFÉ EM GRÃO',
+    peso: 40,
+    volume: 2,
+    qtdBonifi: 1,
+    qtdDoacao: 4,
+    unidadeQty: 'UN',
+  });
   assert.equal(maq.familia, 'maquina');
-  perto(maq.medida, 3);
+  perto(maq.medida, 7);
+  assert.notEqual(maq.medida, 40);
+  const maqSoPeso = ctx.vol27Medida({ hierarq: 'MÁQUINAS', peso: 40 });
+  assert.equal(maqSoPeso.familia, 'maquina');
+  assert.equal(maqSoPeso.medida, null);
 
+  const REAL = ['Organização vendas', 'Canal distribuição', 'Emissor da ordem', 'Doc.faturamento', 'Escritório de vendas', 'Equipe de vendas', 'Material', 'Representante de vendas', 'Hierarq.produtos', 'Data', 'Fatur.', 'Fatur.', 'QtFaturada', 'QtFaturada', 'VendasBrut', 'VendasBrut', 'Desc.Com.', 'Desc.Com.', 'Valor Boni', 'Valor Boni', 'Qtd Bonifi', 'Qtd Bonifi', 'Valor Doaç', 'Valor Doaç', 'Qtd Doação', 'Qtd Doação', 'Peso líq.', 'Peso líq.'];
+  assert.equal(ctx.indiceColunaVolumeVenda(REAL), 12, 'M = QtFaturada');
+  assert.equal(ctx.indiceColunaQtdBonifiVenda(REAL), 20, 'U = Qtd Bonifi');
+  assert.equal(ctx.indiceColunaQtdDoacaoVenda(REAL), 24, 'Y = Qtd Doação');
+  assert.equal(ctx.indiceColunaPesoLiqVenda(REAL), 26, 'AA = Peso líq.');
+  assert.equal(REAL[12], 'QtFaturada');
+  assert.equal(REAL[20], 'Qtd Bonifi');
+  assert.equal(REAL[24], 'Qtd Doação');
+  assert.equal(REAL[26], 'Peso líq.');
+
+  assert.equal(ctx.vol27FamiliaNoTexto('ESMGNB050000400001 MF'), 'maquina');
+  const mf = ctx.vol27Medida({ hierarq: 'ESMGNB050000400001 MF', peso: 8, volume: 1, qtdBonifi: 0, qtdDoacao: 0 });
+  assert.equal(mf.familia, 'maquina');
+  perto(mf.medida, 1);
+  assert.notEqual(mf.medida, 8);
   assert.equal(ctx.vol27FamiliaNoTexto('ENCAPSULADO'), '');
   assert.equal(ctx.vol27FamiliaNoTexto('MOINHO'), '');
   assert.equal(ctx.vol27FamiliaNoTexto('GRAOSTE'), '');
@@ -248,13 +281,14 @@ check('cápsulas = peso/0,005; grão e moído ficam em kg; uma linha não entra 
   assert.equal(ctx.vol27Medida({ tipo: 'OUTRO', peso: 9 }).familia, '');
 });
 
-check('vinho só em litros; máquina em unidades; 99520099 e o filtro de canal', () => {
-  const semLitro = ctx.vol27Medida({ hierarq: 'VINHO', peso: 12, unidadePeso: 'KG', volume: 12, unidadeQty: 'KG' });
-  assert.equal(semLitro.familia, 'vinho');
-  assert.equal(semLitro.medida, null);
-  const comLitro = ctx.vol27Medida({ hierarq: 'VINHO TINTO', peso: 9, unidadePeso: 'KG', volume: 6, unidadeQty: 'L' });
-  assert.equal(comLitro.familia, 'vinho');
-  perto(comLitro.medida, 6);
+check('vinho é a coluna AA sem conversão; 99520099 e o filtro de canal', () => {
+  const vinhoAa = ctx.vol27Medida({ hierarq: 'VINHO', peso: 12, unidadePeso: 'KG', volume: 6, unidadeQty: 'L' });
+  assert.equal(vinhoAa.familia, 'vinho');
+  perto(vinhoAa.medida, 12);
+  assert.notEqual(vinhoAa.medida, 6);
+  const semAa = ctx.vol27Medida({ hierarq: 'VINHO TINTO', volume: 6, unidadeQty: 'L' });
+  assert.equal(semAa.familia, 'vinho');
+  assert.equal(semAa.medida, null);
 
   assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520099, cod: '1' }), '');
   assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520001 }), 'dfb_lojas');
@@ -273,7 +307,7 @@ check('vinho só em litros; máquina em unidades; 99520099 e o filtro de canal',
     { data: '2025-02-01', tipo: 'CAPSULAS', peso: 10, npess: 99520001 },
     { data: '2025-02-02', hierarq: 'CAFÉ MOÍDO', peso: 2.5, tipo: 'OUTRO', npess: 99520002 },
     { data: '2025-03-01', hierarq: 'CÁPSULAS DE GRÃO', peso: 1, tipo: 'GRÃO', npess: 99520001 },
-    { data: '2025-04-01', hierarq: 'MÁQUINAS', peso: 40, volume: 3, unidadeQty: 'UN', npess: 99520018 },
+    { data: '2025-04-01', hierarq: 'MÁQUINAS', peso: 40, volume: 2, qtdBonifi: 1, qtdDoacao: 0, unidadeQty: 'UN', npess: 99520018 },
     { data: '2025-05-01', hierarq: 'VINHO', peso: 12, unidadePeso: 'KG', volume: 12, unidadeQty: 'KG', npess: 99520001 },
     { data: '2025-05-02', hierarq: 'VINHO', peso: 9, volume: 6, unidadeQty: 'L', npess: 99530003 },
     { data: '2025-06-01', tipo: 'OUTRO', peso: 9, npess: 99520001 },
@@ -292,9 +326,9 @@ check('vinho só em litros; máquina em unidades; 99520099 e o filtro de canal',
   assert.equal(fam(ag, '2025-03', 'dfb_lojas', 'grao'), 0);
   perto(fam(ag, '2025-04', 'dfb_ret_mod', 'maquina'), 3);
   assert.equal(fam(ag, '2025-04', 'dfb_ret_mod', 'grao'), 0);
-  assert.equal(fam(ag, '2025-05', 'dfb_lojas', 'vinho'), 0);
-  assert.equal(ag.meses['2025-05'].fora.vinhoSemLitro, 1);
-  perto(fam(ag, '2025-05', 'qb_rest', 'vinho'), 6);
+  perto(fam(ag, '2025-05', 'dfb_lojas', 'vinho'), 12);
+  assert.equal(ag.meses['2025-05'].fora.vinhoSemLitro, 0);
+  perto(fam(ag, '2025-05', 'qb_rest', 'vinho'), 9);
   assert.equal(fam(ag, '2025-06', 'dfb_lojas', 'grao'), 0);
   perto(ag.meses['2025-06'].fora.kg, 13);
   perto(fam(ag, '2026-09', 'dfb_lojas', 'grao'), 3);
@@ -340,7 +374,7 @@ check('vinho só em litros; máquina em unidades; 99520099 e o filtro de canal',
   assert.ok(vistaTodos.includes('Café Moído (Kg)'));
   assert.ok(vistaTodos.includes('Cápsulas (Un)'));
   assert.ok(vistaTodos.includes('Máquina (Un)'));
-  assert.ok(vistaTodos.includes('Vinho (L)'));
+  assert.ok(vistaTodos.includes('Vinho (Kg)'));
   assert.ok(!vistaTodos.includes('data-vol-campo'));
   assert.ok(vistaTodos.includes('Todos os canais'));
   const vistaLojas = ctx.vol27RenderHtml(true, ag, doc, 'dfb_lojas');
