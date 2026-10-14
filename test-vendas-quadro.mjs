@@ -86,6 +86,7 @@ const fns = [
   'indiceColunaValorVenda',
   'indiceColunaNpessVenda',
   'npessDeCelulaExcel',
+  'npessVendaIgnorado',
   'linhaValorQuadroDeExcel',
   'codClienteLojasOnlineBr',
   'codClienteLojasOnlineAmazon',
@@ -277,6 +278,45 @@ check('mês fechado não muda', () => {
   const junho2 = celula(completo, '2026-06', 'Delta Foods Brasil', 'Horeca', 'FILIPE NEVES');
   assert.equal(junho2.valor, 1000, 'completar a base não reescreve mês fechado');
   assert.equal(junho2.linhas, 50);
+});
+
+check('NPess 99520099 é devolução e sai do quadro e de Por classificar', () => {
+  assert.equal(ctx.npessVendaIgnorado(99520099), true);
+  assert.equal(ctx.npessVendaIgnorado('99520099 - QBRASIL'), true);
+  assert.equal(ctx.npessVendaIgnorado('99520099 Q-BRASIL'), true);
+  assert.equal(ctx.npessDeCelulaExcel('99520099 DIOGO OLIVEIRA'), 99520099);
+  assert.equal(ctx.npessVendaIgnorado(99520010), false);
+  assert.equal(ctx.npessVendaIgnorado(99520018), false);
+  assert.equal(ctx.npessVendaIgnorado('99520001 MARCIO'), false);
+  const rows = [
+    { cod: '445753', data: '2026-09-15', tipo: 'OUTRO', valor: 100000, npess: 99520099, nome: 'Q-BRASIL IMP.E DIST.MAQUINAS E ALIM' },
+    { cod: '445753', data: '2026-09-20', tipo: 'OUTRO', valor: 46838.16, npess: '99520099 - QBRASIL' },
+    { cod: '100', data: '2026-09-16', tipo: 'OUTRO', valor: 50, npess: 99520010 },
+    { cod: '445753', data: '2026-10-02', tipo: 'OUTRO', valor: 26638.72, npess: 99520099 },
+    { cod: '9', data: '2026-09-18', tipo: 'OUTRO', valor: 12, npess: 111 },
+  ];
+  const q = ctx.agregarVendasQuadro(rows, opts);
+  assert.equal(celula(q, '2026-09', 'Delta Foods Brasil', 'Por classificar', 'Por classificar'), null);
+  assert.equal(celula(q, '2026-10', 'Delta Foods Brasil', 'Por classificar', 'Por classificar'), null);
+  assert.equal(celula(q, '2026-10', 'Por classificar', 'Por classificar', 'Por classificar'), null);
+  const filipe = celula(q, '2026-09', 'Delta Foods Brasil', 'Horeca', 'FILIPE NEVES');
+  assert.ok(filipe, 'outro vendedor continua a contar');
+  assert.equal(filipe.valor, 50);
+  const semCanal = celula(q, '2026-09', 'Por classificar', 'Por classificar', 'Por classificar');
+  assert.ok(semCanal);
+  assert.equal(semCanal.valor, 12);
+  let totalSet = 0;
+  const celSet = q.meses['2026-09'].celulas;
+  Object.keys(celSet).forEach(k => { totalSet += celSet[k].valor; });
+  assert.equal(Math.round(totalSet * 100) / 100, 62);
+  assert.ok(Math.abs(totalSet - 146838.16) > 1, 'Set/2026 não inclui 146.838,16');
+  assert.ok(!JSON.stringify(q).includes('146838.16'));
+  assert.ok(!JSON.stringify(q).includes('26638.72'));
+  const fat = ctx.agregarFaturClienteMes(rows);
+  assert.equal(fat['2026-09'].clientes['445753\t99520099'], undefined);
+  assert.equal(fat['2026-10'], undefined);
+  assert.ok(fat['2026-09'].clientes['100\t99520010']);
+  assert.equal(fat['2026-09'].clientes['100\t99520010'].valor, 50);
 });
 
 check('linha sem canal cai em Por classificar', () => {
@@ -798,6 +838,8 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(proc.includes('codEmissorVendaAceite(codRaw)'));
   assert.ok(proc.includes('vendaDataNaJanelaCarga'));
   assert.ok(proc.includes('vendaDataAntesDe2025'));
+  assert.ok(proc.includes('npessVendaIgnorado(npessLinha)'));
+  assert.ok(proc.indexOf('npessVendaIgnorado(npessLinha)') < proc.indexOf('linhasJanela.push'));
   assert.ok(proc.indexOf('vendaDataNaJanelaCarga') < proc.indexOf('row[iPeso]'));
   assert.ok(proc.includes('linhaVendaParaSupabase'));
   assert.ok(!proc.includes('actualizarQuadroVendas'));
@@ -812,7 +854,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-14-vendas-site-lojas'));
+  assert.ok(sw.includes('v2026-10-14-vendas-ignorar-99520099'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-vendas-1out'));
@@ -827,7 +869,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-14-vendas-site-lojas'));
+  assert.ok(html.includes('v2026-10-14-vendas-ignorar-99520099'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));

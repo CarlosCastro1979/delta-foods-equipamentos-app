@@ -312,12 +312,12 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-14-vendas-site-lojas'), 'service worker referido no index');
+  assert(html.includes('v2026-10-14-vendas-ignorar-99520099'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-perdas-sem-999'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-14-vendas-site-lojas'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-14-vendas-ignorar-99520099'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
@@ -783,6 +783,13 @@ function testVendedorAtual() {
     { cod: '406016', ym: '2026-09', npess: 99520020, valor: 10, nome: 'F. J. RIBEIRO CAFÉ-ME' },
   ]);
   assert(recente['406016'].npess === 99520020 && recente['406016'].ym === '2026-09', 'o mês mais recente ganha mesmo com menos Fatur');
+  const semDevolucao = nfe.npessAtualDeLinhas([
+    { cod: '445753', ym: '2026-09', npess: 99520099, valor: 146838.16, nome: 'Q-BRASIL IMP.E DIST.MAQUINAS E ALIM' },
+    { cod: '445753', ym: '2026-10', npess: '99520099', valor: 26638.72, nome: 'Q-BRASIL IMP.E DIST.MAQUINAS E ALIM' },
+    { cod: '100', ym: '2026-09', npess: 99520010, valor: 50, nome: 'CLIENTE REAL' },
+  ]);
+  assert(!semDevolucao['445753'], '99520099 não fica como vendedor actual');
+  assert(semDevolucao['100'].npess === 99520010, 'outro vendedor no catálogo mantém-se');
 
   const nomes = {
     99520020: 'EDUARDO MOREIRA',

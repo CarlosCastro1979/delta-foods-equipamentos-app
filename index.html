@@ -19394,6 +19394,18 @@ function npessDeCelulaExcel(v) {
 }
 
 /**
+ * Devolução de mercadoria da Q Brasil à Delta Foods Brasil.
+ * O NPess 99520099 não é venda: não entra no quadro, em «Por classificar»,
+ * nos acumulados, no Fatur. por cliente nem em Maiores perdas.
+ * Não se reclassifica para um canal nem se passa para as vendas da Q Brasil.
+ * O código é o do início do campo representante, como os outros NPess
+ * (99520099 ou «99520099 - …»). Outros vendedores ficam.
+ */
+function npessVendaIgnorado(v) {
+  return npessDeCelulaExcel(v) === 99520099;
+}
+
+/**
  * Cliente genérico das lojas online: BR0002 (CPF) e BR0003 (CNPJ).
  * O SAP também grava BR00002 e BR00003 (zeros a mais depois de BR).
  * Maiúsculas e espaços não contam. BR0002 não apanha BR00020 nem outro código.
@@ -19435,6 +19447,7 @@ function codClienteLojasOnlineAmazon(cod, nome) {
  * Canal: linha do P&L (Power BI), não Ecommerce/Horeca/Varejo da app.
  * Vendedor: só o mapa passado (VENDEDORES_DEFAULT). Código sem nome → Por classificar.
  * NPess desconhecido em 2025–2026 fica visível em «Por classificar» (não se omite).
+ * Excepção: 99520099 é devolução de mercadoria e é ignorado antes disto.
  * cod (opcional): BR0002/BR0003 e as contas Amazon ficam em Lojas online / Marcio.
  * nome (opcional): nome que começa por AMAZON também é Lojas online.
  */
@@ -19476,6 +19489,53 @@ function npessDaLinhaVendaQuadro(row, npessPorCod) {
 
 function chaveCelulaQuadro(dim) {
   return dim.empresa + '\t' + dim.canal + '\t' + dim.vendedor;
+}
+
+/**
+ * R$ já gravados no agregado que são só o 99520099 (Set e Out/2026).
+ * Se a célula ainda os tiver, saem. Se já foram retirados, não se tira outra vez.
+ */
+function ajustesDevolucao99520099() {
+  return {
+    '2026-09': 146838.16,
+    '2026-10': 26638.72,
+  };
+}
+
+function quadroSemDevolucao99520099(quadro) {
+  if (!quadro || !quadro.meses) return quadro;
+  const ajustes = ajustesDevolucao99520099();
+  const out = quadroVendasClone(quadro);
+  const meses = out.meses || {};
+  const chaves = Object.keys(ajustes);
+  for (let i = 0; i < chaves.length; i++) {
+    const ym = chaves[i];
+    const mes = meses[ym];
+    if (!mes || !mes.celulas) continue;
+    const alvo = +ajustes[ym];
+    if (!(alvo > 0)) continue;
+    const celulas = mes.celulas;
+    let key = 'Delta Foods Brasil\tPor classificar\tPor classificar';
+    if (!celulas[key]) {
+      key = '';
+      const nomes = Object.keys(celulas);
+      for (let j = 0; j < nomes.length; j++) {
+        const c = celulas[nomes[j]];
+        if (!c || c.canal !== 'Por classificar') continue;
+        if (Math.abs((+c.valor || 0) - alvo) < 0.02) { key = nomes[j]; break; }
+      }
+    }
+    if (!key || !celulas[key]) continue;
+    const c = celulas[key];
+    const valor = +c.valor || 0;
+    if (valor + 0.001 < alvo) continue;
+    if (Math.abs(valor - alvo) < 0.02) {
+      delete celulas[key];
+      continue;
+    }
+    c.valor = somarValorQuadro(valor, -alvo);
+  }
+  return out;
 }
 
 /**
@@ -19550,6 +19610,7 @@ function maxDataVendaISO(a, b) {
 /**
  * Soma valor e linhas por empresa × canal × vendedor × mês.
  * Linha sem canal conhecido fica em «Por classificar» (não é omitida).
+ * NPess 99520099 (devolução Q Brasil → Delta) fica de fora das somas.
  * Valor em falta não entra na soma de R$ (linhasComValor não sobe).
  * Cada mês guarda ultima_data = dia máximo da coluna Data que entrou nesse mês.
  */
@@ -19562,6 +19623,7 @@ function agregarVendasQuadro(rows, opts) {
     if (!/^\d{4}-\d{2}$/.test(ym)) continue;
     const isoDia = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(row && row.data) : String(row && row.data || '').slice(0, 10);
     const npess = npessDaLinhaVendaQuadro(row, o.npessPorCod);
+    if (npessVendaIgnorado(npess)) continue;
     const dim = dimensoesVendaQuadro(npess, o.mapas, row && row.cod, row && row.nome);
     const key = chaveCelulaQuadro(dim);
     if (!out.meses[ym]) out.meses[ym] = { celulas: {} };
@@ -22197,6 +22259,7 @@ function maioresPerdasMes(linhas, opts) {
     const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row.cod) : String(row.cod || '').trim();
     if (!cod) continue;
     const npess = typeof npessDaLinhaVendaQuadro === 'function' ? npessDaLinhaVendaQuadro(row, npessPorCod) : 0;
+    if (npessVendaIgnorado(npess) || npessVendaIgnorado(row.npess)) continue;
     const canalLinha = (typeof getCanalIdPorVendedorCod === 'function') ? (getCanalIdPorVendedorCod(npess) || '') : '';
     const valor = typeof parseValorVendaSap === 'function' ? parseValorVendaSap(row.valor) : (Number.isFinite(+row.valor) ? +row.valor : null);
     if (rowYm >= '2026-01' && npess && valor != null && npessAcabaEm999(npess)) {
@@ -22668,7 +22731,7 @@ function mesClienteTem(mes) {
   return !!(mes && mes.clientes && Object.keys(mes.clientes).length);
 }
 
-/** Soma Fatur. por cliente e NPess, mês a mês. Não grava meses fora da janela. */
+/** Soma Fatur. por cliente e NPess, mês a mês. Não grava meses fora da janela. 99520099 não entra. */
 function agregarFaturClienteMes(linhas) {
   const meses = {};
   const list = Array.isArray(linhas) ? linhas : [];
@@ -22682,6 +22745,7 @@ function agregarFaturClienteMes(linhas) {
     const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row.cod) : String(row.cod || '').trim();
     if (!cod) continue;
     let npess = typeof npessDeCelulaExcel === 'function' ? (npessDeCelulaExcel(row.npess) || 0) : (parseInt(row.npess, 10) || 0);
+    if (npessVendaIgnorado(npess)) continue;
     // BR0002/BR0003 e as contas Amazon são Lojas online. O NPess 99520009 é Site próprio.
     const lojasBr = typeof codClienteLojasOnlineBr === 'function' && codClienteLojasOnlineBr(cod);
     const lojasAmazon = typeof codClienteLojasOnlineAmazon === 'function' && codClienteLojasOnlineAmazon(cod, row.nome);
@@ -22739,6 +22803,7 @@ function linhasDeMesCliente(mes, ym) {
   for (let i = 0; i < keys.length; i++) {
     const c = clientes[keys[i]];
     if (!c || !c.cod) continue;
+    if (npessVendaIgnorado(c.npess)) continue;
     const neg = Number(c.negativo) || 0;
     const valor = Number(c.valor) || 0;
     const pos = arredondarRsPerdas(valor - neg);
@@ -23687,6 +23752,7 @@ async function processVendasFile(event) {
     let linhasValidas = 0;
     let linhasIgnoradasFora = 0;
     let linhasIgnoradasAntes2025 = 0;
+    let linhasIgnoradasDevolucao = 0;
     let jaExistentes = 0;
     let ficheirosOk = 0;
     let erroCabecalho = '';
@@ -23798,6 +23864,11 @@ async function processVendasFile(event) {
         const codRaw = emissor.split(/\s+/)[0].trim();
         if (!codEmissorVendaAceite(codRaw)) continue;
         const cod = normalizeVendaCod(codRaw);
+        const npessLinha = iNpessVenda >= 0 ? npessDeCelulaExcel(row[iNpessVenda]) : 0;
+        if (npessVendaIgnorado(npessLinha)) {
+          linhasIgnoradasDevolucao++;
+          continue;
+        }
 
         const pesoRaw = row[iPeso];
         const peso = parseFloat(pesoRaw);
@@ -23810,7 +23881,6 @@ async function processVendasFile(event) {
         if (!dataMin || dataStr < dataMin) dataMin = dataStr;
         if (!dataMax || dataStr > dataMax) dataMax = dataStr;
         const valorLinha = iValor >= 0 ? parseValorVendaSap(row[iValor]) : null;
-        const npessLinha = iNpessVenda >= 0 ? npessDeCelulaExcel(row[iNpessVenda]) : 0;
         const volLinha = iVolume >= 0 ? parseValorVendaSap(row[iVolume]) : null;
         const nomeEmissor = emissor.slice(codRaw.length).replace(/\s+/g, ' ').trim().slice(0, 80);
         const linhaAberta = {
@@ -23843,6 +23913,9 @@ async function processVendasFile(event) {
     const txtFora = linhasIgnoradasFora
       ? `<br>• <strong>${linhasIgnoradasFora.toLocaleString('pt-BR')}</strong> linha(s) fora de ${janelaTxt} ignoradas${mesesForaTxt ? ` (${mesesForaTxt})` : ''}`
       : '';
+    const txtDevolucao = linhasIgnoradasDevolucao
+      ? `<br>• <strong>${linhasIgnoradasDevolucao.toLocaleString('pt-BR')}</strong> linha(s) do vendedor 99520099 ignoradas (devolução de mercadoria, não é venda)`
+      : '';
 
     if (!linhasJanela.length) {
       setStatus(
@@ -23851,6 +23924,7 @@ async function processVendasFile(event) {
           • <strong>0</strong> linha(s) do mês corrente e do mês anterior
           ${txtFora}
           ${txtAntes2025}
+          ${txtDevolucao}
         </div>`
       );
       localStorage.setItem('delta_vendas_ultima_carga', JSON.stringify({
@@ -23997,6 +24071,7 @@ async function processVendasFile(event) {
         • <strong>${jaExistentes.toLocaleString('pt-BR')}</strong> já existiam na tabela (o Fatur. do ficheiro mesmo assim corrigiu o R$)
         ${txtFora}
         ${txtAntes2025}
+        ${txtDevolucao}
         ${histAtualizados ? `<br>• Histórico: ${histAtualizados} cliente(s) com última compra actualizada` : ''}
         ${quadroMsg}
       </div>`
@@ -37599,7 +37674,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-14-vendas-site-lojas: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-14-vendas-ignorar-99520099: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

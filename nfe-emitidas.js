@@ -315,6 +315,8 @@
       if (!/^\d{4}-\d{2}$/.test(ym)) return;
       var npess = parseInt(row.npess, 10) || 0;
       if (!npess) return;
+      // Devolução Q Brasil → Delta. Não é venda e não pode ficar como vendedor actual.
+      if (npess === 99520099) return;
       var valor = Number(row.valor);
       if (!Number.isFinite(valor)) valor = 0;
       var nome = String(row.nome || '').trim();

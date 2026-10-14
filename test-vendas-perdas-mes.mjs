@@ -114,6 +114,7 @@ vm.createContext(ctx);
   'normalizeVendaCod',
   'parseValorVendaSap',
   'npessDeCelulaExcel',
+  'npessVendaIgnorado',
   'npessDaLinhaVendaQuadro',
   'dimensoesVendaQuadro',
   'linhasPlVendasQuadro',
@@ -542,6 +543,36 @@ check('NPess 2026 a acabar em 999 não aparece; activo com N menor que N-1 apare
   assert.ok(!topLinhas.some(r => r.cod === 'T1'));
 });
 
+check('devolução 99520099 não entra em maiores perdas nem no Fatur. por cliente', () => {
+  const linhas = [
+    { cod: '445753', data: '2026-09-10', valor: 146838.16, npess: 99520099, nome: 'Q-BRASIL IMP.E DIST.MAQUINAS E ALIM' },
+    { cod: '445753', data: '2026-10-02', valor: 26638.72, npess: '99520099 - QBRASIL' },
+    { cod: '100', data: '2026-09-10', valor: 40, npess: 99520002 },
+    { cod: '100', data: '2025-09-10', valor: 90, npess: 99520002 },
+  ];
+  const fat = ctx.agregarFaturClienteMes(linhas);
+  assert.equal(fat['2026-09'].clientes['445753\t99520099'], undefined);
+  assert.equal(fat['2026-10'], undefined);
+  assert.equal(fat['2026-09'].clientes['100\t99520002'].valor, 40);
+  const modelo = ctx.maioresPerdasMes(linhas, {
+    ym: '2026-09', ymN1: '2025-09', canalId: '',
+  });
+  const saida = modelo.grupos.flatMap(g => g.linhas);
+  assert.ok(!saida.some(r => r.cod === '445753'), 'a devolução não parece perda nem venda do cliente');
+  const outro = saida.find(r => r.cod === '100');
+  assert.ok(outro);
+  assert.equal(outro.n, 40);
+  assert.equal(outro.n1, 90);
+  const deMes = ctx.linhasDeMesCliente({
+    clientes: {
+      '445753\t99520099': { cod: '445753', npess: 99520099, valor: 146838.16, negativo: 0, nome: 'Q-BRASIL' },
+      '100\t99520002': { cod: '100', npess: 99520002, valor: 40, negativo: 0 },
+    },
+  }, '2026-09');
+  assert.ok(!deMes.some(r => String(r.npess) === '99520099' || r.cod === '445753'));
+  assert.ok(deMes.some(r => r.cod === '100' && r.valor === 40));
+});
+
 check('o filtro do vendedor grava no localStorage', () => {
   ctx._perdasFiltroUi = null;
   store.delta_vendas_perdas_filtro = JSON.stringify({
@@ -556,8 +587,8 @@ check('o filtro do vendedor grava no localStorage', () => {
   assert.equal(saved.porCanal.horeca, '');
   assert.equal(saved.geral, 'Filipe Neves');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-14-vendas-site-lojas'));
-  assert.ok(html.includes('v2026-10-14-vendas-site-lojas'));
+  assert.ok(sw.includes('v2026-10-14-vendas-ignorar-99520099'));
+  assert.ok(html.includes('v2026-10-14-vendas-ignorar-99520099'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);
