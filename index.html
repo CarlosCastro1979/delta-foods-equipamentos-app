@@ -25985,9 +25985,9 @@ async function getVendasDedupKeySet(opts) {
         headers: readHeaders({ Range: `${from}-${to}` })
       });
       if (!res.ok) {
-        // HTTP 500 = statement timeout (57014) ao ordenar a tabela inteira (~591k).
-        // Uma retentativa; o mês parte-se em dias se continuar a falhar.
-        if (res.status >= 500 && tentativa < 1 && from === 0) {
+        // HTTP 500 = statement timeout (57014) ao varrer a tabela (~591k).
+        // Algumas retentativas; o mês parte-se em dias se continuar a falhar.
+        if (res.status >= 500 && tentativa < 3 && from === 0) {
           tentativa++;
           continue;
         }
@@ -26032,7 +26032,10 @@ async function getVendasDedupKeySet(opts) {
         const filtro = valor.indexOf('.') >= 0
           ? 'data=eq.' + encodeURIComponent('"' + valor + '"')
           : 'data=eq.' + encodeURIComponent(valor);
-        await pageKeys(`${SUPA_VENDAS}?select=cod,data,tipo&order=id.asc&${filtro}`);
+        // Sem order=id: essa ordenação percorre a chave primária desde o início
+        // e, num dia recente ou vazio, estoura o timeout (HTTP 500). Um dia cabe
+        // numa página; a igualdade é que limita as linhas.
+        await pageKeys(`${SUPA_VENDAS}?select=cod,data,tipo&${filtro}`);
       }
     }
   }

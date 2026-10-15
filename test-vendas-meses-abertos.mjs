@@ -580,6 +580,7 @@ checkAsync('dedup no servidor só pede o mês corrente e o anterior', async () =
   });
   assert.ok(ctx.fetchUrls.length > 0);
   assert.ok(ctx.fetchUrls.every(u => u.includes('data=eq.')), 'só igualdade de dia, sem o histórico');
+  assert.ok(ctx.fetchUrls.every(u => !u.includes('order=id')), 'igualdade de dia não ordena pela chave primária');
   assert.ok(ctx.fetchUrls.every(u => !u.includes('2019') && !u.includes('2026-08') && !u.includes('2025-12')));
   assert.ok(ctx.fetchUrls.some(u => u.includes('data=eq.2026-10-14')));
   assert.equal(porDias.count, 1);
