@@ -2,8 +2,9 @@
 /**
  * Orçamento 2027 · Sazonalidade.
  * Jan–Set 2026 = Fatur. do mês. Out/Nov/Dez = Previsão Out a Dez ÷ 3 até alguém gravar.
- * A média (Jan+…+Set)/9 não é o defeito. 2027 segue os pesos. Dif 2026 começa em 0.
- * Empresa e Institucional somam os filhos. O vendedor escreve só os três meses.
+ * A média (Jan+…+Set)/9 não é o defeito. 2027 começa pelos pesos e cada mês edita-se.
+ * Um mês de 2027 escrito fica quando o 4.º trimestre muda. Dif 2027 = soma − orçamento.
+ * Empresa e Institucional somam os filhos. Quem edita o Orç Valor edita estes meses.
  */
 import fs from 'fs';
 import vm from 'vm';
@@ -14,7 +15,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-15-sazonalidade-q4';
+const CACHE = 'v2026-10-15-sazonalidade-editar';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);
@@ -251,6 +252,15 @@ const fns = [
   'saz27EstadoQ4',
   'saz27LerQ4',
   'saz27Distribuir2027',
+  'saz27Mes2027',
+  'saz27IdxMes',
+  'saz27ChavesQ4',
+  'saz27Chaves2027',
+  'saz27CopiarBloco',
+  'saz27MergeY2027',
+  'saz27Misturar2027',
+  'saz27AnoEl',
+  'saz27PesoDoMes',
   'saz27SomarIdx',
   'saz27AplicarSomas',
   'saz27Montar',
@@ -733,16 +743,26 @@ check('o vendedor edita Out/Nov/Dez; célula calculada, empresa e mapa não', ()
     ['out', 'nov', 'dez'].forEach(mes => {
       const celula = tdMes(vista, row.id, '2026', mes);
       assert.ok(celula.includes('<input'), row.id + ' ' + mes);
+      assert.ok(celula.includes('data-saz-ano="2026"'));
       assert.ok(celula.includes('data-saz-mes="' + mes + '"'));
       inputs += 1;
     });
-    assert.ok(!trDe(vista, row.id, '2027').includes('<input'), row.id + ' 2027');
+    ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'].forEach(mes => {
+      const celula = tdMes(vista, row.id, '2027', mes);
+      assert.ok(celula.includes('<input'), row.id + ' 2027 ' + mes);
+      assert.ok(celula.includes('data-saz-ano="2027"'));
+      inputs += 1;
+    });
   });
-  assert.equal(inputs, canais.length * 3);
+  assert.equal(inputs, canais.length * 15);
   assert.ok(!trDe(vista, 'dfb', '2026').includes('<input'));
+  assert.ok(!trDe(vista, 'dfb', '2027').includes('<input'));
   assert.ok(!trDe(vista, 'dfb_inst', '2026').includes('<input'));
+  assert.ok(!trDe(vista, 'dfb_inst', '2027').includes('<input'));
   assert.ok(!trDe(vista, 'qb', '2026').includes('<input'));
+  assert.ok(!trDe(vista, 'qb', '2027').includes('<input'));
   assert.ok(!trDe(vista, 'total', '2026').includes('<input'));
+  assert.ok(!trDe(vista, 'total', '2027').includes('<input'));
   const fechado = ctx.saz27RenderHtml(false, linhas);
   assert.ok(!fechado.includes('saz27-input'));
   assert.ok(fechado.includes('type="checkbox"'));
@@ -764,6 +784,140 @@ check('o vendedor edita Out/Nov/Dez; célula calculada, empresa e mapa não', ()
   ctx.saz27OnInput(el({ 'data-saz-id': 'dfb_lojas', 'data-saz-mes': 'out' }, '1'));
   assert.equal(ctx._saz27Doc.canais.dfb_lojas.out, antes);
   assert.equal(ctx.saz27Flush(), false);
+});
+
+check('2027 escrito fica quando o 4.º trimestre muda; a Dif é soma − orçamento; o defeito ÷ 3 não se grava', () => {
+  setUser('Massimo Bottello');
+  assert.equal(ctx.orc27PodeEditar(), true);
+  assert.equal(ctx.pvPodeEditar(), false);
+  ctx._orc27Doc = { version: 1, canais: orc };
+  ctx._saz27Doc = { version: 1, canais: {} };
+  ctx._saz27Dirty = false;
+  ctx._saz27Filtro = [];
+
+  const base = byId(ctx.saz27Montar(quadro, orc, {}));
+  assert.equal(base.dfb_lojas.m2026[9], 10);
+  assert.equal(base.dfb_lojas.m2026[10], 10);
+  assert.equal(base.dfb_lojas.m2026[11], 10);
+  assert.equal(cents(base.dfb_lojas.m2026[9] + base.dfb_lojas.m2026[10] + base.dfb_lojas.m2026[11]), 30);
+  assert.notEqual(base.dfb_rest.m2026[9], base.dfb_rest.media);
+  assert.equal(base.dfb_lojas.dif2027, 0);
+  assert.equal(base.dfb_lojas.totalSaz2027, 240);
+  assert.equal(base.dfb_lojas.m2027[1], 20);
+
+  const vista = ctx.saz27RenderHtml(true, ctx.saz27Montar(quadro, orc, {}));
+  ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set'].forEach(mes => {
+    assert.ok(!tdMes(vista, 'dfb_lojas', '2026', mes).includes('<input'), mes);
+  });
+  assert.ok(tdMes(vista, 'dfb_lojas', '2026', 'out').includes('<input'));
+  assert.ok(tdMes(vista, 'dfb_lojas', '2026', 'out').includes('data-saz-ano="2026"'));
+  ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'].forEach(mes => {
+    const celula = tdMes(vista, 'dfb_lojas', '2027', mes);
+    assert.ok(celula.includes('<input'), mes);
+    assert.ok(celula.includes('data-saz-ano="2027"'));
+  });
+  assert.ok(!trDe(vista, 'dfb', '2027').includes('<input'));
+  assert.ok(!trDe(vista, 'dfb_inst', '2027').includes('<input'));
+  assert.ok(!trDe(vista, 'total', '2027').includes('<input'));
+
+  ctx.saz27OnBlur(el({ 'data-saz-id': 'dfb_lojas', 'data-saz-mes': 'fev', 'data-saz-ano': '2027' }, '20'));
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas, undefined);
+
+  ctx.saz27OnInput(el({ 'data-saz-id': 'dfb_lojas', 'data-saz-mes': 'jan', 'data-saz-ano': '2027' }, '99'));
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.y2027.jan, 99);
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.y2027.fev, undefined);
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.out, undefined);
+
+  ctx.saz27OnInput(el({ 'data-saz-id': 'dfb_lojas', 'data-saz-mes': 'out', 'data-saz-ano': '2026' }, '40'));
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.out, 40);
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.y2027.jan, 99);
+
+  const lojas = byId(ctx.saz27Montar(quadro, orc, ctx._saz27Doc.canais)).dfb_lojas;
+  assert.equal(lojas.m2026[9], 40);
+  assert.equal(lojas.m2027[0], 99);
+  assert.equal(lojas.y2027[0].gravado, true);
+  const fevEsp = cents(240 * (lojas.m2026[1] / lojas.totalSaz2026));
+  assert.equal(lojas.m2027[1], fevEsp);
+  assert.notEqual(lojas.m2027[1], 99);
+  assert.equal(lojas.y2027[1].gravado, false);
+  let soma27 = 0;
+  lojas.m2027.forEach(v => { soma27 = cents(soma27 + v); });
+  assert.equal(lojas.totalSaz2027, soma27);
+  assert.equal(lojas.dif2027, cents(soma27 - lojas.orcamento));
+  assert.notEqual(lojas.dif2027, 0);
+  const vivo = ctx.saz27Montar(quadro, orc, ctx._saz27Doc.canais);
+  const dif = tdMes(ctx.saz27RenderHtml(true, vivo), 'dfb_lojas', '2027', 'dif');
+  assert.equal(dif, ctx.orc27FmtRs(lojas.dif2027, true));
+  assert.ok(!dif.includes('—'));
+
+  const limpou = ctx.saz27AplicarEdicao(ctx._saz27Doc, 'dfb_lojas', 'mar', null, '2026-10-15T12:02:00.000Z', '2027');
+  assert.equal(limpou.changed, true);
+  ctx._saz27Doc = limpou.doc;
+  const limpo = byId(ctx.saz27Montar(quadro, orc, ctx._saz27Doc.canais)).dfb_lojas;
+  assert.equal(limpo.y2027[2].vazio, true);
+  assert.equal(limpo.y2027[2].gravado, true);
+  assert.equal(limpo.m2027[2], 0);
+  assert.equal(limpo.m2027[0], 99);
+  const mar = tdMes(ctx.saz27RenderHtml(true, ctx.saz27Montar(quadro, orc, ctx._saz27Doc.canais)), 'dfb_lojas', '2027', 'mar');
+  assert.ok(mar.includes('value=""'));
+  assert.equal(limpo.dif2027, cents(limpo.totalSaz2027 - limpo.orcamento));
+  assert.notEqual(limpo.dif2027, 0);
+
+  const reaberto = byId(ctx.saz27Montar(quadro, orc, JSON.parse(JSON.stringify(ctx._saz27Doc.canais)))).dfb_lojas;
+  assert.equal(reaberto.m2027[0], 99);
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.y2027.fev, undefined);
+  assert.notEqual(reaberto.m2027[0], cents(240 * (reaberto.m2026[0] / reaberto.totalSaz2026)));
+
+  const linhas = ctx.saz27Montar(quadro, orc, ctx._saz27Doc.canais);
+  const map = byId(linhas);
+  let somaJan = 0;
+  let algum = false;
+  folhasSob(linhas, 'dfb').forEach(r => {
+    if (!r.m2027 || !ctx.orc27TemNumero(r.m2027[0])) return;
+    algum = true;
+    somaJan += Number(r.m2027[0]);
+  });
+  assert.equal(algum, true);
+  assert.equal(map.dfb.m2027[0], cents(somaJan));
+  assert.ok(!trDe(ctx.saz27RenderHtml(true, linhas), 'dfb', '2027').includes('<input'));
+  assert.ok(!trDe(ctx.saz27RenderHtml(true, linhas), 'dfb_inst', '2027').includes('<input'));
+
+  const merged = ctx.saz27MergeCanais({
+    dfb_lojas: {
+      out: 40,
+      cellTs: { out: '2026-10-02T00:00:00.000Z' },
+      y2027: { jan: 99, cellTs: { jan: '2026-10-03T00:00:00.000Z' } },
+    },
+  }, {
+    dfb_lojas: {
+      out: 1,
+      nov: 2,
+      cellTs: { out: '2026-10-01T00:00:00.000Z', nov: '2026-10-04T00:00:00.000Z' },
+      y2027: { jan: 5, fev: 8, cellTs: { jan: '2026-10-01T00:00:00.000Z', fev: '2026-10-05T00:00:00.000Z' } },
+    },
+  });
+  assert.equal(merged.dfb_lojas.out, 40);
+  assert.equal(merged.dfb_lojas.nov, 2);
+  assert.equal(merged.dfb_lojas.y2027.jan, 99);
+  assert.equal(merged.dfb_lojas.y2027.fev, 8);
+
+  let doc = ctx.saz27AplicarEdicao({ canais: {} }, 'dfb_lojas', 'jan', 5, '2026-10-15T12:00:00.000Z').doc;
+  assert.equal(doc.canais.dfb_lojas, undefined);
+  doc = ctx.saz27AplicarEdicao({ canais: {} }, 'dfb_lojas', 'jan', 99, '2026-10-15T12:00:00.000Z', '2027').doc;
+  doc = ctx.saz27AplicarEdicao(doc, 'dfb_lojas', 'out', 40, '2026-10-15T12:01:00.000Z').doc;
+  assert.equal(doc.canais.dfb_lojas.out, 40);
+  assert.equal(doc.canais.dfb_lojas.y2027.jan, 99);
+
+  setUser('Hélcio Grégio');
+  const janAntes = ctx._saz27Doc.canais.dfb_lojas.y2027.jan;
+  ctx.saz27OnInput(el({ 'data-saz-id': 'dfb_lojas', 'data-saz-mes': 'fev', 'data-saz-ano': '2027' }, '1'));
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.y2027.jan, janAntes);
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.y2027.fev, undefined);
+
+  setUser('Filipe Neves');
+  ctx._saz27Doc = { version: 1, canais: {} };
+  ctx._saz27Dirty = false;
+  ctx._orc27Doc = { version: 1, canais: orc };
 });
 
 check('filtro de canal: dois canais, pais só com esses filhos, limpar volta ao quadro', () => {
@@ -1013,6 +1167,53 @@ await later('o filtro fica no browser e Out/Nov/Dez grava sem apagar o resto', a
   ctx.saz27LimparFiltro();
   assert.equal(ctx._saz27Doc.canais.dfb_lojas.out, 40);
   assert.equal(ctx._saz27Doc.canais.qb_dist_reg.dez, 9);
+});
+
+await later('um mês de 2027 grava aos 1000 ms sem apagar Out/Nov/Dez nem o resto', async () => {
+  setUser('Diogo Oliveira');
+  posts.length = 0;
+  hint.n = 0;
+  hint._t = '';
+  nuvem = {
+    version: 1,
+    canais: {
+      dfb_lojas: { out: 40, cellTs: { out: '2026-10-01T00:00:00.000Z' } },
+      dfb_rest: { dez: 7, cellTs: { dez: '2026-10-01T00:00:00.000Z' } },
+    },
+  };
+  ctx._saz27CloudCache = null;
+  ctx._saz27CloudFetchedAt = 0;
+  ctx._saz27Fila = Promise.resolve();
+  ctx._saz27Doc = {
+    version: 1,
+    canais: {
+      dfb_lojas: { out: 40, cellTs: { out: '2026-10-01T00:00:00.000Z' } },
+      dfb_rest: { dez: 7, cellTs: { dez: '2026-10-01T00:00:00.000Z' } },
+    },
+  };
+  ctx._saz27Dirty = false;
+  ctx._orc27Doc = { version: 1, canais: orc };
+  const antes = timers.length;
+  ctx.saz27OnInput(el({ 'data-saz-id': 'dfb_lojas', 'data-saz-mes': 'jan', 'data-saz-ano': '2027' }, '99'));
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.y2027.jan, 99);
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.out, 40);
+  assert.equal(ctx._saz27Doc.canais.dfb_rest.dez, 7);
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.y2027.fev, undefined);
+  const pendentes = timers.slice(antes).filter(t => t.fn && t.ms === 1000);
+  assert.equal(pendentes.length, 1);
+  pendentes[0].fn();
+  await ctx._saz27Fila;
+  assert.equal(posts.length, 1);
+  const body = posts[0];
+  assert.equal(body.canais.dfb_lojas.y2027.jan, 99);
+  assert.equal(body.canais.dfb_lojas.y2027.fev, undefined);
+  assert.equal(body.canais.dfb_lojas.out, 40);
+  assert.equal(body.canais.dfb_rest.dez, 7);
+  const outra = byId(ctx.saz27Montar(quadro, orc, body.canais)).dfb_lojas;
+  assert.equal(outra.m2027[0], 99);
+  assert.notEqual(outra.m2027[1], 99);
+  assert.equal(outra.dif2027, cents(outra.totalSaz2027 - outra.orcamento));
+  assert.notEqual(outra.dif2027, 0);
 });
 
 if (process.exitCode) {

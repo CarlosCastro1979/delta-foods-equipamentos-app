@@ -15511,8 +15511,8 @@ function orc27PrepararChrome() {
       banner.innerHTML = '<strong>Orçamento 2027 · Sazonalidade</strong> — '
         + 'Cada canal tem uma linha 2026 e outra 2027. '
         + 'Jan a Set de 2026 = Fatur. líquido desse mês (Outubro não entra). '
-        + 'Out, Nov e Dez começam pela média igual de Jan a Set, (Jan+…+Set) / 9 — um mês em falta conta 0 — e gravam-se à mão. '
-        + '2027 reparte o Orçamento 2027 pelos pesos de 2026; os cêntimos ficam em Dezembro. '
+        + 'Out, Nov e Dez de 2026 começam pela Previsão Out a Dez ÷ 3 (cêntimos em Dezembro) e editam-se. '
+        + '2027 começa pelo Orçamento 2027 × peso de 2026 (cêntimos em Dezembro) e cada mês edita-se. Um mês escrito fica; os outros seguem o peso quando o 4.º trimestre muda. '
         + 'Dif 2026 = soma dos 12 meses − Total 2026 do Orç Valor. '
         + 'Dif 2027 = soma de 2027 − Orçamento 2027. '
         + 'O filtro Canal escolhe um ou vários; sem escolha, mostra todos. '
@@ -15704,8 +15704,12 @@ async function orc27MontarVista() {
  * Previsão vazia: os três meses começam vazios e contam 0. A Dif 2026 começa em 0.
  * Um valor gravado que seja a média antiga (Jan+…+Set)/9, ao cêntimo, não é edição:
  * volta à previsão ÷ 3. Um clear explícito fica vazio e conta 0 — o defeito não volta.
- * 2027 = Orçamento 2027 × peso do mês em 2026. Os cêntimos ficam em Dezembro.
- * Empresa e Institucional somam os filhos, mês a mês. Não se escreve neles.
+ * 2027, enquanto ninguém o gravar, é o Orçamento 2027 × peso do mês em 2026.
+ * Os cêntimos ficam em Dezembro, para os 12 meses começarem iguais ao orçamento.
+ * Cada mês de 2027 edita-se na folha. O que foi escrito fica. O que não foi escrito
+ * segue o peso novo quando Out/Nov/Dez de 2026 mudam. O defeito calculado não se grava.
+ * Dif 2027 = soma dos 12 meses − Orçamento 2027, mesmo quando deixa de ser zero.
+ * Empresa e Institucional somam os filhos visíveis, mês a mês. Não se escreve neles.
  * O filtro Canal é só deste ecrã: vários canais, vazio = todos.
  * Fica no browser, numa chave à parte. Não entra no ficheiro da nuvem nem no Orç Valor.
  * Com filtro, a empresa e o Institucional somam só os filhos visíveis.
@@ -15879,6 +15883,127 @@ function saz27Distribuir2027(meses, orcamento) {
   return { meses: out, total: tot, dif: pvCentavosMapa(tot - alvo), tem: true };
 }
 
+function saz27Mes2027(mes) {
+  for (let i = 0; i < SAZ27_MESES.length; i++) {
+    if (SAZ27_MESES[i].id === mes) return true;
+  }
+  return false;
+}
+
+function saz27IdxMes(mes) {
+  for (let i = 0; i < SAZ27_MESES.length; i++) {
+    if (SAZ27_MESES[i].id === mes) return i;
+  }
+  return -1;
+}
+
+function saz27ChavesQ4() {
+  return ['out', 'nov', 'dez'];
+}
+
+function saz27Chaves2027() {
+  const out = [];
+  SAZ27_MESES.forEach(function (m) { out.push(m.id); });
+  return out;
+}
+
+/** Copia só os meses que têm data. Um clear (null com data) entra. Sem datas, devolve null. */
+function saz27CopiarBloco(src, chaves) {
+  const base = src && typeof src === 'object' ? src : {};
+  const cellTs0 = base.cellTs && typeof base.cellTs === 'object' ? base.cellTs : {};
+  const out = { cellTs: {} };
+  let any = false;
+  (chaves || []).forEach(function (mes) {
+    if (!cellTs0[mes]) return;
+    any = true;
+    out.cellTs[mes] = cellTs0[mes];
+    if (orc27TemNumero(base[mes])) out[mes] = Number(base[mes]);
+    else out[mes] = null;
+  });
+  return any ? out : null;
+}
+
+function saz27MergeY2027(localY, cloudY) {
+  const l = localY && typeof localY === 'object' ? localY : {};
+  const c = cloudY && typeof cloudY === 'object' ? cloudY : {};
+  const lTs = l.cellTs || {};
+  const cTs = c.cellTs || {};
+  const y = { cellTs: {} };
+  let any = false;
+  saz27Chaves2027().forEach(function (mes) {
+    const pick = orc27PickCampo(l[mes], lTs[mes], c[mes], cTs[mes]);
+    if (!pick.ts) return;
+    any = true;
+    y.cellTs[mes] = pick.ts;
+    y[mes] = pick.value;
+  });
+  return any ? y : null;
+}
+
+/**
+ * Mês com data fica como foi escrito (vazio conta 0).
+ * Mês sem data segue o peso. Não grava o peso por cima de uma edição.
+ */
+function saz27Misturar2027(manual, id, distrib, orcamento) {
+  const rec = manual && manual[id] && manual[id].y2027 ? manual[id].y2027 : null;
+  const cellTs = rec && rec.cellTs ? rec.cellTs : {};
+  const base = distrib && Array.isArray(distrib.meses) ? distrib.meses : saz27DozeNulos();
+  const meses = [];
+  const est = [];
+  let algum = false;
+  for (let i = 0; i < 12; i++) {
+    const mes = SAZ27_MESES[i].id;
+    if (cellTs[mes]) {
+      algum = true;
+      if (rec && orc27TemNumero(rec[mes])) {
+        const n = Number(rec[mes]);
+        meses.push(n);
+        est.push({ soma: n, vazio: false, gravado: true, valor: n });
+      } else {
+        meses.push(0);
+        est.push({ soma: 0, vazio: true, gravado: true, valor: null });
+      }
+    } else if (distrib && distrib.tem && orc27TemNumero(base[i])) {
+      algum = true;
+      const n = Number(base[i]);
+      meses.push(n);
+      est.push({ soma: n, vazio: false, gravado: false, valor: n });
+    } else {
+      meses.push(null);
+      est.push({ soma: null, vazio: true, gravado: false, valor: null });
+    }
+  }
+  if (!algum) {
+    return { meses: saz27DozeNulos(), est: est, total: null, dif: null, tem: false };
+  }
+  let tot = 0;
+  meses.forEach(function (v) { if (orc27TemNumero(v)) tot += Number(v); });
+  tot = pvCentavosMapa(tot);
+  const dif = orc27TemNumero(orcamento) ? pvCentavosMapa(tot - Number(orcamento)) : null;
+  return { meses: meses, est: est, total: tot, dif: dif, tem: true };
+}
+
+function saz27AnoEl(el) {
+  if (!el || typeof el.getAttribute !== 'function') return '2026';
+  return el.getAttribute('data-saz-ano') === '2027' ? '2027' : '2026';
+}
+
+/** Peso calculado do mês, já com o 4.º trimestre actual. Não lê o valor escrito em 2027. */
+function saz27PesoDoMes(id, mes) {
+  const idx = saz27IdxMes(mes);
+  if (idx < 0) return null;
+  const quadro = typeof orc27QuadroActual === 'function' ? orc27QuadroActual() : null;
+  const linhas = saz27Montar(quadro, (_orc27Doc && _orc27Doc.canais) || {}, (_saz27Doc && _saz27Doc.canais) || {});
+  let row = null;
+  for (let i = 0; i < linhas.length; i++) {
+    if (linhas[i] && linhas[i].id === id) { row = linhas[i]; break; }
+  }
+  if (!row) return null;
+  const d = saz27Distribuir2027(row.m2026, row.orcamento);
+  if (!d.tem || !orc27TemNumero(d.meses[idx])) return null;
+  return Number(d.meses[idx]);
+}
+
 function saz27SomarIdx(filhos, campo, i) {
   let s = 0;
   (filhos || []).forEach(function (f) {
@@ -15981,10 +16106,12 @@ function saz27Montar(quadro, orcCanais, sazCanais) {
       row.dif2026Tem = true;
     }
     const d = saz27Distribuir2027(m, row.orcamento);
-    row.m2027 = d.meses;
-    row.tem2027 = d.tem;
-    row.totalSaz2027 = d.total;
-    row.dif2027 = d.dif;
+    const mix = saz27Misturar2027(manual, row.id, d, row.orcamento);
+    row.m2027 = mix.meses;
+    row.y2027 = mix.est;
+    row.tem2027 = mix.tem;
+    row.totalSaz2027 = mix.total;
+    row.dif2027 = mix.dif;
   });
   saz27AplicarSomas(linhas);
   return linhas;
@@ -16009,6 +16136,12 @@ function saz27MergeCanais(localCanais, cloudCanais) {
       rec.cellTs[mes] = pick.ts;
       rec[mes] = pick.value;
     });
+    const y2027 = saz27MergeY2027(l.y2027, c.y2027);
+    if (y2027) {
+      any = true;
+      rec.y2027 = y2027;
+    }
+    if (!Object.keys(rec.cellTs).length) delete rec.cellTs;
     if (any) out[id] = rec;
   });
   return out;
@@ -16025,12 +16158,18 @@ function saz27LocalPrecisaNuvem(localCanais, cloudCanais) {
     if (pvTsMs(lTs.out) > pvTsMs(cTs.out)) return true;
     if (pvTsMs(lTs.nov) > pvTsMs(cTs.nov)) return true;
     if (pvTsMs(lTs.dez) > pvTsMs(cTs.dez)) return true;
+    const ly = (local[id] && local[id].y2027 && local[id].y2027.cellTs) || {};
+    const cy = (cloud[id] && cloud[id].y2027 && cloud[id].y2027.cellTs) || {};
+    const meses27 = saz27Chaves2027();
+    for (let m = 0; m < meses27.length; m++) {
+      if (pvTsMs(ly[meses27[m]]) > pvTsMs(cy[meses27[m]])) return true;
+    }
   }
   return false;
 }
 
-/** Só Out, Nov e Dez, e só na folha. A segunda escrita do mesmo número não muda a data. */
-function saz27AplicarEdicao(doc, id, mes, valor, agoraIso) {
+/** Folha apenas. 2026: Out, Nov, Dez. 2027: os doze meses. A segunda escrita igual não muda a data. */
+function saz27AplicarEdicao(doc, id, mes, valor, agoraIso, ano) {
   const base = doc && typeof doc === 'object' ? doc : { canais: {} };
   const canais = Object.assign({}, base.canais || {});
   const out = {
@@ -16040,20 +16179,35 @@ function saz27AplicarEdicao(doc, id, mes, valor, agoraIso) {
     actualizadoPor: base.actualizadoPor || '',
   };
   if (!orc27IdFolha(id)) return { doc: out, changed: false };
-  if (!saz27MesManual(mes)) return { doc: out, changed: false };
+  const ano2027 = ano === '2027';
+  if (ano2027) {
+    if (!saz27Mes2027(mes)) return { doc: out, changed: false };
+  } else if (!saz27MesManual(mes)) {
+    return { doc: out, changed: false };
+  }
   const rec0 = canais[id] || {};
-  const cellTs0 = rec0.cellTs || {};
-  const prev = orc27TemNumero(rec0[mes]) ? Number(rec0[mes]) : null;
+  const bloco0 = ano2027 ? (rec0.y2027 || {}) : rec0;
+  const cellTs0 = bloco0.cellTs || {};
+  const prev = orc27TemNumero(bloco0[mes]) ? Number(bloco0[mes]) : null;
   const next = orc27TemNumero(valor) ? Number(valor) : null;
   const jaTs = !!cellTs0[mes];
   if (jaTs && prev === next) return { doc: out, changed: false };
-  const rec = { cellTs: Object.assign({}, cellTs0) };
-  ['out', 'nov', 'dez'].forEach(function (m) {
-    if (orc27TemNumero(rec0[m])) rec[m] = Number(rec0[m]);
-    else if (cellTs0[m]) rec[m] = null;
-  });
-  rec[mes] = next;
-  rec.cellTs[mes] = agoraIso || new Date().toISOString();
+  const q4 = saz27CopiarBloco(rec0, saz27ChavesQ4());
+  const y0 = saz27CopiarBloco(rec0.y2027, saz27Chaves2027());
+  const quando = agoraIso || new Date().toISOString();
+  let rec;
+  if (ano2027) {
+    rec = q4 || {};
+    const y = y0 || { cellTs: {} };
+    y[mes] = next;
+    y.cellTs[mes] = quando;
+    rec.y2027 = y;
+  } else {
+    rec = q4 || { cellTs: {} };
+    rec[mes] = next;
+    rec.cellTs[mes] = quando;
+    if (y0) rec.y2027 = y0;
+  }
   canais[id] = rec;
   out.canais = canais;
   return { doc: out, changed: true };
@@ -16064,23 +16218,32 @@ function saz27ValorIgual(a, b) {
   return pvCentavosMapa(a) === pvCentavosMapa(b);
 }
 
-function saz27InputHtml(row, mes, q) {
+function saz27InputHtml(row, mes, q, ano) {
+  const anoTxt = ano === '2027' ? '2027' : '2026';
   const val = q && q.vazio ? '' : orc27FmtInput(q ? q.valor : null);
-  const titulo = (mes === 'out' ? 'Out' : (mes === 'nov' ? 'Nov' : 'Dez')) + ' 2026 (autosave)';
+  let rotulo = mes;
+  for (let i = 0; i < SAZ27_MESES.length; i++) {
+    if (SAZ27_MESES[i].id === mes) rotulo = SAZ27_MESES[i].rotulo;
+  }
+  const titulo = rotulo + ' ' + anoTxt + ' (autosave)';
+  const bg = anoTxt === '2027' ? '#f5f3ff' : '#eff6ff';
   return '<input type="text" inputmode="decimal" class="form-input saz27-input" data-saz-id="'
-    + orc27Esc(row.id) + '" data-saz-mes="' + mes + '" data-saz-ano="2026" value="' + orc27Esc(val)
+    + orc27Esc(row.id) + '" data-saz-mes="' + mes + '" data-saz-ano="' + anoTxt + '" value="' + orc27Esc(val)
     + '" placeholder="—" title="' + titulo
-    + '" style="height:32px;width:100%;min-width:84px;text-align:right;padding:4px 6px;background:#eff6ff;font-variant-numeric:tabular-nums;" oninput="saz27OnInput(this)" onblur="saz27OnBlur(this)">';
+    + '" style="height:32px;width:100%;min-width:84px;text-align:right;padding:4px 6px;background:' + bg + ';font-variant-numeric:tabular-nums;" oninput="saz27OnInput(this)" onblur="saz27OnBlur(this)">';
 }
 
 function saz27HtmlMes(row, ano, idx, edit) {
   const mes = SAZ27_MESES[idx];
-  const manual = ano === '2026' && row.tipo === 'canal' && row.q4 && saz27MesManual(mes.id);
-  if (manual && edit) return saz27InputHtml(row, mes.id, row.q4[mes.id]);
   if (ano === '2026') {
+    const manual = row.tipo === 'canal' && row.q4 && saz27MesManual(mes.id);
+    if (manual && edit) return saz27InputHtml(row, mes.id, row.q4[mes.id], '2026');
     if (manual && row.q4[mes.id] && row.q4[mes.id].vazio) return '—';
     return orc27FmtRs(row.m2026[idx], true);
   }
+  const manual27 = row.tipo === 'canal' && row.y2027 && row.y2027[idx];
+  if (manual27 && edit) return saz27InputHtml(row, mes.id, row.y2027[idx], '2027');
+  if (manual27 && row.y2027[idx].vazio) return '—';
   if (!row.tem2027 || !row.m2027 || !orc27TemNumero(row.m2027[idx])) return '—';
   return orc27FmtRs(row.m2027[idx], true);
 }
@@ -16288,6 +16451,7 @@ function saz27ClonarLinha(row) {
   const o = Object.assign({}, row);
   if (Array.isArray(row.m2026)) o.m2026 = row.m2026.slice();
   if (Array.isArray(row.m2027)) o.m2027 = row.m2027.slice();
+  if (Array.isArray(row.y2027)) o.y2027 = row.y2027.slice();
   return o;
 }
 
@@ -16391,7 +16555,7 @@ function saz27RenderHtml(edit, linhas) {
     + saz27FiltroHtml()
     + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
     + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Sazonalidade'
-    + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Out–Dez = Previsão Out a Dez ÷ 3 · Dif 2026 = soma dos meses − Total 2026 do Orç Valor · 2027 = Orçamento 2027 × peso do mês · cêntimos em Dezembro</span>'
+    + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Out–Dez 2026 e os meses de 2027 editam-se no canal · Dif 2026 = soma dos meses − Total 2026 · Dif 2027 = soma de 2027 − Orçamento 2027</span>'
     + '</div>'
     + '<table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1720px;">'
     + '<thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>';
@@ -16544,7 +16708,17 @@ function saz27PatchCalculos() {
       for (let i = 0; i < SAZ27_MESES.length; i++) {
         const mes = SAZ27_MESES[i];
         const el = tr.querySelector('td[data-saz-mes="' + mes.id + '"]');
-        if (!el || el.querySelector('input')) continue;
+        if (!el) continue;
+        const input = el.querySelector('input');
+        if (input) {
+          if (document.activeElement === input) continue;
+          const anoInp = input.getAttribute('data-saz-ano') === '2027' ? '2027' : '2026';
+          let q = null;
+          if (anoInp === '2027') q = row.y2027 ? row.y2027[i] : null;
+          else if (row.q4) q = row.q4[mes.id];
+          if (q) input.value = q.vazio ? '' : orc27FmtInput(q.valor);
+          continue;
+        }
         el.innerHTML = saz27HtmlMes(row, ano, i, false);
       }
       const total = tr.querySelector('td[data-saz-mes="total"]');
@@ -16586,10 +16760,12 @@ function saz27OnInput(el) {
   if (!el || (typeof orc27PodeEditar === 'function' && !orc27PodeEditar())) return;
   const id = el.getAttribute('data-saz-id');
   const mes = el.getAttribute('data-saz-mes');
-  if (!orc27IdFolha(id) || !saz27MesManual(mes)) return;
+  const ano = saz27AnoEl(el);
+  const mesOk = ano === '2027' ? saz27Mes2027(mes) : saz27MesManual(mes);
+  if (!orc27IdFolha(id) || !mesOk) return;
   const ent = orc27EntradaPronta(el.value);
   if (!ent.ok) return;
-  const r = saz27AplicarEdicao(_saz27Doc, id, mes, ent.valor, new Date().toISOString());
+  const r = saz27AplicarEdicao(_saz27Doc, id, mes, ent.valor, new Date().toISOString(), ano);
   if (r.changed) {
     _saz27Doc = r.doc;
     _saz27Dirty = true;
@@ -16602,9 +16778,31 @@ function saz27OnBlur(el) {
   if (!el || (typeof orc27PodeEditar === 'function' && !orc27PodeEditar())) return;
   const id = el.getAttribute('data-saz-id');
   const mes = el.getAttribute('data-saz-mes');
-  if (!orc27IdFolha(id) || !saz27MesManual(mes)) return;
+  const ano = saz27AnoEl(el);
+  const mesOk = ano === '2027' ? saz27Mes2027(mes) : saz27MesManual(mes);
+  if (!orc27IdFolha(id) || !mesOk) return;
   const ent = orc27EntradaPronta(el.value);
   const v = ent.ok ? ent.valor : null;
+  if (ano === '2027') {
+    const recY = (_saz27Doc && _saz27Doc.canais && _saz27Doc.canais[id] && _saz27Doc.canais[id].y2027) || {};
+    const ts = recY.cellTs && recY.cellTs[mes];
+    const def = saz27PesoDoMes(id, mes);
+    const igualDef = (v == null && def == null) || saz27ValorIgual(v, def);
+    if (!ts && igualDef) {
+      el.value = orc27FmtInput(v);
+      if (_saz27Dirty) saz27Flush();
+      return;
+    }
+    const r = saz27AplicarEdicao(_saz27Doc, id, mes, v, new Date().toISOString(), '2027');
+    if (r.changed) {
+      _saz27Doc = r.doc;
+      _saz27Dirty = true;
+    }
+    el.value = orc27FmtInput(v);
+    saz27PatchCalculos();
+    if (_saz27Dirty) saz27Flush();
+    return;
+  }
   const rec = (_saz27Doc && _saz27Doc.canais && _saz27Doc.canais[id]) || {};
   const ts = rec.cellTs && rec.cellTs[mes];
   const media = saz27Media9(saz27MesesReais(orc27QuadroActual(), id));
@@ -16617,7 +16815,7 @@ function saz27OnBlur(el) {
     if (_saz27Dirty) saz27Flush();
     return;
   }
-  const r = saz27AplicarEdicao(_saz27Doc, id, mes, v, new Date().toISOString());
+  const r = saz27AplicarEdicao(_saz27Doc, id, mes, v, new Date().toISOString(), '2026');
   if (r.changed) {
     _saz27Doc = r.doc;
     _saz27Dirty = true;
@@ -17534,6 +17732,7 @@ function saz27ValorMesExcel(row, ano, idx) {
     const v = row && row.m2026 ? row.m2026[idx] : null;
     return orc27TemNumero(v) ? Number(v) : null;
   }
+  if (row && row.tipo === 'canal' && row.y2027 && row.y2027[idx] && row.y2027[idx].vazio) return null;
   if (!row || !row.tem2027 || !row.m2027 || !orc27TemNumero(row.m2027[idx])) return null;
   return Number(row.m2027[idx]);
 }
@@ -41628,7 +41827,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-15-sazonalidade-q4: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-15-sazonalidade-editar: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
