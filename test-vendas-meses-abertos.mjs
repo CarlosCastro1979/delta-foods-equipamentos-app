@@ -385,6 +385,7 @@ check('processVendasFile não relê a base, não apaga meses antigos, não recal
   assert.ok(proc.includes('vendasHojeISO()'));
   assert.ok(proc.includes('mergeCoberturaVendasMesesAbertos(baseMap, agregadoNovos, hoje, cargaCtx)'));
   assert.ok(proc.includes('meses: mesesDedup'));
+  assert.ok(proc.includes('dias: diasDedup'));
   assert.ok(!proc.includes('meses: mesesAbertosArr'));
   assert.ok(!proc.includes('dia: diaAlvo'));
   const entraAt = proc.indexOf('vendaDataNaJanelaCarga');
@@ -476,7 +477,8 @@ check('texto da cobertura diz que a carga só lê o mês corrente e o anterior',
   assert.ok(!html.includes('só entram linhas do dia local de hoje'));
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('desde 2019'));
-  assert.ok(html.includes('v2026-10-14-volume-formulas'));
+  assert.ok(html.includes('v2026-10-15-vendas-out'));
+  assert.ok(!html.includes('v2026-10-14-volume-formulas'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
@@ -496,7 +498,8 @@ check('texto da cobertura diz que a carga só lê o mês corrente e o anterior',
   assert.ok(!html.includes('são relidos nem ficam pendentes'));
   assert.ok(!html.includes('Até Jun/2026 = fechado. De Jul/2026 em diante'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-14-volume-formulas'));
+  assert.ok(sw.includes('v2026-10-15-vendas-out'));
+  assert.ok(!sw.includes('v2026-10-14-volume-formulas'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
@@ -555,6 +558,51 @@ checkAsync('dedup no servidor só pede o mês corrente e o anterior', async () =
   assert.equal(ctx.fetchUrls.length, 0);
   assert.equal(mem.count, 1);
   assert.ok(mem.keys.has('3|2026-09-30|OUTRO'));
+  ctx.window._vendasMemCache = null;
+
+  ctx.fetchUrls = [];
+  ctx.fetch = async (url) => {
+    const u = String(url);
+    ctx.fetchUrls.push(u);
+    if (!u.includes('data=')) return { ok: false, status: 500, json: async () => ({ message: 'timeout' }) };
+    if (u.includes('data=gte.') || u.includes('data=lt.') || u.includes('data=lte.')) {
+      return { ok: false, status: 500, json: async () => ({ code: '57014' }) };
+    }
+    if (u.includes('data=eq.2026-10-14') || u.includes('14.10.2026')) {
+      return { ok: true, status: 200, json: async () => [{ cod: '449796', data: '2026-10-14', tipo: 'GRÃO' }] };
+    }
+    return { ok: true, status: 200, json: async () => [] };
+  };
+
+  const porDias = await ctx.getVendasDedupKeySet({
+    meses: ['2026-09', '2026-10'],
+    dias: ['2026-10-14', '2026-08-31', '2025-12-01'],
+  });
+  assert.ok(ctx.fetchUrls.length > 0);
+  assert.ok(ctx.fetchUrls.every(u => u.includes('data=eq.')), 'só igualdade de dia, sem o histórico');
+  assert.ok(ctx.fetchUrls.every(u => !u.includes('2019') && !u.includes('2026-08') && !u.includes('2025-12')));
+  assert.ok(ctx.fetchUrls.some(u => u.includes('data=eq.2026-10-14')));
+  assert.equal(porDias.count, 1);
+  assert.ok(porDias.keys.has('449796|2026-10-14|GRÃO'));
+
+  ctx.fetchUrls = [];
+  const porMes = await ctx.getVendasDedupKeySet({ meses: ['2026-10'] });
+  assert.ok(ctx.fetchUrls.some(u => u.includes('data=gte.2026-10-01') && u.includes('data=lt.2026-11-01')));
+  assert.ok(ctx.fetchUrls.some(u => u.includes('data=eq.2026-10-14')));
+  assert.ok(ctx.fetchUrls.every(u => u.includes('data=') && !u.includes('2019') && !u.includes('2026-08')));
+  assert.ok(!ctx.fetchUrls.some(u => /2026-09-01/.test(u) && !u.includes('2026-10')));
+  assert.ok(porMes.keys.has('449796|2026-10-14|GRÃO'));
+
+  const filtrado = ctx.filtrarLinhasVendasMesesAbertos([
+    linha('2026-10-14', '449796', 'GRÃO'),
+    linha('2026-09-30', '500', 'GRÃO'),
+    linha('2026-08-31', '8', 'OUTRO'),
+    linha('2025-06-01', '1', 'OUTRO'),
+  ], new Set(), '2026-10-15');
+  assert.deepEqual(filtrado.mesesAbertos, ['2026-09', '2026-10']);
+  assert.equal(filtrado.aceites.length, 2);
+  assert.ok(filtrado.aceites.some(r => r.data === '2026-10-14'));
+  assert.equal(filtrado.ignoradas, 2);
   ctx.window._vendasMemCache = null;
 });
 

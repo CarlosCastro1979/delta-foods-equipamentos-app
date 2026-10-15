@@ -25922,37 +25922,79 @@ async function getVendasDedupKeySet(opts) {
     ? opts.meses.filter(ym => /^\d{4}-\d{2}$/.test(String(ym)))
     : null;
   const mesesSet = meses && meses.length ? new Set(meses) : null;
+  const diasPedidos = (opts && Array.isArray(opts.dias))
+    ? [...new Set(opts.dias
+      .map(d => String(d || '').slice(0, 10))
+      .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && (!mesesSet || mesesSet.has(d.slice(0, 7)))))]
+    : [];
 
-  if (!dia && meses && !meses.length) {
+  if (!dia && !diasPedidos.length && meses && !meses.length) {
     if (typeof onProgress === 'function') onProgress(0);
-    return { keys: new Set(), count: 0, de, ate, meses, dia };
+    return { keys: new Set(), count: 0, de, ate, meses, dia, dias: diasPedidos };
   }
 
-  // Cache em memória: só entram chaves do dia / meses pedidos (ou do intervalo de/ate).
+  function dataIsoLinha(raw) {
+    if (typeof vendasISODateOnly === 'function') {
+      const iso = vendasISODateOnly(raw);
+      if (iso) return iso;
+    }
+    return String(raw || '').slice(0, 10);
+  }
+
+  // Cache em memória: só entram chaves do dia / dias / meses pedidos (ou do intervalo de/ate).
   if (window._vendasMemCache && Array.isArray(window._vendasMemCache) && window._vendasMemCache.length) {
     const keys = new Set();
+    const diasSet = diasPedidos.length ? new Set(diasPedidos) : null;
     for (const v of window._vendasMemCache) {
-      const d = String(v.data || '').slice(0, 10);
+      const d = dataIsoLinha(v.data);
       if (dia && d !== dia) continue;
-      if (!dia && mesesSet && !mesesSet.has(d.slice(0, 7))) continue;
-      if (!dia && !mesesSet && de && d < de) continue;
-      if (!dia && !mesesSet && ate && d > ate) continue;
+      if (!dia && diasSet && !diasSet.has(d)) continue;
+      if (!dia && !diasSet && mesesSet && !mesesSet.has(d.slice(0, 7))) continue;
+      if (!dia && !diasSet && !mesesSet && de && d < de) continue;
+      if (!dia && !diasSet && !mesesSet && ate && d > ate) continue;
       keys.add(vendaDedupKey(v.cod, v.data, v.tipo));
     }
     if (typeof onProgress === 'function') onProgress(keys.size);
-    return { keys, count: keys.size, de, ate, meses, dia };
+    return { keys, count: keys.size, de, ate, meses, dia, dias: diasPedidos };
   }
 
   const keys = new Set();
   const pageSize = 1000;
+
+  // GET limpo: Prefer:return=minimal do HEADERS global corrompe a paginação.
+  function readHeaders(extra) {
+    const base = {};
+    const key = (typeof SUPA_KEY === 'string' && SUPA_KEY) ? SUPA_KEY : ((HEADERS && HEADERS.apikey) || '');
+    if (key) {
+      base.apikey = key;
+      base.Authorization = 'Bearer ' + key;
+    }
+    if (extra) {
+      const ks = Object.keys(extra);
+      for (let i = 0; i < ks.length; i++) base[ks[i]] = extra[ks[i]];
+    }
+    return base;
+  }
+
   async function pageKeys(baseUrl) {
     let from = 0;
+    let tentativa = 0;
     while (true) {
       const to = from + pageSize - 1;
       const res = await fetch(baseUrl, {
-        headers: { ...HEADERS, Range: `${from}-${to}` }
+        headers: readHeaders({ Range: `${from}-${to}` })
       });
-      if (!res.ok) throw new Error('HTTP ' + res.status + ' ao validar vendas existentes');
+      if (!res.ok) {
+        // HTTP 500 = statement timeout (57014) ao ordenar a tabela inteira (~591k).
+        // Uma retentativa; o mês parte-se em dias se continuar a falhar.
+        if (res.status >= 500 && tentativa < 1 && from === 0) {
+          tentativa++;
+          continue;
+        }
+        const err = new Error('HTTP ' + res.status + ' ao validar vendas existentes');
+        err.status = res.status;
+        throw err;
+      }
       const page = await res.json();
       if (!Array.isArray(page) || !page.length) break;
       for (const v of page) keys.add(vendaDedupKey(v.cod, v.data, v.tipo));
@@ -25963,18 +26005,52 @@ async function getVendasDedupKeySet(opts) {
     }
   }
 
+  // Um dia = igualdade (ISO e dd.mm.yyyy). O intervalo gte/lt com order=cod,data
+  // faz seq scan de todo o histórico e o Postgres cancela aos ~3s (HTTP 500).
+  function formatosDia(iso) {
+    const y = iso.slice(0, 4);
+    const m = iso.slice(5, 7);
+    const d = iso.slice(8, 10);
+    return [iso, d + '.' + m + '.' + y];
+  }
+
+  function diasDoMes(ym) {
+    const y = parseInt(ym.slice(0, 4), 10);
+    const m = parseInt(ym.slice(5), 10);
+    const last = new Date(y, m, 0).getDate();
+    const out = [];
+    for (let d = 1; d <= last; d++) out.push(ym + '-' + String(d).padStart(2, '0'));
+    return out;
+  }
+
+  async function chavesPorDias(isoDias) {
+    for (let i = 0; i < isoDias.length; i++) {
+      const formatos = formatosDia(isoDias[i]);
+      for (let j = 0; j < formatos.length; j++) {
+        const valor = formatos[j];
+        // Ponto na data SAP: aspas, senão o filtro deixa de ser igualdade e estoura o timeout.
+        const filtro = valor.indexOf('.') >= 0
+          ? 'data=eq.' + encodeURIComponent('"' + valor + '"')
+          : 'data=eq.' + encodeURIComponent(valor);
+        await pageKeys(`${SUPA_VENDAS}?select=cod,data,tipo&order=id.asc&${filtro}`);
+      }
+    }
+  }
+
+  // Dias do ficheiro, dentro dos meses abertos: não lê Setembro inteiro nem 2019.
+  if (diasPedidos.length) {
+    await chavesPorDias(diasPedidos);
+    return { keys, count: keys.size, de, ate, meses, dia, dias: diasPedidos };
+  }
+
   // Só o dia local de hoje: não pagina o resto do mês nem meses fechados.
   if (dia) {
-    const qs = [
-      'select=cod,data,tipo',
-      'order=cod.asc,data.asc',
-      `data=eq.${encodeURIComponent(dia)}`,
-    ];
-    await pageKeys(`${SUPA_VENDAS}?${qs.join('&')}`);
-    return { keys, count: keys.size, de: dia, ate: dia, meses: null, dia };
+    await chavesPorDias([dia]);
+    return { keys, count: keys.size, de: dia, ate: dia, meses: null, dia, dias: [dia] };
   }
 
   // Um pedido por mês aberto — o intervalo não atravessa meses fechados.
+  // Se der HTTP 500 (timeout), o mesmo mês parte-se nos seus dias.
   if (mesesSet) {
     for (const ym of meses) {
       const y = parseInt(ym.slice(0, 4), 10);
@@ -25986,20 +26062,25 @@ async function getVendasDedupKeySet(opts) {
       const ateExcl = `${ny}-${String(nm).padStart(2, '0')}-01`;
       const qs = [
         'select=cod,data,tipo',
-        'order=cod.asc,data.asc',
+        'order=id.asc',
         `data=gte.${encodeURIComponent(deMes)}`,
         `data=lt.${encodeURIComponent(ateExcl)}`,
       ];
-      await pageKeys(`${SUPA_VENDAS}?${qs.join('&')}`);
+      try {
+        await pageKeys(`${SUPA_VENDAS}?${qs.join('&')}`);
+      } catch (e) {
+        if (!(e && e.status >= 500)) throw e;
+        await chavesPorDias(diasDoMes(ym));
+      }
     }
-    return { keys, count: keys.size, de, ate, meses };
+    return { keys, count: keys.size, de, ate, meses, dias: diasPedidos };
   }
 
-  const qs = ['select=cod,data,tipo', 'order=cod.asc,data.asc'];
+  const qs = ['select=cod,data,tipo', 'order=id.asc'];
   if (de) qs.push(`data=gte.${encodeURIComponent(de)}`);
   if (ate) qs.push(`data=lte.${encodeURIComponent(ate)}`);
   await pageKeys(`${SUPA_VENDAS}?${qs.join('&')}`);
-  return { keys, count: keys.size, de, ate, meses };
+  return { keys, count: keys.size, de, ate, meses, dias: diasPedidos };
 }
 async function saveVendas(arr) {
   // Migrate any localStorage vendas to Supabase
@@ -26385,8 +26466,20 @@ async function processVendasFile(event) {
     for (let iDedup = 0; iDedup < mesesAbertosArr.length; iDedup++) {
       if (mesesDedup.indexOf(mesesAbertosArr[iDedup]) < 0) mesesDedup.push(mesesAbertosArr[iDedup]);
     }
+    // Só os dias que o ficheiro traz, dentro destes meses. O intervalo do mês
+    // inteiro (order por cod+data) estoura o timeout do Postgres e devolve HTTP 500.
+    const diasDedup = [];
+    const diasVistosDedup = new Set();
+    for (let iDia = 0; iDia < linhasJanela.length; iDia++) {
+      const dDia = String((linhasJanela[iDia] && linhasJanela[iDia].data) || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dDia) || diasVistosDedup.has(dDia)) continue;
+      if (mesesDedup.indexOf(dDia.slice(0, 7)) < 0) continue;
+      diasVistosDedup.add(dDia);
+      diasDedup.push(dDia);
+    }
     const { keys: existingKeys, count: existingInRange } = await getVendasDedupKeySet({
       meses: mesesDedup,
+      dias: diasDedup,
       onProgress: (loaded) => {
         setStatus(
           `<div style="color:var(--muted);font-size:12px">⏳ A validar no servidor só <strong>${janelaTxt}</strong>… `
@@ -40082,7 +40175,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-14-volume-formulas: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-15-vendas-out: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
