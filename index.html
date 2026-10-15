@@ -16479,31 +16479,71 @@ function saz27AcertarAlvoPais(linhas) {
   if (total) recalc(total);
 }
 
-/** [] ou ausência = quadro inteiro. Caso contrário, só os canais e os pais com filhos visíveis. */
+/** Empresa do topo (Delta ou Q Brasil). O Institucional fica no meio e não conta como empresa. */
+function saz27RaizEmpresa(row, byId) {
+  let cur = row;
+  const visto = {};
+  while (cur && cur.parent && byId[cur.parent] && !visto[cur.id]) {
+    visto[cur.id] = true;
+    cur = byId[cur.parent];
+  }
+  if (cur && cur.tipo === 'grupo' && !cur.parent) return cur;
+  return null;
+}
+
+/**
+ * Um canal: só essa folha (sem empresa, sem Institucional, sem Total).
+ * Dois ou mais canais da mesma empresa: esses canais e o total da empresa.
+ * Canais das duas empresas, ou o quadro inteiro: canais, total da Delta,
+ * total da Q Brasil e o Total. O grupo Institucional não entra; Balcão e
+ * Horeca continuam como canais. Os totais somam só os filhos visíveis.
+ */
 function saz27LinhasVisiveis(linhas, filtro) {
   const ids = saz27FiltroValido(filtro);
   const base = Array.isArray(linhas) ? linhas : [];
-  if (!ids.length) return base;
   const byId = {};
   base.forEach(function (r) { if (r && r.id) byId[r.id] = r; });
+  const folhas = [];
+  if (!ids.length) {
+    base.forEach(function (r) { if (r && r.tipo === 'canal') folhas.push(r); });
+  } else {
+    ids.forEach(function (id) {
+      const row = byId[id];
+      if (row && row.tipo === 'canal') folhas.push(row);
+    });
+  }
+  if (!folhas.length) return ids.length ? [] : base.map(saz27ClonarLinha);
+  const empresas = {};
+  folhas.forEach(function (f) {
+    const emp = saz27RaizEmpresa(f, byId);
+    if (emp) empresas[emp.id] = true;
+  });
+  const mostrarEmpresas = folhas.length >= 2;
+  const mostrarTotal = mostrarEmpresas && Object.keys(empresas).length >= 2;
   const keep = {};
-  ids.forEach(function (id) {
-    let cur = byId[id];
-    while (cur && cur.id) {
-      keep[cur.id] = true;
-      cur = cur.parent ? byId[cur.parent] : null;
-    }
-  });
-  base.forEach(function (r) {
-    if (r && r.tipo === 'total') keep[r.id] = true;
-  });
+  folhas.forEach(function (f) { keep[f.id] = true; });
+  if (mostrarEmpresas) {
+    Object.keys(empresas).forEach(function (id) { keep[id] = true; });
+  }
+  if (mostrarTotal) {
+    base.forEach(function (r) {
+      if (r && r.tipo === 'total') keep[r.id] = true;
+    });
+  }
   const vis = [];
   base.forEach(function (row) {
     if (!row || !keep[row.id]) return;
-    vis.push(saz27ClonarLinha(row));
+    const clone = saz27ClonarLinha(row);
+    if (clone.tipo === 'canal' && mostrarEmpresas) {
+      const emp = saz27RaizEmpresa(row, byId);
+      if (emp && (!clone.parent || !keep[clone.parent])) clone.parent = emp.id;
+    }
+    vis.push(clone);
   });
-  saz27AcertarAlvoPais(vis);
-  saz27AplicarSomas(vis);
+  if (mostrarEmpresas) {
+    saz27AcertarAlvoPais(vis);
+    saz27AplicarSomas(vis);
+  }
   return vis;
 }
 
@@ -42079,7 +42119,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-15-volume-filtro: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-15-sazonalidade-totais: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

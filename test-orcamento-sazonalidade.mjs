@@ -15,7 +15,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-15-volume-filtro';
+const CACHE = 'v2026-10-15-sazonalidade-totais';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);
@@ -191,6 +191,7 @@ for (const name of [
   'SAZ27_CLOUD_PATH',
   'SAZ27_DEBOUNCE_MS',
   'SAZ27_MESES',
+  'ORC27_EXCEL_RS',
 ]) {
   vm.runInContext(extractConst(html, name), ctx);
 }
@@ -291,7 +292,21 @@ const fns = [
   'saz27FiltroHtml',
   'saz27ClonarLinha',
   'saz27AcertarAlvoPais',
+  'saz27RaizEmpresa',
   'saz27LinhasVisiveis',
+  'orc27ExcelBorda',
+  'orc27ExcelLinha',
+  'orc27ExcelColuna',
+  'orc27PintarTitulo',
+  'orc27PintarCabeca',
+  'orc27PintarTexto',
+  'orc27PintarNumero',
+  'orc27PintarVazio',
+  'orc27ExcelCongelar',
+  'orc27ExcelLarguras',
+  'orc27EscreverCabecas',
+  'saz27ValorMesExcel',
+  'escreverFolhaOrc27Sazonalidade',
   'saz27LinhasVista',
   'saz27LinhasNoEcra',
   'saz27RenderHtml',
@@ -947,7 +962,7 @@ check('filtro de canal: dois canais, pais só com esses filhos, limpar volta ao 
   const todas = ctx.saz27Montar(quadro, orc, {});
   const full = byId(todas);
   const vis = ctx.saz27LinhasVisiveis(todas, ['dfb_rest', 'dfb_lojas']);
-  assert.deepEqual(vis.map(r => r.id), ['dfb', 'dfb_lojas', 'dfb_rest', 'total']);
+  assert.deepEqual(vis.map(r => r.id), ['dfb', 'dfb_lojas', 'dfb_rest']);
   const map = byId(vis);
   assert.equal(map.dfb_lojas.total2026, full.dfb_lojas.total2026);
   assert.equal(map.dfb_lojas.orcamento, full.dfb_lojas.orcamento);
@@ -966,18 +981,18 @@ check('filtro de canal: dois canais, pais só com esses filhos, limpar volta ao 
   assert.equal(map.dfb.dif2026, cents(map.dfb.totalSaz2026 - map.dfb.total2026));
   assert.equal(map.dfb.dif2027, cents(map.dfb.totalSaz2027 - map.dfb.orcamento));
   assert.equal(map.dfb.dif2026, cents(map.dfb_lojas.dif2026 + map.dfb_rest.dif2026));
-  assert.equal(map.total.totalSaz2026, map.dfb.totalSaz2026);
-  assert.equal(map.total.orcamento, map.dfb.orcamento);
+  assert.equal(map.dfb.dif2027, cents(map.dfb_lojas.dif2027 + map.dfb_rest.dif2027));
+  assert.equal(map.total, undefined);
   assert.equal(full.dfb.orcamento, 240 + 300 + 18);
   assert.ok(full.qb);
   assert.ok(full.dfb_inst);
 
   const inst = ctx.saz27LinhasVisiveis(todas, ['dfb_inst_balcao']);
-  assert.deepEqual(inst.map(r => r.id), ['dfb', 'dfb_inst', 'dfb_inst_balcao', 'total']);
-  assert.equal(byId(inst).dfb_inst.totalSaz2026, byId(inst).dfb_inst_balcao.totalSaz2026);
-  assert.equal(byId(inst).dfb.orcamento, byId(inst).dfb_inst_balcao.orcamento);
+  assert.deepEqual(inst.map(r => r.id), ['dfb_inst_balcao']);
   assert.equal(byId(inst).dfb_inst_balcao.dif2026, full.dfb_inst_balcao.dif2026);
-  assert.ok(!inst.some(r => r.id === 'qb' || r.id === 'dfb_lojas' || r.id === 'dfb_inst_horeca'));
+  assert.equal(byId(inst).dfb_inst_balcao.dif2027, full.dfb_inst_balcao.dif2027);
+  assert.equal(byId(inst).dfb_inst_balcao.orcamento, full.dfb_inst_balcao.orcamento);
+  assert.ok(!inst.some(r => r.id === 'qb' || r.id === 'dfb' || r.id === 'dfb_inst' || r.id === 'total' || r.id === 'dfb_inst_horeca'));
 
   const cruzado = ctx.saz27LinhasVisiveis(todas, ['dfb_lojas', 'qb_rest']);
   assert.deepEqual(cruzado.map(r => r.id), ['dfb', 'dfb_lojas', 'qb', 'qb_rest', 'total']);
@@ -988,9 +1003,18 @@ check('filtro de canal: dois canais, pais só com esses filhos, limpar volta ao 
   assert.ok(!cruzado.some(r => r.id === 'dfb_inst'));
 
   const limpo = ctx.saz27LinhasVisiveis(todas, []);
-  assert.deepEqual(limpo.map(r => r.id), todas.map(r => r.id));
+  assert.deepEqual(limpo.map(r => r.id), todas.map(r => r.id).filter(id => id !== 'dfb_inst'));
+  assert.ok(limpo.some(r => r.id === 'dfb' && r.tipo === 'grupo'));
+  assert.ok(limpo.some(r => r.id === 'qb' && r.tipo === 'grupo'));
+  assert.ok(limpo.some(r => r.id === 'total'));
+  assert.ok(limpo.some(r => r.id === 'dfb_inst_balcao'));
+  assert.ok(limpo.some(r => r.id === 'dfb_inst_horeca'));
   assert.equal(byId(limpo).dfb.orcamento, full.dfb.orcamento);
   assert.equal(byId(limpo).dfb.totalSaz2026, full.dfb.totalSaz2026);
+  assert.equal(byId(limpo).dfb.dif2026, full.dfb.dif2026);
+  assert.equal(byId(limpo).dfb.dif2027, full.dfb.dif2027);
+  assert.equal(byId(limpo).qb.totalSaz2026, full.qb.totalSaz2026);
+  assert.equal(byId(limpo).total.totalSaz2026, full.total.totalSaz2026);
 
   const docAntes = JSON.stringify(ctx._saz27Doc);
   const dirtyAntes = ctx._saz27Dirty;
@@ -1024,7 +1048,10 @@ check('filtro de canal: dois canais, pais só com esses filhos, limpar volta ao 
   assert.ok(trDe(vista, 'dfb_lojas', '2026'));
   assert.ok(trDe(vista, 'dfb_lojas', '2027'));
   assert.ok(trDe(vista, 'dfb_lojas', '2026').includes('<input'));
+  assert.ok(trDe(vista, 'dfb', '2026'));
   assert.ok(!trDe(vista, 'dfb', '2026').includes('<input'));
+  assert.equal(trDe(vista, 'total', '2026'), '');
+  assert.equal(trDe(vista, 'qb', '2026'), '');
 
   ctx._saz27Filtro = null;
   assert.deepEqual(ctx.saz27LerFiltro(), ['dfb_lojas', 'dfb_rest']);
@@ -1041,10 +1068,154 @@ check('filtro de canal: dois canais, pais só com esses filhos, limpar volta ao 
   const outra = ctx.saz27RenderHtml(true, todas);
   assert.ok(outra.includes('data-saz-id="qb_dist_reg"'));
   assert.ok(outra.includes('data-saz-id="dfb_inst_horeca"'));
+  assert.ok(outra.includes('data-saz-id="dfb"'));
+  assert.ok(outra.includes('data-saz-id="qb"'));
+  assert.ok(outra.includes('data-saz-id="total"'));
+  assert.ok(!outra.includes('data-saz-id="dfb_inst"'));
   assert.ok(outra.includes('Todos os canais'));
-  assert.equal(ctx.saz27LinhasNoEcra(todas).length, todas.length);
+  assert.equal(ctx.saz27LinhasNoEcra(todas).length, todas.length - 1);
   ctx.saz27LimparFiltro();
   assert.deepEqual(ctx._saz27Filtro, []);
+});
+
+function folhaExcelFalsa() {
+  const cells = new Map();
+  const merges = [];
+  const ws = {
+    merges,
+    views: null,
+    getCell(r, c) {
+      const k = r + ',' + c;
+      if (!cells.has(k)) cells.set(k, {});
+      return cells.get(k);
+    },
+    mergeCells(r1, c1, r2, c2) { merges.push([r1, c1, r2, c2]); },
+    getColumn() { return {}; },
+    getRow() { return {}; },
+  };
+  return ws;
+}
+
+function somaDif(rows, campo) {
+  return cents(rows.reduce((s, r) => s + Number(r[campo] || 0), 0));
+}
+
+check('totais limpos: um canal, a mesma empresa, as duas empresas, e o quadro inteiro', () => {
+  const todas = ctx.saz27Montar(quadro, orc, {});
+  const full = byId(todas);
+  const exportFn = extractFn(html, 'orc27ExportarExcel');
+  assert.ok(exportFn.includes('saz27LinhasNoEcra(montadas)'));
+  assert.ok(exportFn.includes('escreverFolhaOrc27Sazonalidade(ws, base)'));
+
+  const um = ctx.saz27LinhasVisiveis(todas, ['dfb_rest']);
+  assert.deepEqual(um.map(r => r.id), ['dfb_rest']);
+  assert.equal(um[0].tipo, 'canal');
+  assert.equal(byId(um).dfb_rest.dif2026, full.dfb_rest.dif2026);
+  assert.equal(byId(um).dfb_rest.dif2027, full.dfb_rest.dif2027);
+  assert.equal(byId(um).dfb_rest.orcamento, full.dfb_rest.orcamento);
+  assert.equal(byId(um).dfb_rest.total2026, full.dfb_rest.total2026);
+  ctx.saz27GravarFiltro(['dfb_rest']);
+  const ecraUm = ctx.saz27LinhasNoEcra(todas);
+  assert.deepEqual(ecraUm.map(r => r.id), ['dfb_rest']);
+  const vistaUm = ctx.saz27RenderHtml(true, todas);
+  const trsUm = vistaUm.split('<tr ').slice(1).filter(t => t.includes('data-saz-id='));
+  assert.equal(trsUm.length, 2);
+  assert.ok(trDe(vistaUm, 'dfb_rest', '2026'));
+  assert.ok(trDe(vistaUm, 'dfb_rest', '2027'));
+  assert.equal(trDe(vistaUm, 'dfb', '2026'), '');
+  assert.equal(trDe(vistaUm, 'dfb_inst', '2026'), '');
+  assert.equal(trDe(vistaUm, 'total', '2026'), '');
+  ['out', 'nov', 'dez'].forEach(mes => {
+    assert.ok(tdMes(vistaUm, 'dfb_rest', '2026', mes).includes('<input'), mes);
+  });
+  ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set'].forEach(mes => {
+    assert.ok(!tdMes(vistaUm, 'dfb_rest', '2026', mes).includes('<input'), mes);
+  });
+  ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'].forEach(mes => {
+    assert.ok(tdMes(vistaUm, 'dfb_rest', '2027', mes).includes('<input'), mes);
+    assert.ok(tdMes(vistaUm, 'dfb_rest', '2027', mes).includes('data-saz-ano="2027"'), mes);
+  });
+  const metaUm = ctx.escreverFolhaOrc27Sazonalidade(folhaExcelFalsa(), ecraUm);
+  assert.deepEqual(metaUm.linhas.map(r => r.id), ['dfb_rest']);
+  assert.equal(metaUm.linhas[0].tipo, 'canal');
+
+  const mesma = ctx.saz27LinhasVisiveis(todas, ['dfb_lojas', 'dfb_rest']);
+  assert.deepEqual(mesma.map(r => r.id), ['dfb', 'dfb_lojas', 'dfb_rest']);
+  assert.ok(!mesma.some(r => r.tipo === 'total' || r.id === 'dfb_inst' || r.id === 'qb'));
+  const mapMesma = byId(mesma);
+  assert.equal(mapMesma.dfb.m2026[0], cents(mapMesma.dfb_lojas.m2026[0] + mapMesma.dfb_rest.m2026[0]));
+  assert.equal(mapMesma.dfb.orcamento, cents(Number(mapMesma.dfb_lojas.orcamento) + Number(mapMesma.dfb_rest.orcamento)));
+  assert.equal(mapMesma.dfb.total2026, cents(Number(mapMesma.dfb_lojas.total2026) + Number(mapMesma.dfb_rest.total2026)));
+  assert.equal(mapMesma.dfb.dif2026, cents(mapMesma.dfb.totalSaz2026 - mapMesma.dfb.total2026));
+  assert.equal(mapMesma.dfb.dif2027, cents(mapMesma.dfb.totalSaz2027 - mapMesma.dfb.orcamento));
+  assert.equal(mapMesma.dfb.dif2026, somaDif([mapMesma.dfb_lojas, mapMesma.dfb_rest], 'dif2026'));
+  assert.equal(mapMesma.dfb.dif2027, somaDif([mapMesma.dfb_lojas, mapMesma.dfb_rest], 'dif2027'));
+  assert.equal(mapMesma.dfb_lojas.dif2026, full.dfb_lojas.dif2026);
+  assert.equal(mapMesma.dfb_rest.dif2027, full.dfb_rest.dif2027);
+  const instDois = ctx.saz27LinhasVisiveis(todas, ['dfb_inst_balcao', 'dfb_inst_horeca']);
+  assert.deepEqual(instDois.map(r => r.id), ['dfb', 'dfb_inst_balcao', 'dfb_inst_horeca']);
+  assert.equal(byId(instDois).dfb.totalSaz2026, cents(byId(instDois).dfb_inst_balcao.totalSaz2026 + byId(instDois).dfb_inst_horeca.totalSaz2026));
+  assert.equal(byId(instDois).dfb.orcamento, byId(instDois).dfb_inst_balcao.orcamento);
+  assert.equal(byId(instDois).dfb.dif2026, cents(byId(instDois).dfb.totalSaz2026 - byId(instDois).dfb.total2026));
+  ctx.saz27GravarFiltro(['dfb_lojas', 'dfb_rest']);
+  const ecraMesma = ctx.saz27LinhasNoEcra(todas);
+  const metaMesma = ctx.escreverFolhaOrc27Sazonalidade(folhaExcelFalsa(), ecraMesma);
+  assert.deepEqual(metaMesma.linhas.map(r => r.id), ecraMesma.map(r => r.id));
+  assert.ok(!metaMesma.linhas.some(r => r.id === 'total'));
+
+  const ambas = ctx.saz27LinhasVisiveis(todas, ['dfb_rest', 'qb_rest']);
+  assert.deepEqual(ambas.map(r => r.id), ['dfb', 'dfb_rest', 'qb', 'qb_rest', 'total']);
+  const mapAmbas = byId(ambas);
+  assert.equal(mapAmbas.dfb.dif2026, mapAmbas.dfb_rest.dif2026);
+  assert.equal(mapAmbas.dfb.dif2027, mapAmbas.dfb_rest.dif2027);
+  assert.equal(mapAmbas.dfb.dif2026, cents(mapAmbas.dfb.totalSaz2026 - mapAmbas.dfb.total2026));
+  assert.equal(mapAmbas.qb.totalSaz2026, mapAmbas.qb_rest.totalSaz2026);
+  assert.equal(mapAmbas.total.totalSaz2026, cents(mapAmbas.dfb.totalSaz2026 + mapAmbas.qb.totalSaz2026));
+  assert.equal(mapAmbas.total.orcamento, cents(Number(mapAmbas.dfb.orcamento) + (mapAmbas.qb.orcamento || 0)));
+  assert.equal(mapAmbas.total.dif2026, cents(mapAmbas.total.totalSaz2026 - mapAmbas.total.total2026));
+  assert.equal(mapAmbas.dfb_rest.dif2026, full.dfb_rest.dif2026);
+  assert.ok(!ambas.some(r => r.id === 'dfb_inst'));
+  ctx.saz27GravarFiltro(['dfb_rest', 'qb_dist_reg']);
+  const ecraAmbas = ctx.saz27LinhasNoEcra(todas);
+  assert.deepEqual(ecraAmbas.map(r => r.id), ['dfb', 'dfb_rest', 'qb', 'qb_dist_reg', 'total']);
+  const metaAmbas = ctx.escreverFolhaOrc27Sazonalidade(folhaExcelFalsa(), ecraAmbas);
+  assert.deepEqual(metaAmbas.linhas.map(r => r.id), ecraAmbas.map(r => r.id));
+
+  ctx.saz27LimparFiltro();
+  const ecraTudo = ctx.saz27LinhasNoEcra(todas);
+  assert.deepEqual(ecraTudo.map(r => r.id), todas.map(r => r.id).filter(id => id !== 'dfb_inst'));
+  assert.ok(ecraTudo.some(r => r.id === 'dfb'));
+  assert.ok(ecraTudo.some(r => r.id === 'qb'));
+  assert.ok(ecraTudo.some(r => r.id === 'total'));
+  assert.ok(ecraTudo.some(r => r.id === 'dfb_inst_balcao'));
+  assert.ok(ecraTudo.some(r => r.id === 'dfb_inst_horeca'));
+  const filhosDelta = ecraTudo.filter(r => r.tipo === 'canal' && r.parent === 'dfb');
+  assert.ok(filhosDelta.some(r => r.id === 'dfb_inst_balcao'));
+  assert.ok(filhosDelta.some(r => r.id === 'dfb_inst_horeca'));
+  const mapTudo = byId(ecraTudo);
+  assert.equal(mapTudo.dfb.totalSaz2026, full.dfb.totalSaz2026);
+  assert.equal(mapTudo.dfb.orcamento, full.dfb.orcamento);
+  assert.equal(mapTudo.dfb.dif2026, cents(mapTudo.dfb.totalSaz2026 - mapTudo.dfb.total2026));
+  assert.equal(mapTudo.dfb.dif2027, cents(mapTudo.dfb.totalSaz2027 - mapTudo.dfb.orcamento));
+  assert.equal(mapTudo.dfb.dif2026, full.dfb.dif2026);
+  assert.equal(mapTudo.qb.totalSaz2026, full.qb.totalSaz2026);
+  assert.equal(mapTudo.total.totalSaz2026, cents(mapTudo.dfb.totalSaz2026 + mapTudo.qb.totalSaz2026));
+  assert.equal(mapTudo.total.dif2026, cents(mapTudo.total.totalSaz2026 - mapTudo.total.total2026));
+  const comDif = filhosDelta.filter(r => r.dif2026Tem);
+  assert.equal(mapTudo.dfb.dif2026, somaDif(comDif, 'dif2026'));
+  const metaTudo = ctx.escreverFolhaOrc27Sazonalidade(folhaExcelFalsa(), ecraTudo);
+  assert.deepEqual(metaTudo.linhas.map(r => r.id), ecraTudo.map(r => r.id));
+  assert.ok(!metaTudo.linhas.some(r => r.id === 'dfb_inst'));
+  const vistaTudo = ctx.saz27RenderHtml(true, todas);
+  assert.equal(trDe(vistaTudo, 'dfb_inst', '2026'), '');
+  assert.ok(trDe(vistaTudo, 'dfb_inst_balcao', '2026'));
+  assert.ok(trDe(vistaTudo, 'dfb_inst_horeca', '2027'));
+  assert.ok(trDe(vistaTudo, 'dfb', '2026'));
+  assert.ok(trDe(vistaTudo, 'qb', '2026'));
+  assert.ok(trDe(vistaTudo, 'total', '2027'));
+  assert.ok(!trDe(vistaTudo, 'dfb', '2027').includes('<input'));
+  assert.ok(!trDe(vistaTudo, 'total', '2026').includes('<input'));
+  ctx.saz27LimparFiltro();
 });
 
 const chain = Promise.resolve();
