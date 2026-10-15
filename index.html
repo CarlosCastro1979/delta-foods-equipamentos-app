@@ -2142,7 +2142,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas, Orçamento 2027 e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: só consulta no mapa mensal. Edição do mapa: direcção (Carlos, Christian, Andrea, Daniela K.). No Orçamento 2027 escrevem Previsão Out a Dez e Orçamento 2027, em valor e em volume.</div>
+          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas, Orçamento 2027 e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: só consulta no mapa mensal. Edição do mapa: direcção (Carlos, Christian, Andrea, Daniela K.). No Orçamento 2027 escrevem Previsão Out a Dez e Orçamento 2027, em valor e em volume, e Out–Dez da Sazonalidade.</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -4004,7 +4004,7 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR — autosave do mapa só da direcção. Orçamento 2027 (Orç Valor e Volume): vendedores escrevem Previsão Out a Dez e Orçamento 2027, autosave local + cloud.
+            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR — autosave do mapa só da direcção. Orçamento 2027 (Orç Valor, Volume e Sazonalidade): vendedores escrevem Previsão Out a Dez, Orçamento 2027 e Out–Dez da sazonalidade, autosave local + cloud.
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
@@ -11428,8 +11428,8 @@ const DADOS_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kuc
  * Edição do mapa / Publicar produção / autosave do mapa: só a lista ADMINS
  * (Carlos, Christian, Andrea, Daniela K.). Sem rastreio de alterações —
  * vendedores não editam o mapa de fecho.
- * Orçamento 2027 (Orç Valor e Volume): quem abre a Previsão escreve
- * Previsão Out a Dez e Orçamento 2027 (orc27PodeEditar).
+ * Orçamento 2027 (Orç Valor, Volume e Sazonalidade): quem abre a Previsão escreve
+ * Previsão Out a Dez, Orçamento 2027 e Out/Nov/Dez da sazonalidade (orc27PodeEditar).
  */
 const PREV_VENDAS_ACESSO = [
   'Filipe Neves',
@@ -13114,6 +13114,7 @@ function pvShowView(view) {
   if (_pvView === 'orcamento' && next !== 'orcamento') {
     if (typeof orc27Flush === 'function') orc27Flush();
     if (typeof vol27Flush === 'function') vol27Flush();
+    if (typeof saz27Flush === 'function') saz27Flush();
   }
   _pvView = next;
   if (_pvView !== 'accuracy') _pvAccFiltro = '';
@@ -15280,6 +15281,17 @@ function orc27CelulaManualHtml(row, campo, edit) {
     + bg + ';font-variant-numeric:tabular-nums;" oninput="orc27OnInput(this)" onblur="orc27OnBlur(this)">';
 }
 
+function orc27SubNavHtml(activo) {
+  const valor = activo === 'valor' ? ' active' : '';
+  const volume = activo === 'volume' ? ' active' : '';
+  const saz = activo === 'sazonalidade' ? ' active' : '';
+  return '<div class="sub-nav" style="margin-bottom:12px;flex-wrap:wrap;">'
+    + '<button type="button" class="sub-tab' + valor + '" id="orc27-sub-valor" onclick="orc27ShowSub(\'valor\')">Orç Valor</button>'
+    + '<button type="button" class="sub-tab' + volume + '" id="orc27-sub-volume" onclick="orc27ShowSub(\'volume\')">Volume</button>'
+    + '<button type="button" class="sub-tab' + saz + '" id="orc27-sub-sazonalidade" onclick="orc27ShowSub(\'sazonalidade\')">Sazonalidade</button>'
+    + '</div>';
+}
+
 function orc27RenderHtml(edit, linhas) {
   const rows = Array.isArray(linhas) ? linhas : [];
   let body = '';
@@ -15299,10 +15311,7 @@ function orc27RenderHtml(edit, linhas) {
       + '<td class="orc27-pct" style="text-align:right;">' + orc27FmtPct(row.pct27) + '</td>'
       + '</tr>';
   });
-  return '<div class="sub-nav" style="margin-bottom:12px;flex-wrap:wrap;">'
-    + '<button type="button" class="sub-tab active" id="orc27-sub-valor" onclick="orc27ShowSub(\'valor\')">Orç Valor</button>'
-    + '<button type="button" class="sub-tab" id="orc27-sub-volume" onclick="orc27ShowSub(\'volume\')">Volume</button>'
-    + '</div>'
+  return orc27SubNavHtml('valor')
     + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
     + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Orç Valor'
     + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Total 2026 = YTD até Set + Previsão Out a Dez · Var % vs 2025 = (Total 2026 − N-1) / N-1 · % 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026</span>'
@@ -15486,22 +15495,34 @@ function orc27PrepararChrome() {
   if (anoWrap) anoWrap.style.display = 'none';
   const banner = document.getElementById('pv-banner');
   if (banner) {
-    banner.innerHTML = _orc27Sub === 'volume'
-      ? ('<strong>Orçamento 2027 · Volume</strong> — '
-      + 'Mesmas colunas do Orç Valor, na unidade de cada produto. '
-      + 'Grão e café moído: coluna AA (Peso líq.) em kg, sem conversão. Vinho: a mesma coluna AA, em litros. Cápsulas = AA ÷ 0,005 (unidades). '
-      + 'Máquina = QtFaturada + Qtd Bonifi + Qtd Doação (colunas M, U e Y), só nas linhas de máquina. Não usa o peso. '
-      + 'O filtro escolhe o canal. Todos os canais soma o mesmo produto — não soma grão com cápsulas. '
-      + 'Previsão Out a Dez e Orçamento 2027 preenchem-se à mão, por canal e produto, com autosave. '
-      + '<span id="orc27-autosave-hint" style="margin-left:8px;color:#15803d;font-weight:600;"></span>')
-      : ('<strong>Orçamento 2027 · Orç Valor</strong> — '
-      + 'Total N-1 até Dez = Fatur. líquido de Janeiro a Dezembro de 2025. '
-      + 'YTD 2026 até Set = Fatur. de Janeiro a Setembro de 2026 (Outubro não entra). '
-      + 'Previsão Out a Dez e Orçamento 2027 preenchem-se à mão, só nos canais, com autosave. '
-      + 'Total 2026 = YTD + Previsão (vazio conta 0 só nesta soma). '
-      + 'Var % vs 2025 = (Total 2026 − N-1) / N-1. '
-      + '% 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026. '
-      + '<span id="orc27-autosave-hint" style="margin-left:8px;color:#15803d;font-weight:600;"></span>');
+    const hint = '<span id="orc27-autosave-hint" style="margin-left:8px;color:#15803d;font-weight:600;"></span>';
+    if (_orc27Sub === 'volume') {
+      banner.innerHTML = '<strong>Orçamento 2027 · Volume</strong> — '
+        + 'Mesmas colunas do Orç Valor, na unidade de cada produto. '
+        + 'Grão e café moído: coluna AA (Peso líq.) em kg, sem conversão. Vinho: a mesma coluna AA, em litros. Cápsulas = AA ÷ 0,005 (unidades). '
+        + 'Máquina = QtFaturada + Qtd Bonifi + Qtd Doação (colunas M, U e Y), só nas linhas de máquina. Não usa o peso. '
+        + 'O filtro escolhe o canal. Todos os canais soma o mesmo produto — não soma grão com cápsulas. '
+        + 'Previsão Out a Dez e Orçamento 2027 preenchem-se à mão, por canal e produto, com autosave. '
+        + hint;
+    } else if (_orc27Sub === 'sazonalidade') {
+      banner.innerHTML = '<strong>Orçamento 2027 · Sazonalidade</strong> — '
+        + 'Cada canal tem uma linha 2026 e outra 2027. '
+        + 'Jan a Set de 2026 = Fatur. líquido desse mês (Outubro não entra). '
+        + 'Out, Nov e Dez começam pela média igual de Jan a Set, (Jan+…+Set) / 9 — um mês em falta conta 0 — e gravam-se à mão. '
+        + '2027 reparte o Orçamento 2027 pelos pesos de 2026; os cêntimos ficam em Dezembro. '
+        + 'Dif 2026 = soma dos 12 meses − Total 2026 do Orç Valor. '
+        + 'Dif 2027 = soma de 2027 − Orçamento 2027. '
+        + hint;
+    } else {
+      banner.innerHTML = '<strong>Orçamento 2027 · Orç Valor</strong> — '
+        + 'Total N-1 até Dez = Fatur. líquido de Janeiro a Dezembro de 2025. '
+        + 'YTD 2026 até Set = Fatur. de Janeiro a Setembro de 2026 (Outubro não entra). '
+        + 'Previsão Out a Dez e Orçamento 2027 preenchem-se à mão, só nos canais, com autosave. '
+        + 'Total 2026 = YTD + Previsão (vazio conta 0 só nesta soma). '
+        + 'Var % vs 2025 = (Total 2026 − N-1) / N-1. '
+        + '% 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026. '
+        + hint;
+    }
   }
 }
 
@@ -15515,6 +15536,15 @@ function orc27Pintar() {
       return;
     }
     host.innerHTML = vol27RenderHtml(edit, _vol27Agregado, _vol27Doc, _vol27Filtro);
+    return;
+  }
+  if (_orc27Sub === 'sazonalidade') {
+    if (!_saz27Pronto) {
+      if (typeof saz27Abrir === 'function') saz27Abrir(false);
+      return;
+    }
+    _saz27Linhas = saz27Montar(orc27QuadroActual(), (_orc27Doc && _orc27Doc.canais) || {}, (_saz27Doc && _saz27Doc.canais) || {});
+    host.innerHTML = saz27RenderHtml(edit, _saz27Linhas);
     return;
   }
   _orc27Linhas = orc27Montar(orc27QuadroActual(), (_orc27Doc && _orc27Doc.canais) || {});
@@ -15584,6 +15614,7 @@ function orc27BindLifecycle() {
   const flush = () => {
     if (typeof orc27Flush === 'function') orc27Flush();
     if (typeof vol27Flush === 'function') vol27Flush();
+    if (typeof saz27Flush === 'function') saz27Flush();
   };
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flush();
@@ -15633,13 +15664,15 @@ function orc27OnBlur(el) {
 }
 
 function orc27ShowSub(sub) {
-  const next = sub === 'volume' ? 'volume' : 'valor';
+  const next = sub === 'volume' ? 'volume' : (sub === 'sazonalidade' ? 'sazonalidade' : 'valor');
   if (_orc27Sub === 'volume' && next !== 'volume' && typeof vol27Flush === 'function') vol27Flush();
-  if (_orc27Sub !== 'volume' && next === 'volume' && typeof orc27Flush === 'function') orc27Flush();
+  if (_orc27Sub === 'sazonalidade' && next !== 'sazonalidade' && typeof saz27Flush === 'function') saz27Flush();
+  if (_orc27Sub === 'valor' && next !== 'valor' && typeof orc27Flush === 'function') orc27Flush();
   _orc27Sub = next;
   if (_pvView !== 'orcamento') return;
   if (typeof orc27PrepararChrome === 'function') orc27PrepararChrome();
   if (next === 'volume' && typeof vol27Abrir === 'function') vol27Abrir(false);
+  else if (next === 'sazonalidade' && typeof saz27Abrir === 'function') saz27Abrir(false);
   else orc27Pintar();
 }
 
@@ -15654,7 +15687,644 @@ async function orc27MontarVista() {
   try { await orc27Hidrate(); } catch (e) { console.warn('orc27', e); }
   if (gen !== _orc27Gen || _pvView !== 'orcamento') return;
   if (_orc27Sub === 'volume' && typeof vol27Abrir === 'function') vol27Abrir(true);
+  else if (_orc27Sub === 'sazonalidade' && typeof saz27Abrir === 'function') saz27Abrir(true);
   else orc27Pintar();
+}
+
+/**
+ * Orçamento 2027 · Sazonalidade.
+ * Mesmos canais do Orç Valor. Cada um tem a linha 2026 e a linha 2027.
+ * Jan–Set 2026 = Fatur. líquido do mês (Outubro não entra; 99520099 não entra).
+ * Out/Nov/Dez começam pela média (Jan+…+Set)/9 e gravam-se à parte, por canal.
+ * Um clear explícito fica vazio e conta 0 — a média não volta.
+ * 2027 = Orçamento 2027 × peso do mês em 2026. Os cêntimos ficam em Dezembro.
+ * Empresa e Institucional somam os filhos, mês a mês. Não se escreve neles.
+ */
+const SAZ27_LS_KEY = 'dfb_orcamento_2027_sazonalidade_v1';
+const SAZ27_CLOUD_PATH = 'previsao/orcamento_2027_sazonalidade.json';
+const SAZ27_DEBOUNCE_MS = 1000;
+const SAZ27_MESES = [
+  { id: 'jan', rotulo: 'Jan', num: 1 },
+  { id: 'fev', rotulo: 'Fev', num: 2 },
+  { id: 'mar', rotulo: 'Mar', num: 3 },
+  { id: 'abr', rotulo: 'Abr', num: 4 },
+  { id: 'mai', rotulo: 'Mai', num: 5 },
+  { id: 'jun', rotulo: 'Jun', num: 6 },
+  { id: 'jul', rotulo: 'Jul', num: 7 },
+  { id: 'ago', rotulo: 'Ago', num: 8 },
+  { id: 'set', rotulo: 'Set', num: 9 },
+  { id: 'out', rotulo: 'Out', num: 10 },
+  { id: 'nov', rotulo: 'Nov', num: 11 },
+  { id: 'dez', rotulo: 'Dez', num: 12 },
+];
+let _saz27Doc = { version: 1, canais: {} };
+let _saz27Linhas = [];
+let _saz27Dirty = false;
+let _saz27Timer = null;
+let _saz27CloudCache = null;
+let _saz27CloudFetchedAt = 0;
+let _saz27Fila = Promise.resolve();
+let _saz27Pronto = false;
+let _saz27Carga = null;
+
+function saz27MesManual(mes) {
+  return mes === 'out' || mes === 'nov' || mes === 'dez';
+}
+
+function saz27DozeNulos() {
+  return [null, null, null, null, null, null, null, null, null, null, null, null];
+}
+
+function saz27FaturMes(quadro, id, mesNum) {
+  if (!id || mesNum < 1 || mesNum > 9) return 0;
+  const spec = (typeof PV_MAPA_CANAL_VENDA !== 'undefined') ? PV_MAPA_CANAL_VENDA[id] : null;
+  if (!spec) return 0;
+  const ym = '2026-' + String(mesNum).padStart(2, '0');
+  const s = orc27SomarFaturYm(quadro, ym, spec[0], spec[1], spec[2]);
+  if (!s || !s.tem || !orc27TemNumero(s.valor)) return 0;
+  return Number(s.valor);
+}
+
+/** Nove meses. O que não existe no quadro conta 0. Outubro não é pedido. */
+function saz27MesesReais(quadro, id) {
+  const meses = [];
+  for (let m = 1; m <= 9; m++) meses.push(saz27FaturMes(quadro, id, m));
+  return meses;
+}
+
+/** (Jan+…+Set) / 9, em cêntimos. Divide sempre por 9. */
+function saz27Media9(valores9) {
+  let s = 0;
+  const lista = Array.isArray(valores9) ? valores9 : [];
+  for (let i = 0; i < 9; i++) {
+    const n = Number(lista[i]);
+    if (Number.isFinite(n)) s += n;
+  }
+  return pvCentavosMapa(s / 9);
+}
+
+function saz27EstadoQ4(manual, id, mes, media) {
+  const rec = manual && manual[id] ? manual[id] : null;
+  const ts = rec && rec.cellTs ? rec.cellTs[mes] : null;
+  if (ts) {
+    if (rec && orc27TemNumero(rec[mes])) {
+      return { soma: Number(rec[mes]), vazio: false, gravado: true, valor: Number(rec[mes]) };
+    }
+    return { soma: 0, vazio: true, gravado: true, valor: null };
+  }
+  return { soma: media, vazio: false, gravado: false, valor: media };
+}
+
+function saz27LerQ4(manual, id, media) {
+  return {
+    out: saz27EstadoQ4(manual, id, 'out', media),
+    nov: saz27EstadoQ4(manual, id, 'nov', media),
+    dez: saz27EstadoQ4(manual, id, 'dez', media),
+  };
+}
+
+/**
+ * Peso = mês 2026 / soma dos 12. Os cêntimos do arredondamento ficam em Dezembro,
+ * para a soma bater certo com o Orçamento 2027.
+ * Sem orçamento, ou com 2026 a somar 0, não há meses.
+ */
+function saz27Distribuir2027(meses, orcamento) {
+  const vazio = { meses: saz27DozeNulos(), total: null, dif: null, tem: false };
+  if (!orc27TemNumero(orcamento)) return vazio;
+  let soma = 0;
+  const base = [];
+  for (let i = 0; i < 12; i++) {
+    const n = Number(meses && meses[i]);
+    const v = Number.isFinite(n) ? n : 0;
+    base.push(v);
+    soma += v;
+  }
+  if (!(soma > 0 || soma < 0)) return vazio;
+  const alvo = pvCentavosMapa(orcamento);
+  const out = [];
+  let acc = 0;
+  for (let i = 0; i < 11; i++) {
+    const parc = pvCentavosMapa(alvo * (base[i] / soma));
+    out.push(parc);
+    acc = pvCentavosMapa(acc + parc);
+  }
+  out.push(pvCentavosMapa(alvo - acc));
+  let tot = 0;
+  for (let i = 0; i < 12; i++) tot += out[i];
+  tot = pvCentavosMapa(tot);
+  return { meses: out, total: tot, dif: pvCentavosMapa(tot - alvo), tem: true };
+}
+
+function saz27SomarIdx(filhos, campo, i) {
+  let s = 0;
+  (filhos || []).forEach(function (f) {
+    const arr = f && f[campo];
+    if (!arr || !orc27TemNumero(arr[i])) return;
+    s += Number(arr[i]);
+  });
+  return pvCentavosMapa(s);
+}
+
+function saz27AplicarSomas(linhas) {
+  const seen = {};
+  function recalc(row) {
+    if (!row || !row.id || seen[row.id]) return;
+    seen[row.id] = true;
+    if (row.tipo === 'canal') return;
+    const filhos = orc27FilhosDe(row, linhas);
+    filhos.forEach(function (f) { if (f && f.tipo === 'grupo') recalc(f); });
+    if (!filhos.length) return;
+    const m2026 = [];
+    for (let i = 0; i < 12; i++) m2026.push(saz27SomarIdx(filhos, 'm2026', i));
+    row.m2026 = m2026;
+    row.q4 = null;
+    row.totalSaz2026 = pvCentavosMapa(m2026.reduce(function (a, b) { return a + b; }, 0));
+    row.dif2026 = null;
+    row.dif2026Tem = false;
+    if (row.totalTem && orc27TemNumero(row.total2026)) {
+      row.dif2026 = pvCentavosMapa(row.totalSaz2026 - Number(row.total2026));
+      row.dif2026Tem = true;
+    }
+    if (!orc27TemNumero(row.orcamento)) {
+      row.m2027 = saz27DozeNulos();
+      row.tem2027 = false;
+      row.totalSaz2027 = null;
+      row.dif2027 = null;
+      return;
+    }
+    const com2027 = filhos.filter(function (f) { return f && f.tem2027; });
+    const m2027 = [];
+    let any = false;
+    for (let i = 0; i < 12; i++) {
+      let tem = false;
+      com2027.forEach(function (f) {
+        if (f.m2027 && orc27TemNumero(f.m2027[i])) tem = true;
+      });
+      if (!tem) {
+        m2027.push(null);
+      } else {
+        any = true;
+        m2027.push(saz27SomarIdx(com2027, 'm2027', i));
+      }
+    }
+    if (!any) {
+      row.m2027 = saz27DozeNulos();
+      row.tem2027 = false;
+      row.totalSaz2027 = null;
+      row.dif2027 = null;
+      return;
+    }
+    row.m2027 = m2027;
+    row.tem2027 = true;
+    let tot = 0;
+    m2027.forEach(function (v) { if (orc27TemNumero(v)) tot += Number(v); });
+    row.totalSaz2027 = pvCentavosMapa(tot);
+    row.dif2027 = pvCentavosMapa(row.totalSaz2027 - Number(row.orcamento));
+  }
+  (linhas || []).forEach(function (row) {
+    if (row && row.tipo === 'grupo' && !row.parent) recalc(row);
+  });
+  const total = (linhas || []).find(function (r) { return r && r.tipo === 'total'; });
+  if (total) recalc(total);
+}
+
+function saz27Montar(quadro, orcCanais, sazCanais) {
+  const linhas = orc27Montar(quadro, orcCanais || {});
+  const manual = sazCanais || {};
+  linhas.forEach(function (row) {
+    row.m2026 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    row.m2027 = saz27DozeNulos();
+    row.tem2027 = false;
+    row.totalSaz2026 = 0;
+    row.totalSaz2027 = null;
+    row.dif2026 = null;
+    row.dif2026Tem = false;
+    row.dif2027 = null;
+    row.q4 = null;
+    row.media = 0;
+    if (!row || row.tipo !== 'canal') return;
+    const reais = saz27MesesReais(quadro, row.id);
+    const media = saz27Media9(reais);
+    const q4 = saz27LerQ4(manual, row.id, media);
+    const m = reais.concat([q4.out.soma, q4.nov.soma, q4.dez.soma]);
+    row.m2026 = m;
+    row.q4 = q4;
+    row.media = media;
+    row.totalSaz2026 = pvCentavosMapa(m.reduce(function (a, b) { return a + b; }, 0));
+    if (row.totalTem && orc27TemNumero(row.total2026)) {
+      row.dif2026 = pvCentavosMapa(row.totalSaz2026 - Number(row.total2026));
+      row.dif2026Tem = true;
+    }
+    const d = saz27Distribuir2027(m, row.orcamento);
+    row.m2027 = d.meses;
+    row.tem2027 = d.tem;
+    row.totalSaz2027 = d.total;
+    row.dif2027 = d.dif;
+  });
+  saz27AplicarSomas(linhas);
+  return linhas;
+}
+
+function saz27MergeCanais(localCanais, cloudCanais) {
+  const local = localCanais && typeof localCanais === 'object' ? localCanais : {};
+  const cloud = cloudCanais && typeof cloudCanais === 'object' ? cloudCanais : {};
+  const out = {};
+  const ids = orc27LinhasBase().filter(function (r) { return r.tipo === 'canal'; }).map(function (r) { return r.id; });
+  ids.forEach(function (id) {
+    const l = local[id] || {};
+    const c = cloud[id] || {};
+    const lTs = l.cellTs || {};
+    const cTs = c.cellTs || {};
+    const rec = { cellTs: {} };
+    let any = false;
+    ['out', 'nov', 'dez'].forEach(function (mes) {
+      const pick = orc27PickCampo(l[mes], lTs[mes], c[mes], cTs[mes]);
+      if (!pick.ts) return;
+      any = true;
+      rec.cellTs[mes] = pick.ts;
+      rec[mes] = pick.value;
+    });
+    if (any) out[id] = rec;
+  });
+  return out;
+}
+
+function saz27LocalPrecisaNuvem(localCanais, cloudCanais) {
+  const local = localCanais && typeof localCanais === 'object' ? localCanais : {};
+  const cloud = cloudCanais && typeof cloudCanais === 'object' ? cloudCanais : {};
+  const ids = orc27LinhasBase().filter(function (r) { return r.tipo === 'canal'; }).map(function (r) { return r.id; });
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    const lTs = (local[id] && local[id].cellTs) || {};
+    const cTs = (cloud[id] && cloud[id].cellTs) || {};
+    if (pvTsMs(lTs.out) > pvTsMs(cTs.out)) return true;
+    if (pvTsMs(lTs.nov) > pvTsMs(cTs.nov)) return true;
+    if (pvTsMs(lTs.dez) > pvTsMs(cTs.dez)) return true;
+  }
+  return false;
+}
+
+/** Só Out, Nov e Dez, e só na folha. A segunda escrita do mesmo número não muda a data. */
+function saz27AplicarEdicao(doc, id, mes, valor, agoraIso) {
+  const base = doc && typeof doc === 'object' ? doc : { canais: {} };
+  const canais = Object.assign({}, base.canais || {});
+  const out = {
+    version: 1,
+    canais: canais,
+    actualizadoEm: base.actualizadoEm || null,
+    actualizadoPor: base.actualizadoPor || '',
+  };
+  if (!orc27IdFolha(id)) return { doc: out, changed: false };
+  if (!saz27MesManual(mes)) return { doc: out, changed: false };
+  const rec0 = canais[id] || {};
+  const cellTs0 = rec0.cellTs || {};
+  const prev = orc27TemNumero(rec0[mes]) ? Number(rec0[mes]) : null;
+  const next = orc27TemNumero(valor) ? Number(valor) : null;
+  const jaTs = !!cellTs0[mes];
+  if (jaTs && prev === next) return { doc: out, changed: false };
+  const rec = { cellTs: Object.assign({}, cellTs0) };
+  ['out', 'nov', 'dez'].forEach(function (m) {
+    if (orc27TemNumero(rec0[m])) rec[m] = Number(rec0[m]);
+    else if (cellTs0[m]) rec[m] = null;
+  });
+  rec[mes] = next;
+  rec.cellTs[mes] = agoraIso || new Date().toISOString();
+  canais[id] = rec;
+  out.canais = canais;
+  return { doc: out, changed: true };
+}
+
+function saz27ValorIgual(a, b) {
+  if (!orc27TemNumero(a) || !orc27TemNumero(b)) return false;
+  return pvCentavosMapa(a) === pvCentavosMapa(b);
+}
+
+function saz27InputHtml(row, mes, q) {
+  const val = q && q.vazio ? '' : orc27FmtInput(q ? q.valor : null);
+  const titulo = (mes === 'out' ? 'Out' : (mes === 'nov' ? 'Nov' : 'Dez')) + ' 2026 (autosave)';
+  return '<input type="text" inputmode="decimal" class="form-input saz27-input" data-saz-id="'
+    + orc27Esc(row.id) + '" data-saz-mes="' + mes + '" data-saz-ano="2026" value="' + orc27Esc(val)
+    + '" placeholder="—" title="' + titulo
+    + '" style="height:32px;width:100%;min-width:84px;text-align:right;padding:4px 6px;background:#eff6ff;font-variant-numeric:tabular-nums;" oninput="saz27OnInput(this)" onblur="saz27OnBlur(this)">';
+}
+
+function saz27HtmlMes(row, ano, idx, edit) {
+  const mes = SAZ27_MESES[idx];
+  const manual = ano === '2026' && row.tipo === 'canal' && row.q4 && saz27MesManual(mes.id);
+  if (manual && edit) return saz27InputHtml(row, mes.id, row.q4[mes.id]);
+  if (ano === '2026') {
+    if (manual && row.q4[mes.id] && row.q4[mes.id].vazio) return '—';
+    return orc27FmtRs(row.m2026[idx], true);
+  }
+  if (!row.tem2027 || !row.m2027 || !orc27TemNumero(row.m2027[idx])) return '—';
+  return orc27FmtRs(row.m2027[idx], true);
+}
+
+function saz27HtmlTotal(row, ano) {
+  if (ano === '2026') return orc27FmtRs(row.totalSaz2026, true);
+  if (!row.tem2027 || !orc27TemNumero(row.totalSaz2027)) return '—';
+  return orc27FmtRs(row.totalSaz2027, true);
+}
+
+function saz27HtmlDif(row, ano) {
+  if (ano === '2026') {
+    if (!row.dif2026Tem || !orc27TemNumero(row.dif2026)) return '—';
+    return orc27FmtRs(row.dif2026, true);
+  }
+  if (!row.tem2027 || !orc27TemNumero(row.dif2027)) return '—';
+  return orc27FmtRs(row.dif2027, true);
+}
+
+function saz27RenderHtml(edit, linhas) {
+  const rows = Array.isArray(linhas) ? linhas : [];
+  let body = '';
+  rows.forEach(function (row) {
+    const isGrupo = row.tipo === 'grupo' || row.tipo === 'total';
+    const weight = isGrupo ? '700' : '400';
+    const pad = typeof pvMapaPadLeft === 'function' ? pvMapaPadLeft(row, rows) : '8px';
+    ['2026', '2027'].forEach(function (ano) {
+      const bg = row.tipo === 'total' ? '#f1f5f9' : (row.tipo === 'grupo' ? '#f8fafc' : (ano === '2027' ? '#faf8ff' : 'transparent'));
+      const borda = ano === '2027' ? 'border-bottom:1px solid #e2e8f0;' : '';
+      body += '<tr data-saz-id="' + orc27Esc(row.id) + '" data-saz-ano="' + ano + '" style="background:' + bg + ';font-weight:' + weight + ';' + borda + '">';
+      if (ano === '2026') {
+        body += '<td rowspan="2" style="text-align:left;padding-left:' + pad + ';white-space:nowrap;vertical-align:middle;">' + orc27Esc(row.empresa) + '</td>';
+      }
+      body += '<td style="text-align:center;white-space:nowrap;color:' + (ano === '2027' ? '#5b21b6' : '#1e3a8a') + ';">' + ano + '</td>';
+      for (let i = 0; i < SAZ27_MESES.length; i++) {
+        const mes = SAZ27_MESES[i];
+        const q4 = ano === '2026' && saz27MesManual(mes.id);
+        const fundo = q4 ? 'background:#eff6ff;' : (ano === '2027' ? 'background:#f5f3ff;' : '');
+        body += '<td data-saz-mes="' + mes.id + '" class="saz27-mes" style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;' + fundo + '">'
+          + saz27HtmlMes(row, ano, i, edit) + '</td>';
+      }
+      body += '<td data-saz-mes="total" class="saz27-total" style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;">' + saz27HtmlTotal(row, ano) + '</td>';
+      body += '<td data-saz-mes="dif" class="saz27-dif" style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;">' + saz27HtmlDif(row, ano) + '</td>';
+      body += '</tr>';
+    });
+  });
+  let head = '<th style="text-align:left;">Empresa</th><th style="text-align:center;">Ano</th>';
+  SAZ27_MESES.forEach(function (mes) {
+    const fundo = saz27MesManual(mes.id) ? 'background:#dbeafe;' : '';
+    head += '<th style="text-align:right;' + fundo + '">' + mes.rotulo + '</th>';
+  });
+  head += '<th style="text-align:right;">Total</th><th style="text-align:right;">Dif</th>';
+  return orc27SubNavHtml('sazonalidade')
+    + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
+    + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Sazonalidade'
+    + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Dif 2026 = soma dos meses − Total 2026 do Orç Valor · 2027 = Orçamento 2027 × peso do mês · cêntimos em Dezembro</span>'
+    + '</div>'
+    + '<table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1720px;">'
+    + '<thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+}
+
+function saz27CloudUrl() {
+  return 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object/public/contratos/' + SAZ27_CLOUD_PATH;
+}
+
+function saz27LerLocal() {
+  try {
+    const raw = localStorage.getItem(SAZ27_LS_KEY);
+    if (!raw) return { canais: {} };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return { canais: {} };
+    return parsed;
+  } catch (_) {
+    return { canais: {} };
+  }
+}
+
+async function saz27FetchCloud(force) {
+  const now = Date.now();
+  if (!force && _saz27CloudCache && !_saz27CloudCache.fetchFailed && (now - _saz27CloudFetchedAt) < 30000) {
+    return _saz27CloudCache;
+  }
+  try {
+    const res = await fetch(saz27CloudUrl() + '?t=' + now, { cache: 'no-store' });
+    if (res.status === 404) {
+      _saz27CloudCache = { canais: {}, fetchFailed: false, actualizadoEm: null };
+      _saz27CloudFetchedAt = now;
+      return _saz27CloudCache;
+    }
+    if (!res.ok) {
+      const txt = await res.text().catch(function () { return ''; });
+      if (res.status === 400 && /not found|object not found|404/i.test(txt)) {
+        _saz27CloudCache = { canais: {}, fetchFailed: false, actualizadoEm: null };
+        _saz27CloudFetchedAt = now;
+        return _saz27CloudCache;
+      }
+      console.warn('saz27FetchCloud HTTP', res.status);
+      if (_saz27CloudCache && _saz27CloudCache.canais && !_saz27CloudCache.fetchFailed) return _saz27CloudCache;
+      return { canais: {}, fetchFailed: true };
+    }
+    const data = await res.json();
+    _saz27CloudCache = {
+      canais: orc27CanaisDePayload(data),
+      actualizadoEm: data && data.actualizadoEm ? data.actualizadoEm : null,
+      actualizadoPor: data && data.actualizadoPor ? data.actualizadoPor : '',
+      fetchFailed: false,
+    };
+    _saz27CloudFetchedAt = now;
+    return _saz27CloudCache;
+  } catch (e) {
+    console.warn('saz27FetchCloud', e);
+    if (_saz27CloudCache && _saz27CloudCache.canais) {
+      _saz27CloudCache.fetchFailed = true;
+      return _saz27CloudCache;
+    }
+    return { canais: {}, fetchFailed: true };
+  }
+}
+
+async function saz27Upload(payload) {
+  const base = 'https://qnscwppgljobelplgbkp.supabase.co/storage/v1/object';
+  const res = await fetch(base + '/contratos/' + SAZ27_CLOUD_PATH, {
+    method: 'POST',
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      'x-upsert': 'true',
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errTxt = await res.text().catch(function () { return ''; });
+    throw new Error('Upload sazonalidade (' + res.status + '): ' + errTxt.slice(0, 180));
+  }
+  return payload;
+}
+
+async function saz27EnviarCorpo() {
+  if (typeof orc27PodeEditar === 'function' && !orc27PodeEditar()) return false;
+  const cloud = await saz27FetchCloud(true);
+  if (cloud && cloud.fetchFailed) return false;
+  const localCanais = (_saz27Doc && _saz27Doc.canais) || {};
+  const cloudCanais = (cloud && cloud.canais) || {};
+  if (!saz27LocalPrecisaNuvem(localCanais, cloudCanais)) return false;
+  const canais = saz27MergeCanais(localCanais, cloudCanais);
+  const payload = {
+    version: 1,
+    actualizadoEm: new Date().toISOString(),
+    actualizadoPor: typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '',
+    canais: canais,
+  };
+  await saz27Upload(payload);
+  _saz27CloudCache = {
+    canais: canais,
+    actualizadoEm: payload.actualizadoEm,
+    actualizadoPor: payload.actualizadoPor,
+    fetchFailed: false,
+  };
+  _saz27CloudFetchedAt = Date.now();
+  if (_saz27Dirty) {
+    _saz27Doc.canais = saz27MergeCanais(_saz27Doc.canais, canais);
+  } else {
+    _saz27Doc = {
+      version: 1,
+      canais: canais,
+      actualizadoEm: payload.actualizadoEm,
+      actualizadoPor: payload.actualizadoPor,
+    };
+  }
+  try { localStorage.setItem(SAZ27_LS_KEY, JSON.stringify(_saz27Doc)); } catch (_) {}
+  if (_saz27Dirty) saz27Agendar();
+  return true;
+}
+
+function saz27PedirNuvem() {
+  _saz27Fila = _saz27Fila.then(function () { return saz27EnviarCorpo(); }).catch(function (e) { console.warn('saz27 nuvem', e); });
+  return _saz27Fila;
+}
+
+async function saz27Hidrate() {
+  const local = saz27LerLocal();
+  const cloud = await saz27FetchCloud(false);
+  const canais = saz27MergeCanais(local && local.canais, cloud && cloud.canais);
+  _saz27Doc = {
+    version: 1,
+    canais: canais,
+    actualizadoEm: (local && local.actualizadoEm) || (cloud && cloud.actualizadoEm) || null,
+    actualizadoPor: (local && local.actualizadoPor) || (cloud && cloud.actualizadoPor) || '',
+  };
+  if (typeof orc27PodeEditar === 'function' && orc27PodeEditar()) {
+    try { localStorage.setItem(SAZ27_LS_KEY, JSON.stringify(_saz27Doc)); } catch (_) {}
+    if (cloud && !cloud.fetchFailed && saz27LocalPrecisaNuvem(local && local.canais, cloud && cloud.canais)) {
+      saz27PedirNuvem();
+    }
+  }
+}
+
+function saz27PatchCalculos() {
+  _saz27Linhas = saz27Montar(orc27QuadroActual(), (_orc27Doc && _orc27Doc.canais) || {}, (_saz27Doc && _saz27Doc.canais) || {});
+  if (typeof document === 'undefined' || !document.querySelector) return;
+  _saz27Linhas.forEach(function (row) {
+    ['2026', '2027'].forEach(function (ano) {
+      const tr = document.querySelector('tr[data-saz-id="' + row.id + '"][data-saz-ano="' + ano + '"]');
+      if (!tr) return;
+      for (let i = 0; i < SAZ27_MESES.length; i++) {
+        const mes = SAZ27_MESES[i];
+        const el = tr.querySelector('td[data-saz-mes="' + mes.id + '"]');
+        if (!el || el.querySelector('input')) continue;
+        el.innerHTML = saz27HtmlMes(row, ano, i, false);
+      }
+      const total = tr.querySelector('td[data-saz-mes="total"]');
+      if (total) total.innerHTML = saz27HtmlTotal(row, ano);
+      const dif = tr.querySelector('td[data-saz-mes="dif"]');
+      if (dif) dif.innerHTML = saz27HtmlDif(row, ano);
+    });
+  });
+}
+
+function saz27Agendar() {
+  if (typeof orc27PodeEditar === 'function' && !orc27PodeEditar()) return;
+  clearTimeout(_saz27Timer);
+  _saz27Timer = setTimeout(function () { saz27Flush(); }, SAZ27_DEBOUNCE_MS);
+}
+
+function saz27Flush() {
+  clearTimeout(_saz27Timer);
+  if (!_saz27Dirty) return false;
+  if (typeof orc27PodeEditar === 'function' && !orc27PodeEditar()) return false;
+  _saz27Dirty = false;
+  if (_saz27Doc) {
+    _saz27Doc.actualizadoEm = new Date().toISOString();
+    _saz27Doc.actualizadoPor = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
+  }
+  let ok = false;
+  try {
+    localStorage.setItem(SAZ27_LS_KEY, JSON.stringify(_saz27Doc || { version: 1, canais: {} }));
+    ok = true;
+  } catch (e) {
+    console.warn('saz27Flush', e);
+  }
+  if (typeof orc27Flash === 'function') orc27Flash(ok);
+  if (ok) saz27PedirNuvem();
+  return ok;
+}
+
+function saz27OnInput(el) {
+  if (!el || (typeof orc27PodeEditar === 'function' && !orc27PodeEditar())) return;
+  const id = el.getAttribute('data-saz-id');
+  const mes = el.getAttribute('data-saz-mes');
+  if (!orc27IdFolha(id) || !saz27MesManual(mes)) return;
+  const ent = orc27EntradaPronta(el.value);
+  if (!ent.ok) return;
+  const r = saz27AplicarEdicao(_saz27Doc, id, mes, ent.valor, new Date().toISOString());
+  if (r.changed) {
+    _saz27Doc = r.doc;
+    _saz27Dirty = true;
+    saz27Agendar();
+  }
+  saz27PatchCalculos();
+}
+
+function saz27OnBlur(el) {
+  if (!el || (typeof orc27PodeEditar === 'function' && !orc27PodeEditar())) return;
+  const id = el.getAttribute('data-saz-id');
+  const mes = el.getAttribute('data-saz-mes');
+  if (!orc27IdFolha(id) || !saz27MesManual(mes)) return;
+  const ent = orc27EntradaPronta(el.value);
+  const v = ent.ok ? ent.valor : null;
+  const rec = (_saz27Doc && _saz27Doc.canais && _saz27Doc.canais[id]) || {};
+  const ts = rec.cellTs && rec.cellTs[mes];
+  if (!ts && v != null) {
+    const media = saz27Media9(saz27MesesReais(orc27QuadroActual(), id));
+    if (saz27ValorIgual(v, media)) {
+      el.value = orc27FmtInput(media);
+      if (_saz27Dirty) saz27Flush();
+      return;
+    }
+  }
+  const r = saz27AplicarEdicao(_saz27Doc, id, mes, v, new Date().toISOString());
+  if (r.changed) {
+    _saz27Doc = r.doc;
+    _saz27Dirty = true;
+  }
+  el.value = orc27FmtInput(v);
+  saz27PatchCalculos();
+  if (_saz27Dirty) saz27Flush();
+}
+
+function saz27Abrir(force) {
+  const host = document.getElementById('pv-canal-panels');
+  if (force) _saz27Pronto = false;
+  if (_saz27Pronto) {
+    if (typeof orc27Pintar === 'function') orc27Pintar();
+    return;
+  }
+  if (_saz27Carga) return;
+  if (host) {
+    host.innerHTML = orc27SubNavHtml('sazonalidade')
+      + '<p id="saz27-status" style="color:var(--muted);font-size:13px;padding:8px 0;">A carregar sazonalidade…</p>';
+  }
+  _saz27Carga = saz27Hidrate().then(function () {
+    _saz27Pronto = true;
+    if (_orc27Sub === 'sazonalidade' && _pvView === 'orcamento' && typeof orc27Pintar === 'function') orc27Pintar();
+  }).catch(function (e) {
+    console.warn('saz27', e);
+    _saz27Pronto = true;
+    if (_orc27Sub === 'sazonalidade' && _pvView === 'orcamento' && typeof orc27Pintar === 'function') orc27Pintar();
+  }).then(function () { _saz27Carga = null; });
 }
 
 /**
@@ -16201,10 +16871,7 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
   const notaHtml = nota
     ? '<div id="vol27-nota" style="margin:0 0 10px;font-size:12px;color:#9a3412;line-height:1.45;">' + orc27Esc(nota) + '</div>'
     : '<div id="vol27-nota" style="display:none;"></div>';
-  return '<div class="sub-nav" style="margin-bottom:12px;flex-wrap:wrap;">'
-    + '<button type="button" class="sub-tab" id="orc27-sub-valor" onclick="orc27ShowSub(\'valor\')">Orç Valor</button>'
-    + '<button type="button" class="sub-tab active" id="orc27-sub-volume" onclick="orc27ShowSub(\'volume\')">Volume</button>'
-    + '</div>'
+  return orc27SubNavHtml('volume')
     + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">'
     + '<label for="vol27-filtro" style="font-size:13px;font-weight:600;">Canal</label>'
     + '<select id="vol27-filtro" class="form-input" style="height:36px;min-width:260px;font-size:13px;" onchange="vol27OnFiltro(this)">'
@@ -16921,10 +17588,8 @@ function vol27Abrir(force) {
   }
   if (_vol27Carga) return;
   if (host) {
-    host.innerHTML = '<div class="sub-nav" style="margin-bottom:12px;">'
-      + '<button type="button" class="sub-tab" id="orc27-sub-valor" onclick="orc27ShowSub(\'valor\')">Orç Valor</button>'
-      + '<button type="button" class="sub-tab active" id="orc27-sub-volume" onclick="orc27ShowSub(\'volume\')">Volume</button>'
-      + '</div><p id="vol27-status" style="color:var(--muted);font-size:13px;padding:8px 0;">A carregar volumes…</p>';
+    host.innerHTML = orc27SubNavHtml('volume')
+      + '<p id="vol27-status" style="color:var(--muted);font-size:13px;padding:8px 0;">A carregar volumes…</p>';
   }
   _vol27Carga = vol27Preparar().then(function () {
     _vol27Pronto = true;
@@ -17500,6 +18165,8 @@ async function pvExportarExcel() {
 function voltarHome() {
   if (typeof pvFlushAutosave === 'function') pvFlushAutosave();
   if (typeof orc27Flush === 'function') orc27Flush();
+  if (typeof vol27Flush === 'function') vol27Flush();
+  if (typeof saz27Flush === 'function') saz27Flush();
   _canalActivo = null;
   _canalPinOk = null;
   _canalPinPendente = null;
@@ -40187,7 +40854,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-15-orcamento-vendedores: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-15-orcamento-sazonalidade: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
