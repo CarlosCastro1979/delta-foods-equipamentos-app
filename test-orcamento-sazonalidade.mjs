@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Orçamento 2027 · Sazonalidade.
- * Jan–Set 2026 = Fatur. do mês. Out/Nov/Dez = média /9 até alguém gravar.
- * 2027 segue os pesos e soma o Orçamento 2027. Dif 2026 fecha com o Orç Valor.
+ * Jan–Set 2026 = Fatur. do mês. Out/Nov/Dez = Previsão Out a Dez ÷ 3 até alguém gravar.
+ * A média (Jan+…+Set)/9 não é o defeito. 2027 segue os pesos. Dif 2026 começa em 0.
  * Empresa e Institucional somam os filhos. O vendedor escreve só os três meses.
  */
 import fs from 'fs';
@@ -14,7 +14,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-15-orcamento-sazonalidade';
+const CACHE = 'v2026-10-15-orcamento-excel';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);
@@ -186,6 +186,7 @@ for (const name of [
   'PV_INST_BALCAO_NOMES',
   'PV_INST_HORECA_NOMES',
   'SAZ27_LS_KEY',
+  'SAZ27_FILTRO_LS',
   'SAZ27_CLOUD_PATH',
   'SAZ27_DEBOUNCE_MS',
   'SAZ27_MESES',
@@ -241,6 +242,12 @@ const fns = [
   'saz27FaturMes',
   'saz27MesesReais',
   'saz27Media9',
+  'saz27PrevisaoFolha',
+  'saz27Partir3',
+  'saz27PertoCent',
+  'saz27TresIguaisAMedia',
+  'saz27GuardadoEMediaAntiga',
+  'saz27DefeitoMes',
   'saz27EstadoQ4',
   'saz27LerQ4',
   'saz27Distribuir2027',
@@ -255,6 +262,28 @@ const fns = [
   'saz27HtmlMes',
   'saz27HtmlTotal',
   'saz27HtmlDif',
+  'saz27NomesCanal',
+  'saz27NomeEmpresa',
+  'saz27CurtoEmpresa',
+  'saz27FolhasEmpresa',
+  'saz27GruposFiltro',
+  'saz27IdsFolha',
+  'saz27FiltroValido',
+  'saz27LerFiltro',
+  'saz27FiltroActual',
+  'saz27CanaisSeleccionados',
+  'saz27GravarFiltro',
+  'saz27Repintar',
+  'saz27OnFiltroCanal',
+  'saz27TirarCanal',
+  'saz27LimparFiltro',
+  'saz27RotuloChip',
+  'saz27FiltroHtml',
+  'saz27ClonarLinha',
+  'saz27AcertarAlvoPais',
+  'saz27LinhasVisiveis',
+  'saz27LinhasVista',
+  'saz27LinhasNoEcra',
   'saz27RenderHtml',
   'saz27CloudUrl',
   'saz27FetchCloud',
@@ -302,6 +331,7 @@ const orc = {
 ctx._quadro = quadro;
 ctx._orc27Doc = { version: 1, canais: orc };
 ctx._saz27Doc = { version: 1, canais: {} };
+ctx._saz27Filtro = null;
 ctx._saz27Dirty = false;
 ctx._saz27Timer = null;
 ctx._saz27CloudCache = null;
@@ -380,12 +410,18 @@ check('Jan–Set são o Fatur. de cada mês; Outubro e 99520099 ficam de fora', 
   assert.equal(rest.m2026[3], 0);
   assert.equal(rest.m2026[8], 25);
   assert.equal(map.dfb_inst_balcao.m2026[1], 9);
-  assert.equal(map.dfb_inst_balcao.m2026[9], map.dfb_inst_balcao.media);
+  assert.equal(map.dfb_inst_balcao.m2026[9], 1);
+  assert.equal(map.dfb_inst_balcao.m2026[10], 1);
+  assert.equal(map.dfb_inst_balcao.m2026[11], 1);
   assert.notEqual(map.dfb_inst_balcao.m2026[9], 777);
+  assert.ok(html.includes('id="orc27-btn-excel"'));
+  assert.ok(extractFn(html, 'orc27SubNavHtml').includes('orc27ExportarExcel'));
+  assert.ok(extractFn(html, 'saz27RenderHtml').includes('saz27FiltroHtml'));
   assert.deepEqual(linhas.map(r => r.id), ctx.orc27LinhasBase().map(r => r.id));
 });
 
-check('Out, Nov e Dez por defeito são a mesma média (Jan..Set)/9', () => {
+check('Out, Nov e Dez por defeito são a Previsão Out a Dez ÷ 3, não a média de Jan–Set', () => {
+  ctx._saz27Filtro = [];
   const linhas = ctx.saz27Montar(quadro, orc, {});
   const map = byId(linhas);
   const lojas = map.dfb_lojas;
@@ -394,28 +430,143 @@ check('Out, Nov e Dez por defeito são a mesma média (Jan..Set)/9', () => {
   assert.equal(lojas.m2026[9], 10);
   assert.equal(lojas.m2026[10], 10);
   assert.equal(lojas.m2026[11], 10);
+  assert.equal(cents(lojas.m2026[9] + lojas.m2026[10] + lojas.m2026[11]), 30);
   assert.equal(lojas.totalSaz2026, 120);
+  assert.equal(lojas.total2026, 120);
   assert.equal(lojas.dif2026, 0);
+  assert.equal(lojas.dif2027, 0);
+  assert.equal(lojas.totalSaz2027, 240);
 
   const rest = map.dfb_rest;
   const media = cents(175 / 9);
   assert.equal(media, 19.44);
   assert.equal(rest.media, media);
-  assert.equal(rest.m2026[9], media);
-  assert.equal(rest.m2026[10], media);
-  assert.equal(rest.m2026[11], media);
-  perto(rest.dif2026, media * 3);
+  assert.equal(rest.q4.out.vazio, true);
+  assert.equal(rest.q4.nov.gravado, false);
+  assert.equal(rest.m2026[9], 0);
+  assert.equal(rest.m2026[10], 0);
+  assert.equal(rest.m2026[11], 0);
+  assert.notEqual(rest.m2026[9], media);
+  assert.equal(rest.totalSaz2026, 175);
+  assert.equal(rest.total2026, 175);
+  assert.equal(rest.dif2026, 0);
+
+  const balcao = map.dfb_inst_balcao;
+  assert.equal(cents(balcao.m2026[9] + balcao.m2026[10] + balcao.m2026[11]), 3);
+  assert.equal(balcao.dif2026, 0);
 
   const vista = ctx.saz27RenderHtml(true, linhas);
   assert.ok(tdMes(vista, 'dfb_lojas', '2026', 'out').includes('value="10"'));
-  assert.ok(tdMes(vista, 'dfb_rest', '2026', 'nov').includes('value="19,44"'));
+  const novRest = tdMes(vista, 'dfb_rest', '2026', 'nov');
+  assert.ok(novRest.includes('value=""'));
+  assert.ok(!novRest.includes('19,44'));
+  assert.ok(vista.includes('id="orc27-btn-excel"'));
+  assert.ok(vista.includes('id="saz27-filtro"'));
   assert.ok(vista.includes('>Sazonalidade</button>'));
   assert.ok(vista.includes('>Dif</th>'));
   assert.ok(vista.includes('>Jan</th>'));
   assert.ok(vista.includes('>Dez</th>'));
 });
 
-check('um Out escrito substitui a média e não volta; o vazio explícito conta 0', () => {
+check('previsão que não divide por 3: cêntimos em Dezembro, soma exacta, Dif 2026 = 0', () => {
+  ctx._saz27Filtro = [];
+  const orc2 = JSON.parse(JSON.stringify(orc));
+  orc2.dfb_rest = { prevOutDez: 10, orcamento: 300 };
+  const linhas = ctx.saz27Montar(quadro, orc2, {});
+  const rest = byId(linhas).dfb_rest;
+  assert.equal(rest.media, 19.44);
+  assert.equal(rest.m2026[9], 3.33);
+  assert.equal(rest.m2026[10], 3.33);
+  assert.equal(rest.m2026[11], 3.34);
+  assert.notEqual(rest.m2026[9], rest.media);
+  assert.equal(cents(rest.m2026[9] + rest.m2026[10] + rest.m2026[11]), 10);
+  assert.equal(rest.totalSaz2026, cents(175 + 10));
+  assert.equal(rest.total2026, cents(175 + 10));
+  assert.equal(rest.dif2026, 0);
+  assert.equal(rest.totalSaz2027, 300);
+  assert.equal(rest.dif2027, 0);
+  const vista = ctx.saz27RenderHtml(true, linhas);
+  assert.ok(tdMes(vista, 'dfb_rest', '2026', 'out').includes('value="3,33"'));
+  assert.ok(tdMes(vista, 'dfb_rest', '2026', 'dez').includes('value="3,34"'));
+});
+
+check('média antiga gravada não ganha; um mês escrito fica; o vazio explícito conta 0', () => {
+  const orc2 = JSON.parse(JSON.stringify(orc));
+  orc2.dfb_rest = { prevOutDez: 10, orcamento: 300 };
+  const media = 19.44;
+  const ts = '2026-10-01T00:00:00.000Z';
+  let rest = byId(ctx.saz27Montar(quadro, orc2, {
+    dfb_rest: { out: media, nov: media, dez: 19.45, cellTs: { out: ts, nov: ts, dez: ts } },
+  })).dfb_rest;
+  assert.equal(rest.q4.out.gravado, false);
+  assert.equal(rest.q4.dez.gravado, false);
+  assert.equal(rest.m2026[9], 3.33);
+  assert.equal(rest.m2026[10], 3.33);
+  assert.equal(rest.m2026[11], 3.34);
+  assert.equal(rest.dif2026, 0);
+
+  rest = byId(ctx.saz27Montar(quadro, orc2, {
+    dfb_rest: { out: media, nov: media, dez: media, cellTs: { out: ts, nov: ts, dez: ts } },
+  })).dfb_rest;
+  assert.equal(rest.m2026[11], 3.34);
+  assert.equal(rest.q4.nov.gravado, false);
+
+  rest = byId(ctx.saz27Montar(quadro, orc2, {
+    dfb_rest: { out: 40, nov: media, dez: media, cellTs: { out: ts, nov: ts, dez: ts } },
+  })).dfb_rest;
+  assert.equal(rest.m2026[9], 40);
+  assert.equal(rest.q4.out.gravado, true);
+  assert.notEqual(rest.m2026[9], rest.media);
+  assert.equal(rest.m2026[10], 3.33);
+  assert.equal(rest.m2026[11], 3.34);
+
+  rest = byId(ctx.saz27Montar(quadro, orc2, {
+    dfb_rest: { out: 50, nov: 50, dez: 50, cellTs: { out: ts, nov: ts, dez: ts } },
+  })).dfb_rest;
+  assert.equal(rest.m2026[9], 50);
+  assert.equal(rest.m2026[10], 50);
+  assert.equal(rest.m2026[11], 50);
+  assert.equal(rest.q4.dez.gravado, true);
+
+  rest = byId(ctx.saz27Montar(quadro, orc2, {
+    dfb_rest: { out: null, cellTs: { out: ts } },
+  })).dfb_rest;
+  assert.equal(rest.q4.out.vazio, true);
+  assert.equal(rest.q4.out.gravado, true);
+  assert.equal(rest.m2026[9], 0);
+  assert.equal(rest.m2026[10], 3.33);
+  assert.equal(rest.m2026[11], 3.34);
+
+  const escrito = ctx.saz27AplicarEdicao({ canais: {} }, 'dfb_rest', 'out', 40, ts).doc;
+  assert.equal(escrito.canais.dfb_rest.out, 40);
+  rest = byId(ctx.saz27Montar(quadro, orc2, escrito.canais)).dfb_rest;
+  assert.equal(rest.m2026[9], 40);
+  assert.equal(rest.q4.out.gravado, true);
+  assert.equal(rest.m2026[10], 3.33);
+  assert.notEqual(40, rest.media);
+
+  ctx._saz27Filtro = [];
+  ctx._orc27Doc = { version: 1, canais: orc2 };
+  ctx._saz27Doc = { version: 1, canais: {} };
+  ctx._saz27Dirty = false;
+  setUser('Filipe Neves');
+  ctx.saz27OnBlur(el({ 'data-saz-id': 'dfb_rest', 'data-saz-mes': 'out' }, '3,33'));
+  assert.equal(ctx._saz27Doc.canais.dfb_rest, undefined);
+  assert.equal(ctx._saz27Dirty, false);
+
+  const mediaEscrita = ctx.saz27AplicarEdicao({ canais: {} }, 'dfb_rest', 'dez', media, ts).doc;
+  assert.equal(mediaEscrita.canais.dfb_rest.dez, media);
+  rest = byId(ctx.saz27Montar(quadro, orc2, mediaEscrita.canais)).dfb_rest;
+  assert.equal(rest.m2026[11], 3.34);
+  assert.equal(rest.q4.dez.gravado, false);
+
+  ctx._orc27Doc = { version: 1, canais: orc };
+  ctx._saz27Doc = { version: 1, canais: {} };
+  ctx._saz27Dirty = false;
+  ctx._saz27Filtro = [];
+});
+
+check('um Out escrito substitui a previsão ÷ 3 e não volta; o vazio explícito conta 0', () => {
   let doc = { canais: {} };
   let r = ctx.saz27AplicarEdicao(doc, 'dfb_lojas', 'out', 40, '2026-10-15T12:00:00.000Z');
   assert.equal(r.changed, true);
@@ -551,7 +702,7 @@ check('a empresa e o Institucional são a soma dos filhos, mês a mês', () => {
   }
   assert.equal(map.dfb_inst.m2026[1], 9);
   assert.equal(map.dfb_inst.m2026[9], 1);
-  assert.equal(map.dfb.m2026[9], cents(40 + 19.44 + 1));
+  assert.equal(map.dfb.m2026[9], cents(40 + 1));
   assert.equal(map.dfb.dif2027, 0);
   assert.equal(map.dfb.totalSaz2027, map.dfb.orcamento);
   assert.equal(map.total.m2026[0], cents(map.dfb.m2026[0] + map.qb.m2026[0]));
@@ -593,7 +744,8 @@ check('o vendedor edita Out/Nov/Dez; célula calculada, empresa e mapa não', ()
   assert.ok(!trDe(vista, 'qb', '2026').includes('<input'));
   assert.ok(!trDe(vista, 'total', '2026').includes('<input'));
   const fechado = ctx.saz27RenderHtml(false, linhas);
-  assert.ok(!fechado.includes('<input'));
+  assert.ok(!fechado.includes('saz27-input'));
+  assert.ok(fechado.includes('type="checkbox"'));
 
   ctx._saz27Doc = { version: 1, canais: {} };
   ctx._saz27Dirty = false;
@@ -614,12 +766,140 @@ check('o vendedor edita Out/Nov/Dez; célula calculada, empresa e mapa não', ()
   assert.equal(ctx.saz27Flush(), false);
 });
 
+check('filtro de canal: dois canais, pais só com esses filhos, limpar volta ao quadro', () => {
+  const filtroLs = vm.runInContext('SAZ27_FILTRO_LS', ctx);
+  const docLs = vm.runInContext('SAZ27_LS_KEY', ctx);
+  assert.equal(filtroLs, 'dfb_orcamento_2027_sazonalidade_filtro_v1');
+  assert.notEqual(filtroLs, docLs);
+  assert.ok(extractFn(html, 'vol27RenderHtml').includes('id="vol27-filtro"'));
+  assert.ok(!extractFn(html, 'vol27RenderHtml').includes('multiple'));
+  assert.ok(!extractFn(html, 'vol27RenderHtml').includes('saz27'));
+  assert.ok(!extractFn(html, 'orc27RenderHtml').includes('saz27-filtro'));
+  assert.ok(!extractFn(html, 'saz27EnviarCorpo').includes('SAZ27_FILTRO_LS'));
+  assert.ok(!extractFn(html, 'saz27Flush').includes('SAZ27_FILTRO_LS'));
+  assert.ok(!extractFn(html, 'saz27GravarFiltro').includes('SAZ27_LS_KEY'));
+  assert.ok(!extractFn(html, 'saz27GravarFiltro').includes('_saz27Dirty'));
+
+  const grupos = ctx.saz27GruposFiltro();
+  assert.deepEqual(grupos.map(g => g.nome), ['Delta Foods Brasil', 'Q Brasil']);
+  assert.deepEqual(grupos[0].canais.map(c => c.nome), [
+    'Lojas online', 'Distribuidores regionais', 'Restauração', 'Distribuidores de retalho',
+    'Retalho moderno', 'Site próprio', 'Institucional Balcão', 'Institucional Horeca',
+  ]);
+  assert.deepEqual(grupos[1].canais.map(c => c.nome), [
+    'Retalho moderno', 'Distribuidores de retalho', 'Restauração', 'Distribuidores regionais',
+  ]);
+
+  const todas = ctx.saz27Montar(quadro, orc, {});
+  const full = byId(todas);
+  const vis = ctx.saz27LinhasVisiveis(todas, ['dfb_rest', 'dfb_lojas']);
+  assert.deepEqual(vis.map(r => r.id), ['dfb', 'dfb_lojas', 'dfb_rest', 'total']);
+  const map = byId(vis);
+  assert.equal(map.dfb_lojas.total2026, full.dfb_lojas.total2026);
+  assert.equal(map.dfb_lojas.orcamento, full.dfb_lojas.orcamento);
+  assert.equal(map.dfb_lojas.dif2026, full.dfb_lojas.dif2026);
+  assert.equal(map.dfb_lojas.dif2027, full.dfb_lojas.dif2027);
+  assert.equal(map.dfb_lojas.dif2026, cents(map.dfb_lojas.totalSaz2026 - map.dfb_lojas.total2026));
+  assert.equal(map.dfb_rest.dif2026, full.dfb_rest.dif2026);
+  assert.equal(map.dfb.m2026[0], cents(map.dfb_lojas.m2026[0] + map.dfb_rest.m2026[0]));
+  assert.equal(map.dfb.m2026[9], cents(map.dfb_lojas.m2026[9] + map.dfb_rest.m2026[9]));
+  assert.equal(map.dfb.totalSaz2026, cents(map.dfb_lojas.totalSaz2026 + map.dfb_rest.totalSaz2026));
+  assert.equal(map.dfb.totalSaz2027, cents(map.dfb_lojas.totalSaz2027 + map.dfb_rest.totalSaz2027));
+  assert.equal(map.dfb.orcamento, cents(Number(map.dfb_lojas.orcamento) + Number(map.dfb_rest.orcamento)));
+  assert.equal(map.dfb.total2026, cents(Number(map.dfb_lojas.total2026) + Number(map.dfb_rest.total2026)));
+  assert.notEqual(map.dfb.orcamento, full.dfb.orcamento);
+  assert.notEqual(map.dfb.total2026, full.dfb.total2026);
+  assert.equal(map.dfb.dif2026, cents(map.dfb.totalSaz2026 - map.dfb.total2026));
+  assert.equal(map.dfb.dif2027, cents(map.dfb.totalSaz2027 - map.dfb.orcamento));
+  assert.equal(map.dfb.dif2026, cents(map.dfb_lojas.dif2026 + map.dfb_rest.dif2026));
+  assert.equal(map.total.totalSaz2026, map.dfb.totalSaz2026);
+  assert.equal(map.total.orcamento, map.dfb.orcamento);
+  assert.equal(full.dfb.orcamento, 240 + 300 + 18);
+  assert.ok(full.qb);
+  assert.ok(full.dfb_inst);
+
+  const inst = ctx.saz27LinhasVisiveis(todas, ['dfb_inst_balcao']);
+  assert.deepEqual(inst.map(r => r.id), ['dfb', 'dfb_inst', 'dfb_inst_balcao', 'total']);
+  assert.equal(byId(inst).dfb_inst.totalSaz2026, byId(inst).dfb_inst_balcao.totalSaz2026);
+  assert.equal(byId(inst).dfb.orcamento, byId(inst).dfb_inst_balcao.orcamento);
+  assert.equal(byId(inst).dfb_inst_balcao.dif2026, full.dfb_inst_balcao.dif2026);
+  assert.ok(!inst.some(r => r.id === 'qb' || r.id === 'dfb_lojas' || r.id === 'dfb_inst_horeca'));
+
+  const cruzado = ctx.saz27LinhasVisiveis(todas, ['dfb_lojas', 'qb_rest']);
+  assert.deepEqual(cruzado.map(r => r.id), ['dfb', 'dfb_lojas', 'qb', 'qb_rest', 'total']);
+  assert.equal(byId(cruzado).dfb.totalSaz2026, byId(cruzado).dfb_lojas.totalSaz2026);
+  assert.equal(byId(cruzado).qb.totalSaz2026, byId(cruzado).qb_rest.totalSaz2026);
+  assert.equal(byId(cruzado).total.totalSaz2026, cents(byId(cruzado).dfb_lojas.totalSaz2026 + byId(cruzado).qb_rest.totalSaz2026));
+  assert.equal(byId(cruzado).dfb_lojas.dif2027, full.dfb_lojas.dif2027);
+  assert.ok(!cruzado.some(r => r.id === 'dfb_inst'));
+
+  const limpo = ctx.saz27LinhasVisiveis(todas, []);
+  assert.deepEqual(limpo.map(r => r.id), todas.map(r => r.id));
+  assert.equal(byId(limpo).dfb.orcamento, full.dfb.orcamento);
+  assert.equal(byId(limpo).dfb.totalSaz2026, full.dfb.totalSaz2026);
+
+  const docAntes = JSON.stringify(ctx._saz27Doc);
+  const dirtyAntes = ctx._saz27Dirty;
+  ctx.saz27GravarFiltro(['qb_rest', 'dfb_lojas']);
+  assert.deepEqual(ctx._saz27Filtro, ['dfb_lojas', 'qb_rest']);
+  ctx.saz27GravarFiltro(['dfb_lojas', 'dfb_rest']);
+  assert.equal(JSON.stringify(ctx._saz27Doc), docAntes);
+  assert.equal(ctx._saz27Dirty, dirtyAntes);
+
+  const vista = ctx.saz27RenderHtml(true, todas);
+  assert.ok(vista.includes('id="saz27-filtro"'));
+  assert.ok(vista.includes('>Canal</label>'));
+  assert.ok(vista.includes('id="saz27-filtro-limpar"'));
+  assert.ok(vista.includes('>Limpar</button>'));
+  assert.ok(vista.includes('Delta Foods Brasil'));
+  assert.ok(vista.includes('>Q Brasil</legend>'));
+  assert.ok(vista.includes('Lojas online'));
+  assert.ok(vista.includes('Institucional Balcão'));
+  assert.ok(vista.includes('Institucional Horeca'));
+  assert.ok(vista.includes('data-saz-canal="dfb_lojas" checked'));
+  assert.ok(vista.includes('data-saz-canal="dfb_rest" checked'));
+  assert.ok(!vista.includes('data-saz-canal="dfb_site" checked'));
+  assert.ok(vista.includes('data-saz-id="dfb_lojas"'));
+  assert.ok(vista.includes('data-saz-id="dfb_rest"'));
+  assert.ok(!vista.includes('data-saz-id="dfb_site"'));
+  assert.ok(!vista.includes('data-saz-id="qb_rest"'));
+  assert.ok(!vista.includes('data-saz-id="dfb_inst"'));
+  assert.ok(vista.includes('data-saz-canal="qb_rest"'));
+  assert.ok(vista.includes('Delta · Lojas online'));
+  assert.ok(vista.includes('Delta · Restauração'));
+  assert.ok(trDe(vista, 'dfb_lojas', '2026'));
+  assert.ok(trDe(vista, 'dfb_lojas', '2027'));
+  assert.ok(trDe(vista, 'dfb_lojas', '2026').includes('<input'));
+  assert.ok(!trDe(vista, 'dfb', '2026').includes('<input'));
+
+  ctx._saz27Filtro = null;
+  assert.deepEqual(ctx.saz27LerFiltro(), ['dfb_lojas', 'dfb_rest']);
+  assert.deepEqual(ctx.saz27FiltroActual(), ['dfb_lojas', 'dfb_rest']);
+
+  ctx.saz27TirarCanal('dfb_lojas');
+  assert.deepEqual(ctx._saz27Filtro, ['dfb_rest']);
+  ctx.saz27OnFiltroCanal({
+    getAttribute(name) { return name === 'data-saz-canal' ? 'dfb_rest' : ''; },
+    checked: false,
+  });
+  assert.deepEqual(ctx._saz27Filtro, []);
+  assert.equal(store.has(vm.runInContext('SAZ27_FILTRO_LS', ctx)), false);
+  const outra = ctx.saz27RenderHtml(true, todas);
+  assert.ok(outra.includes('data-saz-id="qb_dist_reg"'));
+  assert.ok(outra.includes('data-saz-id="dfb_inst_horeca"'));
+  assert.ok(outra.includes('Todos os canais'));
+  assert.equal(ctx.saz27LinhasNoEcra(todas).length, todas.length);
+  ctx.saz27LimparFiltro();
+  assert.deepEqual(ctx._saz27Filtro, []);
+});
+
 const chain = Promise.resolve();
 function later(title, fn) {
   return chain.then(() => check(title, fn));
 }
 
 await later('autosave aos 1000 ms, uma vez, sem apagar o resto do mapa', async () => {
+  ctx._saz27Filtro = [];
   setUser('Diogo Oliveira');
   posts.length = 0;
   hint.n = 0;
@@ -670,6 +950,69 @@ await later('autosave aos 1000 ms, uma vez, sem apagar o resto do mapa', async (
   ctx.saz27OnBlur(el({ 'data-saz-id': 'dfb_lojas', 'data-saz-mes': 'dez' }, '10'));
   assert.equal(ctx._saz27Doc.canais.dfb_lojas, undefined);
   assert.equal(posts.length, nPosts);
+});
+
+await later('o filtro fica no browser e Out/Nov/Dez grava sem apagar o resto', async () => {
+  setUser('Filipe Neves');
+  posts.length = 0;
+  hint.n = 0;
+  hint._t = '';
+  nuvem = {
+    version: 1,
+    canais: {
+      qb_dist_reg: { dez: 9, cellTs: { dez: '2026-10-01T00:00:00.000Z' } },
+      dfb_rest: { nov: 3, cellTs: { nov: '2026-10-01T00:00:00.000Z' } },
+    },
+  };
+  ctx._saz27CloudCache = null;
+  ctx._saz27CloudFetchedAt = 0;
+  ctx._saz27Fila = Promise.resolve();
+  ctx._saz27Doc = {
+    version: 1,
+    canais: {
+      qb_dist_reg: { dez: 9, cellTs: { dez: '2026-10-01T00:00:00.000Z' } },
+      dfb_rest: { nov: 3, cellTs: { nov: '2026-10-01T00:00:00.000Z' } },
+    },
+  };
+  ctx._saz27Dirty = false;
+  ctx.saz27GravarFiltro(['dfb_lojas', 'dfb_rest']);
+  assert.equal(ctx._saz27Dirty, false);
+  assert.equal(ctx._saz27Doc.canais.qb_dist_reg.dez, 9);
+  assert.equal(ctx._saz27Doc.canais.dfb_rest.nov, 3);
+  assert.equal(posts.length, 0);
+  const antes = timers.length;
+  ctx.saz27OnInput(el({ 'data-saz-id': 'dfb_lojas', 'data-saz-mes': 'out' }, '40'));
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.out, 40);
+  assert.equal(ctx._saz27Doc.canais.qb_dist_reg.dez, 9);
+  assert.equal(ctx._saz27Doc.canais.dfb_rest.nov, 3);
+  assert.equal(ctx._saz27Doc.filtro, undefined);
+  const pendentes = timers.slice(antes).filter(t => t.fn && t.ms === 1000);
+  assert.equal(pendentes.length, 1);
+  pendentes[0].fn();
+  await ctx._saz27Fila;
+  assert.equal(posts.length, 1);
+  const body = posts[0];
+  assert.equal(body.canais.dfb_lojas.out, 40);
+  assert.equal(body.canais.qb_dist_reg.dez, 9);
+  assert.equal(body.canais.dfb_rest.nov, 3);
+  assert.equal(Object.prototype.hasOwnProperty.call(body, 'filtro'), false);
+  const docLs = vm.runInContext('SAZ27_LS_KEY', ctx);
+  const filtroLs = vm.runInContext('SAZ27_FILTRO_LS', ctx);
+  const saved = JSON.parse(store.get(docLs));
+  assert.equal(saved.filtro, undefined);
+  assert.equal(saved.canais.dfb_lojas.out, 40);
+  assert.equal(saved.canais.qb_dist_reg.dez, 9);
+  assert.equal(saved.canais.dfb_rest.nov, 3);
+  assert.deepEqual(JSON.parse(store.get(filtroLs)), ['dfb_lojas', 'dfb_rest']);
+  ctx._saz27Filtro = null;
+  assert.deepEqual(ctx.saz27FiltroActual(), ['dfb_lojas', 'dfb_rest']);
+  const vista = ctx.saz27RenderHtml(true, ctx.saz27Montar(quadro, orc, ctx._saz27Doc.canais));
+  assert.ok(tdMes(vista, 'dfb_lojas', '2026', 'out').includes('value="40"'));
+  assert.ok(tdMes(vista, 'dfb_rest', '2026', 'nov').includes('value="3"'));
+  assert.ok(!vista.includes('data-saz-id="qb_dist_reg"'));
+  ctx.saz27LimparFiltro();
+  assert.equal(ctx._saz27Doc.canais.dfb_lojas.out, 40);
+  assert.equal(ctx._saz27Doc.canais.qb_dist_reg.dez, 9);
 });
 
 if (process.exitCode) {

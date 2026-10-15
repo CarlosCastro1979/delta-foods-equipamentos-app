@@ -15285,10 +15285,13 @@ function orc27SubNavHtml(activo) {
   const valor = activo === 'valor' ? ' active' : '';
   const volume = activo === 'volume' ? ' active' : '';
   const saz = activo === 'sazonalidade' ? ' active' : '';
-  return '<div class="sub-nav" style="margin-bottom:12px;flex-wrap:wrap;">'
+  return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">'
+    + '<div class="sub-nav" style="margin-bottom:0;flex-wrap:wrap;">'
     + '<button type="button" class="sub-tab' + valor + '" id="orc27-sub-valor" onclick="orc27ShowSub(\'valor\')">Orç Valor</button>'
     + '<button type="button" class="sub-tab' + volume + '" id="orc27-sub-volume" onclick="orc27ShowSub(\'volume\')">Volume</button>'
     + '<button type="button" class="sub-tab' + saz + '" id="orc27-sub-sazonalidade" onclick="orc27ShowSub(\'sazonalidade\')">Sazonalidade</button>'
+    + '</div>'
+    + '<button type="button" class="btn btn-primary btn-sm" id="orc27-btn-excel" onclick="orc27ExportarExcel()" style="min-height:36px;">Exportar para Excel</button>'
     + '</div>';
 }
 
@@ -15512,6 +15515,7 @@ function orc27PrepararChrome() {
         + '2027 reparte o Orçamento 2027 pelos pesos de 2026; os cêntimos ficam em Dezembro. '
         + 'Dif 2026 = soma dos 12 meses − Total 2026 do Orç Valor. '
         + 'Dif 2027 = soma de 2027 − Orçamento 2027. '
+        + 'O filtro Canal escolhe um ou vários; sem escolha, mostra todos. '
         + hint;
     } else {
       banner.innerHTML = '<strong>Orçamento 2027 · Orç Valor</strong> — '
@@ -15543,7 +15547,7 @@ function orc27Pintar() {
       if (typeof saz27Abrir === 'function') saz27Abrir(false);
       return;
     }
-    _saz27Linhas = saz27Montar(orc27QuadroActual(), (_orc27Doc && _orc27Doc.canais) || {}, (_saz27Doc && _saz27Doc.canais) || {});
+    _saz27Linhas = saz27LinhasVista();
     host.innerHTML = saz27RenderHtml(edit, _saz27Linhas);
     return;
   }
@@ -15695,12 +15699,20 @@ async function orc27MontarVista() {
  * Orçamento 2027 · Sazonalidade.
  * Mesmos canais do Orç Valor. Cada um tem a linha 2026 e a linha 2027.
  * Jan–Set 2026 = Fatur. líquido do mês (Outubro não entra; 99520099 não entra).
- * Out/Nov/Dez começam pela média (Jan+…+Set)/9 e gravam-se à parte, por canal.
- * Um clear explícito fica vazio e conta 0 — a média não volta.
+ * Out/Nov/Dez, enquanto ninguém os gravar, são a Previsão Out a Dez do Orç Valor ÷ 3.
+ * Os cêntimos que sobram ficam em Dezembro, para os três meses somarem a previsão.
+ * Previsão vazia: os três meses começam vazios e contam 0. A Dif 2026 começa em 0.
+ * Um valor gravado que seja a média antiga (Jan+…+Set)/9, ao cêntimo, não é edição:
+ * volta à previsão ÷ 3. Um clear explícito fica vazio e conta 0 — o defeito não volta.
  * 2027 = Orçamento 2027 × peso do mês em 2026. Os cêntimos ficam em Dezembro.
  * Empresa e Institucional somam os filhos, mês a mês. Não se escreve neles.
+ * O filtro Canal é só deste ecrã: vários canais, vazio = todos.
+ * Fica no browser, numa chave à parte. Não entra no ficheiro da nuvem nem no Orç Valor.
+ * Com filtro, a empresa e o Institucional somam só os filhos visíveis.
+ * A Dif de cada canal continua face ao Orç Valor desse canal, não a um alvo da empresa.
  */
 const SAZ27_LS_KEY = 'dfb_orcamento_2027_sazonalidade_v1';
+const SAZ27_FILTRO_LS = 'dfb_orcamento_2027_sazonalidade_filtro_v1';
 const SAZ27_CLOUD_PATH = 'previsao/orcamento_2027_sazonalidade.json';
 const SAZ27_DEBOUNCE_MS = 1000;
 const SAZ27_MESES = [
@@ -15719,6 +15731,7 @@ const SAZ27_MESES = [
 ];
 let _saz27Doc = { version: 1, canais: {} };
 let _saz27Linhas = [];
+let _saz27Filtro = null;
 let _saz27Dirty = false;
 let _saz27Timer = null;
 let _saz27CloudCache = null;
@@ -15752,7 +15765,7 @@ function saz27MesesReais(quadro, id) {
   return meses;
 }
 
-/** (Jan+…+Set) / 9, em cêntimos. Divide sempre por 9. */
+/** (Jan+…+Set) / 9, em cêntimos. Só serve para reconhecer a média antiga gravada. */
 function saz27Media9(valores9) {
   let s = 0;
   const lista = Array.isArray(valores9) ? valores9 : [];
@@ -15763,23 +15776,74 @@ function saz27Media9(valores9) {
   return pvCentavosMapa(s / 9);
 }
 
-function saz27EstadoQ4(manual, id, mes, media) {
+/** Previsão Out a Dez do Orç Valor, na folha. Empresa e Institucional não têm previsão própria. */
+function saz27PrevisaoFolha(id) {
+  return orc27ValorManual((_orc27Doc && _orc27Doc.canais) || {}, id, 'prevOutDez');
+}
+
+/** Parte o valor em três meses. Os cêntimos que sobram ficam em Dezembro. Vazio não parte. */
+function saz27Partir3(valor) {
+  if (!orc27TemNumero(valor)) return { out: null, nov: null, dez: null, tem: false };
+  const alvo = pvCentavosMapa(valor);
+  const parte = pvCentavosMapa(alvo / 3);
+  const out = parte;
+  const nov = parte;
+  const dez = pvCentavosMapa(alvo - out - nov);
+  return { out: out, nov: nov, dez: dez, tem: true };
+}
+
+/** Diferença de um cêntimo, no máximo. */
+function saz27PertoCent(a, b) {
+  if (!orc27TemNumero(a) || !orc27TemNumero(b)) return false;
+  const ca = Math.round(pvCentavosMapa(a) * 100);
+  const cb = Math.round(pvCentavosMapa(b) * 100);
+  return Math.abs(ca - cb) <= 1;
+}
+
+/** Os três meses iguais entre si e iguais à média antiga. */
+function saz27TresIguaisAMedia(rec, media) {
+  if (!rec || !orc27TemNumero(media)) return false;
+  const o = rec.out;
+  const n = rec.nov;
+  const d = rec.dez;
+  if (!orc27TemNumero(o) || !orc27TemNumero(n) || !orc27TemNumero(d)) return false;
+  if (!saz27PertoCent(o, n) || !saz27PertoCent(n, d) || !saz27PertoCent(o, d)) return false;
+  return saz27PertoCent(o, media);
+}
+
+/** Gravado igual à média (Jan+…+Set)/9, ao cêntimo, não foi uma edição real. */
+function saz27GuardadoEMediaAntiga(rec, mes, media) {
+  if (!rec || !orc27TemNumero(rec[mes])) return false;
+  if (saz27PertoCent(rec[mes], media)) return true;
+  return saz27TresIguaisAMedia(rec, media);
+}
+
+function saz27DefeitoMes(partes, mes) {
+  if (!partes || !partes.tem || !orc27TemNumero(partes[mes])) {
+    return { soma: 0, vazio: true, gravado: false, valor: null };
+  }
+  const n = Number(partes[mes]);
+  return { soma: n, vazio: false, gravado: false, valor: n };
+}
+
+function saz27EstadoQ4(manual, id, mes, partes, media) {
   const rec = manual && manual[id] ? manual[id] : null;
   const ts = rec && rec.cellTs ? rec.cellTs[mes] : null;
   if (ts) {
-    if (rec && orc27TemNumero(rec[mes])) {
-      return { soma: Number(rec[mes]), vazio: false, gravado: true, valor: Number(rec[mes]) };
+    if (!(rec && orc27TemNumero(rec[mes]))) {
+      return { soma: 0, vazio: true, gravado: true, valor: null };
     }
-    return { soma: 0, vazio: true, gravado: true, valor: null };
+    if (saz27GuardadoEMediaAntiga(rec, mes, media)) return saz27DefeitoMes(partes, mes);
+    return { soma: Number(rec[mes]), vazio: false, gravado: true, valor: Number(rec[mes]) };
   }
-  return { soma: media, vazio: false, gravado: false, valor: media };
+  return saz27DefeitoMes(partes, mes);
 }
 
-function saz27LerQ4(manual, id, media) {
+function saz27LerQ4(manual, id, partes, media) {
   return {
-    out: saz27EstadoQ4(manual, id, 'out', media),
-    nov: saz27EstadoQ4(manual, id, 'nov', media),
-    dez: saz27EstadoQ4(manual, id, 'dez', media),
+    out: saz27EstadoQ4(manual, id, 'out', partes, media),
+    nov: saz27EstadoQ4(manual, id, 'nov', partes, media),
+    dez: saz27EstadoQ4(manual, id, 'dez', partes, media),
   };
 }
 
@@ -15905,7 +15969,8 @@ function saz27Montar(quadro, orcCanais, sazCanais) {
     if (!row || row.tipo !== 'canal') return;
     const reais = saz27MesesReais(quadro, row.id);
     const media = saz27Media9(reais);
-    const q4 = saz27LerQ4(manual, row.id, media);
+    const partes = saz27Partir3(row.prevOutDez);
+    const q4 = saz27LerQ4(manual, row.id, partes, media);
     const m = reais.concat([q4.out.soma, q4.nov.soma, q4.dez.soma]);
     row.m2026 = m;
     row.q4 = q4;
@@ -16035,8 +16100,262 @@ function saz27HtmlDif(row, ano) {
   return orc27FmtRs(row.dif2027, true);
 }
 
+function saz27NomesCanal() {
+  return {
+    dfb_lojas: 'Lojas online',
+    dfb_dist_reg: 'Distribuidores regionais',
+    dfb_rest: 'Restauração',
+    dfb_dist_ret: 'Distribuidores de retalho',
+    dfb_ret_mod: 'Retalho moderno',
+    dfb_site: 'Site próprio',
+    dfb_inst_balcao: 'Institucional Balcão',
+    dfb_inst_horeca: 'Institucional Horeca',
+    qb_ret_mod: 'Retalho moderno',
+    qb_dist_ret: 'Distribuidores de retalho',
+    qb_rest: 'Restauração',
+    qb_dist_reg: 'Distribuidores regionais',
+  };
+}
+
+function saz27NomeEmpresa(id) {
+  if (id === 'dfb') return 'Delta Foods Brasil';
+  if (id === 'qb') return 'Q Brasil';
+  const linhas = orc27LinhasBase();
+  for (let i = 0; i < linhas.length; i++) {
+    if (linhas[i] && linhas[i].id === id) return linhas[i].empresa;
+  }
+  return id || '';
+}
+
+function saz27CurtoEmpresa(id) {
+  if (id === 'dfb') return 'Delta';
+  if (id === 'qb') return 'Q Brasil';
+  return saz27NomeEmpresa(id);
+}
+
+function saz27FolhasEmpresa(linhas, id) {
+  const out = [];
+  function walk(pid) {
+    (linhas || []).forEach(function (r) {
+      if (!r || r.parent !== pid) return;
+      if (r.tipo === 'canal') out.push(r);
+      else if (r.tipo === 'grupo') walk(r.id);
+    });
+  }
+  walk(id);
+  return out;
+}
+
+/** Os mesmos canais do quadro, agrupados por empresa. */
+function saz27GruposFiltro() {
+  const linhas = orc27LinhasBase();
+  const nomes = saz27NomesCanal();
+  return linhas.filter(function (r) { return r && r.tipo === 'grupo' && !r.parent; }).map(function (emp) {
+    return {
+      id: emp.id,
+      nome: saz27NomeEmpresa(emp.id),
+      canais: saz27FolhasEmpresa(linhas, emp.id).map(function (c) {
+        return { id: c.id, nome: nomes[c.id] || c.empresa };
+      }),
+    };
+  });
+}
+
+function saz27IdsFolha() {
+  const out = [];
+  saz27GruposFiltro().forEach(function (g) {
+    (g.canais || []).forEach(function (c) { out.push(c.id); });
+  });
+  return out;
+}
+
+function saz27FiltroValido(ids) {
+  const want = {};
+  (Array.isArray(ids) ? ids : []).forEach(function (id) { if (id) want[id] = true; });
+  return saz27IdsFolha().filter(function (id) { return want[id]; });
+}
+
+function saz27LerFiltro() {
+  try {
+    const raw = localStorage.getItem(SAZ27_FILTRO_LS);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return saz27FiltroValido(parsed);
+  } catch (_) {
+    return [];
+  }
+}
+
+/** null = ainda não leu o browser. [] = todos os canais. */
+function saz27FiltroActual() {
+  if (typeof _saz27Filtro === 'undefined' || _saz27Filtro == null) _saz27Filtro = saz27LerFiltro();
+  return _saz27Filtro;
+}
+
+/** Ids escolhidos. Lista vazia = quadro inteiro. O Excel lê isto. */
+function saz27CanaisSeleccionados() {
+  return saz27FiltroActual().slice();
+}
+
+function saz27GravarFiltro(ids) {
+  _saz27Filtro = saz27FiltroValido(ids);
+  try {
+    if (!_saz27Filtro.length) localStorage.removeItem(SAZ27_FILTRO_LS);
+    else localStorage.setItem(SAZ27_FILTRO_LS, JSON.stringify(_saz27Filtro));
+  } catch (_) {}
+}
+
+function saz27Repintar() {
+  if (typeof orc27Pintar !== 'function') return;
+  if (typeof _orc27Sub === 'undefined' || _orc27Sub !== 'sazonalidade') return;
+  if (typeof _pvView === 'undefined' || _pvView !== 'orcamento') return;
+  orc27Pintar();
+}
+
+function saz27OnFiltroCanal(el) {
+  if (!el) return;
+  const id = el.getAttribute('data-saz-canal');
+  const on = !!el.checked;
+  const actual = saz27FiltroActual().slice();
+  const i = actual.indexOf(id);
+  if (on && i < 0) actual.push(id);
+  if (!on && i >= 0) actual.splice(i, 1);
+  saz27GravarFiltro(actual);
+  saz27Repintar();
+}
+
+function saz27TirarCanal(id) {
+  saz27GravarFiltro(saz27FiltroActual().filter(function (x) { return x !== id; }));
+  saz27Repintar();
+}
+
+function saz27LimparFiltro() {
+  saz27GravarFiltro([]);
+  saz27Repintar();
+}
+
+function saz27RotuloChip(id) {
+  const grupos = saz27GruposFiltro();
+  for (let i = 0; i < grupos.length; i++) {
+    const g = grupos[i];
+    const canais = g.canais || [];
+    for (let j = 0; j < canais.length; j++) {
+      if (canais[j].id === id) return saz27CurtoEmpresa(g.id) + ' · ' + canais[j].nome;
+    }
+  }
+  return id;
+}
+
+function saz27FiltroHtml() {
+  const escolhidos = saz27FiltroActual();
+  const on = {};
+  escolhidos.forEach(function (id) { on[id] = true; });
+  let grupos = '';
+  saz27GruposFiltro().forEach(function (g) {
+    let itens = '';
+    (g.canais || []).forEach(function (c) {
+      const chk = on[c.id] ? ' checked' : '';
+      itens += '<label style="display:flex;align-items:center;gap:8px;margin:3px 0;text-transform:none;letter-spacing:0;font-size:13px;font-weight:500;color:var(--text);cursor:pointer;">'
+        + '<input type="checkbox" data-saz-canal="' + orc27Esc(c.id) + '"' + chk + ' onchange="saz27OnFiltroCanal(this)">'
+        + '<span>' + orc27Esc(c.nome) + '</span></label>';
+    });
+    grupos += '<fieldset style="border:1px solid var(--border);border-radius:8px;margin:0;padding:8px 12px 10px;min-width:240px;flex:1;">'
+      + '<legend style="font-size:12px;font-weight:700;padding:0 4px;">' + orc27Esc(g.nome) + '</legend>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0 12px;">' + itens + '</div></fieldset>';
+  });
+  let chips = '';
+  if (!escolhidos.length) {
+    chips = '<span style="font-size:12px;font-weight:600;color:var(--text);">Todos os canais</span>';
+  } else {
+    escolhidos.forEach(function (id) {
+      chips += '<span class="dist-pool-chip" style="margin:0;cursor:default;">' + orc27Esc(saz27RotuloChip(id))
+        + '<button type="button" data-saz-tirar="' + orc27Esc(id) + '" onclick="saz27TirarCanal(\'' + orc27Esc(id) + '\')" title="Tirar este canal" style="border:none;background:transparent;color:#1e3a8a;font-weight:700;cursor:pointer;padding:0 0 0 4px;line-height:1;">×</button></span>';
+    });
+  }
+  return '<div id="saz27-filtro" style="margin-bottom:10px;">'
+    + '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">'
+    + '<label style="font-size:13px;font-weight:600;padding-top:8px;">Canal</label>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;flex:1;min-width:280px;">' + grupos + '</div>'
+    + '<button type="button" class="btn-edit" id="saz27-filtro-limpar" onclick="saz27LimparFiltro()">Limpar</button>'
+    + '</div>'
+    + '<div style="margin-top:8px;font-size:12px;color:var(--muted);">Escolha um ou vários. Sem escolha, o quadro mostra todos os canais.</div>'
+    + '<div id="saz27-filtro-activo" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;">'
+    + '<span style="font-size:12px;color:var(--muted);">A mostrar:</span>' + chips + '</div></div>';
+}
+
+function saz27ClonarLinha(row) {
+  const o = Object.assign({}, row);
+  if (Array.isArray(row.m2026)) o.m2026 = row.m2026.slice();
+  if (Array.isArray(row.m2027)) o.m2027 = row.m2027.slice();
+  return o;
+}
+
+/**
+ * O alvo da Dif no pai passa a ser a soma do Orç Valor dos filhos visíveis.
+ * Cada canal fica com o seu próprio Total 2026 e Orçamento 2027.
+ */
+function saz27AcertarAlvoPais(linhas) {
+  const seen = {};
+  function recalc(row) {
+    if (!row || !row.id || row.tipo === 'canal' || seen[row.id]) return;
+    seen[row.id] = true;
+    const filhos = orc27FilhosDe(row, linhas);
+    filhos.forEach(function (f) { if (f && f.tipo === 'grupo') recalc(f); });
+    if (!filhos.length) return;
+    row.orcamento = orc27SomaManual(filhos, 'orcamento');
+    const tot = orc27SomaTem(filhos, 'total2026', 'totalTem');
+    row.total2026 = tot.tem ? tot.valor : null;
+    row.totalTem = !!tot.tem;
+  }
+  (linhas || []).forEach(function (row) {
+    if (row && row.tipo === 'grupo' && !row.parent) recalc(row);
+  });
+  const total = (linhas || []).find(function (r) { return r && r.tipo === 'total'; });
+  if (total) recalc(total);
+}
+
+/** [] ou ausência = quadro inteiro. Caso contrário, só os canais e os pais com filhos visíveis. */
+function saz27LinhasVisiveis(linhas, filtro) {
+  const ids = saz27FiltroValido(filtro);
+  const base = Array.isArray(linhas) ? linhas : [];
+  if (!ids.length) return base;
+  const byId = {};
+  base.forEach(function (r) { if (r && r.id) byId[r.id] = r; });
+  const keep = {};
+  ids.forEach(function (id) {
+    let cur = byId[id];
+    while (cur && cur.id) {
+      keep[cur.id] = true;
+      cur = cur.parent ? byId[cur.parent] : null;
+    }
+  });
+  base.forEach(function (r) {
+    if (r && r.tipo === 'total') keep[r.id] = true;
+  });
+  const vis = [];
+  base.forEach(function (row) {
+    if (!row || !keep[row.id]) return;
+    vis.push(saz27ClonarLinha(row));
+  });
+  saz27AcertarAlvoPais(vis);
+  saz27AplicarSomas(vis);
+  return vis;
+}
+
+function saz27LinhasVista() {
+  return saz27LinhasVisiveis(
+    saz27Montar(orc27QuadroActual(), (_orc27Doc && _orc27Doc.canais) || {}, (_saz27Doc && _saz27Doc.canais) || {}),
+    saz27FiltroActual()
+  );
+}
+
+function saz27LinhasNoEcra(linhas) {
+  return saz27LinhasVisiveis(Array.isArray(linhas) ? linhas : [], saz27FiltroActual());
+}
+
 function saz27RenderHtml(edit, linhas) {
-  const rows = Array.isArray(linhas) ? linhas : [];
+  const rows = saz27LinhasNoEcra(Array.isArray(linhas) ? linhas : []);
   let body = '';
   rows.forEach(function (row) {
     const isGrupo = row.tipo === 'grupo' || row.tipo === 'total';
@@ -16069,9 +16388,10 @@ function saz27RenderHtml(edit, linhas) {
   });
   head += '<th style="text-align:right;">Total</th><th style="text-align:right;">Dif</th>';
   return orc27SubNavHtml('sazonalidade')
+    + saz27FiltroHtml()
     + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
     + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Sazonalidade'
-    + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Dif 2026 = soma dos meses − Total 2026 do Orç Valor · 2027 = Orçamento 2027 × peso do mês · cêntimos em Dezembro</span>'
+    + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Out–Dez = Previsão Out a Dez ÷ 3 · Dif 2026 = soma dos meses − Total 2026 do Orç Valor · 2027 = Orçamento 2027 × peso do mês · cêntimos em Dezembro</span>'
     + '</div>'
     + '<table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1720px;">'
     + '<thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>';
@@ -16215,7 +16535,7 @@ async function saz27Hidrate() {
 }
 
 function saz27PatchCalculos() {
-  _saz27Linhas = saz27Montar(orc27QuadroActual(), (_orc27Doc && _orc27Doc.canais) || {}, (_saz27Doc && _saz27Doc.canais) || {});
+  _saz27Linhas = saz27LinhasVista();
   if (typeof document === 'undefined' || !document.querySelector) return;
   _saz27Linhas.forEach(function (row) {
     ['2026', '2027'].forEach(function (ano) {
@@ -16287,13 +16607,15 @@ function saz27OnBlur(el) {
   const v = ent.ok ? ent.valor : null;
   const rec = (_saz27Doc && _saz27Doc.canais && _saz27Doc.canais[id]) || {};
   const ts = rec.cellTs && rec.cellTs[mes];
-  if (!ts && v != null) {
-    const media = saz27Media9(saz27MesesReais(orc27QuadroActual(), id));
-    if (saz27ValorIgual(v, media)) {
-      el.value = orc27FmtInput(media);
-      if (_saz27Dirty) saz27Flush();
-      return;
-    }
+  const media = saz27Media9(saz27MesesReais(orc27QuadroActual(), id));
+  const partes = saz27Partir3(saz27PrevisaoFolha(id));
+  const def = partes.tem ? partes[mes] : null;
+  const igualDef = (v == null && def == null) || saz27ValorIgual(v, def);
+  const mediaAntiga = !!(ts && saz27GuardadoEMediaAntiga(rec, mes, media));
+  if (igualDef && (!ts || mediaAntiga)) {
+    el.value = orc27FmtInput(v);
+    if (_saz27Dirty) saz27Flush();
+    return;
   }
   const r = saz27AplicarEdicao(_saz27Doc, id, mes, v, new Date().toISOString());
   if (r.changed) {
@@ -16897,6 +17219,458 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
     + '<th style="text-align:right;">% 27 vs fecho 26</th>'
     + '</tr></thead><tbody>' + body + '</tbody></table></div>';
 }
+
+
+/**
+ * Excel do Orçamento 2027. O mesmo formato do resumo anual da Comissão de RC:
+ * números reais, R$ pt-BR, cabeçalho a negrito com fundo, bordas finas, cabeçalho fixo.
+ * Não abre o Outlook — só descarrega o ficheiro.
+ */
+const ORC27_EXCEL_RS = '[$R$-416] #,##0.00';
+const ORC27_EXCEL_PCT = '0.0%';
+const ORC27_EXCEL_QTD = '#,##0.###';
+const ORC27_EXCEL_CABECAS = [
+  'Total N-1 até Dez',
+  'YTD 2026 até Set',
+  'Previsão Out a Dez',
+  'Total 2026',
+  'Var % vs 2025',
+  'Orçamento 2027',
+  '% 27 vs fecho 26',
+];
+
+function orc27ColExcel(n) {
+  let s = '';
+  let c = n;
+  while (c > 0) {
+    c--;
+    s = String.fromCharCode(65 + (c % 26)) + s;
+    c = Math.floor(c / 26);
+  }
+  return s;
+}
+
+function orc27ExcelBorda() {
+  const thin = { style: 'thin', color: { argb: 'FFCBD5E1' } };
+  return { top: thin, left: thin, bottom: thin, right: thin };
+}
+
+function orc27ExcelLinha(ws, r) {
+  if (!ws || typeof ws.getRow !== 'function') return null;
+  return ws.getRow(r);
+}
+
+function orc27ExcelColuna(ws, c) {
+  if (!ws || typeof ws.getColumn !== 'function') return null;
+  return ws.getColumn(c);
+}
+
+function orc27PintarTitulo(ws, nCols, texto) {
+  if (ws && typeof ws.mergeCells === 'function') ws.mergeCells(1, 1, 1, nCols);
+  const cell = ws.getCell(1, 1);
+  cell.value = texto;
+  cell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: 'FFC8102E' } };
+  cell.alignment = { vertical: 'middle', horizontal: 'left' };
+  const row = orc27ExcelLinha(ws, 1);
+  if (row) row.height = 26;
+}
+
+function orc27PintarCabeca(cell, value) {
+  cell.value = value;
+  cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  cell.border = orc27ExcelBorda();
+  cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+}
+
+function orc27PintarTexto(cell, value, bold, align) {
+  cell.value = value;
+  cell.font = { name: 'Calibri', size: 10, bold: !!bold, color: { argb: 'FF111827' } };
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bold ? 'FFE8EEF5' : 'FFFFFFFF' } };
+  cell.border = orc27ExcelBorda();
+  cell.alignment = { vertical: 'middle', horizontal: align || 'left' };
+}
+
+function orc27PintarNumero(cell, value, fmt, bold) {
+  cell.value = value;
+  cell.numFmt = fmt;
+  cell.font = { name: 'Calibri', size: 10, bold: !!bold, color: { argb: 'FF111827' } };
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bold ? 'FFE8EEF5' : 'FFFFFFFF' } };
+  cell.border = orc27ExcelBorda();
+  cell.alignment = { vertical: 'middle', horizontal: 'right' };
+}
+
+function orc27PintarVazio(cell, bold) {
+  cell.value = null;
+  cell.font = { name: 'Calibri', size: 10, bold: !!bold, color: { argb: 'FF111827' } };
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bold ? 'FFE8EEF5' : 'FFFFFFFF' } };
+  cell.border = orc27ExcelBorda();
+  cell.alignment = { vertical: 'middle', horizontal: 'right' };
+}
+
+function orc27ExcelCongelar(ws) {
+  ws.views = [{
+    state: 'frozen',
+    ySplit: 2,
+    topLeftCell: 'A3',
+    activeCell: 'A3',
+    showGridLines: true,
+  }];
+}
+
+function orc27ExcelLarguras(ws, larguras) {
+  for (let i = 0; i < larguras.length; i++) {
+    const col = orc27ExcelColuna(ws, i + 1);
+    if (col) col.width = larguras[i];
+  }
+}
+
+function orc27FormulaSoma(col, rows) {
+  if (!rows || !rows.length) return null;
+  const letra = orc27ColExcel(col);
+  return 'SUM(' + rows.map(function (r) { return letra + r; }).join(',') + ')';
+}
+
+function orc27ExcelRazao(pct) {
+  if (pct == null || !Number.isFinite(Number(pct))) return null;
+  return Number(pct) / 100;
+}
+
+function orc27EscreverCabecas(ws, headers) {
+  for (let i = 0; i < headers.length; i++) orc27PintarCabeca(ws.getCell(2, i + 1), headers[i]);
+  const head = orc27ExcelLinha(ws, 2);
+  if (head) head.height = 22;
+}
+
+function orc27ValorExcelDeLinha(row, campo, temCampo) {
+  if (!row) return null;
+  if (temCampo) {
+    if (!row[temCampo] || !orc27TemNumero(row[campo])) return null;
+    return Number(row[campo]);
+  }
+  if (!orc27TemNumero(row[campo])) return null;
+  return Number(row[campo]);
+}
+
+function orc27FilhosExcel(row, linhas, mapa) {
+  const filhos = orc27FilhosDe(row, linhas);
+  const nums = [];
+  for (let i = 0; i < filhos.length; i++) {
+    if (filhos[i] && mapa[filhos[i].id]) nums.push(mapa[filhos[i].id]);
+  }
+  return nums;
+}
+
+function orc27EscreverDinheiro(ws, r, col, row, linhas, mapa, campo, temCampo, bold, fmt) {
+  const cell = ws.getCell(r, col);
+  const grupo = (row.tipo === 'grupo' || row.tipo === 'total') && orc27FilhosExcel(row, linhas, mapa).length;
+  if (grupo) {
+    const filhos = orc27FilhosExcel(row, linhas, mapa);
+    let algum = false;
+    for (let k = 0; k < filhos.length; k++) {
+      const filho = linhas[filhos[k] - 3];
+      if (orc27ValorExcelDeLinha(filho, campo, temCampo) != null) algum = true;
+    }
+    if (!algum) {
+      orc27PintarVazio(cell, bold);
+      return;
+    }
+    const result = orc27ValorExcelDeLinha(row, campo, temCampo);
+    orc27PintarNumero(cell, {
+      formula: orc27FormulaSoma(col, filhos),
+      result: result == null ? 0 : result,
+    }, fmt, bold);
+    return;
+  }
+  const valor = orc27ValorExcelDeLinha(row, campo, temCampo);
+  if (valor == null) orc27PintarVazio(cell, bold);
+  else orc27PintarNumero(cell, valor, fmt, bold);
+}
+
+function orc27EscreverTotal2026(ws, r, row, linhas, mapa, bold, fmt) {
+  const cell = ws.getCell(r, 5);
+  const grupo = (row.tipo === 'grupo' || row.tipo === 'total') && orc27FilhosExcel(row, linhas, mapa).length;
+  if (grupo) {
+    const filhos = orc27FilhosExcel(row, linhas, mapa);
+    let algum = false;
+    for (let k = 0; k < filhos.length; k++) {
+      const filho = linhas[filhos[k] - 3];
+      if (filho && filho.totalTem && orc27TemNumero(filho.total2026)) algum = true;
+    }
+    if (!algum) {
+      orc27PintarVazio(cell, bold);
+      return;
+    }
+    orc27PintarNumero(cell, {
+      formula: orc27FormulaSoma(5, filhos),
+      result: (row.totalTem && orc27TemNumero(row.total2026)) ? Number(row.total2026) : 0,
+    }, fmt, bold);
+    return;
+  }
+  if (!(row.totalTem && orc27TemNumero(row.total2026))) {
+    orc27PintarVazio(cell, bold);
+    return;
+  }
+  orc27PintarNumero(cell, {
+    formula: 'IF(AND(C' + r + '="",D' + r + '=""),"",N(C' + r + ')+N(D' + r + '))',
+    result: Number(row.total2026),
+  }, fmt, bold);
+}
+
+function orc27EscreverPercentagens(ws, r, row, bold) {
+  const varCell = ws.getCell(r, 6);
+  const pctCell = ws.getCell(r, 8);
+  const varR = orc27ExcelRazao(row.varPct);
+  const pctR = orc27ExcelRazao(row.pct27);
+  if (varR == null) orc27PintarVazio(varCell, bold);
+  else orc27PintarNumero(varCell, {
+    formula: 'IF(OR(B' + r + '="",B' + r + '=0),"",(IF(E' + r + '="",0,E' + r + ')-B' + r + ')/B' + r + ')',
+    result: varR,
+  }, ORC27_EXCEL_PCT, bold);
+  if (pctR == null) orc27PintarVazio(pctCell, bold);
+  else orc27PintarNumero(pctCell, {
+    formula: 'IF(OR(G' + r + '="",E' + r + '="",E' + r + '=0),"",(G' + r + '-E' + r + ')/E' + r + ')',
+    result: pctR,
+  }, ORC27_EXCEL_PCT, bold);
+}
+
+function escreverFolhaOrc27Valor(ws, linhas) {
+  const rows = Array.isArray(linhas) ? linhas : [];
+  const headers = ['Empresa'].concat(ORC27_EXCEL_CABECAS);
+  orc27PintarTitulo(ws, headers.length, 'Orçamento 2027 — Orç Valor');
+  orc27EscreverCabecas(ws, headers);
+  const mapa = {};
+  const metaLinhas = [];
+  for (let i = 0; i < rows.length; i++) {
+    const excelRow = 3 + i;
+    mapa[rows[i].id] = excelRow;
+    metaLinhas.push({ id: rows[i].id, tipo: rows[i].tipo, excelRow: excelRow, empresa: rows[i].empresa });
+  }
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const r = 3 + i;
+    const bold = row.tipo === 'grupo' || row.tipo === 'total';
+    orc27PintarTexto(ws.getCell(r, 1), row.empresa || '', bold, 'left');
+    const dataH = orc27ExcelLinha(ws, r);
+    if (dataH) dataH.height = 18;
+    orc27EscreverDinheiro(ws, r, 2, row, rows, mapa, 'n1', 'n1Tem', bold, ORC27_EXCEL_RS);
+    orc27EscreverDinheiro(ws, r, 3, row, rows, mapa, 'ytd', 'ytdTem', bold, ORC27_EXCEL_RS);
+    orc27EscreverDinheiro(ws, r, 4, row, rows, mapa, 'prevOutDez', '', bold, ORC27_EXCEL_RS);
+    orc27EscreverTotal2026(ws, r, row, rows, mapa, bold, ORC27_EXCEL_RS);
+    orc27EscreverDinheiro(ws, r, 7, row, rows, mapa, 'orcamento', '', bold, ORC27_EXCEL_RS);
+    orc27EscreverPercentagens(ws, r, row, bold);
+  }
+  orc27ExcelLarguras(ws, [32, 22, 22, 22, 18, 16, 20, 18]);
+  orc27ExcelCongelar(ws);
+  return {
+    filename: 'Orcamento_2027_valor.xlsx',
+    sheetName: 'Orç Valor',
+    numFmtRs: ORC27_EXCEL_RS,
+    numFmtPct: ORC27_EXCEL_PCT,
+    headerRow: 2,
+    firstDataRow: 3,
+    headers: headers,
+    linhas: metaLinhas,
+  };
+}
+
+function orc27NomeCanalVolume(filtro) {
+  const id = filtro || 'todos';
+  if (typeof VOL27_ROTULOS !== 'undefined' && VOL27_ROTULOS[id]) return VOL27_ROTULOS[id];
+  return String(id);
+}
+
+function orc27NomeFicheiroVolume(filtro) {
+  const id = String(filtro || 'todos');
+  const slug = id.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'todos';
+  return 'Orcamento_2027_volume_' + slug + '.xlsx';
+}
+
+function escreverFolhaOrc27Volume(ws, linhas, filtro) {
+  const rows = Array.isArray(linhas) ? linhas : [];
+  const canal = orc27NomeCanalVolume(filtro);
+  const headers = ['Produto'].concat(ORC27_EXCEL_CABECAS);
+  orc27PintarTitulo(ws, headers.length, 'Orçamento 2027 — Volume · ' + canal);
+  orc27EscreverCabecas(ws, headers);
+  const mapa = {};
+  const metaLinhas = [];
+  for (let i = 0; i < rows.length; i++) mapa[rows[i].id] = 3 + i;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const r = 3 + i;
+    const nome = row.nome || '';
+    orc27PintarTexto(ws.getCell(r, 1), nome, false, 'left');
+    const dataH = orc27ExcelLinha(ws, r);
+    if (dataH) dataH.height = 18;
+    orc27EscreverDinheiro(ws, r, 2, row, rows, mapa, 'n1', 'n1Tem', false, ORC27_EXCEL_QTD);
+    orc27EscreverDinheiro(ws, r, 3, row, rows, mapa, 'ytd', 'ytdTem', false, ORC27_EXCEL_QTD);
+    orc27EscreverDinheiro(ws, r, 4, row, rows, mapa, 'prevOutDez', '', false, ORC27_EXCEL_QTD);
+    orc27EscreverTotal2026(ws, r, row, rows, mapa, false, ORC27_EXCEL_QTD);
+    orc27EscreverDinheiro(ws, r, 7, row, rows, mapa, 'orcamento', '', false, ORC27_EXCEL_QTD);
+    orc27EscreverPercentagens(ws, r, row, false);
+    metaLinhas.push({ id: row.id, nome: nome, unidade: row.unidade || '', excelRow: r });
+  }
+  orc27ExcelLarguras(ws, [28, 22, 22, 22, 18, 16, 20, 18]);
+  orc27ExcelCongelar(ws);
+  return {
+    filename: orc27NomeFicheiroVolume(filtro),
+    sheetName: 'Volume',
+    canal: canal,
+    filtro: filtro || 'todos',
+    numFmtQtd: ORC27_EXCEL_QTD,
+    numFmtPct: ORC27_EXCEL_PCT,
+    headerRow: 2,
+    headers: headers,
+    linhas: metaLinhas,
+  };
+}
+
+function saz27ValorMesExcel(row, ano, idx) {
+  const mes = SAZ27_MESES[idx];
+  if (ano === '2026') {
+    if (row && row.tipo === 'canal' && row.q4 && saz27MesManual(mes.id) && row.q4[mes.id] && row.q4[mes.id].vazio) {
+      return null;
+    }
+    const v = row && row.m2026 ? row.m2026[idx] : null;
+    return orc27TemNumero(v) ? Number(v) : null;
+  }
+  if (!row || !row.tem2027 || !row.m2027 || !orc27TemNumero(row.m2027[idx])) return null;
+  return Number(row.m2027[idx]);
+}
+
+function escreverFolhaOrc27Sazonalidade(ws, linhas) {
+  const rows = Array.isArray(linhas) ? linhas : [];
+  const headers = ['Empresa', 'Ano'];
+  for (let i = 0; i < SAZ27_MESES.length; i++) headers.push(SAZ27_MESES[i].rotulo);
+  headers.push('Total', 'Dif');
+  orc27PintarTitulo(ws, headers.length, 'Orçamento 2027 — Sazonalidade');
+  orc27EscreverCabecas(ws, headers);
+  const metaLinhas = [];
+  let excel = 3;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const bold = row.tipo === 'grupo' || row.tipo === 'total';
+    const r2026 = excel;
+    const r2027 = excel + 1;
+    excel += 2;
+    if (ws && typeof ws.mergeCells === 'function') ws.mergeCells(r2026, 1, r2027, 1);
+    orc27PintarTexto(ws.getCell(r2026, 1), row.empresa || '', bold, 'left');
+    const emp = ws.getCell(r2026, 1);
+    if (emp && emp.alignment) emp.alignment.vertical = 'middle';
+    orc27PintarTexto(ws.getCell(r2026, 2), '2026', bold, 'center');
+    orc27PintarTexto(ws.getCell(r2027, 2), '2027', bold, 'center');
+    const escreverAno = function (ano, r) {
+      let algum = false;
+      for (let m = 0; m < 12; m++) {
+        const v = saz27ValorMesExcel(row, ano, m);
+        const cell = ws.getCell(r, 3 + m);
+        if (v == null) orc27PintarVazio(cell, bold);
+        else {
+          algum = true;
+          orc27PintarNumero(cell, v, ORC27_EXCEL_RS, bold);
+        }
+      }
+      const tot = ws.getCell(r, 15);
+      const totalValor = ano === '2026' ? row.totalSaz2026 : row.totalSaz2027;
+      if (!algum) orc27PintarVazio(tot, bold);
+      else orc27PintarNumero(tot, {
+        formula: 'SUM(C' + r + ':N' + r + ')',
+        result: orc27TemNumero(totalValor) ? Number(totalValor) : 0,
+      }, ORC27_EXCEL_RS, bold);
+      const difCell = ws.getCell(r, 16);
+      let dif = null;
+      if (ano === '2026') {
+        if (row.dif2026Tem && orc27TemNumero(row.dif2026)) dif = Number(row.dif2026);
+      } else if (row.tem2027 && orc27TemNumero(row.dif2027)) {
+        dif = Number(row.dif2027);
+      }
+      if (dif == null) orc27PintarVazio(difCell, bold);
+      else orc27PintarNumero(difCell, dif, ORC27_EXCEL_RS, bold);
+      const h = orc27ExcelLinha(ws, r);
+      if (h) h.height = 18;
+    }
+    escreverAno('2026', r2026);
+    escreverAno('2027', r2027);
+    metaLinhas.push({
+      id: row.id,
+      tipo: row.tipo,
+      empresa: row.empresa,
+      row2026: r2026,
+      row2027: r2027,
+    });
+  }
+  const larguras = [28, 10];
+  for (let m = 0; m < 12; m++) larguras.push(14);
+  larguras.push(16, 14);
+  orc27ExcelLarguras(ws, larguras);
+  orc27ExcelCongelar(ws);
+  return {
+    filename: 'Orcamento_2027_sazonalidade.xlsx',
+    sheetName: 'Sazonalidade',
+    numFmtRs: ORC27_EXCEL_RS,
+    headerRow: 2,
+    headers: headers,
+    linhas: metaLinhas,
+  };
+}
+
+/** Descarrega a folha do submenu que está no ecrã. Não abre o Outlook. */
+async function orc27ExportarExcel() {
+  const btn = typeof document !== 'undefined' ? document.getElementById('orc27-btn-excel') : null;
+  if (btn) btn.disabled = true;
+  try {
+    if (typeof toast === 'function') toast('A gerar Excel…');
+    if (typeof prosEnsureExcelJS === 'function') await prosEnsureExcelJS();
+    const ExcelJS = (typeof window !== 'undefined' && window.ExcelJS) ? window.ExcelJS : null;
+    if (!ExcelJS) throw new Error('Excel indisponível');
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Delta Foods Brasil';
+    wb.created = new Date();
+    wb.calcProperties = wb.calcProperties || {};
+    wb.calcProperties.fullCalcOnLoad = true;
+    const sub = _orc27Sub || 'valor';
+    let meta;
+    if (sub === 'volume') {
+      const filtro = (typeof _vol27Filtro !== 'undefined' && _vol27Filtro) ? _vol27Filtro : 'todos';
+      const linhas = vol27Montar(_vol27Agregado, _vol27Doc, filtro);
+      const ws = wb.addWorksheet('Volume', {
+        views: [{ state: 'frozen', ySplit: 2, topLeftCell: 'A3', showGridLines: true }],
+        properties: { defaultRowHeight: 18 },
+      });
+      meta = escreverFolhaOrc27Volume(ws, linhas, filtro);
+    } else if (sub === 'sazonalidade') {
+      const montadas = (_saz27Linhas && _saz27Linhas.length)
+        ? _saz27Linhas
+        : saz27Montar(orc27QuadroActual(), (_orc27Doc && _orc27Doc.canais) || {}, (_saz27Doc && _saz27Doc.canais) || {});
+      const base = (typeof saz27LinhasNoEcra === 'function') ? saz27LinhasNoEcra(montadas) : montadas;
+      const ws = wb.addWorksheet('Sazonalidade', {
+        views: [{ state: 'frozen', ySplit: 2, topLeftCell: 'A3', showGridLines: true }],
+        properties: { defaultRowHeight: 18 },
+      });
+      meta = escreverFolhaOrc27Sazonalidade(ws, base);
+    } else {
+      const linhas = (_orc27Linhas && _orc27Linhas.length)
+        ? _orc27Linhas
+        : orc27Montar(orc27QuadroActual(), (_orc27Doc && _orc27Doc.canais) || {});
+      const ws = wb.addWorksheet('Orç Valor', {
+        views: [{ state: 'frozen', ySplit: 2, topLeftCell: 'A3', showGridLines: true }],
+        properties: { defaultRowHeight: 18 },
+      });
+      meta = escreverFolhaOrc27Valor(ws, linhas);
+    }
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    if (typeof triggerBlobDownload !== 'function') throw new Error('Download indisponível');
+    triggerBlobDownload(blob, meta.filename);
+    if (typeof toast === 'function') toast('Excel descarregado.');
+  } catch (e) {
+    console.error('orc27ExportarExcel', e);
+    if (typeof toast === 'function') toast('Erro ao exportar o Excel: ' + (e && e.message ? e.message : e), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 
 function vol27PickCampo(localVal, localTs, cloudVal, cloudTs) {
   return orc27PickCampo(localVal, localTs, cloudVal, cloudTs);
@@ -40854,7 +41628,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-15-orcamento-sazonalidade: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-15-orcamento-excel: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
