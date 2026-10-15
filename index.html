@@ -2142,7 +2142,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas, Orçamento 2027 e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: só consulta. Edição: direcção (Carlos, Christian, Andrea, Daniela K.).</div>
+          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas, Orçamento 2027 e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: só consulta no mapa mensal. Edição do mapa: direcção (Carlos, Christian, Andrea, Daniela K.). No Orçamento 2027 escrevem Previsão Out a Dez e Orçamento 2027, em valor e em volume.</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -4004,7 +4004,7 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR · Orçamento 2027 · NF emitidas — autosave local + cloud (só direcção).
+            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR — autosave do mapa só da direcção. Orçamento 2027 (Orç Valor e Volume): vendedores escrevem Previsão Out a Dez e Orçamento 2027, autosave local + cloud.
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
@@ -11424,10 +11424,12 @@ const DADOS_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kuc
 
 /**
  * Previsão de vendas e acompanhamento.
- * Consulta: Filipe, Diogo, Marcio, Massimo (+ admins).
- * Edição / Publicar produção / autosave: só a lista ADMINS
+ * Consulta do mapa mensal: Filipe, Diogo, Marcio, Massimo (+ admins).
+ * Edição do mapa / Publicar produção / autosave do mapa: só a lista ADMINS
  * (Carlos, Christian, Andrea, Daniela K.). Sem rastreio de alterações —
- * vendedores não editam o mapa.
+ * vendedores não editam o mapa de fecho.
+ * Orçamento 2027 (Orç Valor e Volume): quem abre a Previsão escreve
+ * Previsão Out a Dez e Orçamento 2027 (orc27PodeEditar).
  */
 const PREV_VENDAS_ACESSO = [
   'Filipe Neves',
@@ -12904,12 +12906,19 @@ function podeAcederPrevisaoVendas() {
   return PREV_VENDAS_ACESSO.some(n => normNomeUtilizador(n) === atual);
 }
 
-/** Só ADMINS editam o mapa. Filipe/Diogo/Marcio/Massimo = consulta (PREV_VENDAS_SO_CONSULTA). */
+/** Só ADMINS editam o mapa mensal de fecho. Filipe/Diogo/Marcio/Massimo = consulta (PREV_VENDAS_SO_CONSULTA).
+ *  O Orçamento 2027 não usa esta função — usa orc27PodeEditar. */
 function pvPodeEditar() {
   const atual = typeof getUtilizadorAtual === 'function' ? normNomeUtilizador(getUtilizadorAtual()) : '';
   if (!atual) return false;
   if (PREV_VENDAS_SO_CONSULTA.some(n => normNomeUtilizador(n) === atual)) return false;
   return typeof isAdmin === 'function' && isAdmin();
+}
+
+/** Orç Valor e Volume: quem abre a Previsão escreve as células manuais.
+ *  O mapa mensal de fecho continua só para a direcção (pvPodeEditar). */
+function orc27PodeEditar() {
+  return typeof podeAcederPrevisaoVendas === 'function' && podeAcederPrevisaoVendas();
 }
 
 function podeAcederAreaTecnica() {
@@ -15391,7 +15400,7 @@ async function orc27Upload(payload) {
 }
 
 async function orc27EnviarCorpo() {
-  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  if (typeof orc27PodeEditar === 'function' && !orc27PodeEditar()) return false;
   const cloud = await orc27FetchCloud(true);
   if (cloud && cloud.fetchFailed) return false;
   const localCanais = (_orc27Doc && _orc27Doc.canais) || {};
@@ -15442,7 +15451,7 @@ async function orc27Hidrate() {
     actualizadoEm: (local && local.actualizadoEm) || (cloud && cloud.actualizadoEm) || null,
     actualizadoPor: (local && local.actualizadoPor) || (cloud && cloud.actualizadoPor) || '',
   };
-  if (typeof pvPodeEditar === 'function' && pvPodeEditar()) {
+  if (typeof orc27PodeEditar === 'function' && orc27PodeEditar()) {
     try { localStorage.setItem(ORC27_LS_KEY, JSON.stringify(_orc27Doc)); } catch (_) {}
     if (cloud && !cloud.fetchFailed && orc27LocalPrecisaNuvem(local && local.canais, cloud && cloud.canais)) {
       orc27PedirNuvem();
@@ -15456,7 +15465,7 @@ function orc27QuadroActual() {
 }
 
 function orc27PrepararChrome() {
-  const edit = typeof pvPodeEditar === 'function' && pvPodeEditar();
+  const edit = typeof orc27PodeEditar === 'function' && orc27PodeEditar();
   const modo = document.getElementById('pv-modo-label');
   if (modo) {
     modo.textContent = edit ? '· Edição com autosave' : '· Só consulta';
@@ -15465,7 +15474,7 @@ function orc27PrepararChrome() {
   const ro = document.getElementById('pv-readonly-banner');
   if (ro) {
     ro.style.display = edit ? 'none' : '';
-    ro.innerHTML = '<strong>Só consulta</strong> — o orçamento é editado pela direcção.';
+    ro.innerHTML = '<strong>Só consulta</strong> — o orçamento escreve-se com um utilizador da Previsão de vendas.';
   }
   const pub = document.getElementById('pv-btn-publicar');
   if (pub) pub.style.display = 'none';
@@ -15499,7 +15508,7 @@ function orc27PrepararChrome() {
 function orc27Pintar() {
   const host = document.getElementById('pv-canal-panels');
   if (!host || _pvView !== 'orcamento') return;
-  const edit = typeof pvPodeEditar === 'function' && pvPodeEditar();
+  const edit = typeof orc27PodeEditar === 'function' && orc27PodeEditar();
   if (_orc27Sub === 'volume') {
     if (!_vol27Pronto) {
       if (typeof vol27Abrir === 'function') vol27Abrir(false);
@@ -15543,7 +15552,7 @@ function orc27Flash(ok) {
 }
 
 function orc27Agendar() {
-  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return;
+  if (typeof orc27PodeEditar === 'function' && !orc27PodeEditar()) return;
   clearTimeout(_orc27Timer);
   _orc27Timer = setTimeout(() => { orc27Flush(); }, ORC27_DEBOUNCE_MS);
 }
@@ -15551,7 +15560,7 @@ function orc27Agendar() {
 function orc27Flush() {
   clearTimeout(_orc27Timer);
   if (!_orc27Dirty) return false;
-  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  if (typeof orc27PodeEditar === 'function' && !orc27PodeEditar()) return false;
   _orc27Dirty = false;
   if (_orc27Doc) {
     _orc27Doc.actualizadoEm = new Date().toISOString();
@@ -15593,7 +15602,7 @@ function orc27EntradaPronta(raw) {
 }
 
 function orc27OnInput(el) {
-  if (!el || (typeof pvPodeEditar === 'function' && !pvPodeEditar())) return;
+  if (!el || (typeof orc27PodeEditar === 'function' && !orc27PodeEditar())) return;
   const id = el.getAttribute('data-orc-id');
   const campo = el.getAttribute('data-orc-campo');
   const ent = orc27EntradaPronta(el.value);
@@ -15608,7 +15617,7 @@ function orc27OnInput(el) {
 }
 
 function orc27OnBlur(el) {
-  if (!el || (typeof pvPodeEditar === 'function' && !pvPodeEditar())) return;
+  if (!el || (typeof orc27PodeEditar === 'function' && !orc27PodeEditar())) return;
   const id = el.getAttribute('data-orc-id');
   const campo = el.getAttribute('data-orc-campo');
   const ent = orc27EntradaPronta(el.value);
@@ -16386,7 +16395,7 @@ async function vol27Upload(payload) {
 }
 
 async function vol27EnviarCorpo() {
-  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  if (typeof orc27PodeEditar === 'function' && !orc27PodeEditar()) return false;
   const cloud = await vol27FetchCloud(true);
   if (cloud && cloud.fetchFailed) return false;
   const localCelulas = (_vol27Doc && _vol27Doc.celulas) || {};
@@ -16437,7 +16446,7 @@ async function vol27HidrateManual() {
     actualizadoEm: (local && local.actualizadoEm) || (cloud && cloud.actualizadoEm) || null,
     actualizadoPor: (local && local.actualizadoPor) || (cloud && cloud.actualizadoPor) || '',
   };
-  if (typeof pvPodeEditar === 'function' && pvPodeEditar()) {
+  if (typeof orc27PodeEditar === 'function' && orc27PodeEditar()) {
     try { localStorage.setItem(VOL27_LS_KEY, JSON.stringify(_vol27Doc)); } catch (_) {}
     if (cloud && !cloud.fetchFailed && vol27LocalPrecisaNuvem(local && local.celulas, cloud && cloud.celulas)) {
       vol27PedirNuvem();
@@ -16838,7 +16847,7 @@ function vol27Flash(ok) {
 }
 
 function vol27Agendar() {
-  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return;
+  if (typeof orc27PodeEditar === 'function' && !orc27PodeEditar()) return;
   clearTimeout(_vol27Timer);
   _vol27Timer = setTimeout(function () { vol27Flush(); }, VOL27_DEBOUNCE_MS);
 }
@@ -16846,7 +16855,7 @@ function vol27Agendar() {
 function vol27Flush() {
   clearTimeout(_vol27Timer);
   if (!_vol27Dirty) return false;
-  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  if (typeof orc27PodeEditar === 'function' && !orc27PodeEditar()) return false;
   _vol27Dirty = false;
   if (_vol27Doc) {
     _vol27Doc.actualizadoEm = new Date().toISOString();
@@ -16871,7 +16880,7 @@ function vol27OnFiltro(el) {
 }
 
 function vol27OnInput(el) {
-  if (!el || (typeof pvPodeEditar === 'function' && !pvPodeEditar())) return;
+  if (!el || (typeof orc27PodeEditar === 'function' && !orc27PodeEditar())) return;
   if (!vol27FiltroFolha(_vol27Filtro)) return;
   const fam = el.getAttribute('data-vol-fam');
   const campo = el.getAttribute('data-vol-campo');
@@ -16887,7 +16896,7 @@ function vol27OnInput(el) {
 }
 
 function vol27OnBlur(el) {
-  if (!el || (typeof pvPodeEditar === 'function' && !pvPodeEditar())) return;
+  if (!el || (typeof orc27PodeEditar === 'function' && !orc27PodeEditar())) return;
   if (!vol27FiltroFolha(_vol27Filtro)) return;
   const fam = el.getAttribute('data-vol-fam');
   const campo = el.getAttribute('data-vol-campo');
@@ -30855,7 +30864,7 @@ function atualizarHomeCanais() {
     prevCard.disabled = !okPrev;
     prevCard.title = okPrev
       ? 'Previsão de vendas — PIN do utilizador'
-      : 'Só Filipe, Diogo, Marcio, Massimo (consulta) e direcção (editar)';
+      : 'Só Filipe, Diogo, Marcio, Massimo e a direcção';
     prevCard.style.opacity = okPrev ? '' : '0.45';
     prevCard.style.cursor = okPrev ? '' : 'not-allowed';
   }
@@ -40178,7 +40187,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-15-vendas-out: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-15-orcamento-vendedores: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

@@ -158,7 +158,7 @@ check('UI: banner de consulta e Publicar escondido por omissão', () => {
   assert.ok(html.includes('id="pv-ano"'));
   assert.ok(html.includes('id="pv-mes"'));
   assert.ok(!/function pvExportarExcel\(\) \{\s*if \(!pvPodeEditar/.test(html));
-  assert.ok(html.includes('Vendedores: só consulta. Edição: direcção'));
+  assert.ok(html.includes('Vendedores: só consulta no mapa mensal. Edição do mapa: direcção'));
 });
 
 VENDEDORES.forEach(nome => {
