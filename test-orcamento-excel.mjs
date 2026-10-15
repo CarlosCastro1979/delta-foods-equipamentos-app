@@ -13,7 +13,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-15-orcamento-excel';
+const CACHE = 'v2026-10-15-sazonalidade-filtro';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);
@@ -576,7 +576,8 @@ check('o botão Exportar para Excel está nos três submenus e não abre o Outlo
   assert.ok(sw.includes(CACHE));
   assert.ok(html.includes(CACHE));
   assert.ok(!sw.includes('v2026-10-15-orcamento-sazonalidade'));
-  assert.ok(!html.includes('v2026-10-15-sazonalidade-filtro'));
+  assert.ok(!html.includes('v2026-10-15-orcamento-excel'));
+  assert.ok(!sw.includes('v2026-10-15-orcamento-excel'));
 });
 
 if (process.exitCode) {
