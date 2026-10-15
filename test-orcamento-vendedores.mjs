@@ -13,7 +13,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-15-sazonalidade-editar';
+const CACHE = 'v2026-10-15-volume-filtro';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);
@@ -182,6 +182,7 @@ for (const name of [
   'ORC27_CLOUD_PATH',
   'ORC27_DEBOUNCE_MS',
   'VOL27_LS_KEY',
+  'VOL27_FILTRO_LS',
   'VOL27_CLOUD_PATH',
   'VOL27_DEBOUNCE_MS',
   'VOL27_FAMILIAS',
@@ -244,6 +245,7 @@ const fns = [
   'vol27IdsFolha',
   'vol27CanaisDoFiltro',
   'vol27FiltroFolha',
+  'vol27FiltroTodos',
   'vol27Somar',
   'vol27Total2026',
   'vol27Chave',
@@ -258,6 +260,17 @@ const fns = [
   'vol27TemMesHistorico',
   'vol27NotaFora',
   'vol27OpcoesFiltro',
+  'vol27NomesCanal',
+  'vol27NomeEmpresa',
+  'vol27CurtoEmpresa',
+  'vol27FolhasEmpresa',
+  'vol27GruposFiltro',
+  'vol27FiltroValido',
+  'vol27EscolhaDe',
+  'vol27RotuloChip',
+  'vol27FiltroHtml',
+  'vol27CanalEscrita',
+  'vol27CanalDoEl',
   'vol27CelulaManualHtml',
   'vol27RenderHtml',
   'vol27PickCampo',
@@ -445,10 +458,11 @@ await check('Volume: canal tem cinco produtos editáveis; Todos os canais e a em
   const ag = { version: 1, meses: {} };
   const doc = { celulas: {} };
   const todos = ctx.vol27RenderHtml(ctx.orc27PodeEditar(), ag, doc, 'todos');
-  assert.ok(!todos.includes('<input'));
+  assert.ok(!todos.includes('vol27-input'));
   assert.ok(!todos.includes('data-vol-campo'));
   const empresa = ctx.vol27RenderHtml(ctx.orc27PodeEditar(), ag, doc, 'dfb');
-  assert.ok(!empresa.includes('<input'));
+  assert.ok(!empresa.includes('vol27-input'));
+  assert.ok(!empresa.includes('data-vol-campo'));
   const lojas = ctx.vol27RenderHtml(ctx.orc27PodeEditar(), ag, doc, 'dfb_lojas');
   const trs = lojas.split('<tr ').slice(1);
   assert.equal(trs.length, 5);

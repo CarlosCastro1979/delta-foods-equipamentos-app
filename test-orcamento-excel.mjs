@@ -13,7 +13,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-15-sazonalidade-editar';
+const CACHE = 'v2026-10-15-volume-filtro';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);
@@ -191,6 +191,7 @@ const fns = [
   'orc27EscreverTotal2026',
   'orc27EscreverPercentagens',
   'escreverFolhaOrc27Valor',
+  'orc27CanalUnicoVolume',
   'orc27NomeCanalVolume',
   'orc27NomeFicheiroVolume',
   'escreverFolhaOrc27Volume',
@@ -201,6 +202,7 @@ const fns = [
   'vol27IdsFolha',
   'vol27CanaisDoFiltro',
   'vol27FiltroFolha',
+  'vol27FiltroTodos',
   'vol27Somar',
   'vol27Total2026',
   'vol27Chave',
@@ -365,7 +367,9 @@ check('Volume: canal escolhido, cinco produtos com unidade, sem somar kg com un 
   const meta = ctx.escreverFolhaOrc27Volume(ws, linhas, 'dfb_lojas');
 
   assert.equal(meta.filename, 'Orcamento_2027_volume_dfb_lojas.xlsx');
-  assert.equal(ctx.orc27NomeFicheiroVolume('todos'), 'Orcamento_2027_volume_todos.xlsx');
+  assert.equal(ctx.orc27NomeFicheiroVolume('todos'), 'Orcamento_2027_volume.xlsx');
+  assert.equal(ctx.orc27NomeFicheiroVolume([]), 'Orcamento_2027_volume.xlsx');
+  assert.equal(ctx.orc27NomeFicheiroVolume(['dfb_lojas']), 'Orcamento_2027_volume_dfb_lojas.xlsx');
   assert.equal(meta.sheetName, 'Volume');
   assert.equal(meta.canal, 'Delta · Lojas online');
   assert.equal(ws.getCell(1, 1).value, 'Orçamento 2027 — Volume · Delta · Lojas online');
@@ -426,6 +430,55 @@ check('Volume: canal escolhido, cinco produtos com unidade, sem somar kg com un 
   assert.equal(ws.getCell(meta.linhas[3].excelRow, 2).value, 4);
   perto(ws.getCell(meta.linhas[4].excelRow, 2).value, 1.5);
   assert.ok(String(ws.getCell(meta.linhas[4].excelRow, 1).value).includes('(L)'));
+});
+
+check('Volume: vários canais saem numa folha com a soma de cada produto', () => {
+  const ag = { meses: {} };
+  function por(ym, canal, fam, qtd) {
+    if (!ag.meses[ym]) ag.meses[ym] = { canais: {}, semCanal: {} };
+    if (!ag.meses[ym].canais[canal]) ag.meses[ym].canais[canal] = {};
+    ag.meses[ym].canais[canal][fam] = qtd;
+  }
+  por('2025-01', 'dfb_lojas', 'grao', 10);
+  por('2025-01', 'dfb_rest', 'grao', 4);
+  por('2025-01', 'dfb_lojas', 'capsulas', 3);
+  por('2025-01', 'dfb_rest', 'moido', 8);
+  por('2025-01', 'qb_rest', 'vinho', 100);
+  const doc = {
+    celulas: {
+      'dfb_lojas|grao': { prevOutDez: 1, orcamento: 2 },
+      'dfb_rest|grao': { prevOutDez: 3, orcamento: 5 },
+    },
+  };
+  const linhas = ctx.vol27Montar(ag, doc, ['dfb_rest', 'dfb_lojas']);
+  assert.equal(linhas.length, 5);
+  assert.equal(linhas.find(r => r.id === 'grao').editavel, false);
+  perto(linhas.find(r => r.id === 'grao').n1, 14);
+  assert.equal(linhas.find(r => r.id === 'grao').prevOutDez, 4);
+  assert.equal(linhas.find(r => r.id === 'grao').orcamento, 7);
+  perto(linhas.find(r => r.id === 'moido').n1, 8);
+  perto(linhas.find(r => r.id === 'capsulas').n1, 3);
+  assert.equal(linhas.find(r => r.id === 'vinho').n1Tem, false);
+
+  const ws = folhaExcelFalsa();
+  const meta = ctx.escreverFolhaOrc27Volume(ws, linhas, ['dfb_lojas', 'dfb_rest']);
+  assert.equal(meta.filename, 'Orcamento_2027_volume.xlsx');
+  assert.equal(meta.sheetName, 'Volume');
+  assert.equal(meta.canal, 'Vários canais');
+  assert.equal(ws.getCell(1, 1).value, 'Orçamento 2027 — Volume · Vários canais');
+  assert.equal(meta.linhas.length, 5);
+  assert.deepEqual(meta.linhas.map(r => r.nome), [
+    'Grão (Kg)', 'Café Moído (Kg)', 'Cápsulas (Un)', 'Máquina (Un)', 'Vinho (L)',
+  ]);
+  const grao = meta.linhas[0];
+  perto(ws.getCell(grao.excelRow, 2).value, 14);
+  assert.equal(ws.getCell(grao.excelRow, 4).value, 4);
+  assert.equal(ws.getCell(grao.excelRow, 7).value, 7);
+  perto(ws.getCell(meta.linhas[1].excelRow, 2).value, 8);
+  perto(ws.getCell(meta.linhas[2].excelRow, 2).value, 3);
+  assert.equal(ws.getCell(meta.linhas[4].excelRow, 2).value, null);
+  assert.equal(ctx.orc27NomeFicheiroVolume(['dfb_lojas', 'dfb_rest']), 'Orcamento_2027_volume.xlsx');
+  assert.equal(ctx.orc27NomeFicheiroVolume(['dfb_lojas']), 'Orcamento_2027_volume_dfb_lojas.xlsx');
 });
 
 check('Sazonalidade: 2026 e 2027, meses numéricos, vazio em branco, total SUM, só canais visíveis', () => {

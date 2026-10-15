@@ -84,8 +84,14 @@ function perto(a, b, msg) {
   assert.ok(Math.abs(Number(a) - Number(b)) < 0.02, (msg || '') + ' ' + a + ' vs ' + b);
 }
 
+const volStore = new Map();
 const ctx = {
   console, Math, Number, String, Date, Object, Array, JSON, parseInt, isNaN,
+  localStorage: {
+    getItem(k) { return volStore.has(k) ? volStore.get(k) : null; },
+    setItem(k, v) { volStore.set(k, String(v)); },
+    removeItem(k) { volStore.delete(k); },
+  },
 };
 vm.createContext(ctx);
 
@@ -102,6 +108,7 @@ const consts = [
   'VOL27_DEBOUNCE_MS',
   'VOL27_CLOUD_PATH',
   'VOL27_LS_KEY',
+  'VOL27_FILTRO_LS',
   'ORC27_CLOUD_PATH',
 ];
 for (const name of consts) vm.runInContext(extractConst(html, name), ctx);
@@ -161,6 +168,7 @@ const fns = [
   'vol27FundirMeses',
   'vol27CanaisDoFiltro',
   'vol27FiltroFolha',
+  'vol27FiltroTodos',
   'vol27Somar',
   'vol27Total2026',
   'vol27Chave',
@@ -172,8 +180,27 @@ const fns = [
   'vol27FmtPlano',
   'vol27FmtInput',
   'vol27FmtQtd',
+  'vol27TemMesHistorico',
   'vol27NotaFora',
   'vol27OpcoesFiltro',
+  'vol27NomesCanal',
+  'vol27NomeEmpresa',
+  'vol27CurtoEmpresa',
+  'vol27FolhasEmpresa',
+  'vol27GruposFiltro',
+  'vol27FiltroValido',
+  'vol27LerFiltro',
+  'vol27FiltroActual',
+  'vol27EscolhaDe',
+  'vol27GravarFiltro',
+  'vol27Repintar',
+  'vol27OnFiltroCanal',
+  'vol27TirarCanal',
+  'vol27LimparFiltro',
+  'vol27RotuloChip',
+  'vol27FiltroHtml',
+  'vol27CanalEscrita',
+  'vol27CanalDoEl',
   'orc27SubNavHtml',
   'vol27CelulaManualHtml',
   'vol27RenderHtml',
@@ -209,9 +236,9 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
   assert.equal(vm.runInContext('VOL27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_volume.json');
   assert.ok(!String(vm.runInContext('VOL27_CLOUD_PATH', ctx)).includes('mapas_v3'));
   assert.equal(vm.runInContext('ORC27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_canais.json');
-  assert.ok(sw.includes('v2026-10-15-sazonalidade-editar'));
+  assert.ok(sw.includes('v2026-10-15-volume-filtro'));
   assert.ok(!sw.includes('v2026-10-14-volume-formulas'));
-  assert.ok(html.includes('v2026-10-15-sazonalidade-editar'));
+  assert.ok(html.includes('v2026-10-15-volume-filtro'));
   assert.ok(!html.includes('v2026-10-14-volume-formulas'));
   assert.ok(extractFn(html, 'vol27Medida').includes('/ VOL27_CAPSULA_KG'));
   assert.ok(extractFn(html, 'vol27Medida').includes('qtdBonifi'));
@@ -511,6 +538,117 @@ check('seed do Excel: AA, cápsulas ÷ 0,005, máquina M+U+Y, YTD só até Set',
   assert.ok(vista.includes('Ficheiro até 30/09/2026'));
   assert.equal((vista.match(/data-vol-fam=/g) || []).length, 5);
   assert.ok(!vista.includes('>Total</td>'));
+});
+
+check('filtro multi-canal: dois canais somam o produto, um edita, vários não, Limpar mostra todos e a escolha fica no browser', () => {
+  const ag = ctx.vol27AgregarLinhas([
+    { data: '2025-01-15', tipo: 'GRÃO', peso: 8, npess: 99520001 },
+    { data: '2025-01-20', tipo: 'GRÃO', peso: 1.5, npess: 99530001 },
+    { data: '2025-02-01', tipo: 'CAPSULAS', peso: 10, npess: 99520002 },
+    { data: '2026-03-01', tipo: 'GRÃO', peso: 3, npess: 99520001 },
+  ]);
+  const doc = {
+    version: 1,
+    celulas: {
+      'dfb_lojas|grao': { prevOutDez: 5, orcamento: 20 },
+      'qb_ret_mod|grao': { prevOutDez: 2, orcamento: 4 },
+      'dfb_rest|capsulas': { prevOutDez: 7, orcamento: 9 },
+    },
+  };
+  ctx._vol27Doc = doc;
+  const antes = JSON.stringify(doc);
+
+  const dois = ctx.vol27Montar(ag, doc, ['qb_ret_mod', 'dfb_lojas']);
+  assert.equal(dois.length, 5);
+  assert.ok(!dois.some(r => r.id === 'total'));
+  const g = dois.find(r => r.id === 'grao');
+  perto(g.n1, 9.5);
+  perto(g.ytd, 3);
+  assert.equal(g.prevOutDez, 7);
+  assert.equal(g.orcamento, 24);
+  assert.equal(g.editavel, false);
+  const capDois = dois.find(r => r.id === 'capsulas');
+  assert.equal(capDois.n1Tem, false);
+  assert.equal(capDois.prevOutDez, null);
+  assert.equal(JSON.stringify(doc), antes);
+
+  const um = ctx.vol27Montar(ag, doc, ['dfb_lojas']);
+  assert.equal(um.find(r => r.id === 'grao').editavel, true);
+  perto(um.find(r => r.id === 'grao').n1, 8);
+  assert.equal(um.find(r => r.id === 'grao').prevOutDez, 5);
+  assert.equal(um.find(r => r.id === 'grao').orcamento, 20);
+
+  const vistaUm = ctx.vol27RenderHtml(true, ag, doc, ['dfb_lojas']);
+  assert.ok(vistaUm.includes('id="vol27-filtro"'));
+  assert.ok(vistaUm.includes('>Canal</label>'));
+  assert.ok(vistaUm.includes('id="vol27-filtro-limpar"'));
+  assert.ok(vistaUm.includes('>Limpar</button>'));
+  assert.ok(vistaUm.includes('>Delta Foods Brasil</legend>'));
+  assert.ok(vistaUm.includes('>Q Brasil</legend>'));
+  assert.ok(vistaUm.includes('Lojas online'));
+  assert.ok(vistaUm.includes('Distribuidores regionais'));
+  assert.ok(vistaUm.includes('Restauração'));
+  assert.ok(vistaUm.includes('Distribuidores de retalho'));
+  assert.ok(vistaUm.includes('Retalho moderno'));
+  assert.ok(vistaUm.includes('Site próprio'));
+  assert.ok(vistaUm.includes('Institucional Balcão'));
+  assert.ok(vistaUm.includes('Institucional Horeca'));
+  assert.ok(vistaUm.includes('A mostrar:'));
+  assert.ok(vistaUm.includes('Delta · Lojas online'));
+  assert.ok(vistaUm.includes('um só canal'));
+  assert.ok(vistaUm.includes('data-vol-canal="dfb_lojas" checked'));
+  assert.ok(!vistaUm.includes('data-vol-canal="dfb_rest" checked'));
+  assert.ok(vistaUm.includes('data-vol-fam="grao" data-vol-campo="prevOutDez"'));
+  assert.ok(vistaUm.includes('class="form-input vol27-input"'));
+  assert.equal(JSON.stringify(doc), antes);
+
+  const vistaVarios = ctx.vol27RenderHtml(true, ag, doc, ['dfb_lojas', 'qb_ret_mod']);
+  assert.ok(!vistaVarios.includes('data-vol-campo'));
+  assert.ok(!vistaVarios.includes('vol27-input'));
+  assert.ok(vistaVarios.includes('data-vol-canal="dfb_lojas" checked'));
+  assert.ok(vistaVarios.includes('data-vol-canal="qb_ret_mod" checked'));
+  assert.ok(!vistaVarios.includes('data-vol-canal="dfb_rest" checked'));
+  assert.ok(vistaVarios.includes('9,5'));
+  assert.equal(vistaVarios.split('<tr ').length - 1, 5);
+  assert.equal(JSON.stringify(doc), antes);
+
+  const chave = vm.runInContext('VOL27_FILTRO_LS', ctx);
+  assert.equal(chave, 'dfb_orcamento_2027_volume_filtro_v1');
+  assert.notEqual(chave, 'dfb_orcamento_2027_sazonalidade_filtro_v1');
+  assert.notEqual(chave, vm.runInContext('VOL27_LS_KEY', ctx));
+  assert.ok(!extractFn(html, 'vol27EnviarCorpo').includes('VOL27_FILTRO_LS'));
+  assert.ok(!extractFn(html, 'vol27Flush').includes('VOL27_FILTRO_LS'));
+  assert.ok(!extractFn(html, 'vol27GravarFiltro').includes('VOL27_LS_KEY'));
+  assert.ok(!extractFn(html, 'vol27GravarFiltro').includes('_vol27Dirty'));
+  assert.ok(!extractFn(html, 'vol27GravarFiltro').includes('_vol27Doc'));
+
+  ctx._vol27Filtro = null;
+  ctx.vol27GravarFiltro(['qb_ret_mod', 'dfb_lojas']);
+  assert.deepEqual(ctx._vol27Filtro, ['dfb_lojas', 'qb_ret_mod']);
+  assert.equal(JSON.stringify(ctx._vol27Doc), antes);
+  ctx._vol27Filtro = null;
+  assert.deepEqual(ctx.vol27LerFiltro(), ['dfb_lojas', 'qb_ret_mod']);
+  assert.deepEqual(ctx.vol27FiltroActual(), ['dfb_lojas', 'qb_ret_mod']);
+  assert.deepEqual(JSON.parse(volStore.get(chave)), ['dfb_lojas', 'qb_ret_mod']);
+  assert.equal(volStore.has('dfb_orcamento_2027_sazonalidade_filtro_v1'), false);
+
+  ctx.vol27LimparFiltro();
+  assert.deepEqual(ctx._vol27Filtro, []);
+  assert.equal(volStore.has(chave), false);
+  const limpo = ctx.vol27RenderHtml(true, ag, doc, []);
+  assert.ok(limpo.includes('Todos os canais'));
+  assert.ok(!limpo.includes('data-vol-campo'));
+  assert.ok(!limpo.includes('vol27-input'));
+  assert.ok(!limpo.includes('data-vol-canal="dfb_lojas" checked'));
+  assert.ok(limpo.includes('>Q Brasil</legend>'));
+  const todas = ctx.vol27Montar(ag, doc, []);
+  assert.equal(todas.length, 5);
+  perto(todas.find(r => r.id === 'grao').n1, 9.5);
+  assert.equal(todas.find(r => r.id === 'grao').editavel, false);
+  assert.equal(todas.find(r => r.id === 'grao').prevOutDez, 7);
+  assert.equal(todas.find(r => r.id === 'capsulas').prevOutDez, 7);
+  perto(todas.find(r => r.id === 'capsulas').n1, 10 / 0.005);
+  assert.equal(JSON.stringify(doc), antes);
 });
 
 if (process.exitCode) {

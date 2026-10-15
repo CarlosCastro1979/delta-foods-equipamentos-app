@@ -15504,8 +15504,8 @@ function orc27PrepararChrome() {
         + 'Mesmas colunas do Orç Valor, na unidade de cada produto. '
         + 'Grão e café moído: coluna AA (Peso líq.) em kg, sem conversão. Vinho: a mesma coluna AA, em litros. Cápsulas = AA ÷ 0,005 (unidades). '
         + 'Máquina = QtFaturada + Qtd Bonifi + Qtd Doação (colunas M, U e Y), só nas linhas de máquina. Não usa o peso. '
-        + 'O filtro escolhe o canal. Todos os canais soma o mesmo produto — não soma grão com cápsulas. '
-        + 'Previsão Out a Dez e Orçamento 2027 preenchem-se à mão, por canal e produto, com autosave. '
+        + 'O filtro Canal escolhe um ou vários; sem escolha, mostra todos. Cada produto soma só esses canais, na mesma unidade. '
+        + 'Previsão Out a Dez e Orçamento 2027 escrevem-se com um só canal seleccionado, com autosave. '
         + hint;
     } else if (_orc27Sub === 'sazonalidade') {
       banner.innerHTML = '<strong>Orçamento 2027 · Sazonalidade</strong> — '
@@ -16888,11 +16888,13 @@ const VOL27_ROTULOS = {
 const VOL27_AGREGADO_LS = 'dfb_vendas_volume_familias_v1';
 const VOL27_AGREGADO_ID = 'vendas_volume_familias';
 const VOL27_LS_KEY = 'dfb_orcamento_2027_volume_v1';
+const VOL27_FILTRO_LS = 'dfb_orcamento_2027_volume_filtro_v1';
 const VOL27_CLOUD_PATH = 'previsao/orcamento_2027_volume.json';
 const VOL27_DEBOUNCE_MS = 1000;
 let _vol27Doc = { version: 1, celulas: {} };
 let _vol27Agregado = { version: 1, meses: {} };
-let _vol27Filtro = 'todos';
+/** null = ainda não leu o browser. [] = todos os canais. Não entra no ficheiro da cloud. */
+let _vol27Filtro = null;
 let _vol27Dirty = false;
 let _vol27Timer = null;
 let _vol27HintTimer = null;
@@ -17141,6 +17143,14 @@ function vol27FundirMeses(base, porCima, yms) {
 
 function vol27CanaisDoFiltro(filtro) {
   const folhas = vol27IdsFolha();
+  if (Array.isArray(filtro)) {
+    const want = {};
+    for (let i = 0; i < filtro.length; i++) {
+      if (filtro[i]) want[filtro[i]] = true;
+    }
+    const ids = folhas.filter(function (id) { return want[id]; });
+    return ids.length ? ids : folhas.slice();
+  }
   const f = filtro || 'todos';
   if (f === 'todos') return folhas.slice();
   if (f === 'dfb') return folhas.filter(function (id) { return id.indexOf('dfb_') === 0; });
@@ -17150,7 +17160,27 @@ function vol27CanaisDoFiltro(filtro) {
 }
 
 function vol27FiltroFolha(filtro) {
-  return vol27IdsFolha().indexOf(filtro || '') >= 0;
+  const folhas = vol27IdsFolha();
+  if (Array.isArray(filtro)) {
+    let n = 0;
+    for (let i = 0; i < filtro.length; i++) {
+      if (folhas.indexOf(filtro[i]) >= 0) n++;
+    }
+    return n === 1;
+  }
+  return folhas.indexOf(filtro || '') >= 0;
+}
+
+/** [] ou ausência = todos os canais, incluindo o volume sem canal. */
+function vol27FiltroTodos(filtro) {
+  if (Array.isArray(filtro)) {
+    const folhas = vol27IdsFolha();
+    for (let i = 0; i < filtro.length; i++) {
+      if (folhas.indexOf(filtro[i]) >= 0) return false;
+    }
+    return true;
+  }
+  return !filtro || filtro === 'todos';
 }
 
 function vol27Somar(ag, yms, canalIds, familia, incluirSemCanal) {
@@ -17220,7 +17250,7 @@ function vol27ManualSoma(doc, canais, familia, campo) {
 
 function vol27Montar(ag, doc, filtro) {
   const canais = vol27CanaisDoFiltro(filtro);
-  const todos = !filtro || filtro === 'todos';
+  const todos = vol27FiltroTodos(filtro);
   const editavel = vol27FiltroFolha(filtro);
   const n1Yms = orc27PeriodoN1();
   const ytdYms = orc27PeriodoYtd();
@@ -17320,7 +17350,7 @@ function vol27NotaFora(ag) {
   const unSem = { grao: 'kg', moido: 'kg', capsulas: 'un', maquina: 'un', vinho: 'l' };
   Object.keys(f.semCanal).forEach(function (fam) {
     if (!orc27TemNumero(f.semCanal[fam]) || Number(f.semCanal[fam]) === 0) return;
-    partes.push(nomesSem[fam] + ' sem canal: ' + vol27FmtPlano(f.semCanal[fam]) + ' ' + unSem[fam] + '. Entra em Todos os canais e fica de fora ao escolher um canal.');
+    partes.push(nomesSem[fam] + ' sem canal: ' + vol27FmtPlano(f.semCanal[fam]) + ' ' + unSem[fam] + '. Entra em Todos os canais e fica de fora quando há canais escolhidos.');
   });
   if (ag && ag.erro) partes.push('Não foi possível ler o histórico de volumes (' + String(ag.erro).slice(0, 140) + ').');
   if (!partes.length && !vol27TemMesHistorico(ag)) {
@@ -17352,23 +17382,223 @@ function vol27OpcoesFiltro() {
   return out;
 }
 
+function vol27NomesCanal() {
+  return {
+    dfb_lojas: 'Lojas online',
+    dfb_dist_reg: 'Distribuidores regionais',
+    dfb_rest: 'Restauração',
+    dfb_dist_ret: 'Distribuidores de retalho',
+    dfb_ret_mod: 'Retalho moderno',
+    dfb_site: 'Site próprio',
+    dfb_inst_balcao: 'Institucional Balcão',
+    dfb_inst_horeca: 'Institucional Horeca',
+    qb_ret_mod: 'Retalho moderno',
+    qb_dist_ret: 'Distribuidores de retalho',
+    qb_rest: 'Restauração',
+    qb_dist_reg: 'Distribuidores regionais',
+  };
+}
+
+function vol27NomeEmpresa(id) {
+  if (id === 'dfb') return 'Delta Foods Brasil';
+  if (id === 'qb') return 'Q Brasil';
+  const linhas = orc27LinhasBase();
+  for (let i = 0; i < linhas.length; i++) {
+    if (linhas[i] && linhas[i].id === id) return linhas[i].empresa;
+  }
+  return id || '';
+}
+
+function vol27CurtoEmpresa(id) {
+  if (id === 'dfb') return 'Delta';
+  if (id === 'qb') return 'Q Brasil';
+  return vol27NomeEmpresa(id);
+}
+
+function vol27FolhasEmpresa(linhas, id) {
+  const out = [];
+  function walk(pid) {
+    (linhas || []).forEach(function (r) {
+      if (!r || r.parent !== pid) return;
+      if (r.tipo === 'canal') out.push(r);
+      else if (r.tipo === 'grupo') walk(r.id);
+    });
+  }
+  walk(id);
+  return out;
+}
+
+/** Os mesmos canais do quadro, agrupados por empresa. */
+function vol27GruposFiltro() {
+  const linhas = orc27LinhasBase();
+  const nomes = vol27NomesCanal();
+  return linhas.filter(function (r) { return r && r.tipo === 'grupo' && !r.parent; }).map(function (emp) {
+    return {
+      id: emp.id,
+      nome: vol27NomeEmpresa(emp.id),
+      canais: vol27FolhasEmpresa(linhas, emp.id).map(function (c) {
+        return { id: c.id, nome: nomes[c.id] || c.empresa };
+      }),
+    };
+  });
+}
+
+function vol27FiltroValido(ids) {
+  const want = {};
+  (Array.isArray(ids) ? ids : []).forEach(function (id) { if (id) want[id] = true; });
+  return vol27IdsFolha().filter(function (id) { return want[id]; });
+}
+
+function vol27LerFiltro() {
+  try {
+    const raw = localStorage.getItem(VOL27_FILTRO_LS);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return vol27FiltroValido(parsed);
+  } catch (_) {
+    return [];
+  }
+}
+
+/** null = ainda não leu o browser. [] = todos os canais. */
+function vol27FiltroActual() {
+  if (typeof _vol27Filtro === 'undefined' || _vol27Filtro == null) _vol27Filtro = vol27LerFiltro();
+  if (!Array.isArray(_vol27Filtro)) _vol27Filtro = vol27EscolhaDe(_vol27Filtro);
+  return _vol27Filtro;
+}
+
+/** Argumento do ecrã ou dos testes. [] = todos. Não lê o browser quando o argumento vem explícito. */
+function vol27EscolhaDe(filtro) {
+  if (Array.isArray(filtro)) return vol27FiltroValido(filtro);
+  if (filtro == null || filtro === '' || filtro === 'todos') return [];
+  if (filtro === 'dfb' || filtro === 'qb') {
+    const prefixo = filtro + '_';
+    return vol27IdsFolha().filter(function (id) { return id.indexOf(prefixo) === 0; });
+  }
+  if (vol27IdsFolha().indexOf(filtro) >= 0) return [filtro];
+  return [];
+}
+
+function vol27GravarFiltro(ids) {
+  _vol27Filtro = vol27FiltroValido(ids);
+  try {
+    if (!_vol27Filtro.length) localStorage.removeItem(VOL27_FILTRO_LS);
+    else localStorage.setItem(VOL27_FILTRO_LS, JSON.stringify(_vol27Filtro));
+  } catch (_) {}
+}
+
+function vol27Repintar() {
+  if (typeof orc27Pintar !== 'function') return;
+  if (typeof _orc27Sub === 'undefined' || _orc27Sub !== 'volume') return;
+  if (typeof _pvView === 'undefined' || _pvView !== 'orcamento') return;
+  orc27Pintar();
+}
+
+function vol27OnFiltroCanal(el) {
+  if (!el) return;
+  const id = el.getAttribute('data-vol-canal');
+  const on = !!el.checked;
+  const actual = vol27FiltroActual().slice();
+  const i = actual.indexOf(id);
+  if (on && i < 0) actual.push(id);
+  if (!on && i >= 0) actual.splice(i, 1);
+  vol27GravarFiltro(actual);
+  vol27Repintar();
+}
+
+function vol27TirarCanal(id) {
+  vol27GravarFiltro(vol27FiltroActual().filter(function (x) { return x !== id; }));
+  vol27Repintar();
+}
+
+function vol27LimparFiltro() {
+  vol27GravarFiltro([]);
+  vol27Repintar();
+}
+
+function vol27RotuloChip(id) {
+  const grupos = vol27GruposFiltro();
+  for (let i = 0; i < grupos.length; i++) {
+    const g = grupos[i];
+    const canais = g.canais || [];
+    for (let j = 0; j < canais.length; j++) {
+      if (canais[j].id === id) return vol27CurtoEmpresa(g.id) + ' · ' + canais[j].nome;
+    }
+  }
+  return id;
+}
+
+function vol27FiltroHtml(escolhidos) {
+  const ids = Array.isArray(escolhidos) ? escolhidos : [];
+  const on = {};
+  ids.forEach(function (id) { on[id] = true; });
+  let grupos = '';
+  vol27GruposFiltro().forEach(function (g) {
+    let itens = '';
+    (g.canais || []).forEach(function (c) {
+      const chk = on[c.id] ? ' checked' : '';
+      itens += '<label style="display:flex;align-items:center;gap:8px;margin:3px 0;text-transform:none;letter-spacing:0;font-size:13px;font-weight:500;color:var(--text);cursor:pointer;">'
+        + '<input type="checkbox" data-vol-canal="' + orc27Esc(c.id) + '"' + chk + ' onchange="vol27OnFiltroCanal(this)">'
+        + '<span>' + orc27Esc(c.nome) + '</span></label>';
+    });
+    grupos += '<fieldset style="border:1px solid var(--border);border-radius:8px;margin:0;padding:8px 12px 10px;min-width:240px;flex:1;">'
+      + '<legend style="font-size:12px;font-weight:700;padding:0 4px;">' + orc27Esc(g.nome) + '</legend>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0 12px;">' + itens + '</div></fieldset>';
+  });
+  let chips = '';
+  if (!ids.length) {
+    chips = '<span style="font-size:12px;font-weight:600;color:var(--text);">Todos os canais</span>';
+  } else {
+    ids.forEach(function (id) {
+      chips += '<span class="dist-pool-chip" style="margin:0;cursor:default;">' + orc27Esc(vol27RotuloChip(id))
+        + '<button type="button" data-vol-tirar="' + orc27Esc(id) + '" onclick="vol27TirarCanal(\'' + orc27Esc(id) + '\')" title="Tirar este canal" style="border:none;background:transparent;color:#1e3a8a;font-weight:700;cursor:pointer;padding:0 0 0 4px;line-height:1;">×</button></span>';
+    });
+  }
+  return '<div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">'
+    + '<label style="font-size:13px;font-weight:600;padding-top:8px;">Canal</label>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;flex:1;min-width:280px;">' + grupos + '</div>'
+    + '<button type="button" class="btn-edit" id="vol27-filtro-limpar" onclick="vol27LimparFiltro()">Limpar</button>'
+    + '</div>'
+    + '<div style="margin-top:8px;font-size:12px;color:var(--muted);">Escolha um ou vários. Sem escolha, o quadro mostra todos os canais. Para escrever Previsão Out a Dez e Orçamento 2027, escolha um só canal; com vários, a célula mostra a soma.</div>'
+    + '<div id="vol27-filtro-activo" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;">'
+    + '<span style="font-size:12px;color:var(--muted);">A mostrar:</span>' + chips + '</div>';
+}
+
+/** Id do canal quando a escolha é exactamente uma folha. Caso contrário, vazio. */
+function vol27CanalEscrita() {
+  const f = (typeof _vol27Filtro === 'undefined') ? '' : _vol27Filtro;
+  const folhas = vol27IdsFolha();
+  if (Array.isArray(f)) {
+    let n = 0;
+    let id = '';
+    for (let i = 0; i < f.length; i++) {
+      if (folhas.indexOf(f[i]) >= 0) { n++; id = f[i]; }
+    }
+    return n === 1 ? id : '';
+  }
+  if (folhas.indexOf(f || '') >= 0) return String(f);
+  return '';
+}
+
 function vol27CelulaManualHtml(row, campo, edit) {
   const tem = orc27TemNumero(row[campo]);
   if (!row.editavel || !edit) return tem ? vol27FmtQtd(row[campo], true) : '—';
   const val = vol27FmtInput(row[campo]);
   const titulo = campo === 'prevOutDez' ? 'Previsão Out a Dez (autosave)' : 'Orçamento 2027 (autosave)';
   const bg = campo === 'prevOutDez' ? '#eff6ff' : '#f5f3ff';
+  const canal = vol27CanalEscrita();
   return '<input type="text" inputmode="decimal" class="form-input vol27-input" data-vol-canal="'
-    + orc27Esc(_vol27Filtro) + '" data-vol-fam="' + orc27Esc(row.id) + '" data-vol-campo="' + campo
+    + orc27Esc(canal) + '" data-vol-fam="' + orc27Esc(row.id) + '" data-vol-campo="' + campo
     + '" value="' + orc27Esc(val) + '" placeholder="—" title="' + titulo
     + '" style="height:32px;width:100%;min-width:110px;text-align:right;padding:4px 6px;background:'
     + bg + ';font-variant-numeric:tabular-nums;" oninput="vol27OnInput(this)" onblur="vol27OnBlur(this)">';
 }
 
 function vol27RenderHtml(edit, ag, doc, filtro) {
-  const f = filtro || 'todos';
-  _vol27Filtro = f;
-  const rows = vol27Montar(ag, doc, f);
+  const escolha = (filtro == null) ? vol27FiltroActual().slice() : vol27EscolhaDe(filtro);
+  _vol27Filtro = escolha;
+  const rows = vol27Montar(ag, doc, escolha);
   let body = '';
   rows.forEach(function (row) {
     body += '<tr data-vol-fam="' + orc27Esc(row.id) + '">'
@@ -17382,22 +17612,13 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
       + '<td class="vol27-pct" style="text-align:right;">' + orc27FmtPct(row.pct27) + '</td>'
       + '</tr>';
   });
-  let opts = '';
-  vol27OpcoesFiltro().forEach(function (op) {
-    const sel = op.id === f ? ' selected' : '';
-    opts += '<option value="' + orc27Esc(op.id) + '"' + sel + '>' + orc27Esc(op.nome) + '</option>';
-  });
   const nota = vol27NotaFora(ag);
   const notaHtml = nota
     ? '<div id="vol27-nota" style="margin:0 0 10px;font-size:12px;color:#9a3412;line-height:1.45;">' + orc27Esc(nota) + '</div>'
     : '<div id="vol27-nota" style="display:none;"></div>';
   return orc27SubNavHtml('volume')
-    + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">'
-    + '<label for="vol27-filtro" style="font-size:13px;font-weight:600;">Canal</label>'
-    + '<select id="vol27-filtro" class="form-input" style="height:36px;min-width:260px;font-size:13px;" onchange="vol27OnFiltro(this)">'
-    + opts + '</select>'
-    + '<span style="font-size:12px;color:var(--muted);">Grão e moído = Peso líq. (AA) em kg · vinho = AA em litros · cápsulas = AA ÷ 0,005 · máquina = QtFaturada + Qtd Bonifi + Qtd Doação. Sem linha de total.</span>'
-    + '</div>'
+    + '<div id="vol27-filtro" style="margin-bottom:10px;">' + vol27FiltroHtml(escolha) + '</div>'
+    + '<div style="margin:0 0 10px;font-size:12px;color:var(--muted);">Grão e moído = Peso líq. (AA) em kg · vinho = AA em litros · cápsulas = AA ÷ 0,005 · máquina = QtFaturada + Qtd Bonifi + Qtd Doação. Sem linha de total.</div>'
     + notaHtml
     + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
     + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Volume'
@@ -17672,15 +17893,42 @@ function escreverFolhaOrc27Valor(ws, linhas) {
   };
 }
 
+function orc27CanalUnicoVolume(filtro) {
+  if (Array.isArray(filtro)) {
+    if (typeof vol27FiltroFolha !== 'function' || !vol27FiltroFolha(filtro)) return '';
+    const folhas = (typeof vol27IdsFolha === 'function') ? vol27IdsFolha() : [];
+    for (let i = 0; i < filtro.length; i++) {
+      if (folhas.indexOf(filtro[i]) >= 0) return filtro[i];
+    }
+    return '';
+  }
+  if (typeof vol27FiltroFolha === 'function' && vol27FiltroFolha(filtro)) return String(filtro);
+  return '';
+}
+
 function orc27NomeCanalVolume(filtro) {
-  const id = filtro || 'todos';
+  const um = orc27CanalUnicoVolume(filtro);
+  if (um) {
+    if (typeof VOL27_ROTULOS !== 'undefined' && VOL27_ROTULOS[um]) return VOL27_ROTULOS[um];
+    return um;
+  }
+  if (Array.isArray(filtro)) {
+    const folhas = (typeof vol27IdsFolha === 'function') ? vol27IdsFolha() : [];
+    let n = 0;
+    for (let i = 0; i < filtro.length; i++) {
+      if (folhas.indexOf(filtro[i]) >= 0) n++;
+    }
+    if (n > 1) return 'Vários canais';
+  }
+  const id = (filtro && !Array.isArray(filtro)) ? filtro : 'todos';
   if (typeof VOL27_ROTULOS !== 'undefined' && VOL27_ROTULOS[id]) return VOL27_ROTULOS[id];
-  return String(id);
+  return id === 'todos' ? 'Todos os canais' : String(id);
 }
 
 function orc27NomeFicheiroVolume(filtro) {
-  const id = String(filtro || 'todos');
-  const slug = id.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'todos';
+  const um = orc27CanalUnicoVolume(filtro);
+  if (!um) return 'Orcamento_2027_volume.xlsx';
+  const slug = um.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'canal';
   return 'Orcamento_2027_volume_' + slug + '.xlsx';
 }
 
@@ -17830,7 +18078,9 @@ async function orc27ExportarExcel() {
     const sub = _orc27Sub || 'valor';
     let meta;
     if (sub === 'volume') {
-      const filtro = (typeof _vol27Filtro !== 'undefined' && _vol27Filtro) ? _vol27Filtro : 'todos';
+      let filtro = (typeof _vol27Filtro !== 'undefined') ? _vol27Filtro : null;
+      if (filtro == null && typeof vol27FiltroActual === 'function') filtro = vol27FiltroActual();
+      if (filtro == null) filtro = 'todos';
       const linhas = vol27Montar(_vol27Agregado, _vol27Doc, filtro);
       const ws = wb.addWorksheet('Volume', {
         views: [{ state: 'frozen', ySplit: 2, topLeftCell: 'A3', showGridLines: true }],
@@ -18513,20 +18763,21 @@ function vol27Flush() {
   return ok;
 }
 
-function vol27OnFiltro(el) {
-  const v = el && el.value ? String(el.value) : 'todos';
-  _vol27Filtro = v || 'todos';
-  if (_orc27Sub === 'volume' && _pvView === 'orcamento') orc27Pintar();
+function vol27CanalDoEl(el) {
+  const attr = el && el.getAttribute ? el.getAttribute('data-vol-canal') : '';
+  if (attr && vol27FiltroFolha(attr)) return attr;
+  return vol27CanalEscrita();
 }
 
 function vol27OnInput(el) {
   if (!el || (typeof orc27PodeEditar === 'function' && !orc27PodeEditar())) return;
-  if (!vol27FiltroFolha(_vol27Filtro)) return;
+  const canal = vol27CanalDoEl(el);
+  if (!vol27FiltroFolha(canal)) return;
   const fam = el.getAttribute('data-vol-fam');
   const campo = el.getAttribute('data-vol-campo');
   const ent = orc27EntradaPronta(el.value);
   if (!ent.ok) return;
-  const r = vol27AplicarEdicao(_vol27Doc, _vol27Filtro, fam, campo, ent.valor, new Date().toISOString());
+  const r = vol27AplicarEdicao(_vol27Doc, canal, fam, campo, ent.valor, new Date().toISOString());
   if (r.changed) {
     _vol27Doc = r.doc;
     _vol27Dirty = true;
@@ -18537,12 +18788,13 @@ function vol27OnInput(el) {
 
 function vol27OnBlur(el) {
   if (!el || (typeof orc27PodeEditar === 'function' && !orc27PodeEditar())) return;
-  if (!vol27FiltroFolha(_vol27Filtro)) return;
+  const canal = vol27CanalDoEl(el);
+  if (!vol27FiltroFolha(canal)) return;
   const fam = el.getAttribute('data-vol-fam');
   const campo = el.getAttribute('data-vol-campo');
   const ent = orc27EntradaPronta(el.value);
   const v = ent.ok ? ent.valor : null;
-  const r = vol27AplicarEdicao(_vol27Doc, _vol27Filtro, fam, campo, v, new Date().toISOString());
+  const r = vol27AplicarEdicao(_vol27Doc, canal, fam, campo, v, new Date().toISOString());
   if (r.changed) {
     _vol27Doc = r.doc;
     _vol27Dirty = true;
@@ -41827,7 +42079,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-15-sazonalidade-editar: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-15-volume-filtro: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
