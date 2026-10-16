@@ -14727,6 +14727,7 @@ function pvQuadroSemDevolucao99520099(quadro) {
   let q = quadro;
   if (q && typeof quadroSemDevolucao99520099 === 'function') q = quadroSemDevolucao99520099(q);
   if (q && typeof quadroSemClienteInterno441908 === 'function') q = quadroSemClienteInterno441908(q);
+  if (q && typeof quadroComClientesDistRetalho === 'function') q = quadroComClientesDistRetalho(q);
   return q;
 }
 
@@ -19047,6 +19048,69 @@ function vol27AgregadoSemCliente441908(ag) {
   return out;
 }
 
+/**
+ * Volume já gravado de 410730 e 423557 que ficou em Retalho moderno (99520018).
+ * Janeiro e Fevereiro de 2025. Só mexe se o canal ainda tem os números de antes.
+ * Grão, moído e vinho são a coluna AA. Cápsulas = AA / 0,005. Máquina = M+U+Y.
+ * Os outros meses e os outros canais ficam. Segunda passagem não volta a tirar.
+ */
+function vol27AgregadoComClientesDistRetalho(ag) {
+  if (!ag || !ag.meses) return ag;
+  const movimentos = {
+    '2025-01': {
+      antes: { capsulas: 191444, grao: 7.5, maquina: 626, vinho: 94.5 },
+      delta: { capsulas: 100408, grao: 4.5, maquina: 623, vinho: 67.5 },
+    },
+    '2025-02': {
+      antes: { moido: 48, grao: 66.5, maquina: 230 },
+      delta: { moido: -8, grao: 45, maquina: 230 },
+    },
+  };
+  const yms = Object.keys(movimentos);
+  let muda = false;
+  for (let i = 0; i < yms.length; i++) {
+    const ym = yms[i];
+    const mes = ag.meses[ym];
+    const ret = mes && mes.canais && mes.canais.dfb_ret_mod;
+    if (!ret) continue;
+    const antes = movimentos[ym].antes;
+    const chaves = Object.keys(antes);
+    let igual = true;
+    for (let k = 0; k < chaves.length; k++) {
+      if (Math.abs(Number(ret[chaves[k]] || 0) - Number(antes[chaves[k]])) > 0.001) igual = false;
+    }
+    if (igual) muda = true;
+  }
+  if (!muda) return ag;
+  let out;
+  try { out = JSON.parse(JSON.stringify(ag)); } catch (e) { return ag; }
+  for (let i = 0; i < yms.length; i++) {
+    const ym = yms[i];
+    const mes = out.meses[ym];
+    if (!mes || !mes.canais || !mes.canais.dfb_ret_mod) continue;
+    const antes = movimentos[ym].antes;
+    const delta = movimentos[ym].delta;
+    const ret = mes.canais.dfb_ret_mod;
+    const chaves = Object.keys(antes);
+    let igual = true;
+    for (let k = 0; k < chaves.length; k++) {
+      if (Math.abs(Number(ret[chaves[k]] || 0) - Number(antes[chaves[k]])) > 0.001) igual = false;
+    }
+    if (!igual) continue;
+    if (!mes.canais.dfb_dist_ret) mes.canais.dfb_dist_ret = {};
+    const dist = mes.canais.dfb_dist_ret;
+    const fams = Object.keys(delta);
+    for (let f = 0; f < fams.length; f++) {
+      const fam = fams[f];
+      const novoRet = vol27Round(Number(ret[fam] || 0) - Number(delta[fam]));
+      if (Math.abs(novoRet) < 0.0005) delete ret[fam];
+      else ret[fam] = novoRet;
+      dist[fam] = vol27Round(Number(dist[fam] || 0) + Number(delta[fam]));
+    }
+  }
+  return out;
+}
+
 function vol27SeedExcelAa() {
   const root = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : null);
   const raw = root && root.VOL27_SEED_EXCEL;
@@ -19101,6 +19165,7 @@ async function vol27Preparar() {
     }
   }
   if (typeof vol27AgregadoSemCliente441908 === 'function') ag = vol27AgregadoSemCliente441908(ag);
+  if (typeof vol27AgregadoComClientesDistRetalho === 'function') ag = vol27AgregadoComClientesDistRetalho(ag);
   _vol27Agregado = ag && ag.meses ? ag : { version: 1, meses: {}, fonte: '' };
   _vol27Pronto = true;
   return _vol27Agregado;
@@ -23964,6 +24029,27 @@ function codClienteLojasOnlineAmazon(cod, nome) {
 }
 
 /**
+ * RUBI (410730) e DNA 2 (423557) são revendedores.
+ * O SAP gravou parte das notas com NPess 99520018, que no quadro é Retalho moderno.
+ * O cliente inteiro fica em Distribuidores de retalho da Delta, com o Diogo.
+ * Zeros à esquerda e o nome a seguir ao código não contam.
+ * 4107300 e 4235571 não entram. 441908, 99520099, Amazon e BR0002/BR0003 não mudam.
+ */
+function codClienteDistRetalho(cod) {
+  if (cod == null || cod === '') return false;
+  let raw = cod;
+  if (typeof raw === 'number' && Number.isFinite(raw)) raw = String(Math.trunc(raw));
+  const s = String(raw).replace(/\u00a0/g, ' ').trim();
+  if (!s) return false;
+  let token = s.split(/\s+/)[0].replace(/\s+/g, '');
+  if (/^\d+\.0+$/.test(token)) token = token.replace(/\.0+$/, '');
+  const norm = typeof normalizeVendaCod === 'function'
+    ? normalizeVendaCod(token)
+    : (String(token).replace(/^0+/, '') || token);
+  return norm === '410730' || norm === '423557';
+}
+
+/**
  * Empresa / canal / vendedor a partir do NPess já mapeado.
  * Empresa: 9952 = Delta Foods Brasil, 9953 = Q Brasil. Sem prefixo → Por classificar.
  * Canal: linha do P&L (Power BI), não Ecommerce/Horeca/Varejo da app.
@@ -23972,6 +24058,7 @@ function codClienteLojasOnlineAmazon(cod, nome) {
  * Excepção: 99520099 é devolução de mercadoria e é ignorado antes disto.
  * cod (opcional): BR0002/BR0003 e as contas Amazon ficam em Lojas online / Marcio.
  * nome (opcional): nome que começa por AMAZON também é Lojas online.
+ * 410730 e 423557 ficam em Distribuidores de retalho / Diogo, mesmo com 99520018.
  */
 function dimensoesVendaQuadro(npess, mapas, cod, nome) {
   const n = parseInt(npess, 10);
@@ -23993,6 +24080,11 @@ function dimensoesVendaQuadro(npess, mapas, cod, nome) {
     empresa = 'Delta Foods Brasil';
     canal = 'Lojas online';
     if (!vendedor || vendedor === 'Por classificar') vendedor = 'MARCIO GORGA';
+  }
+  if (typeof codClienteDistRetalho === 'function' && codClienteDistRetalho(cod)) {
+    empresa = 'Delta Foods Brasil';
+    canal = 'Distribuidores de retalho';
+    vendedor = 'DIOGO OLIVEIRA';
   }
   return { empresa, canal, vendedor, npess: conhecido ? n : 0 };
 }
@@ -24045,12 +24137,63 @@ function quadroSemDevolucao99520099(quadro) {
   return out;
 }
 
+/**
+ * Fatur. já gravado de 410730 e 423557 que entrou em Retalho moderno
+ * porque o NPess da nota era 99520018.
+ * Só mexe no mês cujo R$ de Retalho moderno / Diogo ainda é o de antes da correcção.
+ * Tira o total do cliente nesse mês e soma-o em Distribuidores de retalho / Diogo.
+ * Outubro de 2026 e os outros meses do Diogo não estão nesta lista.
+ * Segunda passagem não volta a somar.
+ */
+function quadroComClientesDistRetalho(quadro) {
+  if (!quadro || !quadro.meses) return quadro;
+  const alvos = [
+    { ym: '2025-01', de: 206747.21, valor: 123482.45, linhas: 33 },
+    { ym: '2025-02', de: 117519.46, valor: 15153.14, linhas: 7 },
+  ];
+  const keyDe = 'Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA';
+  const keyPara = 'Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA';
+  const out = quadroVendasClone(quadro);
+  let mudou = false;
+  for (let i = 0; i < alvos.length; i++) {
+    const a = alvos[i];
+    const mes = out.meses && out.meses[a.ym];
+    if (!mes || !mes.celulas) continue;
+    const de = mes.celulas[keyDe];
+    if (!de) continue;
+    if (Math.abs((+de.valor || 0) - a.de) >= 0.02) continue;
+    mudou = true;
+    de.valor = somarValorQuadro(de.valor, -a.valor);
+    de.linhas = Math.max(0, (+de.linhas || 0) - a.linhas);
+    if (de.linhasComValor) de.linhasComValor = Math.max(0, (+de.linhasComValor || 0) - a.linhas);
+    let para = mes.celulas[keyPara];
+    if (!para) {
+      para = {
+        empresa: 'Delta Foods Brasil',
+        canal: 'Distribuidores de retalho',
+        vendedor: 'DIOGO OLIVEIRA',
+        valor: 0,
+        linhas: 0,
+        linhasComValor: 0,
+        volume: 0,
+        temVolume: false,
+      };
+      mes.celulas[keyPara] = para;
+    }
+    para.valor = somarValorQuadro(para.valor, a.valor);
+    para.linhas = (+para.linhas || 0) + a.linhas;
+    para.linhasComValor = (+para.linhasComValor || 0) + a.linhas;
+  }
+  return mudou ? out : quadro;
+}
+
 /** Quadro que a vista mostra: sem a devolução 99520099 já gravada, e com o Marcio identificado. */
 function quadroVistaVendas(quadro) {
   let q = (typeof quadroSemDevolucao99520099 === 'function')
     ? quadroSemDevolucao99520099(quadro)
     : quadro;
   if (typeof quadroSemClienteInterno441908 === 'function') q = quadroSemClienteInterno441908(q);
+  if (typeof quadroComClientesDistRetalho === 'function') q = quadroComClientesDistRetalho(q);
   return (typeof quadroComMarcioIdentificado === 'function')
     ? quadroComMarcioIdentificado(q)
     : q;
@@ -25527,7 +25670,8 @@ const PV_OBJETIVOS_CANAL = {
   }
 };
 
-const VENDAS_VOLUME_SEED = {"2025-02":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5194.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":8275.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":6788.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3324.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":122.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3695.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":160.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":67.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2228.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":45.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":242.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":28279.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":2336.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4876.0,"Q Brasil\tRestauração\tMARCIO GORGA":1584.0},"2025-01":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":13208.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":14242.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":135.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":142.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":67.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1427.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3161.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3034.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":41.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":582.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":2561.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":14030.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7140.0,"Q Brasil\tRestauração\tMARCIO GORGA":946.0},"2025-03":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":14075.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7957.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":85.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":82.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":55.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1977.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3676.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3117.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":452.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":11634.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":42.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":18888.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":25445.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":9640.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":1234.0,"Q Brasil\tRestauração\tMARCIO GORGA":1504.0},"2025-04":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":4902.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5593.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":24.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":32.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3730.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2242.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4234.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":293.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":478.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":14451.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":20153.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":5336.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4620.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":2200.0,"Q Brasil\tRestauração\tMARCIO GORGA":1470.0},"2025-05":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":13907.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":12829.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":3912.0,"Delta Foods Brasil\tInstitucional\tFILIPE NEVES":36.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":60.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":190.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":49.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2910.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3987.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4394.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":198.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":10.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":23821.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":6709.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4096.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":1180.0,"Q Brasil\tRestauração\tMARCIO GORGA":2236.0},"2025-08":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":8745.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":9994.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":71.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":56.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":12.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1927.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2607.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3300.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":0.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":12532.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":106.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":11329.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":14009.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":10822.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":3380.0,"Q Brasil\tRestauração\tMARCIO GORGA":2542.0},"2025-09":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":19477.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":-194.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":83.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":74.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":82.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1288.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3156.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4271.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":20753.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":118.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":15668.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":2415.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":2152.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":3200.0,"Q Brasil\tRestauração\tMARCIO GORGA":736.0},"2025-10":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":9683.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":3789.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":25.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":134.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":132.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2090.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4151.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4971.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":774.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":7059.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":4.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":30552.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":5566.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":1644.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":980.0,"Q Brasil\tRestauração\tMARCIO GORGA":1092.0},"2025-11":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":10316.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":8110.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":786.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":78.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":1279.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1054.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":1748.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":20304.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":30.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":12740.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":19250.0},"2025-12":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":10605.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":14514.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":1225.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":0.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1254.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3094.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3251.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":332.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":22538.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":38.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":18159.0},"2026-01":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":16020.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":2919.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4112.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":193.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":90.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1202.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":1993.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2265.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":628.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":0.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":10613.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":33116.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":6277.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":4260.0},"2026-04":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":4570.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":12369.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7944.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":10.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":106.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2286.0,"Delta Foods Brasil\tInstitucional\tFILIPE NEVES":24.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1394.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2772.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":36.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":92.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":4766.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":5068.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":23592.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":2814.0},"2026-05":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":8038.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":10690.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":14813.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":83.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":92.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":64.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2955.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1407.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":5272.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":600.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":3.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":3893.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":13107.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":28062.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":3130.0,"Q Brasil\tRestauração\tMARCIO GORGA":2466.0},"2025-07":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":7465.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":8490.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":118.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3566.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3443.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1664.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":434.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":17979.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":133.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":15669.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":46889.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7066.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":3070.0,"Q Brasil\tRestauração\tMARCIO GORGA":1362.0},"2026-02":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":14860.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":6640.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":24.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":42.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":65.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1783.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2450.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2561.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":326.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":367.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":30.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":11404.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":3900.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":10430.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":536.0,"Q Brasil\tRestauração\tMARCIO GORGA":3496.0},"2026-03":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":20453.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":6776.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":1831.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":125.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3986.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":8.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1853.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3041.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":590.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":1081.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":5069.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":9069.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":37225.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":9915.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":-4260.0,"Q Brasil\tRestauração\tMARCIO GORGA":1720.0},"2026-07":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5804.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":442.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":26551.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":88.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":132.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":19834.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":161.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3313.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1148.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2639.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":681.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":7270.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":10317.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":-252.0,"Q Brasil\tRestauração\tMARCIO GORGA":1964.0},"2026-09":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":8498.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":26324.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":55.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":234.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":36.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1197.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3079.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3082.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":448.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":10623.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":7784.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":11180.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":-1852.0,"Q Brasil\tRestauração\tMARCIO GORGA":1514.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":24762.0},"2025-06":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":15145.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":5610.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":21.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":70.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":56.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2535.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4240.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4376.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":545.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":25269.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":63.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":22311.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":37222.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4151.0},"2026-06":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4234.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":2372.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":22495.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":27.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":88.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1272.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2619.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2660.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":226.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":13.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":10185.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":9030.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":12465.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5234.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":4888.0},"2026-08":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":33615.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5654.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":133.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":100.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":2.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1714.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4620.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":7070.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":238.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":397.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":113.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":6547.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":4076.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":28214.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":42.0,"Q Brasil\tRestauração\tMARCIO GORGA":337.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":20024.0}};
+/* QtFaturada. Jan e Fev/2025: 410730 e 423557 passaram de Retalho moderno para Distribuidores de retalho. */
+const VENDAS_VOLUME_SEED = {"2025-02":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4906.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":8275.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":6788.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3324.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":122.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3695.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":160.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":67.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2228.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":45.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":242.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":28279.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":2624.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4876.0,"Q Brasil\tRestauração\tMARCIO GORGA":1584.0},"2025-01":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":3867.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":9341.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":14242.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":135.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":142.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":67.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1427.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3161.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3034.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":41.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":582.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":2561.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":14030.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7140.0,"Q Brasil\tRestauração\tMARCIO GORGA":946.0},"2025-03":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":14075.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7957.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":85.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":82.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":55.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1977.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3676.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3117.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":452.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":11634.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":42.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":18888.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":25445.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":9640.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":1234.0,"Q Brasil\tRestauração\tMARCIO GORGA":1504.0},"2025-04":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":4902.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5593.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":24.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":32.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3730.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2242.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4234.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":293.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":478.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":14451.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":20153.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":5336.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4620.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":2200.0,"Q Brasil\tRestauração\tMARCIO GORGA":1470.0},"2025-05":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":13907.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":12829.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":3912.0,"Delta Foods Brasil\tInstitucional\tFILIPE NEVES":36.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":60.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":190.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":49.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2910.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3987.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4394.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":198.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":10.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":23821.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":6709.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4096.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":1180.0,"Q Brasil\tRestauração\tMARCIO GORGA":2236.0},"2025-08":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":8745.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":9994.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":71.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":56.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":12.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1927.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2607.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3300.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":0.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":12532.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":106.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":11329.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":14009.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":10822.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":3380.0,"Q Brasil\tRestauração\tMARCIO GORGA":2542.0},"2025-09":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":19477.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":-194.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":83.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":74.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":82.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1288.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3156.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4271.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":20753.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":118.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":15668.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":2415.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":2152.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":3200.0,"Q Brasil\tRestauração\tMARCIO GORGA":736.0},"2025-10":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":9683.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":3789.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":25.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":134.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":132.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2090.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4151.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4971.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":774.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":7059.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":4.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":30552.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":5566.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":1644.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":980.0,"Q Brasil\tRestauração\tMARCIO GORGA":1092.0},"2025-11":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":10316.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":8110.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":786.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":78.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":1279.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1054.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":1748.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":20304.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":30.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":12740.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":19250.0},"2025-12":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":10605.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":14514.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":1225.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":0.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1254.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3094.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3251.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":332.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":22538.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":38.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":18159.0},"2026-01":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":16020.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":2919.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4112.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":193.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":90.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1202.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":1993.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2265.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":628.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":0.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":10613.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":33116.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":6277.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":4260.0},"2026-04":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":4570.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":12369.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7944.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":10.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":106.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2286.0,"Delta Foods Brasil\tInstitucional\tFILIPE NEVES":24.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1394.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2772.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":36.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":92.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":4766.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":5068.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":23592.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":2814.0},"2026-05":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":8038.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":10690.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":14813.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":83.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":92.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":64.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2955.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1407.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":5272.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":600.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":3.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":3893.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":13107.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":28062.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":3130.0,"Q Brasil\tRestauração\tMARCIO GORGA":2466.0},"2025-07":{"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":7465.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":8490.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":118.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3566.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3443.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1664.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":434.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":17979.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":133.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":15669.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":46889.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":7066.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":3070.0,"Q Brasil\tRestauração\tMARCIO GORGA":1362.0},"2026-02":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":14860.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":6640.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":24.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":42.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":65.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1783.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2450.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2561.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":326.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":367.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":30.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":11404.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":3900.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":10430.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":536.0,"Q Brasil\tRestauração\tMARCIO GORGA":3496.0},"2026-03":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":20453.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":6776.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":1831.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":125.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3986.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":8.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1853.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3041.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":590.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":1081.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":5069.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":9069.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":37225.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":9915.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":-4260.0,"Q Brasil\tRestauração\tMARCIO GORGA":1720.0},"2026-07":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5804.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":442.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":26551.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":88.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":132.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":19834.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":161.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3313.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1148.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2639.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":681.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":7270.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":10317.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":-252.0,"Q Brasil\tRestauração\tMARCIO GORGA":1964.0},"2026-09":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":8498.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":26324.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":55.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":234.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":36.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1197.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":3079.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":3082.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":448.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":10623.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":7784.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":11180.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":-1852.0,"Q Brasil\tRestauração\tMARCIO GORGA":1514.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":24762.0},"2025-06":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":15145.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":5610.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":21.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":70.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":56.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":2535.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4240.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":4376.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":545.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":25269.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":63.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":22311.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":37222.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4151.0},"2026-06":{"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":4234.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":2372.0,"Delta Foods Brasil\tLojas online\tMARCIO GORGA":22495.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":27.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":88.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":40.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1272.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":2619.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":2660.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":226.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":13.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":10185.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":9030.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":12465.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5234.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":4888.0},"2026-08":{"Delta Foods Brasil\tLojas online\tMARCIO GORGA":33615.0,"Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA":5654.0,"Delta Foods Brasil\tInstitucional\tPAULO FONTES":133.0,"Delta Foods Brasil\tInstitucional\tDANIELA SANTOS":100.0,"Delta Foods Brasil\tInstitucional\tHÉLCIO GRÉGIO":2.0,"Delta Foods Brasil\tRestauração\tDANIELA SANTOS":1714.0,"Delta Foods Brasil\tRestauração\tHÉLCIO GRÉGIO":4620.0,"Delta Foods Brasil\tRestauração\tPAULO FONTES":7070.0,"Delta Foods Brasil\tRestauração\tFILIPE NEVES":238.0,"Delta Foods Brasil\tSite próprio\tMARCIO GORGA":397.0,"Delta Foods Brasil\tInstitucional\tMARCIO GORGA":113.0,"Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA":6547.0,"Delta Foods Brasil\tDistribuidores regionais\tMASSIMO BOTTELLO":4076.0,"Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":28214.0,"Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA":42.0,"Q Brasil\tRestauração\tMARCIO GORGA":337.0,"Q Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA":20024.0}};
 
 /**
  * Objectivo (Budget) por mês e canal, colado pelo Carlos (Jan–Dez 2026, Março inclusive).
@@ -27355,6 +27499,65 @@ function mesClienteTem(mes) {
   return !!(mes && mes.clientes && Object.keys(mes.clientes).length);
 }
 
+/**
+ * Fatur. por cliente já gravado de 410730 e 423557 com NPess 99520018.
+ * Passa para 99520004 (Distribuidores de retalho, Diogo). Soma se o mês já tiver o 004.
+ * Segunda passagem não encontra o 018. Os outros clientes ficam.
+ */
+function vendasClienteComClientesDistRetalho(store) {
+  if (!store || !store.meses) return store;
+  const cods = { '410730': 1, '423557': 1 };
+  const npDe = 99520018;
+  const npPara = 99520004;
+  const meses = store.meses;
+  const yms = Object.keys(meses);
+  let achou = false;
+  for (let i = 0; i < yms.length && !achou; i++) {
+    const clientes = meses[yms[i]] && meses[yms[i]].clientes;
+    if (!clientes) continue;
+    const keys = Object.keys(clientes);
+    for (let k = 0; k < keys.length; k++) {
+      const c = clientes[keys[k]];
+      if (!c) continue;
+      const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(c.cod) : String(c.cod || '').replace(/^0+/, '');
+      if (!cods[cod]) continue;
+      if ((parseInt(c.npess, 10) || 0) === npDe) { achou = true; break; }
+    }
+  }
+  if (!achou) return store;
+  let out;
+  try { out = JSON.parse(JSON.stringify(store)); } catch (e) { return store; }
+  for (let i = 0; i < yms.length; i++) {
+    const destMes = out.meses[yms[i]];
+    const clientes = destMes && destMes.clientes;
+    if (!clientes) continue;
+    const keys = Object.keys(clientes);
+    for (let k = 0; k < keys.length; k++) {
+      const src = clientes[keys[k]];
+      if (!src) continue;
+      const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(src.cod) : String(src.cod || '').replace(/^0+/, '');
+      if (!cods[cod]) continue;
+      if ((parseInt(src.npess, 10) || 0) !== npDe) continue;
+      const keyPara = cod + '\t' + String(npPara);
+      if (!clientes[keyPara]) {
+        clientes[keyPara] = {
+          cod: cod,
+          npess: npPara,
+          valor: 0,
+          negativo: 0,
+          nome: src.nome || '',
+        };
+      }
+      const d = clientes[keyPara];
+      d.valor = arredondarRsPerdas((+d.valor || 0) + (+src.valor || 0));
+      d.negativo = arredondarRsPerdas((+d.negativo || 0) + (+src.negativo || 0));
+      if (!d.nome && src.nome) d.nome = src.nome;
+      delete clientes[keys[k]];
+    }
+  }
+  return out;
+}
+
 /** Soma Fatur. por cliente e NPess, mês a mês. Não grava meses fora da janela. 99520099 não entra. */
 function agregarFaturClienteMes(linhas) {
   const meses = {};
@@ -27376,6 +27579,10 @@ function agregarFaturClienteMes(linhas) {
     const lojasAmazon = typeof codClienteLojasOnlineAmazon === 'function' && codClienteLojasOnlineAmazon(cod, row.nome);
     if ((lojasBr || lojasAmazon) && (!npess || npess === 99520009)) {
       npess = 99520001;
+    }
+    // 410730 e 423557 são Distribuidores de retalho. O NPess 99520018 é Retalho moderno.
+    if (typeof codClienteDistRetalho === 'function' && codClienteDistRetalho(cod) && npess === 99520018) {
+      npess = 99520004;
     }
     const key = cod + '\t' + String(npess || 0);
     if (!meses[ym]) meses[ym] = { clientes: {} };
@@ -27453,10 +27660,13 @@ function nomesDoMesCliente(mes) {
 }
 
 async function salvarVendasClientePersistida(payload) {
-  const body = {
+  let body = {
     atualizado_em: new Date().toISOString(),
     meses: (payload && payload.meses) || {},
   };
+  if (typeof vendasClienteComClientesDistRetalho === 'function') {
+    body = vendasClienteComClientesDistRetalho(body) || body;
+  }
   window._vendasCliente = body;
   window._vendasClienteLeituraFalhou = false;
   _perdasLinhasCache = { key: '', linhas: null, temColunaValor: false };
@@ -27476,7 +27686,12 @@ async function salvarVendasClientePersistida(payload) {
 }
 
 async function lerVendasClientePersistida() {
-  if (window._vendasCliente && window._vendasCliente.meses) return window._vendasCliente;
+  if (window._vendasCliente && window._vendasCliente.meses) {
+    if (typeof vendasClienteComClientesDistRetalho === 'function') {
+      window._vendasCliente = vendasClienteComClientesDistRetalho(window._vendasCliente);
+    }
+    return window._vendasCliente;
+  }
   let local = null;
   try {
     if (typeof idbGet === 'function') {
@@ -27496,9 +27711,11 @@ async function lerVendasClientePersistida() {
     const rows = await res.json();
     const remoto = rows && rows[0] && rows[0].data;
     if (remoto && remoto.meses) {
-      window._vendasCliente = remoto;
+      window._vendasCliente = (typeof vendasClienteComClientesDistRetalho === 'function')
+        ? vendasClienteComClientesDistRetalho(remoto)
+        : remoto;
       window._vendasClienteLeituraFalhou = false;
-      return remoto;
+      return window._vendasCliente;
     }
     const vazio = vendasClienteVazio();
     window._vendasCliente = vazio;
@@ -27506,9 +27723,11 @@ async function lerVendasClientePersistida() {
     return vazio;
   } catch (e) {
     if (local && local.meses) {
-      window._vendasCliente = local;
+      window._vendasCliente = (typeof vendasClienteComClientesDistRetalho === 'function')
+        ? vendasClienteComClientesDistRetalho(local)
+        : local;
       window._vendasClienteLeituraFalhou = false;
-      return local;
+      return window._vendasCliente;
     }
     window._vendasClienteLeituraFalhou = true;
     console.warn('lerVendasClientePersistida:', e.message || e);
@@ -42585,7 +42804,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-16-volume-total-sim: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-16-dist-retalho-018: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
