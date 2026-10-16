@@ -15510,7 +15510,7 @@ function orc27PrepararChrome() {
         + 'Previsão Out a Dez e Orçamento 2027 escrevem-se com um só canal seleccionado, com autosave. '
         + 'O preço médio de Ago–Out é o Fatur. líquido desses meses a dividir pelo volume. '
         + 'A Simulação valor 2026 multiplica a Previsão Out a Dez por esse preço. A Simulação valor 27 multiplica o Orçamento 2027 pelo mesmo preço. '
-        + 'Por baixo dos produtos, o Total soma só essas duas colunas em R$. A linha No mapa de valor mostra a Previsão Out a Dez e o Orçamento 2027 do Orç Valor, para o canal ou canais escolhidos. '
+        + 'Por baixo dos produtos, o Total soma só essas duas colunas em R$. A linha seguinte, Orç. 2027 no mapa de valor, mostra a Previsão Out a Dez e o Orçamento 2027 do Orç Valor, para o canal ou canais escolhidos. A Diferença é a simulação 27 menos esse orçamento. '
         + hint;
     } else if (_orc27Sub === 'sazonalidade') {
       banner.innerHTML = '<strong>Orçamento 2027 · Sazonalidade</strong> — '
@@ -16909,8 +16909,9 @@ function saz27Abrir(force) {
  * 441908 e 99520099 não entram na faturação. Vários canais: soma dos R$ ÷ soma dos volumes.
  * Simulação valor 2026 = Previsão Out a Dez (só esses três meses) × esse preço.
  * Simulação valor 27 = volume do Orçamento 2027 × o mesmo preço. Falta o preço ou a quantidade → «—».
- * Por baixo dos cinco produtos: Total soma só as duas simulações em R$; No mapa de valor mostra
- * a Previsão Out a Dez e o Orçamento 2027 do Orç Valor, na mesma escolha de canais. Sem rodapé.
+ * Por baixo dos cinco produtos: Total soma só as duas simulações em R$; Orç. 2027 no mapa de valor mostra
+ * a Previsão Out a Dez e o Orçamento 2027 do Orç Valor, na mesma escolha de canais.
+ * Diferença = simulação 27 − orçamento do mapa de valor.
  */
 const VOL27_CAPSULA_KG = 0.005;
 const VOL27_EXCEL_AA = '2026-10-16-preco';
@@ -17799,6 +17800,15 @@ function vol27OrcValorSelecao(filtro, campo) {
   return { tem: tem, valor: tem ? vol27Centavos(soma) : null };
 }
 
+/** Diferença da simulação 27 menos o Orçamento 2027 do mapa de valor. */
+function vol27TextoComparacao(rows, filtro) {
+  const sim = vol27SomaSimulacao(rows);
+  const orc = vol27OrcValorSelecao(filtro);
+  if (!sim.tem || !orc.tem) return '';
+  const dif = vol27Centavos(Number(sim.valor) - Number(orc.valor));
+  return 'Diferença: ' + orc27FmtRs(dif, true);
+}
+
 /** Duas linhas por baixo dos produtos. Só as simulações em R$ levam número: não se somam kg, un e L. */
 function vol27RodapeHtml(rotulo, rodape, sim26, sim26Tem, sim27, sim27Tem, primeira, id26, id27) {
   const borda = primeira ? 'border-top:2px solid #cbd5e1;' : '';
@@ -17844,7 +17854,8 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
   const prevMapa = vol27OrcValorSelecao(escolha, 'prevOutDez');
   const orcMapa = vol27OrcValorSelecao(escolha);
   body += vol27RodapeHtml('Total', 'total', soma26.valor, soma26.tem, soma27.valor, soma27.tem, true, 'vol27-total-sim26', 'vol27-total-sim');
-  body += vol27RodapeHtml('No mapa de valor', 'mapa', prevMapa.valor, prevMapa.tem, orcMapa.valor, orcMapa.tem, false, 'vol27-mapa-prev', 'vol27-orc-mapa');
+  body += vol27RodapeHtml('Orç. 2027 no mapa de valor', 'mapa', prevMapa.valor, prevMapa.tem, orcMapa.valor, orcMapa.tem, false, 'vol27-mapa-prev', 'vol27-orc-mapa');
+  const comparaTxt = vol27TextoComparacao(rows, escolha);
   const nota = vol27NotaFora(ag);
   const notaHtml = nota
     ? '<div id="vol27-nota" style="margin:0 0 10px;font-size:12px;color:#9a3412;line-height:1.45;">' + orc27Esc(nota) + '</div>'
@@ -17872,7 +17883,9 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
     + '<th style="text-align:right;background:#ede9fe;">Orçamento 2027</th>'
     + '<th style="text-align:right;">% 27 vs fecho 26</th>'
     + '<th style="text-align:right;background:#dcfce7;">Simulação valor 27</th>'
-    + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+    + '</tr></thead><tbody>' + body + '</tbody></table></div>'
+    + '<div id="vol27-compara" style="margin:10px 2px 0;font-size:13px;line-height:1.45;'
+    + (comparaTxt ? '' : 'display:none;') + '">' + comparaTxt + '</div>';
 }
 
 
@@ -18253,7 +18266,7 @@ function vol27EscreverRodapeExcel(ws, linhas, filtro) {
   const refs = [];
   for (let i = 0; i < rows.length; i++) refs.push(3 + i);
   orc27PintarTexto(ws.getCell(rTotal, 1), 'Total', true, 'left');
-  orc27PintarTexto(ws.getCell(rMapa, 1), 'No mapa de valor', true, 'left');
+  orc27PintarTexto(ws.getCell(rMapa, 1), 'Orç. 2027 no mapa de valor', true, 'left');
   for (let c = 2; c <= 11; c++) {
     if (c === 5 || c === 11) continue;
     orc27PintarVazio(ws.getCell(rTotal, c), true);
@@ -19146,6 +19159,12 @@ function vol27PatchCalculos() {
   const t27 = document.getElementById('vol27-total-sim');
   if (t26) t26.innerHTML = orc27FmtRs(soma26.valor, soma26.tem);
   if (t27) t27.innerHTML = orc27FmtRs(soma27.valor, soma27.tem);
+  const cmp = document.getElementById('vol27-compara');
+  if (cmp) {
+    const txt = vol27TextoComparacao(linhas, _vol27Filtro);
+    cmp.innerHTML = txt;
+    cmp.style.display = txt ? '' : 'none';
+  }
 }
 
 function vol27Flash(ok) {
@@ -42566,7 +42585,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-16-volume-sim-2026: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-16-volume-total-sim: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

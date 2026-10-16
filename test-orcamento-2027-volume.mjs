@@ -181,6 +181,7 @@ const fns = [
   'vol27Centavos',
   'vol27SomaSimulacao',
   'vol27OrcValorSelecao',
+  'vol27TextoComparacao',
   'vol27RodapeHtml',
   'vol27CanalIgual441908',
   'vol27AgregadoSemCliente441908',
@@ -255,10 +256,10 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
   assert.equal(vm.runInContext('VOL27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_volume.json');
   assert.ok(!String(vm.runInContext('VOL27_CLOUD_PATH', ctx)).includes('mapas_v3'));
   assert.equal(vm.runInContext('ORC27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_canais.json');
-  assert.ok(sw.includes('v2026-10-16-volume-sim-2026'));
+  assert.ok(sw.includes('v2026-10-16-volume-total-sim'));
   assert.ok(!sw.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!sw.includes('v2026-10-14-volume-formulas'));
-  assert.ok(html.includes('v2026-10-16-volume-sim-2026'));
+  assert.ok(html.includes('v2026-10-16-volume-total-sim'));
   assert.ok(!html.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!html.includes('v2026-10-14-volume-formulas'));
   assert.ok(extractFn(html, 'vol27Medida').includes('/ VOL27_CAPSULA_KG'));
@@ -677,8 +678,9 @@ check('filtro multi-canal: dois canais somam o produto, um edita, vários não, 
   assert.equal(vistaVarios.split('<tr ').length - 1, 7);
   assert.ok(vistaVarios.includes('data-vol-rodape="total"'));
   assert.ok(vistaVarios.includes('data-vol-rodape="mapa"'));
-  assert.ok(vistaVarios.includes('>No mapa de valor</td>'));
-  assert.ok(!vistaVarios.includes('id="vol27-compara"'));
+  assert.ok(vistaVarios.includes('>Orç. 2027 no mapa de valor</td>'));
+  const cmpVazio = vistaVarios.split('id="vol27-compara"')[1] || '';
+  assert.ok(cmpVazio.slice(0, 90).includes('display:none'));
   assert.equal(JSON.stringify(doc), antes);
 
   const chave = vm.runInContext('VOL27_FILTRO_LS', ctx);
@@ -782,19 +784,21 @@ check('preço médio Ago–Out = Fatur. ÷ volume; mês com volume 0 sai; simula
   assert.ok(vistaCanal.includes('data-vol-rodape="total"'));
   assert.ok(vistaCanal.includes('data-vol-rodape="mapa"'));
   assert.ok(vistaCanal.includes('>Total</td>'));
-  assert.ok(vistaCanal.includes('>No mapa de valor</td>'));
+  assert.ok(vistaCanal.includes('>Orç. 2027 no mapa de valor</td>'));
   assert.ok(vistaCanal.includes('id="vol27-total-sim"'));
   assert.ok(vistaCanal.includes('id="vol27-total-sim26"'));
   assert.ok(vistaCanal.includes('id="vol27-orc-mapa"'));
   assert.ok(vistaCanal.includes('id="vol27-mapa-prev"'));
-  assert.ok(!vistaCanal.includes('id="vol27-compara"'));
-  assert.ok(!vistaCanal.includes('Orçamento 2027 no Orç Valor'));
-  assert.ok(!vistaCanal.includes('Diferença:'));
-  assert.ok(!html.includes('id="vol27-compara"'));
-  assert.ok(!html.includes('function vol27TextoComparacao'));
+  assert.ok(vistaCanal.includes('id="vol27-compara"'));
+  assert.ok(vistaCanal.includes('Diferença:'));
+  assert.ok(html.includes('id="vol27-compara"'));
+  assert.ok(html.includes('function vol27TextoComparacao'));
+  const cmp = ctx.vol27TextoComparacao(linhas, 'dfb_lojas');
+  assert.ok(cmp.startsWith('Diferença:'));
   const varios = ctx.vol27RenderHtml(false, ag, doc, ['dfb_lojas', 'dfb_rest']);
-  assert.ok(!varios.includes('id="vol27-compara"'));
-  assert.ok(varios.includes('>No mapa de valor</td>'));
+  assert.ok(varios.includes('id="vol27-compara"'));
+  assert.ok(varios.includes('Diferença:'));
+  assert.ok(varios.includes('>Orç. 2027 no mapa de valor</td>'));
   const dois = ctx.vol27PrecoMedio(ag, ['dfb_lojas', 'dfb_rest'], 'grao');
   perto(dois.fatur, 170);
   perto(dois.volume, 17);
@@ -927,14 +931,14 @@ check('simulação 2026 = previsão × preço; total soma só os R$; mapa de val
   volumeVazio(total);
   volumeVazio(mapa);
   assert.ok(total[0].includes('>Total</td>'));
-  assert.ok(mapa[0].includes('>No mapa de valor</td>'));
+  assert.ok(mapa[0].includes('>Orç. 2027 no mapa de valor</td>'));
   assert.ok(total[4].includes(ctx.orc27FmtRs(45, true)));
   assert.ok(total[10].includes(ctx.orc27FmtRs(115, true)));
   assert.ok(mapa[4].includes(ctx.orc27FmtRs(500000, true)));
   assert.ok(mapa[10].includes(ctx.orc27FmtRs(12823215, true)));
-  assert.ok(!um.includes('id="vol27-compara"'));
-  assert.ok(!um.includes('Orçamento 2027 no Orç Valor'));
-  assert.ok(!um.includes('Diferença:'));
+  assert.ok(um.includes('id="vol27-compara"'));
+  assert.ok(um.includes('Diferença:'));
+  assert.ok(ctx.vol27TextoComparacao(linhas, 'dfb_lojas').startsWith('Diferença:'));
   perto(grao.n1, 12);
   assert.ok(!total[1].includes('12'));
   assert.ok(!total[5].includes('104'));
@@ -953,7 +957,7 @@ check('simulação 2026 = previsão × preço; total soma só os R$; mapa de val
   assert.ok(totalDois[4].includes(ctx.orc27FmtRs(soma26Dois.valor, true)));
   perto(linhasDois.find(r => r.id === 'grao').n1, 19);
   assert.ok(totalDois[1].startsWith(' class="vol27-rodape-vazio"'));
-  assert.ok(!doisHtml.includes('id="vol27-compara"'));
+  assert.ok(doisHtml.includes('Diferença:'));
 
   const todosHtml = ctx.vol27RenderHtml(false, ag, doc, []);
   const mapaTodos = celulasDaLinha(todosHtml, 'mapa');
@@ -961,7 +965,7 @@ check('simulação 2026 = previsão × preço; total soma só os R$; mapa de val
   volumeVazio(mapaTodos);
   assert.ok(mapaTodos[4].includes(ctx.orc27FmtRs(500203.45, true)));
   assert.ok(mapaTodos[10].includes(ctx.orc27FmtRs(12824235.55, true)));
-  assert.ok(!todosHtml.includes('id="vol27-compara"'));
+  assert.ok(todosHtml.includes('Diferença:'));
 });
 
 if (process.exitCode) {

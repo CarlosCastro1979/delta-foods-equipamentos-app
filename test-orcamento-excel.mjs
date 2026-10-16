@@ -13,7 +13,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-16-volume-sim-2026';
+const CACHE = 'v2026-10-16-volume-total-sim';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);
@@ -420,7 +420,7 @@ check('Volume: canal escolhido, cinco produtos com unidade, sem somar kg com un 
     assert.notEqual(ws.getCell(linha.excelRow, 1).value, 'Total');
   }
   assert.equal(ws.getCell(meta.rodape.totalRow, 1).value, 'Total');
-  assert.equal(ws.getCell(meta.rodape.mapaRow, 1).value, 'No mapa de valor');
+  assert.equal(ws.getCell(meta.rodape.mapaRow, 1).value, 'Orç. 2027 no mapa de valor');
   for (let c = 2; c <= 11; c++) {
     assert.equal(ws.getCell(meta.rodape.totalRow, c).value, null);
     assert.equal(ws.getCell(meta.rodape.mapaRow, c).value, null);
@@ -626,7 +626,7 @@ check('Volume Excel: total só nas duas simulações; mapa de valor na linha seg
   assert.equal(meta.rodape.previsaoValor, 500000);
   assert.equal(meta.rodape.orcamentoValor, 12823215);
   assert.equal(ws.getCell(8, 1).value, 'Total');
-  assert.equal(ws.getCell(9, 1).value, 'No mapa de valor');
+  assert.equal(ws.getCell(9, 1).value, 'Orç. 2027 no mapa de valor');
   for (const c of [2, 3, 4, 6, 7, 8, 9, 10]) {
     assert.equal(ws.getCell(8, c).value, null);
     assert.equal(ws.getCell(9, c).value, null);
