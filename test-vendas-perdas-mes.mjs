@@ -115,6 +115,7 @@ vm.createContext(ctx);
   'parseValorVendaSap',
   'npessDeCelulaExcel',
   'npessVendaIgnorado',
+  'codClienteVendaIgnorado',
   'npessDaLinhaVendaQuadro',
   'dimensoesVendaQuadro',
   'linhasPlVendasQuadro',
@@ -573,6 +574,46 @@ check('devolução 99520099 não entra em maiores perdas nem no Fatur. por clien
   assert.ok(deMes.some(r => r.cod === '100' && r.valor === 40));
 });
 
+check('cliente 441908 não entra em maiores perdas nem no Fatur. por cliente, nas duas empresas', () => {
+  const linhas = [
+    { cod: '441908', data: '2026-10-09', valor: 2059.67, npess: 99520005, nome: 'UNILOG EXPRESS LOGISTICA S/A' },
+    { cod: '0441908', data: '2026-10-09', valor: 3952.43, npess: 99530002, nome: 'UNILOG EXPRESS LOGISTICA S/A' },
+    { cod: 441908, data: '2026-03-26', valor: 47.87, npess: 99520011 },
+    { cod: '430787', data: '2026-10-09', valor: 80, npess: 99520005, nome: 'OUTRO CLIENTE' },
+    { cod: '430787', data: '2025-10-09', valor: 120, npess: 99520005 },
+    { cod: '441908', data: '2025-10-09', valor: 9000, npess: 99520005 },
+    { cod: '200', data: '2026-10-09', valor: 40, npess: 99530002, nome: 'OUTRO QB' },
+    { cod: '200', data: '2025-10-09', valor: 90, npess: 99530002 },
+  ];
+  const fat = ctx.agregarFaturClienteMes(linhas);
+  assert.equal(fat['2026-03'], undefined);
+  assert.equal(fat['2026-10'].clientes['441908\t99520005'], undefined);
+  assert.equal(fat['2026-10'].clientes['441908\t99530002'], undefined);
+  assert.equal(fat['2026-10'].clientes['430787\t99520005'].valor, 80);
+  assert.equal(fat['2026-10'].clientes['200\t99530002'].valor, 40);
+  const modelo = ctx.maioresPerdasMes(linhas, {
+    ym: '2026-10', ymN1: '2025-10', canalId: '',
+  });
+  const saida = modelo.grupos.flatMap(g => g.linhas);
+  assert.ok(!saida.some(r => r.cod === '441908'), 'a venda interna não parece perda nem venda');
+  const outro = saida.find(r => r.cod === '430787');
+  assert.ok(outro);
+  assert.equal(outro.n, 80);
+  assert.equal(outro.n1, 120);
+  const qb = saida.find(r => r.cod === '200');
+  assert.ok(qb);
+  assert.equal(qb.n, 40);
+  assert.equal(qb.n1, 90);
+  const deMes = ctx.linhasDeMesCliente({
+    clientes: {
+      '441908\t99520005': { cod: '441908', npess: 99520005, valor: 2059.67, negativo: 0, nome: 'UNILOG' },
+      '430787\t99520005': { cod: '430787', npess: 99520005, valor: 80, negativo: 0 },
+    },
+  }, '2026-10');
+  assert.ok(!deMes.some(r => r.cod === '441908'));
+  assert.ok(deMes.some(r => r.cod === '430787' && r.valor === 80));
+});
+
 check('o filtro do vendedor grava no localStorage', () => {
   ctx._perdasFiltroUi = null;
   store.delta_vendas_perdas_filtro = JSON.stringify({
@@ -587,8 +628,8 @@ check('o filtro do vendedor grava no localStorage', () => {
   assert.equal(saved.porCanal.horeca, '');
   assert.equal(saved.geral, 'Filipe Neves');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-15-sazonalidade-totais'));
-  assert.ok(html.includes('v2026-10-15-sazonalidade-totais'));
+  assert.ok(sw.includes('v2026-10-16-ignorar-441908'));
+  assert.ok(html.includes('v2026-10-16-ignorar-441908'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);

@@ -311,6 +311,8 @@
       if (!row) return;
       var cod = String(row.cod == null ? '' : row.cod).trim();
       if (!cod) return;
+      var codNorm = cod.replace(/\u00a0/g, ' ').trim().split(/\s+/)[0].replace(/^0+/, '');
+      if (codNorm === '441908') return;
       var ym = row.ym ? String(row.ym).slice(0, 7) : nfeYmDeData(row.data);
       if (!/^\d{4}-\d{2}$/.test(ym)) return;
       var npess = parseInt(row.npess, 10) || 0;

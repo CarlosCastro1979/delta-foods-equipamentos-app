@@ -118,6 +118,7 @@ const fns = [
   'npessEmpresaGn',
   'npessDeCelulaExcel',
   'npessVendaIgnorado',
+  'codClienteVendaIgnorado',
   'codClienteLojasOnlineBr',
   'codClienteLojasOnlineAmazon',
   'dimensoesVendaQuadro',
@@ -165,6 +166,8 @@ const fns = [
   'vol27CanalIdDeLinha',
   'vol27MesVazio',
   'vol27AgregarLinhas',
+  'vol27CanalIgual441908',
+  'vol27AgregadoSemCliente441908',
   'vol27FundirMeses',
   'vol27CanaisDoFiltro',
   'vol27FiltroFolha',
@@ -236,9 +239,9 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
   assert.equal(vm.runInContext('VOL27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_volume.json');
   assert.ok(!String(vm.runInContext('VOL27_CLOUD_PATH', ctx)).includes('mapas_v3'));
   assert.equal(vm.runInContext('ORC27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_canais.json');
-  assert.ok(sw.includes('v2026-10-15-sazonalidade-totais'));
+  assert.ok(sw.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!sw.includes('v2026-10-14-volume-formulas'));
-  assert.ok(html.includes('v2026-10-15-sazonalidade-totais'));
+  assert.ok(html.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!html.includes('v2026-10-14-volume-formulas'));
   assert.ok(extractFn(html, 'vol27Medida').includes('/ VOL27_CAPSULA_KG'));
   assert.ok(extractFn(html, 'vol27Medida').includes('qtdBonifi'));
@@ -337,6 +340,9 @@ check('vinho é a coluna AA sem conversão; 99520099 e o filtro de canal', () =>
   assert.equal(semAa.medida, null);
 
   assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520099, cod: '1' }), '');
+  assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520005, cod: '441908' }), '');
+  assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99530002, cod: '0441908' }), '');
+  assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520005, cod: '430787' }), 'dfb_inst_balcao');
   assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520001 }), 'dfb_lojas');
   assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520002 }), 'dfb_rest');
   assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520011 }), 'dfb_inst_balcao');
@@ -429,6 +435,39 @@ check('vinho é a coluna AA sem conversão; 99520099 e o filtro de canal', () =>
   assert.ok(!vistaLojas.includes('data-vol-fam="total"'));
   const vistaEmp = ctx.vol27RenderHtml(true, ag, doc, 'dfb');
   assert.ok(!vistaEmp.includes('data-vol-campo'));
+});
+
+check('cliente 441908 sai do volume na DFB e na Q Brasil; outro cliente no mesmo vendedor fica', () => {
+  const ag = ctx.vol27AgregarLinhas([
+    { data: '2026-10-09', tipo: 'GRÃO', peso: 11.5, npess: 99520005, cod: '441908' },
+    { data: '2026-10-09', tipo: 'CAPSULAS', peso: 23.925, npess: 99530002, cod: '0441908' },
+    { data: '2026-10-09', hierarq: 'CAFÉ MOÍDO', peso: 4, tipo: 'OUTRO', npess: 99520005, cod: '430787' },
+    { data: '2026-10-09', tipo: 'GRÃO', peso: 2, npess: 99530002, cod: 200 },
+    { data: '2026-03-26', tipo: 'OUTRO', peso: 0.75, npess: 99520011, cod: 441908 },
+  ]);
+  assert.equal(ag.ignoradas, 3);
+  assert.equal(ag.meses['2026-10'].canais.dfb_inst_balcao.grao, undefined);
+  perto(fam(ag, '2026-10', 'dfb_inst_balcao', 'moido'), 4);
+  perto(fam(ag, '2026-10', 'qb_dist_reg', 'grao'), 2);
+  assert.equal(ag.meses['2026-03'], undefined);
+  const gravado = {
+    meses: {
+      '2026-10': {
+        canais: {
+          dfb_inst_balcao: { grao: 16.5, moido: 0.5, vinho: 19.5, maquina: 3, capsulas: 5445 },
+          qb_dist_reg: { moido: 4, maquina: 15, capsulas: 2112 },
+          dfb_lojas: { grao: 100 },
+        },
+      },
+    },
+  };
+  const limpo = ctx.vol27AgregadoSemCliente441908(gravado);
+  assert.equal(limpo.meses['2026-10'].canais.dfb_inst_balcao, undefined);
+  assert.equal(limpo.meses['2026-10'].canais.qb_dist_reg, undefined);
+  assert.equal(limpo.meses['2026-10'].canais.dfb_lojas.grao, 100);
+  const outra = ctx.vol27AgregadoSemCliente441908(limpo);
+  assert.equal(outra.meses['2026-10'].canais.dfb_lojas.grao, 100);
+  assert.equal(outra.meses['2026-10'].canais.dfb_inst_balcao, undefined);
 });
 
 check('cópia ISO e dd.mm.aaaa não soma duas vezes; moído não é grão; o grão do fixture fica no kg certo', () => {

@@ -312,12 +312,12 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-15-sazonalidade-totais'), 'service worker referido no index');
+  assert(html.includes('v2026-10-16-ignorar-441908'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-perdas-sem-999'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-15-sazonalidade-totais'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-16-ignorar-441908'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
@@ -790,6 +790,13 @@ function testVendedorAtual() {
   ]);
   assert(!semDevolucao['445753'], '99520099 não fica como vendedor actual');
   assert(semDevolucao['100'].npess === 99520010, 'outro vendedor no catálogo mantém-se');
+  const semInterna = nfe.npessAtualDeLinhas([
+    { cod: '441908', ym: '2026-10', npess: 99520005, valor: 2059.67, nome: 'UNILOG' },
+    { cod: '0441908', ym: '2026-10', npess: 99530002, valor: 3952.43, nome: 'UNILOG' },
+    { cod: '430787', ym: '2026-10', npess: 99520005, valor: 80, nome: 'OUTRO' },
+  ]);
+  assert(!semInterna['441908'], '441908 não fica como vendedor actual');
+  assert(semInterna['430787'].npess === 99520005, 'outro cliente no mesmo NPess mantém-se');
 
   const nomes = {
     99520020: 'EDUARDO MOREIRA',

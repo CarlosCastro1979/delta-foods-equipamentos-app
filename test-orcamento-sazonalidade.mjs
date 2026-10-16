@@ -15,7 +15,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-15-sazonalidade-totais';
+const CACHE = 'v2026-10-16-ignorar-441908';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);

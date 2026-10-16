@@ -87,6 +87,8 @@ const fns = [
   'indiceColunaNpessVenda',
   'npessDeCelulaExcel',
   'npessVendaIgnorado',
+  'codClienteVendaIgnorado',
+  'quadroSemClienteInterno441908',
   'linhaValorQuadroDeExcel',
   'codClienteLojasOnlineBr',
   'codClienteLojasOnlineAmazon',
@@ -320,6 +322,74 @@ check('NPess 99520099 é devolução e sai do quadro e de Por classificar', () =
   assert.equal(fat['2026-10'], undefined);
   assert.ok(fat['2026-09'].clientes['100\t99520010']);
   assert.equal(fat['2026-09'].clientes['100\t99520010'].valor, 50);
+});
+
+check('cliente 441908 é venda interna e sai do quadro na DFB e na Q Brasil', () => {
+  assert.equal(ctx.codClienteVendaIgnorado(441908), true);
+  assert.equal(ctx.codClienteVendaIgnorado('0441908'), true);
+  assert.equal(ctx.codClienteVendaIgnorado(' 441908 UNILOG'), true);
+  assert.equal(ctx.codClienteVendaIgnorado('441908.0'), true);
+  assert.equal(ctx.codClienteVendaIgnorado('441909'), false);
+  assert.equal(ctx.codClienteVendaIgnorado('BR00002'), false);
+  ctx.VENDEDORES_DEFAULT = [
+    { cod: 99520011, nome: 'MARCIO GORGA' },
+    { cod: 99520005, nome: 'MARCIO GORGA' },
+    { cod: 99530001, nome: 'DIOGO OLIVEIRA' },
+  ];
+  const mapasReais = ctx.mapasVendasQuadro();
+  const rows = [
+    { cod: '441908', data: '2026-03-26', tipo: 'OUTRO', valor: 47.87, npess: 99520011, nome: 'UNILOG' },
+    { cod: '0441908', data: '2026-10-09', tipo: 'OUTRO', valor: 2059.67, npess: 99520005 },
+    { cod: 441908, data: '2026-10-09', tipo: 'OUTRO', valor: 3952.43, npess: 99530002 },
+    { cod: '430787', data: '2026-03-26', tipo: 'OUTRO', valor: 100, npess: 99520011, nome: 'OUTRO' },
+    { cod: '100', data: '2026-10-09', tipo: 'OUTRO', valor: 50, npess: 99530001 },
+  ];
+  const q = ctx.agregarVendasQuadro(rows, { mapas: mapasReais });
+  assert.equal(celula(q, '2026-10', 'Delta Foods Brasil', 'Institucional', 'MARCIO GORGA'), null);
+  assert.equal(celula(q, '2026-10', 'Q Brasil', 'Distribuidores regionais', 'Por classificar'), null);
+  const marcio = celula(q, '2026-03', 'Delta Foods Brasil', 'Institucional', 'MARCIO GORGA');
+  assert.ok(marcio);
+  assert.equal(marcio.valor, 100);
+  const diogo = celula(q, '2026-10', 'Q Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA');
+  assert.ok(diogo);
+  assert.equal(diogo.valor, 50);
+  const fat = ctx.agregarFaturClienteMes(rows);
+  assert.equal(fat['2026-03'].clientes['441908\t99520011'], undefined);
+  assert.equal(fat['2026-03'].clientes['430787\t99520011'].valor, 100);
+  assert.equal(fat['2026-10'].clientes['441908\t99520005'], undefined);
+  assert.equal(fat['2026-10'].clientes['441908\t99530002'], undefined);
+  assert.equal(fat['2026-10'].clientes['100\t99530001'].valor, 50);
+  const bruto = {
+    meses: {
+      '2026-03': { celulas: {
+        'Delta Foods Brasil\tInstitucional\tMARCIO GORGA': {
+          empresa: 'Delta Foods Brasil', canal: 'Institucional', vendedor: 'MARCIO GORGA', valor: 15090.99, linhas: 88,
+        },
+        'Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA': {
+          empresa: 'Delta Foods Brasil', canal: 'Retalho moderno', vendedor: 'DIOGO OLIVEIRA', valor: 111451.51, linhas: 82,
+        },
+      } },
+      '2026-10': { celulas: {
+        'Delta Foods Brasil\tInstitucional\tMARCIO GORGA': {
+          empresa: 'Delta Foods Brasil', canal: 'Institucional', vendedor: 'MARCIO GORGA', valor: 2059.67, linhas: 38,
+        },
+        'Q Brasil\tDistribuidores regionais\tPor classificar': {
+          empresa: 'Q Brasil', canal: 'Distribuidores regionais', vendedor: 'Por classificar', valor: 3952.43, linhas: 10,
+        },
+        'Q Brasil\tRetalho moderno\tDIOGO OLIVEIRA': {
+          empresa: 'Q Brasil', canal: 'Retalho moderno', vendedor: 'DIOGO OLIVEIRA', valor: -7801.79, linhas: 15,
+        },
+      } },
+    },
+  };
+  const limpo = ctx.quadroSemClienteInterno441908(bruto);
+  assert.equal(celula(limpo, '2026-03', 'Delta Foods Brasil', 'Institucional', 'MARCIO GORGA').valor, 15043.12);
+  assert.equal(celula(limpo, '2026-03', 'Delta Foods Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA').valor, 111451.51);
+  assert.equal(celula(limpo, '2026-10', 'Delta Foods Brasil', 'Institucional', 'MARCIO GORGA'), null);
+  assert.equal(celula(limpo, '2026-10', 'Q Brasil', 'Distribuidores regionais', 'Por classificar'), null);
+  assert.equal(celula(limpo, '2026-10', 'Q Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA').valor, -7801.79);
+  const outra = ctx.quadroSemClienteInterno441908(limpo);
+  assert.equal(celula(outra, '2026-03', 'Delta Foods Brasil', 'Institucional', 'MARCIO GORGA').valor, 15043.12);
 });
 
 check('linha sem canal cai em Por classificar', () => {
@@ -843,6 +913,8 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(proc.includes('vendaDataAntesDe2025'));
   assert.ok(proc.includes('npessVendaIgnorado(npessLinha)'));
   assert.ok(proc.indexOf('npessVendaIgnorado(npessLinha)') < proc.indexOf('linhasJanela.push'));
+  assert.ok(proc.includes('codClienteVendaIgnorado(cod)'));
+  assert.ok(proc.indexOf('codClienteVendaIgnorado(cod)') < proc.indexOf('linhasJanela.push'));
   assert.ok(proc.indexOf('vendaDataNaJanelaCarga') < proc.indexOf('row[iPeso]'));
   assert.ok(proc.includes('linhaVendaParaSupabase'));
   assert.ok(!proc.includes('actualizarQuadroVendas'));
@@ -857,7 +929,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-15-sazonalidade-totais'));
+  assert.ok(sw.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-vendas-1out'));
@@ -872,7 +944,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-15-sazonalidade-totais'));
+  assert.ok(html.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));

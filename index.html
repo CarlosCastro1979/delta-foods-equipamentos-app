@@ -14724,8 +14724,10 @@ function pvLerQuadroParaMapa() {
 }
 
 function pvQuadroSemDevolucao99520099(quadro) {
-  if (quadro && typeof quadroSemDevolucao99520099 === 'function') return quadroSemDevolucao99520099(quadro);
-  return quadro;
+  let q = quadro;
+  if (q && typeof quadroSemDevolucao99520099 === 'function') q = quadroSemDevolucao99520099(q);
+  if (q && typeof quadroSemClienteInterno441908 === 'function') q = quadroSemClienteInterno441908(q);
+  return q;
 }
 
 function pvMesTemVendas(quadro, ym) {
@@ -17095,6 +17097,7 @@ function vol27IdsFolha() {
 
 function vol27CanalIdDeLinha(row) {
   if (!row) return '';
+  if (typeof codClienteVendaIgnorado === 'function' && codClienteVendaIgnorado(row.cod)) return '';
   if (typeof npessVendaIgnorado === 'function' && (npessVendaIgnorado(row.npess) || npessVendaIgnorado(row.vendedor))) return '';
   const mapas = typeof mapasVendasQuadro === 'function' ? mapasVendasQuadro() : {};
   const dim = typeof dimensoesVendaQuadro === 'function'
@@ -17127,6 +17130,10 @@ function vol27AgregarLinhas(linhas) {
   for (let i = 0; i < list.length; i++) {
     const row = list[i];
     if (!row) continue;
+    if (typeof codClienteVendaIgnorado === 'function' && codClienteVendaIgnorado(row.cod)) {
+      ignoradas++;
+      continue;
+    }
     if (typeof npessVendaIgnorado === 'function' && (npessVendaIgnorado(row.npess) || npessVendaIgnorado(row.vendedor))) {
       ignoradas++;
       continue;
@@ -18565,6 +18572,7 @@ function vol27MapaNpessDeCliente(doc) {
       const lista = porCod[cods[c]];
       if (lista.length !== 1) continue;
       const np = parseInt(lista[0].npess, 10) || 0;
+      if (typeof codClienteVendaIgnorado === 'function' && codClienteVendaIgnorado(cods[c])) continue;
       if (typeof npessVendaIgnorado === 'function' && npessVendaIgnorado(np)) continue;
       out[ym][cods[c]] = { npess: np, nome: String(lista[0].nome || '') };
     }
@@ -18582,6 +18590,7 @@ function vol27LinhasCloudParaAgregar(rows, mapa) {
     const ym = typeof ymLinhaPerdas === 'function' ? ymLinhaPerdas(row.data) : '';
     if (!/^\d{4}-\d{2}$/.test(ym) || ym < '2025-01') continue;
     const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row.cod) : String(row.cod || '').trim();
+    if (typeof codClienteVendaIgnorado === 'function' && codClienteVendaIgnorado(cod)) continue;
     const info = mp[ym] && mp[ym][cod];
     out.push({
       data: ym + '-01',
@@ -18667,6 +18676,43 @@ async function vol27ConstruirDeVendasCloud() {
   return ag;
 }
 
+/**
+ * Outubro/2026: o canal inteiro era o cliente 441908.
+ * Só tira se os números ainda são esses. Uma segunda passagem não mexe.
+ * Março fica: 0,75 kg sem família, misturado com outros clientes.
+ */
+function vol27CanalIgual441908(got, esperado) {
+  const g = got || null;
+  if (!g || !esperado) return false;
+  const keys = Object.keys(g);
+  const expKeys = Object.keys(esperado);
+  if (keys.length !== expKeys.length) return false;
+  for (let i = 0; i < expKeys.length; i++) {
+    const k = expKeys[i];
+    if (!Object.prototype.hasOwnProperty.call(g, k)) return false;
+    if (Math.abs(Number(g[k]) - Number(esperado[k])) > 0.001) return false;
+  }
+  return true;
+}
+
+function vol27AgregadoSemCliente441908(ag) {
+  if (!ag || !ag.meses || !ag.meses['2026-10'] || !ag.meses['2026-10'].canais) return ag;
+  const canais = ag.meses['2026-10'].canais;
+  const tiraBalcao = vol27CanalIgual441908(canais.dfb_inst_balcao, {
+    grao: 16.5, moido: 0.5, vinho: 19.5, maquina: 3, capsulas: 5445,
+  });
+  const tiraQb = vol27CanalIgual441908(canais.qb_dist_reg, {
+    moido: 4, maquina: 15, capsulas: 2112,
+  });
+  if (!tiraBalcao && !tiraQb) return ag;
+  let out;
+  try { out = JSON.parse(JSON.stringify(ag)); } catch (e) { return ag; }
+  const dest = out.meses['2026-10'].canais;
+  if (tiraBalcao) delete dest.dfb_inst_balcao;
+  if (tiraQb) delete dest.qb_dist_reg;
+  return out;
+}
+
 function vol27SeedExcelAa() {
   const root = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : null);
   const raw = root && root.VOL27_SEED_EXCEL;
@@ -18717,6 +18763,7 @@ async function vol27Preparar() {
       }
     }
   }
+  if (typeof vol27AgregadoSemCliente441908 === 'function') ag = vol27AgregadoSemCliente441908(ag);
   _vol27Agregado = ag && ag.meses ? ag : { version: 1, meses: {}, fonte: '' };
   _vol27Pronto = true;
   return _vol27Agregado;
@@ -23477,6 +23524,57 @@ function npessVendaIgnorado(v) {
 }
 
 /**
+ * Venda interna (UNILOG), Delta Foods Brasil e Q Brasil.
+ * O código de cliente é 441908. Espaços e zeros à esquerda não contam
+ * (o Excel grava o código como número). O NPess da linha está errado e será
+ * corrigido; mesmo assim a linha não é venda: não entra no quadro, no volume,
+ * no Fatur. por cliente, em Maiores perdas nem no Orçamento 2027.
+ */
+function codClienteVendaIgnorado(cod) {
+  if (cod == null || cod === '') return false;
+  let raw = cod;
+  if (typeof raw === 'number' && Number.isFinite(raw)) raw = String(Math.trunc(raw));
+  const s = String(raw).replace(/\u00a0/g, ' ').trim();
+  if (!s) return false;
+  let token = s.split(/\s+/)[0].replace(/\s+/g, '');
+  if (/^\d+\.0+$/.test(token)) token = token.replace(/\.0+$/, '');
+  const norm = typeof normalizeVendaCod === 'function'
+    ? normalizeVendaCod(token)
+    : (String(token).replace(/^0+/, '') || token);
+  return norm === '441908';
+}
+
+/**
+ * Fatur. já gravado do cliente 441908.
+ * Só mexe se a célula ainda tem o total de antes da correcção.
+ * Célula que é só esta venda sai. Célula com outros clientes desconta uma vez.
+ * Segunda passagem não volta a descontar. Diogo e os outros canais ficam.
+ */
+function quadroSemClienteInterno441908(quadro) {
+  if (!quadro || !quadro.meses) return quadro;
+  const alvos = [
+    { ym: '2026-03', key: 'Delta Foods Brasil\tInstitucional\tMARCIO GORGA', original: 15090.99, tira: 47.87 },
+    { ym: '2026-10', key: 'Delta Foods Brasil\tInstitucional\tMARCIO GORGA', original: 2059.67, tira: 2059.67 },
+    { ym: '2026-10', key: 'Q Brasil\tDistribuidores regionais\tPor classificar', original: 3952.43, tira: 3952.43 },
+  ];
+  const out = quadroVendasClone(quadro);
+  let mudou = false;
+  for (let i = 0; i < alvos.length; i++) {
+    const a = alvos[i];
+    const mes = out.meses && out.meses[a.ym];
+    if (!mes || !mes.celulas) continue;
+    const c = mes.celulas[a.key];
+    if (!c) continue;
+    const valor = +c.valor || 0;
+    if (Math.abs(valor - a.original) >= 0.02) continue;
+    mudou = true;
+    if (Math.abs(a.tira - a.original) < 0.02) delete mes.celulas[a.key];
+    else c.valor = somarValorQuadro(valor, -a.tira);
+  }
+  return mudou ? out : quadro;
+}
+
+/**
  * Cliente genérico das lojas online: BR0002 (CPF) e BR0003 (CNPJ).
  * O SAP também grava BR00002 e BR00003 (zeros a mais depois de BR).
  * Maiúsculas e espaços não contam. BR0002 não apanha BR00020 nem outro código.
@@ -23596,12 +23694,13 @@ function quadroSemDevolucao99520099(quadro) {
 
 /** Quadro que a vista mostra: sem a devolução 99520099 já gravada, e com o Marcio identificado. */
 function quadroVistaVendas(quadro) {
-  const semDev = (typeof quadroSemDevolucao99520099 === 'function')
+  let q = (typeof quadroSemDevolucao99520099 === 'function')
     ? quadroSemDevolucao99520099(quadro)
     : quadro;
+  if (typeof quadroSemClienteInterno441908 === 'function') q = quadroSemClienteInterno441908(q);
   return (typeof quadroComMarcioIdentificado === 'function')
-    ? quadroComMarcioIdentificado(semDev)
-    : semDev;
+    ? quadroComMarcioIdentificado(q)
+    : q;
 }
 
 /**
@@ -23688,6 +23787,7 @@ function agregarVendasQuadro(rows, opts) {
     const ym = typeof vendasYmFromISO === 'function' ? vendasYmFromISO(row && row.data) : String(row && row.data || '').slice(0, 7);
     if (!/^\d{4}-\d{2}$/.test(ym)) continue;
     const isoDia = typeof vendasISODateOnly === 'function' ? vendasISODateOnly(row && row.data) : String(row && row.data || '').slice(0, 10);
+    if (typeof codClienteVendaIgnorado === 'function' && codClienteVendaIgnorado(row && row.cod)) continue;
     const npess = npessDaLinhaVendaQuadro(row, o.npessPorCod);
     if (npessVendaIgnorado(npess)) continue;
     const dim = dimensoesVendaQuadro(npess, o.mapas, row && row.cod, row && row.nome);
@@ -26428,6 +26528,7 @@ function maioresPerdasMes(linhas, opts) {
     if (rowYm !== ym && rowYm !== ymN1) continue;
     const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row.cod) : String(row.cod || '').trim();
     if (!cod) continue;
+    if (typeof codClienteVendaIgnorado === 'function' && codClienteVendaIgnorado(cod)) continue;
     const npess = typeof npessDaLinhaVendaQuadro === 'function' ? npessDaLinhaVendaQuadro(row, npessPorCod) : 0;
     if (npessVendaIgnorado(npess) || npessVendaIgnorado(row.npess)) continue;
     const canalLinha = (typeof getCanalIdPorVendedorCod === 'function') ? (getCanalIdPorVendedorCod(npess) || '') : '';
@@ -26914,6 +27015,7 @@ function agregarFaturClienteMes(linhas) {
     if (valor == null) continue;
     const cod = typeof normalizeVendaCod === 'function' ? normalizeVendaCod(row.cod) : String(row.cod || '').trim();
     if (!cod) continue;
+    if (typeof codClienteVendaIgnorado === 'function' && codClienteVendaIgnorado(cod)) continue;
     let npess = typeof npessDeCelulaExcel === 'function' ? (npessDeCelulaExcel(row.npess) || 0) : (parseInt(row.npess, 10) || 0);
     if (npessVendaIgnorado(npess)) continue;
     // BR0002/BR0003 e as contas Amazon são Lojas online. O NPess 99520009 é Site próprio.
@@ -26973,6 +27075,7 @@ function linhasDeMesCliente(mes, ym) {
   for (let i = 0; i < keys.length; i++) {
     const c = clientes[keys[i]];
     if (!c || !c.cod) continue;
+    if (typeof codClienteVendaIgnorado === 'function' && codClienteVendaIgnorado(c.cod)) continue;
     if (npessVendaIgnorado(c.npess)) continue;
     const neg = Number(c.negativo) || 0;
     const valor = Number(c.valor) || 0;
@@ -28161,6 +28264,7 @@ async function processVendasFile(event) {
     let linhasIgnoradasFora = 0;
     let linhasIgnoradasAntes2025 = 0;
     let linhasIgnoradasDevolucao = 0;
+    let linhasIgnoradasInternas = 0;
     let jaExistentes = 0;
     let ficheirosOk = 0;
     let erroCabecalho = '';
@@ -28278,6 +28382,10 @@ async function processVendasFile(event) {
         const codRaw = emissor.split(/\s+/)[0].trim();
         if (!codEmissorVendaAceite(codRaw)) continue;
         const cod = normalizeVendaCod(codRaw);
+        if (typeof codClienteVendaIgnorado === 'function' && (codClienteVendaIgnorado(cod) || codClienteVendaIgnorado(codRaw))) {
+          linhasIgnoradasInternas++;
+          continue;
+        }
         const npessLinha = iNpessVenda >= 0 ? npessDeCelulaExcel(row[iNpessVenda]) : 0;
         if (npessVendaIgnorado(npessLinha)) {
           linhasIgnoradasDevolucao++;
@@ -28339,6 +28447,9 @@ async function processVendasFile(event) {
     const txtDevolucao = linhasIgnoradasDevolucao
       ? `<br>• <strong>${linhasIgnoradasDevolucao.toLocaleString('pt-BR')}</strong> linha(s) do vendedor 99520099 ignoradas (devolução de mercadoria, não é venda)`
       : '';
+    const txtInternas = linhasIgnoradasInternas
+      ? `<br>• <strong>${linhasIgnoradasInternas.toLocaleString('pt-BR')}</strong> linha(s) do cliente 441908 ignoradas (venda interna, DFB e Q Brasil)`
+      : '';
 
     if (!linhasJanela.length) {
       setStatus(
@@ -28348,6 +28459,7 @@ async function processVendasFile(event) {
           ${txtFora}
           ${txtAntes2025}
           ${txtDevolucao}
+          ${txtInternas}
         </div>`
       );
       localStorage.setItem('delta_vendas_ultima_carga', JSON.stringify({
@@ -28517,6 +28629,7 @@ async function processVendasFile(event) {
         ${txtFora}
         ${txtAntes2025}
         ${txtDevolucao}
+        ${txtInternas}
         ${histAtualizados ? `<br>• Histórico: ${histAtualizados} cliente(s) com última compra actualizada` : ''}
         ${quadroMsg}
       </div>`
@@ -42119,7 +42232,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-15-sazonalidade-totais: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-16-ignorar-441908: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
