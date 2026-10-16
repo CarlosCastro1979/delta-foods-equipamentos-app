@@ -13,7 +13,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-16-volume-preco';
+const CACHE = 'v2026-10-16-volume-sim-2026';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);
@@ -196,8 +196,17 @@ const fns = [
   'vol27RotuloPreco',
   'vol27PrecoMedio',
   'vol27Simulacao',
+  'vol27Centavos',
+  'vol27OrcValorDoCanal',
+  'vol27SomaSimulacao',
+  'vol27OrcValorSelecao',
   'vol27EscreverPercentagens',
+  'vol27EscreverSimulacao2026',
+  'vol27EscreverFecho2026',
   'vol27EscreverSimulacao',
+  'vol27PintarSomaExcel',
+  'vol27PintarMapaExcel',
+  'vol27EscreverRodapeExcel',
   'escreverFolhaOrc27Valor',
   'orc27CanalUnicoVolume',
   'orc27NomeCanalVolume',
@@ -381,11 +390,12 @@ check('Volume: canal escolhido, cinco produtos com unidade, sem somar kg com un 
   assert.equal(meta.sheetName, 'Volume');
   assert.equal(meta.canal, 'Delta · Lojas online');
   assert.equal(ws.getCell(1, 1).value, 'Orçamento 2027 — Volume · Delta · Lojas online');
-  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(c => ws.getCell(2, c).value), [
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(c => ws.getCell(2, c).value), [
     'Produto',
     'Total N-1 até Dez',
     'YTD 2026 até Set',
     'Previsão Out a Dez',
+    'Simulação valor 2026',
     'Total 2026',
     'Preço médio Ago–Out',
     'Var % vs 2025',
@@ -409,11 +419,21 @@ check('Volume: canal escolhido, cinco produtos com unidade, sem somar kg com un 
   for (const linha of meta.linhas) {
     assert.notEqual(ws.getCell(linha.excelRow, 1).value, 'Total');
   }
-  const textos = [];
-  for (const cell of ws.cells.values()) {
-    if (cell.value === 'Total') textos.push(cell.value);
+  assert.equal(ws.getCell(meta.rodape.totalRow, 1).value, 'Total');
+  assert.equal(ws.getCell(meta.rodape.mapaRow, 1).value, 'No mapa de valor');
+  for (let c = 2; c <= 11; c++) {
+    assert.equal(ws.getCell(meta.rodape.totalRow, c).value, null);
+    assert.equal(ws.getCell(meta.rodape.mapaRow, c).value, null);
   }
-  assert.equal(textos.length, 0);
+  assert.equal(meta.rodape.simulacao2026, null);
+  assert.equal(meta.rodape.simulacao, null);
+  assert.equal(meta.rodape.previsaoValor, null);
+  assert.equal(meta.rodape.orcamentoValor, null);
+  let totais = 0;
+  for (const cell of ws.cells.values()) {
+    if (cell.value === 'Total') totais++;
+  }
+  assert.equal(totais, 1);
 
   const grao = meta.linhas[0];
   const n1 = ws.getCell(grao.excelRow, 2);
@@ -423,19 +443,22 @@ check('Volume: canal escolhido, cinco produtos com unidade, sem somar kg com un 
   assert.ok(!n1.numFmt.includes('R$'));
   perto(ws.getCell(grao.excelRow, 3).value, 3);
   assert.equal(ws.getCell(grao.excelRow, 4).value, 1.5);
-  const tot = ws.getCell(grao.excelRow, 5);
+  assert.equal(ws.getCell(grao.excelRow, 5).value, null);
+  const tot = ws.getCell(grao.excelRow, 6);
   perto(tot.value.result, 4.5);
   assert.equal(typeof tot.value.result, 'number');
-  assert.equal(ws.getCell(grao.excelRow, 6).value, null);
-  assert.equal(ws.getCell(grao.excelRow, 8).value, null);
-  assert.equal(ws.getCell(grao.excelRow, 10).value, null);
+  assert.equal(tot.value.formula, 'IF(AND(C' + grao.excelRow + '="",D' + grao.excelRow + '=""),"",N(C' + grao.excelRow + ')+N(D' + grao.excelRow + '))');
+  assert.equal(ws.getCell(grao.excelRow, 7).value, null);
+  assert.equal(ws.getCell(grao.excelRow, 9).value, null);
+  assert.equal(ws.getCell(grao.excelRow, 11).value, null);
 
   const caps = meta.linhas[2];
   assert.equal(typeof ws.getCell(caps.excelRow, 2).value, 'number');
   perto(ws.getCell(caps.excelRow, 2).value, 100);
   assert.equal(ws.getCell(caps.excelRow, 4).value, null);
-  assert.equal(ws.getCell(caps.excelRow, 8).value, 10);
-  assert.equal(ws.getCell(caps.excelRow, 8).numFmt, meta.numFmtQtd);
+  assert.equal(ws.getCell(caps.excelRow, 5).value, null);
+  assert.equal(ws.getCell(caps.excelRow, 9).value, 10);
+  assert.equal(ws.getCell(caps.excelRow, 9).numFmt, meta.numFmtQtd);
 
   const moido = meta.linhas[1];
   assert.equal(typeof ws.getCell(moido.excelRow, 2).value, 'number');
@@ -485,10 +508,11 @@ check('Volume: vários canais saem numa folha com a soma de cada produto', () =>
   const grao = meta.linhas[0];
   perto(ws.getCell(grao.excelRow, 2).value, 14);
   assert.equal(ws.getCell(grao.excelRow, 4).value, 4);
-  assert.equal(ws.getCell(grao.excelRow, 8).value, 7);
-  assert.equal(ws.getCell(grao.excelRow, 6).value, null);
-  assert.equal(ws.getCell(2, 6).value, 'Preço médio Ago–Out');
-  assert.equal(ws.getCell(2, 10).value, 'Simulação valor 27');
+  assert.equal(ws.getCell(grao.excelRow, 9).value, 7);
+  assert.equal(ws.getCell(grao.excelRow, 7).value, null);
+  assert.equal(ws.getCell(2, 5).value, 'Simulação valor 2026');
+  assert.equal(ws.getCell(2, 7).value, 'Preço médio Ago–Out');
+  assert.equal(ws.getCell(2, 11).value, 'Simulação valor 27');
   perto(ws.getCell(meta.linhas[1].excelRow, 2).value, 8);
   perto(ws.getCell(meta.linhas[2].excelRow, 2).value, 3);
   assert.equal(ws.getCell(meta.linhas[4].excelRow, 2).value, null);
@@ -509,24 +533,145 @@ check('Volume Excel: preço em R$ a seguir ao fecho e simulação = orçamento �
       },
     },
   };
-  const doc = { celulas: { 'dfb_lojas|grao': { orcamento: 3 }, 'dfb_lojas|capsulas': { orcamento: 9 } } };
+  const doc = { celulas: { 'dfb_lojas|grao': { prevOutDez: 2, orcamento: 3 }, 'dfb_lojas|capsulas': { orcamento: 9 } } };
   const linhas = ctx.vol27Montar(ag, doc, 'dfb_lojas');
   const ws = folhaExcelFalsa();
   const meta = ctx.escreverFolhaOrc27Volume(ws, linhas, 'dfb_lojas');
-  assert.equal(meta.headers[5], 'Preço médio Ago–Out');
-  assert.equal(meta.headers[9], 'Simulação valor 27');
+  assert.equal(meta.headers[4], 'Simulação valor 2026');
+  assert.equal(meta.headers[6], 'Preço médio Ago–Out');
+  assert.equal(meta.headers[10], 'Simulação valor 27');
   const grao = meta.linhas[0];
-  const preco = ws.getCell(grao.excelRow, 6);
+  const preco = ws.getCell(grao.excelRow, 7);
   perto(preco.value, 220 / 19);
   assert.equal(preco.numFmt, vm.runInContext('ORC27_EXCEL_RS', ctx));
-  const sim = ws.getCell(grao.excelRow, 10);
-  assert.equal(sim.value.formula, 'IF(OR(H' + grao.excelRow + '="",F' + grao.excelRow + '=""),"",H' + grao.excelRow + '*F' + grao.excelRow + ')');
+  const sim26 = ws.getCell(grao.excelRow, 5);
+  assert.equal(sim26.value.formula, 'IF(OR(D' + grao.excelRow + '="",G' + grao.excelRow + '=""),"",D' + grao.excelRow + '*G' + grao.excelRow + ')');
+  perto(sim26.value.result, 2 * (220 / 19));
+  assert.equal(sim26.numFmt, vm.runInContext('ORC27_EXCEL_RS', ctx));
+  const sim = ws.getCell(grao.excelRow, 11);
+  assert.equal(sim.value.formula, 'IF(OR(I' + grao.excelRow + '="",G' + grao.excelRow + '=""),"",I' + grao.excelRow + '*G' + grao.excelRow + ')');
   perto(sim.value.result, 3 * (220 / 19));
   assert.equal(sim.numFmt, vm.runInContext('ORC27_EXCEL_RS', ctx));
   const caps = meta.linhas[2];
-  assert.equal(ws.getCell(caps.excelRow, 6).value, null);
-  assert.equal(ws.getCell(caps.excelRow, 10).value, null);
-  assert.equal(ws.getCell(caps.excelRow, 8).value, 9);
+  assert.equal(ws.getCell(caps.excelRow, 7).value, null);
+  assert.equal(ws.getCell(caps.excelRow, 5).value, null);
+  assert.equal(ws.getCell(caps.excelRow, 11).value, null);
+  assert.equal(ws.getCell(caps.excelRow, 9).value, 9);
+});
+
+check('Volume Excel: total só nas duas simulações; mapa de valor na linha seguinte; kg/un/L vazios', () => {
+  const ag = {
+    meses: {},
+    precos: {
+      meses: ['2026-08'],
+      rotulo: 'Ago–Out',
+      porMes: {
+        '2026-08': {
+          dfb_lojas: {
+            grao: { f: 100, v: 10 },
+            moido: { f: 40, v: 8 },
+            capsulas: { f: 30, v: 6 },
+            maquina: { f: 9, v: 0 },
+            vinho: { f: 50, v: 5 },
+          },
+          dfb_rest: {
+            grao: { f: 20, v: 4 },
+            capsulas: { f: 6, v: 3 },
+          },
+        },
+      },
+    },
+  };
+  function por(ym, canal, fam, qtd) {
+    if (!ag.meses[ym]) ag.meses[ym] = { canais: {}, semCanal: {} };
+    if (!ag.meses[ym].canais[canal]) ag.meses[ym].canais[canal] = {};
+    ag.meses[ym].canais[canal][fam] = qtd;
+  }
+  por('2025-01', 'dfb_lojas', 'grao', 12.5);
+  por('2025-01', 'dfb_lojas', 'capsulas', 100);
+  por('2025-01', 'dfb_rest', 'grao', 4);
+  por('2025-01', 'dfb_rest', 'moido', 8);
+  const doc = {
+    celulas: {
+      'dfb_lojas|grao': { prevOutDez: 4, orcamento: 2 },
+      'dfb_lojas|moido': { prevOutDez: 1, orcamento: 3 },
+      'dfb_lojas|capsulas': { orcamento: 4 },
+      'dfb_lojas|maquina': { prevOutDez: 8, orcamento: 5 },
+      'dfb_lojas|vinho': { prevOutDez: 0, orcamento: 6 },
+      'dfb_rest|grao': { prevOutDez: 3, orcamento: 1 },
+      'dfb_rest|capsulas': { orcamento: 2 },
+    },
+  };
+  ctx._orc27Doc = {
+    canais: {
+      dfb_lojas: { prevOutDez: 500000, orcamento: 12823215 },
+      dfb_rest: { prevOutDez: 200.45, orcamento: 1000.55 },
+    },
+  };
+  const linhas = ctx.vol27Montar(ag, doc, 'dfb_lojas');
+  const soma = ctx.vol27SomaSimulacao(linhas);
+  const soma26 = ctx.vol27SomaSimulacao(linhas, 'simulacao2026', 'simulacao2026Tem');
+  perto(soma.valor, 115);
+  perto(soma26.valor, 45);
+  perto(linhas.find(r => r.id === 'grao').simulacao2026, 4 * 10);
+  assert.equal(linhas.find(r => r.id === 'capsulas').simulacao2026Tem, false);
+  assert.equal(linhas.find(r => r.id === 'maquina').simulacao2026Tem, false);
+  const ws = folhaExcelFalsa();
+  const meta = ctx.escreverFolhaOrc27Volume(ws, linhas, 'dfb_lojas');
+  assert.equal(meta.linhas.length, 5);
+  assert.equal(meta.rodape.totalRow, 8);
+  assert.equal(meta.rodape.mapaRow, 9);
+  perto(meta.rodape.simulacao2026, 45);
+  perto(meta.rodape.simulacao, 115);
+  assert.equal(meta.rodape.previsaoValor, 500000);
+  assert.equal(meta.rodape.orcamentoValor, 12823215);
+  assert.equal(ws.getCell(8, 1).value, 'Total');
+  assert.equal(ws.getCell(9, 1).value, 'No mapa de valor');
+  for (const c of [2, 3, 4, 6, 7, 8, 9, 10]) {
+    assert.equal(ws.getCell(8, c).value, null);
+    assert.equal(ws.getCell(9, c).value, null);
+  }
+  const sim26Cell = ws.getCell(8, 5);
+  assert.equal(sim26Cell.value.formula, 'SUM(E3,E4,E5,E6,E7)');
+  perto(sim26Cell.value.result, 45);
+  assert.equal(sim26Cell.numFmt, meta.numFmtRs);
+  const sim = ws.getCell(8, 11);
+  assert.equal(sim.value.formula, 'SUM(K3,K4,K5,K6,K7)');
+  perto(sim.value.result, 115);
+  assert.equal(sim.numFmt, meta.numFmtRs);
+  assert.equal(sim.font.bold, true);
+  const prevMapa = ws.getCell(9, 5);
+  assert.equal(prevMapa.value, 500000);
+  assert.equal(prevMapa.numFmt, meta.numFmtRs);
+  const orc = ws.getCell(9, 11);
+  assert.equal(orc.value, 12823215);
+  assert.equal(orc.numFmt, meta.numFmtRs);
+  assert.equal(typeof orc.value, 'number');
+  const graoExcel = ws.getCell(meta.linhas[0].excelRow, 5);
+  assert.equal(graoExcel.value.formula, 'IF(OR(D3="",G3=""),"",D3*G3)');
+  perto(graoExcel.value.result, 40);
+  perto(ws.getCell(meta.linhas[0].excelRow, 2).value, 12.5);
+  assert.notEqual(ws.getCell(8, 2).value, 12.5);
+
+  const linhasDois = ctx.vol27Montar(ag, doc, ['dfb_lojas', 'dfb_rest']);
+  const ws2 = folhaExcelFalsa();
+  const meta2 = ctx.escreverFolhaOrc27Volume(ws2, linhasDois, ['dfb_lojas', 'dfb_rest']);
+  const soma2 = ctx.vol27SomaSimulacao(linhasDois);
+  const soma26b = ctx.vol27SomaSimulacao(linhasDois, 'simulacao2026', 'simulacao2026Tem');
+  perto(meta2.rodape.simulacao, soma2.valor);
+  perto(meta2.rodape.simulacao2026, soma26b.valor);
+  perto(meta2.rodape.previsaoValor, 500200.45);
+  perto(meta2.rodape.orcamentoValor, 12824215.55);
+  perto(ws2.getCell(meta2.rodape.totalRow, 11).value.result, soma2.valor);
+  perto(ws2.getCell(meta2.rodape.totalRow, 5).value.result, soma26b.valor);
+  assert.equal(ws2.getCell(meta2.rodape.mapaRow, 11).value, 12824215.55);
+  assert.equal(ws2.getCell(meta2.rodape.mapaRow, 5).value, 500200.45);
+  for (const c of [2, 3, 4, 6, 7, 8, 9, 10]) {
+    assert.equal(ws2.getCell(meta2.rodape.totalRow, c).value, null);
+    assert.equal(ws2.getCell(meta2.rodape.mapaRow, c).value, null);
+  }
+  perto(ws2.getCell(meta2.linhas[0].excelRow, 2).value, 16.5);
+  assert.equal(ws2.getCell(meta2.rodape.totalRow, 2).value, null);
 });
 
 check('Sazonalidade: 2026 e 2027, meses numéricos, vazio em branco, total SUM, só canais visíveis', () => {

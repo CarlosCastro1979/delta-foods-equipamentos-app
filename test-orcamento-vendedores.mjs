@@ -13,7 +13,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-16-volume-preco';
+const CACHE = 'v2026-10-16-volume-sim-2026';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);
@@ -280,7 +280,10 @@ const fns = [
   'vol27CanalDoEl',
   'vol27CelulaManualHtml',
   'vol27OrcValorDoCanal',
-  'vol27TextoComparacao',
+  'vol27Centavos',
+  'vol27SomaSimulacao',
+  'vol27OrcValorSelecao',
+  'vol27RodapeHtml',
   'vol27RenderHtml',
   'vol27PickCampo',
   'vol27MergeCelulas',
@@ -473,8 +476,11 @@ await check('Volume: canal tem cinco produtos editáveis; Todos os canais e a em
   assert.ok(!empresa.includes('vol27-input'));
   assert.ok(!empresa.includes('data-vol-campo'));
   const lojas = ctx.vol27RenderHtml(ctx.orc27PodeEditar(), ag, doc, 'dfb_lojas');
-  const trs = lojas.split('<tr ').slice(1);
+  const trs = lojas.split('<tr ').slice(1).filter(tr => tr.includes('data-vol-fam='));
   assert.equal(trs.length, 5);
+  assert.ok(lojas.includes('data-vol-rodape="total"'));
+  assert.ok(lojas.includes('data-vol-rodape="mapa"'));
+  assert.ok(!lojas.split('data-vol-rodape="total"')[1].includes('<input'));
   trs.forEach(tr => {
     ['vol27-n1', 'vol27-ytd', 'vol27-total', 'vol27-var', 'vol27-pct'].forEach(cls => {
       assert.ok(!td(tr, cls).includes('<input'));

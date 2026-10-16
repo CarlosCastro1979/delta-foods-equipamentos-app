@@ -1,4 +1,4 @@
-// Service Worker v2026-10-16-volume-preco — limpa cache e auto-destrói
+// Service Worker v2026-10-16-volume-sim-2026 — limpa cache e auto-destrói
 // (a app não deve servir index.html antigo após merge no GitHub Pages)
 self.addEventListener('install', e => {
   self.skipWaiting();

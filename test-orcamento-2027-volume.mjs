@@ -137,6 +137,8 @@ const fns = [
   'orc27PeriodoYtd',
   'orc27TemNumero',
   'orc27LinhasBase',
+  'orc27IdFolha',
+  'orc27ValorManual',
   'orc27VarPct',
   'orc27Pct27',
   'orc27PickCampo',
@@ -176,7 +178,10 @@ const fns = [
   'vol27PrecoMedio',
   'vol27Simulacao',
   'vol27OrcValorDoCanal',
-  'vol27TextoComparacao',
+  'vol27Centavos',
+  'vol27SomaSimulacao',
+  'vol27OrcValorSelecao',
+  'vol27RodapeHtml',
   'vol27CanalIgual441908',
   'vol27AgregadoSemCliente441908',
   'vol27FundirMeses',
@@ -250,10 +255,10 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
   assert.equal(vm.runInContext('VOL27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_volume.json');
   assert.ok(!String(vm.runInContext('VOL27_CLOUD_PATH', ctx)).includes('mapas_v3'));
   assert.equal(vm.runInContext('ORC27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_canais.json');
-  assert.ok(sw.includes('v2026-10-16-volume-preco'));
+  assert.ok(sw.includes('v2026-10-16-volume-sim-2026'));
   assert.ok(!sw.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!sw.includes('v2026-10-14-volume-formulas'));
-  assert.ok(html.includes('v2026-10-16-volume-preco'));
+  assert.ok(html.includes('v2026-10-16-volume-sim-2026'));
   assert.ok(!html.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!html.includes('v2026-10-14-volume-formulas'));
   assert.ok(extractFn(html, 'vol27Medida').includes('/ VOL27_CAPSULA_KG'));
@@ -592,7 +597,11 @@ check('seed do Excel: AA, cápsulas ÷ 0,005, máquina M+U+Y, YTD só até Set',
   assert.ok(vista.includes('969.575'));
   assert.ok(vista.includes('Ficheiro até 30/09/2026'));
   assert.equal((vista.match(/data-vol-fam=/g) || []).length, 5);
-  assert.ok(!vista.includes('>Total</td>'));
+  assert.ok(vista.includes('data-vol-rodape="total"'));
+  assert.ok(vista.includes('>Total</td>'));
+  const rodapeSeed = vista.slice(vista.indexOf('data-vol-rodape="total"'));
+  assert.ok(rodapeSeed.includes('class="vol27-rodape-vazio"'));
+  assert.ok(!rodapeSeed.split('vol27-total-sim')[0].includes('6.107'));
 });
 
 check('filtro multi-canal: dois canais somam o produto, um edita, vários não, Limpar mostra todos e a escolha fica no browser', () => {
@@ -664,7 +673,12 @@ check('filtro multi-canal: dois canais somam o produto, um edita, vários não, 
   assert.ok(vistaVarios.includes('data-vol-canal="qb_ret_mod" checked'));
   assert.ok(!vistaVarios.includes('data-vol-canal="dfb_rest" checked'));
   assert.ok(vistaVarios.includes('9,5'));
-  assert.equal(vistaVarios.split('<tr ').length - 1, 5);
+  assert.equal((vistaVarios.match(/data-vol-fam=/g) || []).length, 5);
+  assert.equal(vistaVarios.split('<tr ').length - 1, 7);
+  assert.ok(vistaVarios.includes('data-vol-rodape="total"'));
+  assert.ok(vistaVarios.includes('data-vol-rodape="mapa"'));
+  assert.ok(vistaVarios.includes('>No mapa de valor</td>'));
+  assert.ok(!vistaVarios.includes('id="vol27-compara"'));
   assert.equal(JSON.stringify(doc), antes);
 
   const chave = vm.runInContext('VOL27_FILTRO_LS', ctx);
@@ -755,15 +769,32 @@ check('preço médio Ago–Out = Fatur. ÷ volume; mês com volume 0 sai; simula
   assert.ok(vista.includes('>R$'));
   const semPreco = vista.split('data-vol-fam="moido"')[1] || '';
   assert.ok(semPreco.includes('—'));
-  ctx._orc27Doc = { canais: { dfb_lojas: { orcamento: 12823215 } } };
-  const cmp = ctx.vol27TextoComparacao(linhas, 'dfb_lojas');
-  assert.ok(cmp.includes('Simulação valor 27'));
-  assert.ok(cmp.includes('Orçamento 2027 no Orç Valor'));
-  assert.ok(cmp.includes('Delta · Lojas online'));
-  assert.equal(ctx.vol27TextoComparacao(linhas, ['dfb_lojas', 'dfb_rest']), '');
+  assert.equal(g.simulacao2026, null);
+  assert.equal(g.simulacao2026Tem, false);
+  ctx._orc27Doc = { canais: { dfb_lojas: { orcamento: 12823215, prevOutDez: 900000 } } };
+  const somaLojas = ctx.vol27SomaSimulacao(linhas);
+  assert.equal(somaLojas.tem, true);
+  perto(somaLojas.valor, 3 * (140 / 15));
+  assert.equal(ctx.vol27OrcValorSelecao('dfb_lojas').valor, 12823215);
+  assert.equal(ctx.vol27OrcValorSelecao('dfb_lojas', 'prevOutDez').valor, 900000);
+  const vistaCanal = ctx.vol27RenderHtml(false, ag, doc, 'dfb_lojas');
+  assert.ok(vistaCanal.includes('Simulação valor 2026'));
+  assert.ok(vistaCanal.includes('data-vol-rodape="total"'));
+  assert.ok(vistaCanal.includes('data-vol-rodape="mapa"'));
+  assert.ok(vistaCanal.includes('>Total</td>'));
+  assert.ok(vistaCanal.includes('>No mapa de valor</td>'));
+  assert.ok(vistaCanal.includes('id="vol27-total-sim"'));
+  assert.ok(vistaCanal.includes('id="vol27-total-sim26"'));
+  assert.ok(vistaCanal.includes('id="vol27-orc-mapa"'));
+  assert.ok(vistaCanal.includes('id="vol27-mapa-prev"'));
+  assert.ok(!vistaCanal.includes('id="vol27-compara"'));
+  assert.ok(!vistaCanal.includes('Orçamento 2027 no Orç Valor'));
+  assert.ok(!vistaCanal.includes('Diferença:'));
+  assert.ok(!html.includes('id="vol27-compara"'));
+  assert.ok(!html.includes('function vol27TextoComparacao'));
   const varios = ctx.vol27RenderHtml(false, ag, doc, ['dfb_lojas', 'dfb_rest']);
-  assert.ok(varios.includes('id="vol27-compara"'));
-  assert.ok(varios.includes('display:none'));
+  assert.ok(!varios.includes('id="vol27-compara"'));
+  assert.ok(varios.includes('>No mapa de valor</td>'));
   const dois = ctx.vol27PrecoMedio(ag, ['dfb_lojas', 'dfb_rest'], 'grao');
   perto(dois.fatur, 170);
   perto(dois.volume, 17);
@@ -785,6 +816,152 @@ check('preço médio Ago–Out = Fatur. ÷ volume; mês com volume 0 sai; simula
   assert.ok(Math.abs(dist.fatur - (208505.09 + 28723.49 - 32721.73)) > 1);
   assert.equal(ctx.vol27PrecoMedio(seed, 'qb_dist_reg', 'grao').tem, false);
   assert.equal(ctx.vol27PrecoMedio(seed, 'dfb_inst_horeca', 'moido').tem, false);
+});
+
+check('simulação 2026 = previsão × preço; total soma só os R$; mapa de valor é a previsão e o orçamento do canal; sem rodapé', () => {
+  const ag = {
+    meses: {},
+    precos: {
+      meses: ['2026-08'],
+      rotulo: 'Ago–Out',
+      porMes: {
+        '2026-08': {
+          dfb_lojas: {
+            grao: { f: 100, v: 10 },
+            moido: { f: 40, v: 8 },
+            capsulas: { f: 30, v: 6 },
+            maquina: { f: 9, v: 0 },
+            vinho: { f: 50, v: 5 },
+          },
+          dfb_rest: {
+            grao: { f: 10, v: 2 },
+            capsulas: { f: 6, v: 3 },
+          },
+        },
+      },
+    },
+  };
+  function por(ym, canal, fam, qtd) {
+    if (!ag.meses[ym]) ag.meses[ym] = { canais: {}, semCanal: {} };
+    if (!ag.meses[ym].canais[canal]) ag.meses[ym].canais[canal] = {};
+    ag.meses[ym].canais[canal][fam] = qtd;
+  }
+  por('2025-01', 'dfb_lojas', 'grao', 12);
+  por('2026-04', 'dfb_lojas', 'grao', 100);
+  por('2025-01', 'dfb_lojas', 'moido', 4);
+  por('2025-01', 'dfb_rest', 'grao', 7);
+  const doc = {
+    celulas: {
+      'dfb_lojas|grao': { prevOutDez: 4, orcamento: 2 },
+      'dfb_lojas|moido': { prevOutDez: 1, orcamento: 3 },
+      'dfb_lojas|capsulas': { orcamento: 4 },
+      'dfb_lojas|maquina': { prevOutDez: 8, orcamento: 5 },
+      'dfb_lojas|vinho': { prevOutDez: 0, orcamento: 6 },
+      'dfb_rest|grao': { prevOutDez: 3, orcamento: 1 },
+      'dfb_rest|capsulas': { orcamento: 2 },
+    },
+  };
+  ctx._orc27Doc = {
+    canais: {
+      dfb_lojas: { prevOutDez: 500000, orcamento: 12823215 },
+      dfb_rest: { prevOutDez: 200.45, orcamento: 1000.55 },
+      qb_rest: { prevOutDez: 3, orcamento: 20 },
+    },
+  };
+  const linhas = ctx.vol27Montar(ag, doc, 'dfb_lojas');
+  assert.equal(linhas.length, 5);
+  const sim27 = { grao: 20, moido: 15, capsulas: 20, maquina: null, vinho: 60 };
+  const sim26 = { grao: 40, moido: 5, capsulas: null, maquina: null, vinho: 0 };
+  let soma27Manual = 0;
+  let soma26Manual = 0;
+  linhas.forEach(function (row) {
+    if (sim27[row.id] == null) assert.equal(row.simulacaoTem, false);
+    else {
+      perto(row.simulacao, sim27[row.id]);
+      soma27Manual += sim27[row.id];
+    }
+    if (sim26[row.id] == null) assert.equal(row.simulacao2026Tem, false);
+    else {
+      perto(row.simulacao2026, sim26[row.id]);
+      soma26Manual += sim26[row.id];
+    }
+  });
+  const grao = linhas.find(r => r.id === 'grao');
+  perto(grao.total2026, 104);
+  assert.notEqual(grao.simulacao2026, grao.total2026 * grao.preco);
+  perto(grao.simulacao2026, grao.prevOutDez * grao.preco);
+  assert.equal(soma27Manual, 115);
+  assert.equal(soma26Manual, 45);
+  const soma = ctx.vol27SomaSimulacao(linhas);
+  const somaPrev = ctx.vol27SomaSimulacao(linhas, 'simulacao2026', 'simulacao2026Tem');
+  assert.equal(soma.tem, true);
+  perto(soma.valor, 115);
+  perto(somaPrev.valor, 45);
+  assert.equal(ctx.vol27OrcValorSelecao('dfb_lojas').valor, 12823215);
+  assert.equal(ctx.vol27OrcValorSelecao('dfb_lojas', 'prevOutDez').valor, 500000);
+  assert.equal(ctx.vol27OrcValorSelecao(['dfb_lojas']).valor, 12823215);
+  perto(ctx.vol27OrcValorSelecao(['dfb_lojas', 'dfb_rest']).valor, 12824215.55);
+  perto(ctx.vol27OrcValorSelecao(['dfb_lojas', 'dfb_rest'], 'prevOutDez').valor, 500200.45);
+  perto(ctx.vol27OrcValorSelecao([]).valor, 12824235.55);
+  perto(ctx.vol27OrcValorSelecao([], 'prevOutDez').valor, 500203.45);
+  perto(ctx.vol27OrcValorSelecao('todos', 'prevOutDez').valor, 500203.45);
+
+  function celulasDaLinha(html, rodape) {
+    const i = html.indexOf('data-vol-rodape="' + rodape + '"');
+    assert.ok(i >= 0, rodape);
+    const fim = html.indexOf('</tr>', i);
+    const trecho = html.slice(i, fim);
+    return trecho.split('<td').slice(1);
+  }
+  function volumeVazio(celulas) {
+    assert.equal(celulas.length, 11);
+    [1, 2, 3, 5, 6, 7, 8, 9].forEach(function (k) {
+      const inner = celulas[k].slice(celulas[k].indexOf('>') + 1);
+      assert.ok(inner.startsWith('</td>'), k + ' ' + inner.slice(0, 40));
+    });
+  }
+
+  const um = ctx.vol27RenderHtml(false, ag, doc, 'dfb_lojas');
+  const total = celulasDaLinha(um, 'total');
+  const mapa = celulasDaLinha(um, 'mapa');
+  volumeVazio(total);
+  volumeVazio(mapa);
+  assert.ok(total[0].includes('>Total</td>'));
+  assert.ok(mapa[0].includes('>No mapa de valor</td>'));
+  assert.ok(total[4].includes(ctx.orc27FmtRs(45, true)));
+  assert.ok(total[10].includes(ctx.orc27FmtRs(115, true)));
+  assert.ok(mapa[4].includes(ctx.orc27FmtRs(500000, true)));
+  assert.ok(mapa[10].includes(ctx.orc27FmtRs(12823215, true)));
+  assert.ok(!um.includes('id="vol27-compara"'));
+  assert.ok(!um.includes('Orçamento 2027 no Orç Valor'));
+  assert.ok(!um.includes('Diferença:'));
+  perto(grao.n1, 12);
+  assert.ok(!total[1].includes('12'));
+  assert.ok(!total[5].includes('104'));
+
+  const doisHtml = ctx.vol27RenderHtml(false, ag, doc, ['dfb_lojas', 'dfb_rest']);
+  const mapaDois = celulasDaLinha(doisHtml, 'mapa');
+  const totalDois = celulasDaLinha(doisHtml, 'total');
+  volumeVazio(totalDois);
+  volumeVazio(mapaDois);
+  assert.ok(mapaDois[4].includes(ctx.orc27FmtRs(500200.45, true)));
+  assert.ok(mapaDois[10].includes(ctx.orc27FmtRs(12824215.55, true)));
+  const linhasDois = ctx.vol27Montar(ag, doc, ['dfb_lojas', 'dfb_rest']);
+  const somaDois = ctx.vol27SomaSimulacao(linhasDois);
+  const soma26Dois = ctx.vol27SomaSimulacao(linhasDois, 'simulacao2026', 'simulacao2026Tem');
+  assert.ok(totalDois[10].includes(ctx.orc27FmtRs(somaDois.valor, true)));
+  assert.ok(totalDois[4].includes(ctx.orc27FmtRs(soma26Dois.valor, true)));
+  perto(linhasDois.find(r => r.id === 'grao').n1, 19);
+  assert.ok(totalDois[1].startsWith(' class="vol27-rodape-vazio"'));
+  assert.ok(!doisHtml.includes('id="vol27-compara"'));
+
+  const todosHtml = ctx.vol27RenderHtml(false, ag, doc, []);
+  const mapaTodos = celulasDaLinha(todosHtml, 'mapa');
+  volumeVazio(celulasDaLinha(todosHtml, 'total'));
+  volumeVazio(mapaTodos);
+  assert.ok(mapaTodos[4].includes(ctx.orc27FmtRs(500203.45, true)));
+  assert.ok(mapaTodos[10].includes(ctx.orc27FmtRs(12824235.55, true)));
+  assert.ok(!todosHtml.includes('id="vol27-compara"'));
 });
 
 if (process.exitCode) {
