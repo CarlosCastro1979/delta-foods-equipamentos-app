@@ -92,6 +92,9 @@ const fns = [
   'linhaValorQuadroDeExcel',
   'codClienteLojasOnlineBr',
   'codClienteLojasOnlineAmazon',
+  'codClienteDistRetalho',
+  'quadroComClientesDistRetalho',
+  'vendasClienteComClientesDistRetalho',
   'arredondarRsPerdas',
   'ymLinhaPerdas',
   'agregarFaturClienteMes',
@@ -929,7 +932,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-16-volume-total-sim'));
+  assert.ok(sw.includes('v2026-10-16-dist-retalho-018'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-vendas-1out'));
@@ -944,7 +947,7 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!sw.includes('v2026-10-01-mapa-n'));
   assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
   assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(html.includes('v2026-10-16-volume-total-sim'));
+  assert.ok(html.includes('v2026-10-16-dist-retalho-018'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
@@ -1793,6 +1796,190 @@ check('resumo anual: 12 meses + Total, só N, empresa = soma dos canais, 9952009
   assert.ok(html.includes('>Resumo Anual<'));
   assert.ok(html.includes('id="vq-ano-anual"'));
   assert.ok(html.includes('onclick="actualizarQuadroVendas()"'));
+});
+
+check('410730 e 423557 ficam em Distribuidores de retalho, não em Retalho moderno', () => {
+  assert.equal(ctx.codClienteDistRetalho('410730'), true);
+  assert.equal(ctx.codClienteDistRetalho('0410730'), true);
+  assert.equal(ctx.codClienteDistRetalho(410730), true);
+  assert.equal(ctx.codClienteDistRetalho('410730.0'), true);
+  assert.equal(ctx.codClienteDistRetalho('410730 RUBI DISTRIBUIDORA DE ALIMENTOS LTD'), true);
+  assert.equal(ctx.codClienteDistRetalho('423557'), true);
+  assert.equal(ctx.codClienteDistRetalho('423557 DNA 2, LTDA'), true);
+  assert.equal(ctx.codClienteDistRetalho('4107300'), false);
+  assert.equal(ctx.codClienteDistRetalho('4235571'), false);
+  assert.equal(ctx.codClienteDistRetalho('441908'), false);
+  assert.equal(ctx.codClienteDistRetalho('BR00002'), false);
+  assert.equal(ctx.codClienteDistRetalho('426555'), false);
+
+  ctx.VENDEDORES_DEFAULT = [
+    { cod: 99520018, nome: 'DIOGO OLIVEIRA' },
+    { cod: 99520004, nome: 'DIOGO OLIVEIRA' },
+    { cod: 99520001, nome: 'MARCIO GORGA' },
+    { cod: 99520009, nome: 'MARCIO GORGA' },
+  ];
+  const mapasD = ctx.mapasVendasQuadro();
+  const rubi = ctx.dimensoesVendaQuadro(99520018, mapasD, '410730');
+  assert.equal(rubi.empresa, 'Delta Foods Brasil');
+  assert.equal(rubi.canal, 'Distribuidores de retalho');
+  assert.equal(rubi.vendedor, 'DIOGO OLIVEIRA');
+  assert.equal(ctx.dimensoesVendaQuadro(99520018, mapasD, '423557').canal, 'Distribuidores de retalho');
+  assert.equal(ctx.dimensoesVendaQuadro(99520018, mapasD, '0410730').canal, 'Distribuidores de retalho');
+  const outro = ctx.dimensoesVendaQuadro(99520018, mapasD, '411550');
+  assert.equal(outro.canal, 'Retalho moderno');
+  assert.equal(outro.vendedor, 'DIOGO OLIVEIRA');
+  assert.equal(ctx.dimensoesVendaQuadro(99520004, mapasD, '410730').canal, 'Distribuidores de retalho');
+  assert.equal(ctx.dimensoesVendaQuadro(99520018, mapasD, '441908').canal, 'Retalho moderno');
+  assert.equal(ctx.dimensoesVendaQuadro(99520009, mapasD, 'BR00002').canal, 'Lojas online');
+  assert.equal(ctx.dimensoesVendaQuadro(99520009, mapasD, '426555').canal, 'Lojas online');
+
+  const q = ctx.agregarVendasQuadro([
+    { cod: '410730', data: '2025-01-10', tipo: 'OUTRO', valor: 100, npess: 99520018 },
+    { cod: '423557', data: '2025-01-11', tipo: 'OUTRO', valor: 40, npess: 99520018 },
+    { cod: '411550', data: '2025-01-12', tipo: 'OUTRO', valor: 7, npess: 99520018 },
+    { cod: '410730', data: '2025-03-01', tipo: 'OUTRO', valor: 9, npess: 99520004 },
+  ], { mapas: mapasD });
+  assert.equal(celula(q, '2025-01', 'Delta Foods Brasil', 'Distribuidores de retalho', 'DIOGO OLIVEIRA').valor, 140);
+  assert.equal(celula(q, '2025-01', 'Delta Foods Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA').valor, 7);
+  assert.equal(celula(q, '2025-03', 'Delta Foods Brasil', 'Distribuidores de retalho', 'DIOGO OLIVEIRA').valor, 9);
+  assert.equal(celula(q, '2025-03', 'Delta Foods Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA'), null);
+
+  const fat = ctx.agregarFaturClienteMes([
+    { cod: '410730', data: '2025-01-10', valor: 100, npess: 99520018, nome: 'RUBI' },
+    { cod: '423557', data: '2025-02-04', valor: 40, npess: 99520018, nome: 'DNA 2' },
+    { cod: '411550', data: '2025-01-12', valor: 7, npess: 99520018 },
+    { cod: '410730', data: '2025-01-20', valor: 5, npess: 99520004, nome: 'RUBI' },
+  ]);
+  assert.equal(fat['2025-01'].clientes['410730\t99520018'], undefined);
+  assert.equal(fat['2025-01'].clientes['410730\t99520004'].valor, 105);
+  assert.equal(fat['2025-02'].clientes['423557\t99520018'], undefined);
+  assert.equal(fat['2025-02'].clientes['423557\t99520004'].valor, 40);
+  assert.equal(fat['2025-01'].clientes['411550\t99520018'].valor, 7);
+
+  const store = {
+    meses: {
+      '2025-01': { clientes: {
+        '410730\t99520018': { cod: '410730', npess: 99520018, valor: 94231.19, negativo: 0, nome: 'RUBI' },
+        '410730\t99520004': { cod: '410730', npess: 99520004, valor: 10, negativo: 1, nome: '' },
+        '411550\t99520018': { cod: '411550', npess: 99520018, valor: 7, negativo: 0, nome: 'X' },
+      } },
+      '2025-02': { clientes: {
+        '423557\t99520018': { cod: '423557', npess: 99520018, valor: 15463.42, negativo: 0, nome: 'DNA 2' },
+      } },
+      '2026-10': { clientes: {
+        '411550\t99520018': { cod: '411550', npess: 99520018, valor: 50, negativo: 0, nome: 'Y' },
+      } },
+    },
+  };
+  const moved = ctx.vendasClienteComClientesDistRetalho(store);
+  assert.equal(moved.meses['2025-01'].clientes['410730\t99520018'], undefined);
+  assert.equal(moved.meses['2025-01'].clientes['410730\t99520004'].valor, 94241.19);
+  assert.equal(moved.meses['2025-01'].clientes['410730\t99520004'].nome, 'RUBI');
+  assert.equal(moved.meses['2025-01'].clientes['411550\t99520018'].valor, 7);
+  assert.equal(moved.meses['2025-02'].clientes['423557\t99520018'], undefined);
+  assert.equal(moved.meses['2025-02'].clientes['423557\t99520004'].valor, 15463.42);
+  assert.equal(moved.meses['2026-10'].clientes['411550\t99520018'].valor, 50);
+  assert.equal(ctx.vendasClienteComClientesDistRetalho(moved), moved);
+
+  const retalho = {
+    '2025-01': [206747.21, 200],
+    '2025-02': [117519.46, 140],
+    '2025-03': [131918.32, 10],
+    '2025-04': [111560.05, 10],
+    '2025-05': [116272.52, 10],
+    '2025-06': [303560.43, 10],
+    '2025-07': [148487.95, 10],
+    '2025-08': [160041.72, 10],
+    '2025-09': [-10056.02, 10],
+    '2025-10': [57703.88, 10],
+    '2025-11': [116720.76, 10],
+    '2025-12': [287543.29, 10],
+  };
+  const distMes = {
+    '2025-02': [31176.65, 17],
+    '2025-03': [333743.14, 1],
+    '2025-04': [59559.68, 1],
+    '2025-05': [112433.36, 1],
+    '2025-06': [393595.42, 1],
+    '2025-07': [517765.23, 1],
+    '2025-08': [174740.7, 1],
+    '2025-09': [81658.96, 1],
+    '2025-10': [70553.59, 1],
+    '2025-11': [219925.78, 1],
+    '2025-12': [28527.08, 1],
+  };
+  const rk = 'Delta Foods Brasil\tRetalho moderno\tDIOGO OLIVEIRA';
+  const dk = 'Delta Foods Brasil\tDistribuidores de retalho\tDIOGO OLIVEIRA';
+  const bruto = { meses: {} };
+  Object.keys(retalho).forEach((ym) => {
+    const valor = retalho[ym][0];
+    const linhas = retalho[ym][1];
+    bruto.meses[ym] = { celulas: {} };
+    bruto.meses[ym].celulas[rk] = {
+      empresa: 'Delta Foods Brasil', canal: 'Retalho moderno', vendedor: 'DIOGO OLIVEIRA',
+      valor, linhas, linhasComValor: linhas, volume: 0, temVolume: false,
+    };
+  });
+  Object.keys(distMes).forEach((ym) => {
+    const valor = distMes[ym][0];
+    const linhas = distMes[ym][1];
+    bruto.meses[ym].celulas[dk] = {
+      empresa: 'Delta Foods Brasil', canal: 'Distribuidores de retalho', vendedor: 'DIOGO OLIVEIRA',
+      valor, linhas, linhasComValor: linhas, volume: 0, temVolume: false,
+    };
+  });
+  bruto.meses['2026-10'] = { celulas: {
+    [rk]: {
+      empresa: 'Delta Foods Brasil', canal: 'Retalho moderno', vendedor: 'DIOGO OLIVEIRA',
+      valor: 32732.16, linhas: 24, linhasComValor: 24, volume: 2548, temVolume: true,
+    },
+    [dk]: {
+      empresa: 'Delta Foods Brasil', canal: 'Distribuidores de retalho', vendedor: 'DIOGO OLIVEIRA',
+      valor: -20620.8, linhas: 159, linhasComValor: 159, volume: 1378, temVolume: true,
+    },
+  } };
+  const limpo = ctx.quadroComClientesDistRetalho(bruto);
+  assert.equal(limpo.meses['2025-01'].celulas[rk].valor, 83264.76);
+  assert.equal(limpo.meses['2025-01'].celulas[rk].linhas, 167);
+  assert.equal(limpo.meses['2025-01'].celulas[dk].valor, 123482.45);
+  assert.equal(limpo.meses['2025-01'].celulas[dk].linhas, 33);
+  assert.equal(limpo.meses['2025-02'].celulas[rk].valor, 102366.32);
+  assert.equal(limpo.meses['2025-02'].celulas[rk].linhas, 133);
+  assert.equal(limpo.meses['2025-02'].celulas[dk].valor, 46329.79);
+  assert.equal(limpo.meses['2025-02'].celulas[dk].linhas, 24);
+  assert.equal(limpo.meses['2025-03'].celulas[rk].valor, 131918.32);
+  assert.equal(limpo.meses['2026-10'].celulas[rk].valor, 32732.16);
+  assert.equal(limpo.meses['2026-10'].celulas[rk].volume, 2548);
+  assert.equal(limpo.meses['2026-10'].celulas[dk].valor, -20620.8);
+  let somaR = 0;
+  let somaD = 0;
+  for (let m = 1; m <= 12; m++) {
+    const ym = '2025-' + String(m).padStart(2, '0');
+    somaR += limpo.meses[ym].celulas[rk].valor;
+    somaD += limpo.meses[ym].celulas[dk].valor;
+  }
+  assert.equal(Math.round(somaR * 100) / 100, 1609383.98);
+  assert.equal(Math.round(somaD * 100) / 100, 2162315.18);
+  const outra = ctx.quadroComClientesDistRetalho(limpo);
+  assert.equal(outra, limpo);
+  assert.equal(outra.meses['2025-01'].celulas[dk].valor, 123482.45);
+
+  const jaCerto = JSON.parse(JSON.stringify(bruto));
+  jaCerto.meses['2025-01'].celulas[rk].valor = 83264.76;
+  const parcial = ctx.quadroComClientesDistRetalho(jaCerto);
+  assert.equal(parcial.meses['2025-01'].celulas[rk].valor, 83264.76);
+  assert.equal(parcial.meses['2025-01'].celulas[dk], undefined);
+  assert.equal(parcial.meses['2025-02'].celulas[dk].valor, 46329.79);
+
+  const seed = JSON.parse(extractConstObject(html, 'VENDAS_VOLUME_SEED'));
+  assert.equal(seed['2025-01'][rk], 3867);
+  assert.equal(seed['2025-01'][dk], 9341);
+  assert.equal(seed['2025-02'][rk], 4906);
+  assert.equal(seed['2025-02'][dk], 2624);
+  assert.equal(seed['2025-03'][rk], 7957);
+  assert.equal(seed['2025-03'][dk], 25445);
+  assert.equal(seed['2026-09'][rk], 8498);
+  assert.equal(seed['2026-09'][dk], 11180);
 });
 
 if (process.exitCode) {

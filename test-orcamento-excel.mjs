@@ -13,7 +13,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-16-volume-total-sim';
+const CACHE = 'v2026-10-16-dist-retalho-018';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);
