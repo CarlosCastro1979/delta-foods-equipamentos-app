@@ -15508,6 +15508,7 @@ function orc27PrepararChrome() {
         + 'Máquina = QtFaturada + Qtd Bonifi + Qtd Doação (colunas M, U e Y), só nas linhas de máquina. Não usa o peso. '
         + 'O filtro Canal escolhe um ou vários; sem escolha, mostra todos. Cada produto soma só esses canais, na mesma unidade. '
         + 'Previsão Out a Dez e Orçamento 2027 escrevem-se com um só canal seleccionado, com autosave. '
+        + 'O preço médio de Ago–Out é o Fatur. líquido desses meses a dividir pelo volume, e a Simulação valor 27 multiplica o Orçamento 2027 por esse preço. '
         + hint;
     } else if (_orc27Sub === 'sazonalidade') {
       banner.innerHTML = '<strong>Orçamento 2027 · Sazonalidade</strong> — '
@@ -16900,9 +16901,16 @@ function saz27Abrir(force) {
  * Neste ficheiro SAP a hierarquia das máquinas é o token MF.
  * Uma linha entra numa família só. O que não se reconhece fica de fora — não vai para o grão.
  * 99520099 não entra. Previsão e orçamento são manuais, por canal e família, com autosave.
+ * Preço médio Ago–Out = Fatur. líquido (não Valor Boni nem Valor Doação) da família no canal
+ * em Agosto, Setembro e Outubro de 2026 ÷ volume dessa família. Outubro só até ao dia já no ficheiro.
+ * Mês com volume 0 fica de fora das duas somas. Sem volume nos três meses, o preço é «—». Não usa 2025.
+ * 441908 e 99520099 não entram na faturação. Vários canais: soma dos R$ ÷ soma dos volumes.
+ * Simulação valor 27 = volume do Orçamento 2027 × esse preço. Falta o preço ou o volume → «—».
  */
 const VOL27_CAPSULA_KG = 0.005;
-const VOL27_EXCEL_AA = '2026-10-14-formulas';
+const VOL27_EXCEL_AA = '2026-10-16-preco';
+const VOL27_PRECO_MESES = ['2026-08', '2026-09', '2026-10'];
+const VOL27_PRECO_ROTULO = 'Ago–Out';
 const VOL27_FAMILIAS = [
   { id: 'grao', nome: 'Grão (Kg)', unidade: 'kg' },
   { id: 'moido', nome: 'Café Moído (Kg)', unidade: 'kg' },
@@ -17167,6 +17175,97 @@ function vol27AgregarLinhas(linhas) {
   return { meses: meses, ignoradas: ignoradas };
 }
 
+/** Uma célula de preço entra na média se tiver volume diferente de zero e Fatur. numérico. Volume 0 leva o Fatur. consigo para fora. */
+function vol27PrecoCelulaEntra(cell) {
+  if (!cell || !orc27TemNumero(cell.v) || Number(cell.v) === 0) return false;
+  if (!orc27TemNumero(cell.f)) return false;
+  return true;
+}
+
+/**
+ * Fatur. e volume por mês, canal e família, para o preço médio.
+ * A mesma regra do volume: 441908 e 99520099 não entram; a cópia ISO / dd.mm.aaaa não soma duas vezes.
+ * Fatur. é row.fatur (ou row.valor). Valor Boni e Valor Doação não são este campo.
+ */
+function vol27AcumularPreco(linhas) {
+  const list = vol27SemCopiaDeData(linhas);
+  const porMes = {};
+  for (let i = 0; i < list.length; i++) {
+    const row = list[i];
+    if (!row) continue;
+    if (typeof codClienteVendaIgnorado === 'function' && codClienteVendaIgnorado(row.cod)) continue;
+    if (typeof npessVendaIgnorado === 'function' && (npessVendaIgnorado(row.npess) || npessVendaIgnorado(row.vendedor))) continue;
+    const ym = typeof ymLinhaPerdas === 'function'
+      ? ymLinhaPerdas(row.data)
+      : String(row.data || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(ym)) continue;
+    const med = vol27Medida(row);
+    if (!med.familia || med.medida == null || !Number.isFinite(Number(med.medida))) continue;
+    const canal = vol27CanalIdDeLinha(row) || 'semCanal';
+    if (!porMes[ym]) porMes[ym] = {};
+    if (!porMes[ym][canal]) porMes[ym][canal] = {};
+    if (!porMes[ym][canal][med.familia]) porMes[ym][canal][med.familia] = { f: 0, v: 0 };
+    const cell = porMes[ym][canal][med.familia];
+    const fatRaw = (row.fatur != null && row.fatur !== '') ? row.fatur : row.valor;
+    const fat = Number(fatRaw);
+    if (Number.isFinite(fat)) cell.f += fat;
+    cell.v += Number(med.medida);
+  }
+  const yms = Object.keys(porMes);
+  for (let i = 0; i < yms.length; i++) {
+    const canais = porMes[yms[i]];
+    const cids = Object.keys(canais);
+    for (let c = 0; c < cids.length; c++) {
+      const fams = canais[cids[c]];
+      const fids = Object.keys(fams);
+      for (let f = 0; f < fids.length; f++) {
+        const cell = fams[fids[f]];
+        cell.f = Math.round((cell.f + Number.EPSILON) * 100) / 100;
+        cell.v = vol27Round(cell.v);
+      }
+    }
+  }
+  return { meses: VOL27_PRECO_MESES.slice(), rotulo: VOL27_PRECO_ROTULO, porMes: porMes };
+}
+
+function vol27RotuloPreco(ag) {
+  const r = ag && ag.precos && ag.precos.rotulo;
+  if (r) return String(r);
+  return VOL27_PRECO_ROTULO;
+}
+
+/** Preço = soma do Fatur. ÷ soma do volume nos meses do preço. Mês (canal × família) com volume 0 não entra. */
+function vol27PrecoMedio(ag, filtro, familia) {
+  const precos = ag && ag.precos;
+  const porMes = (precos && precos.porMes) || {};
+  const yms = (precos && Array.isArray(precos.meses) && precos.meses.length) ? precos.meses : VOL27_PRECO_MESES.slice();
+  const canais = vol27CanaisDoFiltro(filtro);
+  const todos = vol27FiltroTodos(filtro);
+  let fatur = 0;
+  let volume = 0;
+  for (let i = 0; i < yms.length; i++) {
+    const mes = porMes[yms[i]] || {};
+    for (let c = 0; c < canais.length; c++) {
+      const cell = mes[canais[c]] && mes[canais[c]][familia];
+      if (!vol27PrecoCelulaEntra(cell)) continue;
+      fatur += Number(cell.f);
+      volume += Number(cell.v);
+    }
+    if (todos && mes.semCanal && vol27PrecoCelulaEntra(mes.semCanal[familia])) {
+      fatur += Number(mes.semCanal[familia].f);
+      volume += Number(mes.semCanal[familia].v);
+    }
+  }
+  if (!volume) return { tem: false, preco: null, fatur: 0, volume: 0 };
+  return { tem: true, preco: fatur / volume, fatur: fatur, volume: vol27Round(volume) };
+}
+
+/** Volume 2027 × preço. Qualquer lado em falta → null (o ecrã mostra «—»). Zero é número. */
+function vol27Simulacao(volume27, preco) {
+  if (!orc27TemNumero(volume27) || !orc27TemNumero(preco)) return null;
+  return Number(volume27) * Number(preco);
+}
+
 function vol27FundirMeses(base, porCima, yms) {
   const out = {
     version: 1,
@@ -17176,6 +17275,8 @@ function vol27FundirMeses(base, porCima, yms) {
     ultimaData: (base && base.ultimaData) || (porCima && porCima.ultimaData) || '',
     meses: {},
   };
+  const precos = (base && base.precos) || (porCima && porCima.precos) || null;
+  if (precos) out.precos = precos;
   if (!out.excelAa) delete out.excelAa;
   if (!out.ultimaData) delete out.ultimaData;
   const bm = (base && base.meses) || {};
@@ -17325,6 +17426,11 @@ function vol27Montar(ag, doc, filtro) {
     row.totalTem = tot.tem;
     row.varPct = orc27VarPct(row.total2026, row.totalTem, row.n1, row.n1Tem);
     row.pct27 = orc27Pct27(row.orcamento, row.total2026, row.totalTem);
+    const preco = vol27PrecoMedio(ag, filtro, fam.id);
+    row.preco = preco.tem ? preco.preco : null;
+    row.precoTem = !!preco.tem;
+    row.simulacao = vol27Simulacao(row.orcamento, row.preco);
+    row.simulacaoTem = orc27TemNumero(row.simulacao);
     rows.push(row);
   }
   return rows;
@@ -17642,10 +17748,38 @@ function vol27CelulaManualHtml(row, campo, edit) {
     + bg + ';font-variant-numeric:tabular-nums;" oninput="vol27OnInput(this)" onblur="vol27OnBlur(this)">';
 }
 
+function vol27OrcValorDoCanal(canal) {
+  const doc = (typeof _orc27Doc !== 'undefined') ? _orc27Doc : null;
+  if (typeof orc27ValorManual !== 'function') return null;
+  return orc27ValorManual(doc && doc.canais, canal, 'orcamento');
+}
+
+/** Soma das simulações (tudo em R$) e o Orçamento 2027 em R$ do Orç Valor. Só com um canal. */
+function vol27TextoComparacao(rows, filtro) {
+  const canal = (typeof orc27CanalUnicoVolume === 'function') ? orc27CanalUnicoVolume(filtro) : '';
+  if (!canal) return '';
+  let soma = 0;
+  let tem = false;
+  const lista = Array.isArray(rows) ? rows : [];
+  for (let i = 0; i < lista.length; i++) {
+    if (!lista[i] || !lista[i].simulacaoTem || !orc27TemNumero(lista[i].simulacao)) continue;
+    tem = true;
+    soma += Number(lista[i].simulacao);
+  }
+  if (tem) soma = Math.round((soma + Number.EPSILON) * 100) / 100;
+  const orc = vol27OrcValorDoCanal(canal);
+  const nome = (typeof VOL27_ROTULOS !== 'undefined' && VOL27_ROTULOS[canal]) ? VOL27_ROTULOS[canal] : canal;
+  const simTxt = tem ? orc27FmtRs(soma, true) : '—';
+  const orcTxt = orc27FmtRs(orc, orc27TemNumero(orc));
+  return '<strong>' + orc27Esc(nome) + '</strong> — Simulação valor 27: ' + simTxt
+    + ' · Orçamento 2027 no Orç Valor: ' + orcTxt;
+}
+
 function vol27RenderHtml(edit, ag, doc, filtro) {
   const escolha = (filtro == null) ? vol27FiltroActual().slice() : vol27EscolhaDe(filtro);
   _vol27Filtro = escolha;
   const rows = vol27Montar(ag, doc, escolha);
+  const rotuloPreco = vol27RotuloPreco(ag);
   let body = '';
   rows.forEach(function (row) {
     body += '<tr data-vol-fam="' + orc27Esc(row.id) + '">'
@@ -17654,11 +17788,16 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
       + '<td class="vol27-ytd" style="text-align:right;font-variant-numeric:tabular-nums;">' + vol27FmtQtd(row.ytd, row.ytdTem) + '</td>'
       + '<td class="vol27-prev" style="text-align:right;background:#eff6ff;font-variant-numeric:tabular-nums;">' + vol27CelulaManualHtml(row, 'prevOutDez', edit) + '</td>'
       + '<td class="vol27-total" style="text-align:right;font-variant-numeric:tabular-nums;">' + vol27FmtQtd(row.total2026, row.totalTem) + '</td>'
+      + '<td class="vol27-preco" style="text-align:right;background:#fffbeb;font-variant-numeric:tabular-nums;">' + orc27FmtRs(row.preco, row.precoTem) + '</td>'
       + '<td class="vol27-var" style="text-align:right;">' + orc27FmtPct(row.varPct) + '</td>'
       + '<td class="vol27-orc" style="text-align:right;background:#f5f3ff;font-variant-numeric:tabular-nums;">' + vol27CelulaManualHtml(row, 'orcamento', edit) + '</td>'
       + '<td class="vol27-pct" style="text-align:right;">' + orc27FmtPct(row.pct27) + '</td>'
+      + '<td class="vol27-sim" style="text-align:right;background:#f0fdf4;font-variant-numeric:tabular-nums;">' + orc27FmtRs(row.simulacao, row.simulacaoTem) + '</td>'
       + '</tr>';
   });
+  const comparaTxt = vol27TextoComparacao(rows, escolha);
+  const comparaHtml = '<div id="vol27-compara" style="margin:10px 2px 0;font-size:13px;line-height:1.45;'
+    + (comparaTxt ? '' : 'display:none;') + '">' + comparaTxt + '</div>';
   const nota = vol27NotaFora(ag);
   const notaHtml = nota
     ? '<div id="vol27-nota" style="margin:0 0 10px;font-size:12px;color:#9a3412;line-height:1.45;">' + orc27Esc(nota) + '</div>'
@@ -17669,21 +17808,24 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
     + notaHtml
     + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
     + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Volume'
-    + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Total 2026 = YTD até Set + Previsão Out a Dez · Var % vs 2025 = (Total 2026 − N-1) / N-1 · % 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026'
+    + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Total 2026 = YTD até Set + Previsão Out a Dez · Preço médio ' + orc27Esc(rotuloPreco) + ' = Fatur. líquido ÷ volume · Var % vs 2025 = (Total 2026 − N-1) / N-1 · % 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026 · Simulação valor 27 = Orçamento 2027 × preço médio'
     + (ag && ag.ultimaData ? (' · Ficheiro até ' + String(ag.ultimaData).split('-').reverse().join('/') + '. YTD até Set é só Janeiro a Setembro' + (ag.ultimaData <= '2026-09-30' ? ' e cobre o ficheiro até ao último dia.' : '.')) : '')
     + '</span>'
     + '</div>'
-    + '<table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1180px;">'
+    + '<table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1520px;">'
     + '<thead><tr>'
     + '<th style="text-align:left;">Produto</th>'
     + '<th style="text-align:right;">Total N-1 até Dez</th>'
     + '<th style="text-align:right;">YTD 2026 até Set</th>'
     + '<th style="text-align:right;background:#dbeafe;">Previsão Out a Dez</th>'
     + '<th style="text-align:right;">Total 2026</th>'
+    + '<th style="text-align:right;background:#fef3c7;">Preço médio ' + orc27Esc(rotuloPreco) + '</th>'
     + '<th style="text-align:right;">Var % vs 2025</th>'
     + '<th style="text-align:right;background:#ede9fe;">Orçamento 2027</th>'
     + '<th style="text-align:right;">% 27 vs fecho 26</th>'
-    + '</tr></thead><tbody>' + body + '</tbody></table></div>';
+    + '<th style="text-align:right;background:#dcfce7;">Simulação valor 27</th>'
+    + '</tr></thead><tbody>' + body + '</tbody></table></div>'
+    + comparaHtml;
 }
 
 
@@ -17979,10 +18121,51 @@ function orc27NomeFicheiroVolume(filtro) {
   return 'Orcamento_2027_volume_' + slug + '.xlsx';
 }
 
+function vol27EscreverPercentagens(ws, r, row) {
+  const varCell = ws.getCell(r, 7);
+  const pctCell = ws.getCell(r, 9);
+  const varR = orc27ExcelRazao(row.varPct);
+  const pctR = orc27ExcelRazao(row.pct27);
+  if (varR == null) orc27PintarVazio(varCell, false);
+  else orc27PintarNumero(varCell, {
+    formula: 'IF(OR(B' + r + '="",B' + r + '=0),"",(IF(E' + r + '="",0,E' + r + ')-B' + r + ')/B' + r + ')',
+    result: varR,
+  }, ORC27_EXCEL_PCT, false);
+  if (pctR == null) orc27PintarVazio(pctCell, false);
+  else orc27PintarNumero(pctCell, {
+    formula: 'IF(OR(H' + r + '="",E' + r + '="",E' + r + '=0),"",(H' + r + '-E' + r + ')/E' + r + ')',
+    result: pctR,
+  }, ORC27_EXCEL_PCT, false);
+}
+
+function vol27EscreverSimulacao(ws, r, row) {
+  const cell = ws.getCell(r, 10);
+  if (!row || !row.precoTem || !orc27TemNumero(row.orcamento) || !orc27TemNumero(row.preco)) {
+    orc27PintarVazio(cell, false);
+    return;
+  }
+  orc27PintarNumero(cell, {
+    formula: 'IF(OR(H' + r + '="",F' + r + '=""),"",H' + r + '*F' + r + ')',
+    result: Number(row.orcamento) * Number(row.preco),
+  }, ORC27_EXCEL_RS, false);
+}
+
 function escreverFolhaOrc27Volume(ws, linhas, filtro) {
   const rows = Array.isArray(linhas) ? linhas : [];
   const canal = orc27NomeCanalVolume(filtro);
-  const headers = ['Produto'].concat(ORC27_EXCEL_CABECAS);
+  const rotulo = (typeof vol27RotuloPreco === 'function') ? vol27RotuloPreco(null) : VOL27_PRECO_ROTULO;
+  const headers = [
+    'Produto',
+    'Total N-1 até Dez',
+    'YTD 2026 até Set',
+    'Previsão Out a Dez',
+    'Total 2026',
+    'Preço médio ' + rotulo,
+    'Var % vs 2025',
+    'Orçamento 2027',
+    '% 27 vs fecho 26',
+    'Simulação valor 27',
+  ];
   orc27PintarTitulo(ws, headers.length, 'Orçamento 2027 — Volume · ' + canal);
   orc27EscreverCabecas(ws, headers);
   const mapa = {};
@@ -17999,11 +18182,15 @@ function escreverFolhaOrc27Volume(ws, linhas, filtro) {
     orc27EscreverDinheiro(ws, r, 3, row, rows, mapa, 'ytd', 'ytdTem', false, ORC27_EXCEL_QTD);
     orc27EscreverDinheiro(ws, r, 4, row, rows, mapa, 'prevOutDez', '', false, ORC27_EXCEL_QTD);
     orc27EscreverTotal2026(ws, r, row, rows, mapa, false, ORC27_EXCEL_QTD);
-    orc27EscreverDinheiro(ws, r, 7, row, rows, mapa, 'orcamento', '', false, ORC27_EXCEL_QTD);
-    orc27EscreverPercentagens(ws, r, row, false);
+    const precoCell = ws.getCell(r, 6);
+    if (row.precoTem && orc27TemNumero(row.preco)) orc27PintarNumero(precoCell, Number(row.preco), ORC27_EXCEL_RS, false);
+    else orc27PintarVazio(precoCell, false);
+    orc27EscreverDinheiro(ws, r, 8, row, rows, mapa, 'orcamento', '', false, ORC27_EXCEL_QTD);
+    vol27EscreverPercentagens(ws, r, row);
+    vol27EscreverSimulacao(ws, r, row);
     metaLinhas.push({ id: row.id, nome: nome, unidade: row.unidade || '', excelRow: r });
   }
-  orc27ExcelLarguras(ws, [28, 22, 22, 22, 18, 16, 20, 18]);
+  orc27ExcelLarguras(ws, [28, 22, 22, 22, 18, 20, 16, 20, 18, 22]);
   orc27ExcelCongelar(ws);
   return {
     filename: orc27NomeFicheiroVolume(filtro),
@@ -18407,6 +18594,7 @@ function vol27NormalizarAgregado(raw) {
   };
   if (raw.excelAa) out.excelAa = raw.excelAa;
   if (raw.ultimaData) out.ultimaData = raw.ultimaData;
+  if (raw.precos && raw.precos.porMes) out.precos = raw.precos;
   return out;
 }
 
@@ -18455,6 +18643,7 @@ async function vol27SalvarAgregado(ag) {
   payload.version = 1;
   if (ag && ag.excelAa) payload.excelAa = ag.excelAa;
   if (ag && ag.ultimaData) payload.ultimaData = ag.ultimaData;
+  if (ag && ag.precos && ag.precos.porMes) payload.precos = ag.precos;
   _vol27Agregado = payload;
   try { localStorage.setItem(VOL27_AGREGADO_LS, JSON.stringify(payload)); } catch (_) {}
   try {
@@ -18723,7 +18912,9 @@ function vol27SeedExcelAa() {
 function vol27AgregadoEhExcelAa(ag) {
   if (!ag || ag.fonte !== 'excel-aa' || ag.excelAa !== VOL27_EXCEL_AA) return false;
   const meses = ag.meses || {};
-  return !!(meses['2025-01'] && meses['2026-09']);
+  if (!(meses['2025-01'] && meses['2026-09'])) return false;
+  const porMes = ag.precos && ag.precos.porMes;
+  return !!(porMes && porMes['2026-08'] && porMes['2026-10']);
 }
 
 /**
@@ -18744,6 +18935,7 @@ async function vol27Preparar() {
       const merged = vol27FundirMeses(seed, manterUpload ? ag : seed, yms);
       merged.fonte = 'excel-aa';
       merged.excelAa = VOL27_EXCEL_AA;
+      if (seed.precos) merged.precos = seed.precos;
       merged.ultimaData = seed.ultimaData || merged.ultimaData || '';
       if (manterUpload && ag.ultimaData && ag.ultimaData > merged.ultimaData) merged.ultimaData = ag.ultimaData;
       ag = await vol27SalvarAgregado(merged);
@@ -18805,13 +18997,21 @@ function vol27PatchCalculos() {
     set('vol27-n1', vol27FmtQtd(row.n1, row.n1Tem));
     set('vol27-ytd', vol27FmtQtd(row.ytd, row.ytdTem));
     set('vol27-total', vol27FmtQtd(row.total2026, row.totalTem));
+    set('vol27-preco', orc27FmtRs(row.preco, row.precoTem));
     set('vol27-var', orc27FmtPct(row.varPct));
     set('vol27-pct', orc27FmtPct(row.pct27));
+    set('vol27-sim', orc27FmtRs(row.simulacao, row.simulacaoTem));
     if (!row.editavel) {
       set('vol27-prev', vol27FmtQtd(row.prevOutDez, orc27TemNumero(row.prevOutDez)));
       set('vol27-orc', vol27FmtQtd(row.orcamento, orc27TemNumero(row.orcamento)));
     }
   });
+  const cmp = typeof document !== 'undefined' ? document.getElementById('vol27-compara') : null;
+  if (cmp) {
+    const txt = vol27TextoComparacao(linhas, _vol27Filtro);
+    cmp.innerHTML = txt;
+    cmp.style.display = txt ? '' : 'none';
+  }
 }
 
 function vol27Flash(ok) {
@@ -42232,7 +42432,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-16-ignorar-441908: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-16-volume-preco: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

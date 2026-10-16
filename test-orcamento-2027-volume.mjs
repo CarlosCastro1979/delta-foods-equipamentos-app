@@ -103,6 +103,8 @@ const consts = [
   'PV_INST_BALCAO_NOMES',
   'PV_INST_HORECA_NOMES',
   'VOL27_CAPSULA_KG',
+  'VOL27_PRECO_MESES',
+  'VOL27_PRECO_ROTULO',
   'VOL27_FAMILIAS',
   'VOL27_ROTULOS',
   'VOL27_DEBOUNCE_MS',
@@ -140,7 +142,9 @@ const fns = [
   'orc27PickCampo',
   'orc27EntradaPronta',
   'orc27FmtPct',
+  'orc27FmtRs',
   'orc27Esc',
+  'orc27CanalUnicoVolume',
   'vol27Round',
   'vol27NormTexto',
   'vol27TemToken',
@@ -166,6 +170,13 @@ const fns = [
   'vol27CanalIdDeLinha',
   'vol27MesVazio',
   'vol27AgregarLinhas',
+  'vol27PrecoCelulaEntra',
+  'vol27AcumularPreco',
+  'vol27RotuloPreco',
+  'vol27PrecoMedio',
+  'vol27Simulacao',
+  'vol27OrcValorDoCanal',
+  'vol27TextoComparacao',
   'vol27CanalIgual441908',
   'vol27AgregadoSemCliente441908',
   'vol27FundirMeses',
@@ -239,9 +250,11 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
   assert.equal(vm.runInContext('VOL27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_volume.json');
   assert.ok(!String(vm.runInContext('VOL27_CLOUD_PATH', ctx)).includes('mapas_v3'));
   assert.equal(vm.runInContext('ORC27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_canais.json');
-  assert.ok(sw.includes('v2026-10-16-ignorar-441908'));
+  assert.ok(sw.includes('v2026-10-16-volume-preco'));
+  assert.ok(!sw.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!sw.includes('v2026-10-14-volume-formulas'));
-  assert.ok(html.includes('v2026-10-16-ignorar-441908'));
+  assert.ok(html.includes('v2026-10-16-volume-preco'));
+  assert.ok(!html.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!html.includes('v2026-10-14-volume-formulas'));
   assert.ok(extractFn(html, 'vol27Medida').includes('/ VOL27_CAPSULA_KG'));
   assert.ok(extractFn(html, 'vol27Medida').includes('qtdBonifi'));
@@ -541,10 +554,13 @@ check('seed do Excel: AA, cápsulas ÷ 0,005, máquina M+U+Y, YTD só até Set',
   vm.runInContext(fs.readFileSync(path.join(root, 'vendas-volume-familias.js'), 'utf8'), seedCtx);
   const seed = seedCtx.VOL27_SEED_EXCEL;
   assert.equal(seed.fonte, 'excel-aa');
-  assert.equal(seed.excelAa, '2026-10-14-formulas');
+  assert.equal(seed.excelAa, '2026-10-16-preco');
   assert.equal(seed.ultimaData, '2026-09-30');
   assert.ok(seed.meses['2025-01'] && seed.meses['2026-09']);
   assert.ok(!seed.meses['2026-10']);
+  assert.equal(seed.precos.rotulo, 'Ago–Out');
+  assert.deepEqual(seed.precos.meses, ['2026-08', '2026-09', '2026-10']);
+  assert.equal(seed.precos.porMes['2026-10'].qb_dist_reg, undefined);
   const ytd = ctx.orc27PeriodoYtd();
   assert.equal(ytd[0], '2026-01');
   assert.equal(ytd[ytd.length - 1], '2026-09');
@@ -688,6 +704,87 @@ check('filtro multi-canal: dois canais somam o produto, um edita, vários não, 
   assert.equal(todas.find(r => r.id === 'capsulas').prevOutDez, 7);
   perto(todas.find(r => r.id === 'capsulas').n1, 10 / 0.005);
   assert.equal(JSON.stringify(doc), antes);
+});
+
+check('preço médio Ago–Out = Fatur. ÷ volume; mês com volume 0 sai; simulação = volume 2027 × preço; sem preço fica —; 441908 não entra na faturação', () => {
+  assert.deepEqual(vm.runInContext('VOL27_PRECO_MESES', ctx), ['2026-08', '2026-09', '2026-10']);
+  assert.equal(vm.runInContext('VOL27_PRECO_ROTULO', ctx), 'Ago–Out');
+  const acum = ctx.vol27AcumularPreco([
+    { data: '2026-08-02', hierarq: 'CAFÉ EM GRÃO', peso: 10, fatur: 100, npess: 99520001, cod: '100' },
+    { data: '02.08.2026', hierarq: 'CAFÉ EM GRÃO', peso: 10, fatur: 100, npess: 99520001, cod: '100' },
+    { data: '2026-08-03', hierarq: 'CAFÉ EM GRÃO', peso: 4, fatur: 80, npess: 99520001, cod: '441908' },
+    { data: '2026-08-03', hierarq: 'CAFÉ EM GRÃO', peso: 1, fatur: 999, npess: 99520099, cod: '200' },
+    { data: '2026-09-01', hierarq: 'CAFÉ EM GRÃO', peso: 0, fatur: 50, npess: 99520001, cod: '100' },
+    { data: '2026-10-04', hierarq: 'CAFÉ EM GRÃO', peso: 5, fatur: 40, npess: 99520001, cod: '100' },
+    { data: '2026-08-01', hierarq: 'CAFÉ EM GRÃO', peso: 2, fatur: 30, npess: 99520002, cod: '300' },
+  ]);
+  const graoAgo = acum.porMes['2026-08'].dfb_lojas.grao;
+  perto(graoAgo.f, 100);
+  perto(graoAgo.v, 10);
+  assert.ok(!acum.porMes['2026-08'].dfb_lojas || acum.porMes['2026-08'].dfb_lojas.grao.f !== 180);
+  const set = acum.porMes['2026-09'].dfb_lojas.grao;
+  perto(set.f, 50);
+  assert.equal(set.v, 0);
+  assert.equal(ctx.vol27PrecoCelulaEntra(set), false);
+  const ag = { meses: {}, precos: acum };
+  const preco = ctx.vol27PrecoMedio(ag, 'dfb_lojas', 'grao');
+  assert.equal(preco.tem, true);
+  perto(preco.fatur, 140);
+  perto(preco.volume, 15);
+  perto(preco.preco, 140 / 15);
+  assert.notEqual(preco.fatur, 140 + 80);
+  assert.notEqual(preco.fatur, 140 + 50);
+  const doc = { celulas: { 'dfb_lojas|grao': { orcamento: 3 } } };
+  const linhas = ctx.vol27Montar(ag, doc, 'dfb_lojas');
+  const g = linhas.find(r => r.id === 'grao');
+  perto(g.preco, 140 / 15);
+  perto(g.simulacao, 3 * (140 / 15));
+  assert.equal(g.simulacaoTem, true);
+  const moido = linhas.find(r => r.id === 'moido');
+  assert.equal(moido.precoTem, false);
+  assert.equal(moido.preco, null);
+  assert.equal(moido.simulacao, null);
+  assert.equal(ctx.vol27Simulacao(null, 10), null);
+  assert.equal(ctx.vol27Simulacao(4, null), null);
+  assert.equal(ctx.vol27Simulacao(0, 10), 0);
+  const vista = ctx.vol27RenderHtml(false, ag, doc, 'dfb_lojas');
+  assert.ok(vista.includes('Preço médio Ago–Out'));
+  assert.ok(vista.includes('Simulação valor 27'));
+  assert.ok(vista.includes('vol27-preco'));
+  assert.ok(vista.includes('vol27-sim'));
+  assert.ok(vista.includes('>R$'));
+  const semPreco = vista.split('data-vol-fam="moido"')[1] || '';
+  assert.ok(semPreco.includes('—'));
+  ctx._orc27Doc = { canais: { dfb_lojas: { orcamento: 12823215 } } };
+  const cmp = ctx.vol27TextoComparacao(linhas, 'dfb_lojas');
+  assert.ok(cmp.includes('Simulação valor 27'));
+  assert.ok(cmp.includes('Orçamento 2027 no Orç Valor'));
+  assert.ok(cmp.includes('Delta · Lojas online'));
+  assert.equal(ctx.vol27TextoComparacao(linhas, ['dfb_lojas', 'dfb_rest']), '');
+  const varios = ctx.vol27RenderHtml(false, ag, doc, ['dfb_lojas', 'dfb_rest']);
+  assert.ok(varios.includes('id="vol27-compara"'));
+  assert.ok(varios.includes('display:none'));
+  const dois = ctx.vol27PrecoMedio(ag, ['dfb_lojas', 'dfb_rest'], 'grao');
+  perto(dois.fatur, 170);
+  perto(dois.volume, 17);
+  perto(dois.preco, 170 / 17);
+
+  const seedCtx = {};
+  vm.createContext(seedCtx);
+  vm.runInContext(fs.readFileSync(path.join(root, 'vendas-volume-familias.js'), 'utf8'), seedCtx);
+  const seed = seedCtx.VOL27_SEED_EXCEL;
+  const lojas = ctx.vol27PrecoMedio(seed, 'dfb_lojas', 'grao');
+  perto(lojas.fatur, 297686.13);
+  perto(lojas.volume, 3030);
+  perto(lojas.preco, 297686.13 / 3030);
+  const outMoido = seed.precos.porMes['2026-10'].dfb_dist_ret.moido;
+  assert.equal(outMoido.v, 0);
+  perto(outMoido.f, -32721.73);
+  const dist = ctx.vol27PrecoMedio(seed, 'dfb_dist_ret', 'moido');
+  perto(dist.fatur, 208505.09 + 28723.49);
+  assert.ok(Math.abs(dist.fatur - (208505.09 + 28723.49 - 32721.73)) > 1);
+  assert.equal(ctx.vol27PrecoMedio(seed, 'qb_dist_reg', 'grao').tem, false);
+  assert.equal(ctx.vol27PrecoMedio(seed, 'dfb_inst_horeca', 'moido').tem, false);
 });
 
 if (process.exitCode) {

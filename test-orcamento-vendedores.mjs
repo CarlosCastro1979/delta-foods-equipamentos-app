@@ -13,7 +13,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-16-ignorar-441908';
+const CACHE = 'v2026-10-16-volume-preco';
 
 function extractFn(src, name) {
   let start = src.indexOf(`function ${name}(`);
@@ -187,6 +187,8 @@ for (const name of [
   'VOL27_DEBOUNCE_MS',
   'VOL27_FAMILIAS',
   'VOL27_ROTULOS',
+  'VOL27_PRECO_MESES',
+  'VOL27_PRECO_ROTULO',
 ]) {
   vm.runInContext(extractConst(html, name), ctx);
 }
@@ -223,6 +225,7 @@ const fns = [
   'orc27AplicarEdicao',
   'orc27FmtRs',
   'orc27FmtPct',
+  'orc27CanalUnicoVolume',
   'orc27FmtInput',
   'orc27Esc',
   'orc27SubNavHtml',
@@ -252,6 +255,10 @@ const fns = [
   'vol27ChaveValida',
   'vol27ManualValor',
   'vol27ManualSoma',
+  'vol27PrecoCelulaEntra',
+  'vol27RotuloPreco',
+  'vol27PrecoMedio',
+  'vol27Simulacao',
   'vol27Montar',
   'vol27ResumoFora',
   'vol27FmtPlano',
@@ -272,6 +279,8 @@ const fns = [
   'vol27CanalEscrita',
   'vol27CanalDoEl',
   'vol27CelulaManualHtml',
+  'vol27OrcValorDoCanal',
+  'vol27TextoComparacao',
   'vol27RenderHtml',
   'vol27PickCampo',
   'vol27MergeCelulas',
