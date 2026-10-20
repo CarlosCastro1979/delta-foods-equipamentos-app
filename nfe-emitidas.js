@@ -519,6 +519,24 @@
     return !!(n && typeof n.pdfJuntoBase64 === 'string' && n.pdfJuntoBase64.length > 0);
   }
 
+  /**
+   * Coluna Boleto da lista de NF: S ou N.
+   * S quando a nota tem boleto gravado — boletoBase64, o PDF junto
+   * (pdfJuntoBase64), ou a marca que fica na célula leve (temBoleto,
+   * temPdfJunto, boletoNome, pdfJuntoNome) depois de tirar o base64.
+   * O PDF da DANFE sozinho não conta. Sem esses campos, N.
+   */
+  function nfeMarcaBoleto(n) {
+    if (!n) return 'N';
+    if (typeof n.boletoBase64 === 'string' && n.boletoBase64.length > 0) return 'S';
+    if (typeof n.pdfJuntoBase64 === 'string' && n.pdfJuntoBase64.length > 0) return 'S';
+    if (n.temBoleto) return 'S';
+    if (n.temPdfJunto) return 'S';
+    if (typeof n.boletoNome === 'string' && n.boletoNome.length > 0) return 'S';
+    if (typeof n.pdfJuntoNome === 'string' && n.pdfJuntoNome.length > 0) return 'S';
+    return 'N';
+  }
+
   function nfeTemAlgumBinario(n) {
     return nfeTemPdfBinario(n) || nfeTemBoletoBinario(n) || nfeTemJuntoBinario(n);
   }
@@ -1108,6 +1126,7 @@
     nfeTemPdfBinario: nfeTemPdfBinario,
     nfeTemBoletoBinario: nfeTemBoletoBinario,
     nfeTemJuntoBinario: nfeTemJuntoBinario,
+    nfeMarcaBoleto: nfeMarcaBoleto,
     nfeBaseNome: nfeBaseNome,
     nfeEhBoleto: nfeEhBoleto,
     nfeChaveNoNome: nfeChaveNoNome,

@@ -123,6 +123,7 @@ const fns = [
   'codClienteVendaIgnorado',
   'codClienteLojasOnlineBr',
   'codClienteLojasOnlineAmazon',
+  'codClienteDistRetalho',
   'dimensoesVendaQuadro',
   'linhasPlVendasQuadro',
   'mapasVendasQuadro',
@@ -185,6 +186,7 @@ const fns = [
   'vol27RodapeHtml',
   'vol27CanalIgual441908',
   'vol27AgregadoSemCliente441908',
+  'vol27AgregadoComClientesDistRetalho',
   'vol27FundirMeses',
   'vol27CanaisDoFiltro',
   'vol27FiltroFolha',
@@ -256,10 +258,10 @@ check('submenu Orç Valor e cinco linhas de Volume, com cache novo', () => {
   assert.equal(vm.runInContext('VOL27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_volume.json');
   assert.ok(!String(vm.runInContext('VOL27_CLOUD_PATH', ctx)).includes('mapas_v3'));
   assert.equal(vm.runInContext('ORC27_CLOUD_PATH', ctx), 'previsao/orcamento_2027_canais.json');
-  assert.ok(sw.includes('v2026-10-20-nfe-boletos'));
+  assert.ok(sw.includes('v2026-10-20-nfe-boleto-coluna'));
   assert.ok(!sw.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!sw.includes('v2026-10-14-volume-formulas'));
-  assert.ok(html.includes('v2026-10-20-nfe-boletos'));
+  assert.ok(html.includes('v2026-10-20-nfe-boleto-coluna'));
   assert.ok(!html.includes('v2026-10-16-ignorar-441908'));
   assert.ok(!html.includes('v2026-10-14-volume-formulas'));
   assert.ok(extractFn(html, 'vol27Medida').includes('/ VOL27_CAPSULA_KG'));
@@ -966,6 +968,74 @@ check('simulação 2026 = previsão × preço; total soma só os R$; mapa de val
   assert.ok(mapaTodos[4].includes(ctx.orc27FmtRs(500203.45, true)));
   assert.ok(mapaTodos[10].includes(ctx.orc27FmtRs(12824235.55, true)));
   assert.ok(todosHtml.includes('Diferença:'));
+});
+
+check('410730 e 423557: volume de Retalho moderno passa para Distribuidores de retalho', () => {
+  assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520018, cod: '410730' }), 'dfb_dist_ret');
+  assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520018, cod: '423557' }), 'dfb_dist_ret');
+  assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520018, cod: '0410730' }), 'dfb_dist_ret');
+  assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520018, cod: '411550' }), 'dfb_ret_mod');
+  assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520004, cod: '410730' }), 'dfb_dist_ret');
+  assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520009, cod: 'BR00002' }), 'dfb_lojas');
+  assert.equal(ctx.vol27CanalIdDeLinha({ npess: 99520005, cod: '441908' }), '');
+  assert.ok(extractFn(html, 'vol27Preparar').includes('vol27AgregadoComClientesDistRetalho'));
+
+  const ag = ctx.vol27AgregarLinhas([
+    { data: '2025-01-15', hierarq: 'GRAO', peso: 4.5, npess: 99520018, cod: '423557' },
+    { data: '2025-01-16', hierarq: 'GRAO', peso: 3, npess: 99520018, cod: '411550' },
+  ]);
+  perto(fam(ag, '2025-01', 'dfb_dist_ret', 'grao'), 4.5);
+  perto(fam(ag, '2025-01', 'dfb_ret_mod', 'grao'), 3);
+
+  const seedCtx = {};
+  vm.createContext(seedCtx);
+  vm.runInContext(fs.readFileSync(path.join(root, 'vendas-volume-familias.js'), 'utf8'), seedCtx);
+  const seed = seedCtx.VOL27_SEED_EXCEL;
+  assert.deepEqual(seed.meses['2025-01'].canais.dfb_ret_mod, {
+    vinho: 27, grao: 3, maquina: 3, capsulas: 91036, moido: -28,
+  });
+  assert.deepEqual(seed.meses['2025-01'].canais.dfb_dist_ret, {
+    capsulas: 100408, grao: 4.5, maquina: 623, vinho: 67.5,
+  });
+  assert.deepEqual(seed.meses['2025-02'].canais.dfb_ret_mod, {
+    moido: 56, vinho: 229.5, capsulas: 86031, grao: 21.5,
+  });
+  assert.equal(seed.meses['2025-02'].canais.dfb_ret_mod.maquina, undefined);
+  assert.deepEqual(seed.meses['2025-02'].canais.dfb_dist_ret, {
+    grao: 120, capsulas: 26312, maquina: 288, moido: -8,
+  });
+  assert.equal(seed.meses['2025-02'].canais.dfb_lojas.grao, 243);
+  assert.deepEqual(seed.meses['2025-03'].canais.dfb_ret_mod, {
+    moido: 1250, capsulas: 26994, grao: 732.5, maquina: 2,
+  });
+  assert.equal(seed.precos.porMes['2026-10'].dfb_ret_mod.moido.f, 16999.56);
+  assert.equal(seed.precos.porMes['2026-10'].dfb_ret_mod.moido.v, 304);
+  assert.ok(!seed.meses['2026-10']);
+
+  const antigo = {
+    meses: {
+      '2025-01': { canais: {
+        dfb_ret_mod: { vinho: 94.5, grao: 7.5, maquina: 626, capsulas: 191444, moido: -28 },
+        dfb_lojas: { grao: 1 },
+      } },
+      '2025-02': { canais: {
+        dfb_ret_mod: { moido: 48, vinho: 229.5, capsulas: 86031, grao: 66.5, maquina: 230 },
+        dfb_dist_ret: { grao: 75, capsulas: 26312, maquina: 58 },
+        dfb_lojas: { grao: 9 },
+      } },
+      '2026-10': { canais: { dfb_ret_mod: { moido: 304 } } },
+    },
+  };
+  const limpo = ctx.vol27AgregadoComClientesDistRetalho(antigo);
+  assert.deepEqual(limpo.meses['2025-01'].canais.dfb_ret_mod, seed.meses['2025-01'].canais.dfb_ret_mod);
+  assert.deepEqual(limpo.meses['2025-01'].canais.dfb_dist_ret, seed.meses['2025-01'].canais.dfb_dist_ret);
+  assert.deepEqual(limpo.meses['2025-02'].canais.dfb_ret_mod, seed.meses['2025-02'].canais.dfb_ret_mod);
+  assert.deepEqual(limpo.meses['2025-02'].canais.dfb_dist_ret, seed.meses['2025-02'].canais.dfb_dist_ret);
+  assert.equal(limpo.meses['2025-01'].canais.dfb_lojas.grao, 1);
+  assert.equal(limpo.meses['2025-02'].canais.dfb_lojas.grao, 9);
+  assert.equal(limpo.meses['2026-10'].canais.dfb_ret_mod.moido, 304);
+  const segunda = ctx.vol27AgregadoComClientesDistRetalho(limpo);
+  assert.equal(segunda, limpo);
 });
 
 if (process.exitCode) {

@@ -312,12 +312,12 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-20-nfe-boletos'), 'service worker referido no index');
+  assert(html.includes('v2026-10-20-nfe-boleto-coluna'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-perdas-sem-999'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-20-nfe-boletos'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-20-nfe-boleto-coluna'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
@@ -437,7 +437,9 @@ function testFiltrosETotal(zipPath) {
   assert(!host.includes('Linhas'), 'a lista de NF não repõe a coluna Linhas');
   const iNum = host.indexOf('>Número<');
   const depois = host.slice(iNum);
-  assert(iNum > 0 && depois.indexOf('>Cliente<') < depois.indexOf('>Valor<') && depois.indexOf('>Valor<') < depois.indexOf('>Data<'), 'a ordem das colunas da lista mantém-se');
+  assert(iNum > 0 && depois.indexOf('>Boleto<') > 0 && depois.indexOf('>Boleto<') < depois.indexOf('>Cliente<') && depois.indexOf('>Cliente<') < depois.indexOf('>Valor<') && depois.indexOf('>Valor<') < depois.indexOf('>Data<'), 'a coluna Boleto fica imediatamente ao lado do número');
+  const marcasSem = depois.match(/class="nfe-boleto"[^>]*>[SN]</g) || [];
+  assert(marcasSem.length > 0 && marcasSem.every(m => m.endsWith('>N<')), 'notas sem boleto gravado mostram N e a coluna não se esconde');
   assert(host.includes('>Valor<'), 'o resumo tem a coluna de valor');
   assert(host.includes(brl(somaHelcio)), 'o resumo do Hélcio mostra a soma em R$');
 
@@ -1166,6 +1168,44 @@ async function testBoletosPdf() {
   assert(html.includes('nfeAssociarBoletos'), 'a carga liga o boleto');
   assert(html.includes('nfeAnexarDocsJuntos'), 'a carga grava o PDF junto ao ler o zip');
   assert(html.includes('Abrir NF e boleto'), 'o número da NF com boleto abre o documento junto');
+  assert(html.includes('>Boleto<'), 'a lista de NF tem a coluna Boleto');
+
+  assert(nfe.nfeMarcaBoleto(fundida) === 'S', 'nota com boletoBase64 e PDF junto marca S');
+  assert(nfe.nfeMarcaBoleto(semJunto) === 'N', 'nota só com DANFE marca N');
+  assert(nfe.nfeMarcaBoleto(soBolJ) === 'S', 'boleto sem DANFE marca S');
+  const leveCom = nfe.nfeNotaSemPdfBinario(fundida);
+  const leveSem = nfe.nfeNotaSemPdfBinario(semJunto);
+  assert(nfe.nfeMarcaBoleto(leveCom) === 'S' && !leveCom.boletoBase64 && !leveCom.pdfJuntoBase64, 'a célula leve com temBoleto marca S');
+  assert(nfe.nfeMarcaBoleto(leveSem) === 'N', 'a célula leve sem boleto marca N');
+  assert(nfe.nfeMarcaBoleto({ pdfJuntoBase64: 'QQ==' }) === 'S', 'pdfJuntoBase64 sozinho marca S');
+  assert(nfe.nfeMarcaBoleto({ pdfBase64: 'QQ==', temPdf: true }) === 'N', 'só o PDF da NF marca N');
+
+  function marcaNaLista(pagina, numero) {
+    const lista = pagina.indexOf('Total da lista');
+    const i = pagina.indexOf('>' + numero + '</button>', lista >= 0 ? lista : 0);
+    assert(i >= 0, 'a lista mostra o número ' + numero);
+    const cab = pagina.indexOf('>Número<');
+    const bol = pagina.indexOf('>Boleto<');
+    const cli = pagina.indexOf('>Cliente<');
+    assert(cab >= 0 && bol > cab && cli > bol, 'Boleto fica ao lado do número, antes do cliente');
+    const m = pagina.slice(i, i + 700).match(/class="nfe-boleto"[^>]*>([SN])</);
+    assert(m, 'a linha ' + numero + ' tem a célula Boleto');
+    return m[1];
+  }
+  const notasUi = [fundida, semJunto, soBolJ].map(n => Object.assign({}, n, { canalId: 'horeca', canalNome: 'Horeca' }));
+  const geral = loadNfeUi(notasUi, '', 'nfe').nfeHtml();
+  assert(marcaNaLista(geral, '1') === 'S', 'no quadro geral a NF com boleto mostra S');
+  assert(marcaNaLista(geral, '2') === 'N', 'no quadro geral a NF sem boleto mostra N');
+  assert(marcaNaLista(geral, '3') === 'S', 'no quadro geral o boleto sem DANFE mostra S');
+  assert(!geral.includes('>Sim<') && !geral.includes('>Não<'), 'a coluna usa S ou N');
+  const canalUi = loadNfeUi(notasUi, 'horeca');
+  canalUi.nfePaintCanal();
+  const canalHtml = canalUi.el('canal-nfe-host').innerHTML;
+  assert(marcaNaLista(canalHtml, '1') === 'S' && marcaNaLista(canalHtml, '2') === 'N', 'o menu do canal repete a coluna Boleto');
+  const soSem = loadNfeUi([semJunto], '', 'nfe').nfeHtml();
+  assert(soSem.includes('>Boleto<') && marcaNaLista(soSem, '2') === 'N', 'a coluna Boleto fica visível quando todas são N');
+  const leves = loadNfeUi([leveCom, leveSem].map(n => Object.assign({}, n, { canalId: 'horeca' })), '', 'nfe').nfeHtml();
+  assert(marcaNaLista(leves, '1') === 'S' && marcaNaLista(leves, '2') === 'N', 'a lista usa a marca da célula leve');
 }
 
 testCliqueSemPdf().then(() => testBoletosPdf()).then(() => {
