@@ -2032,6 +2032,10 @@
   .pv-acc-click:hover{color:var(--accent);}
   button.nfe-click{background:none;border:none;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
   button.nfe-click:hover{color:var(--accent);}
+  button.nfe-wa-btn{background:none;border:none;padding:4px;margin:0;line-height:0;cursor:pointer;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;min-width:32px;min-height:32px;}
+  button.nfe-wa-btn:hover,button.nfe-wa-btn:focus-visible{background:#dcfce7;outline:none;}
+  .nfe-wa-ico{display:block;width:18px;height:18px;}
+  th.nfe-wa,td.nfe-wa{width:36px;max-width:40px;}
   .pv-acc-rank-active{background:#fff7ed;}
   .ct-review-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
   .ct-review-item strong{display:block;font-size:10px;text-transform:uppercase;color:var(--muted);margin-bottom:2px;}
@@ -14334,6 +14338,16 @@ function nfeBoletoCelula(n) {
   return `<td class="nfe-boleto" style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center;font-weight:700;">${marca}</td>`;
 }
 
+function nfeWhatsappIcone() {
+  return `<svg class="nfe-wa-ico" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="#25D366" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>`;
+}
+
+function nfeWhatsappCelula(n) {
+  const ch = String((n && n.chave) || '').replace(/[^0-9A-Za-z]/g, '');
+  if (!ch) return `<td class="nfe-wa" style="padding:4px;border-bottom:1px solid var(--border);text-align:center;width:36px;"></td>`;
+  return `<td class="nfe-wa" style="padding:4px;border-bottom:1px solid var(--border);text-align:center;width:36px;"><button type="button" class="nfe-wa-btn" title="WhatsApp" aria-label="WhatsApp" onclick="event.preventDefault();event.stopPropagation();nfePartilharWhatsapp('${ch}',event)">${nfeWhatsappIcone()}</button></td>`;
+}
+
 function nfeListaHtml(notas, passa) {
   const pred = typeof passa === 'function' ? passa : nfePassaFiltro;
   const vis = (notas || []).filter(pred).slice().sort(nfeCmpNota);
@@ -14375,6 +14389,7 @@ function nfeListaHtml(notas, passa) {
     const linhas = g.notas.map(n => `<tr>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;">${nfeNumeroCelula(n)}</td>
       ${nfeBoletoCelula(n)}
+      ${nfeWhatsappCelula(n)}
       <td style="padding:6px 8px;border-bottom:1px solid var(--border);">${escHtml(n.cliente || '—')}</td>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;">${nfeFmtValor(n.valor)}</td>
       <td style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;">${escHtml(nfeFmtData(n.data))}</td>
@@ -14387,6 +14402,7 @@ function nfeListaHtml(notas, passa) {
           <thead><tr>
             <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);">Número</th>
             <th style="text-align:center;padding:6px 8px;border-bottom:1px solid var(--border);">Boleto</th>
+            <th class="nfe-wa" style="text-align:center;padding:4px;border-bottom:1px solid var(--border);width:36px;" aria-label="WhatsApp">${nfeWhatsappIcone()}</th>
             <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);">Cliente</th>
             <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);">Valor</th>
             <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);">Data</th>
@@ -14405,7 +14421,7 @@ function nfeHtml() {
   const resumo = nfeTabelaResumo(rows, 'nfeFiltrar');
   const estado = escHtml(_nfeStatusMsg || (notas.length ? (notas.length + ' notas guardadas.') : 'Ainda sem carga. O ZIP de XML da TTI carrega-se em Dados.'));
   return `<p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;">
-      Consulta das NF já carregadas. O ZIP de XML e PDF da TTI carrega-se em <strong>Dados</strong>. Clique no número da NF para abrir o PDF. A coluna Boleto mostra S quando a nota tem boleto gravado e N quando não tem. CPF sem vendedor fica no Marcio Gorga (Ecommerce). Transferência entre os CNPJ da Delta ES e da Delta SP fica em Transferências internas, sem vendedor. A mesma chave não duplica.
+      Consulta das NF já carregadas. O ZIP de XML e PDF da TTI carrega-se em <strong>Dados</strong>. Clique no número da NF para abrir o PDF. A coluna Boleto mostra S quando a nota tem boleto gravado e N quando não tem. O ícone verde a seguir envia esse PDF para o WhatsApp. CPF sem vendedor fica no Marcio Gorga (Ecommerce). Transferência entre os CNPJ da Delta ES e da Delta SP fica em Transferências internas, sem vendedor. A mesma chave não duplica.
     </p>
     <div style="font-size:12px;color:var(--muted);margin:0 0 12px;">${estado}</div>
     ${nfeFiltrosHtml('geral', notas)}
@@ -14622,25 +14638,99 @@ function cvmPeriodoMudou() {
   }
 }
 
+function nfeBytesDeBase64(b64) {
+  const bin = atob(String(b64 || ''));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) & 255;
+  return bytes;
+}
+
+async function nfePdfResolvido(chave) {
+  const ch = String(chave || '').replace(/[^0-9A-Za-z]/g, '');
+  const nota = (_nfeNotas || []).find(n => n && String(n.chave) === ch) || null;
+  let map = null;
+  try {
+    const pack = await idbGet('delta_nfe_pdfs');
+    map = pack && pack.pdfs;
+  } catch (_) { map = null; }
+  const hit = (typeof nfePdfDaNota === 'function')
+    ? nfePdfDaNota(nota, map)
+    : { ok: false, msg: 'Esta NF não tem PDF.' };
+  return { nota, hit };
+}
+
+function nfeFicheiroPdf(hit, nota) {
+  if (!hit || !hit.ok || !hit.pdfBase64) return null;
+  const bytes = nfeBytesDeBase64(hit.pdfBase64);
+  if (!bytes.length) return null;
+  let nome = String(hit.pdfNome || '').trim().replace(/[\\/]/g, '_');
+  if (!nome) {
+    const num = String((nota && nota.numero) || '').replace(/[^\w.-]+/g, '');
+    nome = num ? ('NF_' + num + '.pdf') : 'NF.pdf';
+  }
+  if (!/\.pdf$/i.test(nome)) nome += '.pdf';
+  return new File([bytes], nome, { type: 'application/pdf' });
+}
+
+function nfePodePartilharFicheiro(file) {
+  const nav = (typeof navigator !== 'undefined') ? navigator : null;
+  if (!nav || typeof nav.share !== 'function' || !file || !file.size) return false;
+  if (typeof nav.canShare !== 'function') return true;
+  try { return !!nav.canShare({ files: [file] }); } catch (_) { return false; }
+}
+
+function nfeDescarregarPdf(file) {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name || 'NF.pdf';
+  a.rel = 'noopener';
+  if (document.body) document.body.appendChild(a);
+  a.click();
+  if (a.remove) a.remove();
+  setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 60000);
+}
+
+function nfeAbrirWhatsappTexto(texto) {
+  const url = 'https://wa.me/?text=' + encodeURIComponent(texto || 'NF');
+  let aberto = false;
+  try {
+    if (typeof window !== 'undefined' && typeof window.open === 'function') {
+      const w = window.open(url, '_blank', 'noopener');
+      aberto = !!w;
+    }
+  } catch (_) { aberto = false; }
+  if (!aberto && typeof document !== 'undefined' && document.createElement) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    if (document.body) document.body.appendChild(a);
+    a.click();
+    if (a.remove) a.remove();
+  }
+}
+
+function nfeWhatsappSemFicheiro(file, nota) {
+  nfeDescarregarPdf(file);
+  const num = nota && nota.numero ? String(nota.numero) : '';
+  const texto = num ? ('NF ' + num + '. O PDF foi guardado para anexar.') : 'NF. O PDF foi guardado para anexar.';
+  nfeAbrirWhatsappTexto(texto);
+  if (typeof toast === 'function') toast('Neste browser o PDF foi descarregado para anexar no WhatsApp.', 'warn');
+}
+
 async function nfeAbrirPdf(chave) {
   try {
-    const ch = String(chave || '').replace(/[^0-9A-Za-z]/g, '');
-    const nota = (_nfeNotas || []).find(n => n && String(n.chave) === ch) || null;
-    let map = null;
-    try {
-      const pack = await idbGet('delta_nfe_pdfs');
-      map = pack && pack.pdfs;
-    } catch (_) { map = null; }
-    const hit = (typeof nfePdfDaNota === 'function')
-      ? nfePdfDaNota(nota, map)
-      : { ok: false, msg: 'Esta NF não tem PDF.' };
+    const { hit } = await nfePdfResolvido(chave);
     if (!hit.ok || !hit.pdfBase64) {
       if (typeof toast === 'function') toast((hit && hit.msg) || 'Esta NF não tem PDF.', 'error');
       return;
     }
-    const bin = atob(hit.pdfBase64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) & 255;
+    const bytes = nfeBytesDeBase64(hit.pdfBase64);
+    if (!bytes.length) {
+      if (typeof toast === 'function') toast('Esta NF não tem PDF.', 'error');
+      return;
+    }
     const blob = new Blob([bytes], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     let aberto = false;
@@ -14663,6 +14753,44 @@ async function nfeAbrirPdf(chave) {
   } catch (e) {
     console.warn('nfe pdf', e);
     if (typeof toast === 'function') toast('Esta NF não tem PDF.', 'error');
+  }
+}
+
+async function nfePartilharWhatsapp(chave, ev) {
+  if (ev && ev.preventDefault) ev.preventDefault();
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  try {
+    const { nota, hit } = await nfePdfResolvido(chave);
+    if (!hit || !hit.ok || !hit.pdfBase64) {
+      if (typeof toast === 'function') toast((hit && hit.msg) || 'Esta NF não tem PDF.', 'error');
+      return;
+    }
+    const file = nfeFicheiroPdf(hit, nota);
+    if (!file || !file.size) {
+      if (typeof toast === 'function') toast('Esta NF não tem PDF.', 'error');
+      return;
+    }
+    const num = nota && nota.numero ? String(nota.numero) : '';
+    const texto = num ? ('NF ' + num) : 'NF';
+    if (!nfePodePartilharFicheiro(file)) {
+      nfeWhatsappSemFicheiro(file, nota);
+      return;
+    }
+    try {
+      await navigator.share({ files: [file], title: texto, text: texto });
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      const semFicheiro = err && (err.name === 'TypeError' || err.name === 'DataError' || err.name === 'NotSupportedError');
+      if (semFicheiro) {
+        nfeWhatsappSemFicheiro(file, nota);
+        return;
+      }
+      if (typeof toast === 'function') toast('Não foi possível partilhar no WhatsApp.', 'error');
+    }
+  } catch (e) {
+    console.warn('nfe whatsapp', e);
+    if (e && e.name === 'AbortError') return;
+    if (typeof toast === 'function') toast('Não foi possível partilhar no WhatsApp.', 'error');
   }
 }
 
@@ -43179,7 +43307,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-20-nfe-boletos-parcelas: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-20-nfe-whatsapp: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

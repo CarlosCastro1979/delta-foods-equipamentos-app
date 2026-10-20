@@ -312,12 +312,12 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-20-nfe-boletos-parcelas'), 'service worker referido no index');
+  assert(html.includes('v2026-10-20-nfe-whatsapp'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-perdas-sem-999'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-20-nfe-boletos-parcelas'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-20-nfe-whatsapp'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
@@ -357,14 +357,31 @@ function loadNfeUi(notas, canalId, pvView) {
     nfe.nfeNormNome,
     nfe.nfeNotasDoCanal,
     () => canalId || '',
-    { getElementById: el },
+    {
+      getElementById: el,
+      body: { appendChild() {}, removeChild() {} },
+      createElement() {
+        const node = {
+          href: '',
+          download: '',
+          target: '',
+          rel: '',
+          style: {},
+          click() {
+            if (global._nfeAnchorClicks) global._nfeAnchorClicks.push({ href: node.href, download: node.download, target: node.target });
+          },
+          remove() {},
+        };
+        return node;
+      },
+    },
     pvView || 'mapa',
     notas,
     '',
     '',
     false,
   ];
-  const api = new Function(...names, src + '\nreturn { nfePaintCanal, nfeHtml, nfeSetFiltro, nfeFiltrarCanal, nfeLimparFiltroCanal, nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, nfeAbrirPdf, el: null };')(...vals);
+  const api = new Function(...names, src + '\nreturn { nfePaintCanal, nfeHtml, nfeSetFiltro, nfeFiltrarCanal, nfeLimparFiltroCanal, nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, nfeAbrirPdf, nfePartilharWhatsapp, el: null };')(...vals);
   api.el = el;
   return api;
 }
@@ -1353,7 +1370,154 @@ async function testBoletosParcelas() {
   assert(naPasta.notas[0].boletos.map(b => b.nome).join(',') === 'Boleto_6-2_1_2.pdf,Boleto_6-2_2_2.pdf', 'na pasta a ordem também é a parcela');
 }
 
-testCliqueSemPdf().then(() => testBoletosPdf()).then(() => testBoletosParcelas()).then(() => {
+async function testWhatsappPdf() {
+  const junto = await pdfComTamanhos([[200, 300], [401, 101], [402, 102]]);
+  const danfe = await pdfComTamanhos([[180, 280]]);
+  const chave = '35261014830817000100550020000000990000000000';
+  const nota = {
+    chave,
+    numero: '99',
+    serie: '1',
+    canalId: 'horeca',
+    canalNome: 'Horeca',
+    vendedor: 'Hélcio Grégio',
+    cliente: 'Cliente WA',
+    valor: 10,
+    data: '2026-10-20',
+    status: 'unico',
+    temPdf: true,
+    temBoleto: true,
+    temPdfJunto: true,
+    pdfJuntoBase64: junto.toString('base64'),
+    pdfJuntoNome: 'NF-99-boleto.pdf',
+    pdfBase64: Buffer.from('%PDF-so-danfe').toString('base64'),
+    boletoBase64: Buffer.from('%PDF-so-bol').toString('base64'),
+  };
+  const api = loadNfeUi([nota], '', 'nfe');
+  const html = api.nfeHtml();
+  const canal = loadNfeUi([nota], 'horeca');
+  canal.nfePaintCanal();
+  const canalHtml = canal.el('canal-nfe-host').innerHTML;
+  [html, canalHtml].forEach(function (pagina, idx) {
+    const onde = idx ? 'menu do canal' : 'NF emitidas';
+    const cab = pagina.indexOf('>Número<');
+    const bol = pagina.indexOf('>Boleto<', cab);
+    const cli = pagina.indexOf('>Cliente<', bol);
+    const thWa = pagina.indexOf('class="nfe-wa"', bol);
+    assert(cab > 0 && bol > cab && thWa > bol && cli > thWa, onde + ': o ícone fica no cabeçalho entre Boleto e Cliente');
+    const iBtn = pagina.indexOf("nfeAbrirPdf('" + chave + "')");
+    const iBolCell = pagina.indexOf('class="nfe-boleto"', iBtn);
+    const iSn = pagina.indexOf('>S<', iBolCell);
+    const iWa = pagina.indexOf("nfePartilharWhatsapp('" + chave + "'", iSn);
+    const iCell = pagina.lastIndexOf('class="nfe-wa"', iWa);
+    const iCli = pagina.indexOf('Cliente WA', iWa);
+    assert(iBtn > 0 && iBolCell > iBtn && iSn > iBolCell && iCell > iSn && iWa > iCell && iCli > iWa, onde + ': o botão WhatsApp fica a seguir à célula S/N');
+    const celula = pagina.slice(iCell, iCli);
+    assert(celula.includes('nfe-wa-btn') && celula.includes('<svg') && celula.includes('#25D366'), onde + ': a célula tem o ícone verde');
+    assert(!/Exportar|partilhar no/i.test(celula), onde + ': a célula não tem texto além do ícone');
+  });
+
+  const partilhas = [];
+  function porNavigator(nav) {
+    Object.defineProperty(global, 'navigator', { value: nav, configurable: true, writable: true });
+  }
+  porNavigator({
+    canShare(data) {
+      return !!(data && data.files && data.files[0] && data.files[0].size > 0);
+    },
+    share(data) {
+      partilhas.push(data);
+      return Promise.resolve();
+    },
+  });
+  global.idbGet = async () => null;
+  global.toast = () => {};
+  await api.nfePartilharWhatsapp(chave);
+  assert(partilhas.length === 1, 'navigator.share foi chamado com o PDF junto');
+  const f = partilhas[0] && partilhas[0].files && partilhas[0].files[0];
+  assert(f instanceof File && f.size > 0 && f.type === 'application/pdf', 'o File partilhado não está vazio');
+  assert(f.name === 'NF-99-boleto.pdf', 'usa o nome do PDF junto, veio ' + (f && f.name));
+  assert(partilhas[0].text === 'NF 99', 'o texto da partilha é curto');
+  const got = Buffer.from(await f.arrayBuffer());
+  assert(got.equals(junto), 'o File é o PDF junto, não o primeiro boleto nem a DANFE isolada');
+
+  const sem = Object.assign({}, nota, {
+    chave: chave + 'B',
+    numero: '98',
+    cliente: 'Cliente DANFE',
+    temBoleto: false,
+    temPdfJunto: false,
+    pdfJuntoBase64: '',
+    pdfJuntoNome: '',
+    boletoBase64: '',
+    pdfBase64: danfe.toString('base64'),
+    pdfNome: 'NF_98.pdf',
+  });
+  const apiSem = loadNfeUi([sem], '', 'nfe');
+  const semHtml = apiSem.nfeHtml();
+  const iN = semHtml.indexOf('class="nfe-boleto"');
+  assert(semHtml.slice(iN, iN + 220).includes('>N<'), 'sem boleto a célula continua N');
+  assert(semHtml.indexOf("nfePartilharWhatsapp('" + sem.chave + "'") > semHtml.indexOf('>N<'), 'o ícone também aparece quando o boleto é N');
+  partilhas.length = 0;
+  await apiSem.nfePartilharWhatsapp(sem.chave);
+  const f2 = partilhas[0] && partilhas[0].files && partilhas[0].files[0];
+  assert(f2 && f2.name === 'NF_98.pdf' && Buffer.from(await f2.arrayBuffer()).equals(danfe), 'sem boleto partilha só a DANFE');
+
+  const noIdb = await pdfComTamanhos([[190, 290], [403, 103]]);
+  const leve = {
+    chave: 'IDB1',
+    numero: '97',
+    canalId: 'horeca',
+    canalNome: 'Horeca',
+    cliente: 'Cliente IDB',
+    valor: 1,
+    data: '2026-10-20',
+    status: 'unico',
+    temPdf: true,
+    temBoleto: true,
+    temPdfJunto: true,
+    pdfJuntoNome: 'NF-97-boleto.pdf',
+  };
+  global.idbGet = async (k) => {
+    if (k !== 'delta_nfe_pdfs') return null;
+    return { pdfs: { IDB1: { juntoB64: noIdb.toString('base64'), juntoNome: 'NF-97-boleto.pdf', b64: Buffer.from('%PDF-danfe').toString('base64'), nome: 'danfe.pdf' } } };
+  };
+  const apiIdb = loadNfeUi([leve], '', 'nfe');
+  partilhas.length = 0;
+  await apiIdb.nfePartilharWhatsapp('IDB1');
+  const f3 = partilhas[0] && partilhas[0].files && partilhas[0].files[0];
+  assert(f3 && f3.size > 0 && Buffer.from(await f3.arrayBuffer()).equals(noIdb), 'com o binário no IndexedDB partilha o PDF junto');
+
+  const toasts = [];
+  const abertos = [];
+  global._nfeAnchorClicks = [];
+  global.toast = (m) => { toasts.push(String(m)); };
+  global.window = { open(url) { abertos.push(url); return {}; } };
+  global.idbGet = async () => null;
+  porNavigator({
+    canShare() { return false; },
+    share() { throw new Error('share não devia correr sem ficheiros'); },
+  });
+  await api.nfePartilharWhatsapp(chave);
+  assert(toasts.some(t => t.indexOf('Neste browser o PDF foi descarregado para anexar no WhatsApp') >= 0), 'fallback avisa a descarga, veio ' + toasts.join('|'));
+  assert(abertos.some(u => String(u).indexOf('https://wa.me/?text=') === 0), 'fallback abre o WhatsApp com texto, veio ' + abertos.join('|'));
+  assert(global._nfeAnchorClicks.some(a => a.download === 'NF-99-boleto.pdf'), 'fallback descarrega o PDF junto');
+
+  const toastsAbort = [];
+  global.toast = (m) => { toastsAbort.push(String(m)); };
+  porNavigator({
+    canShare() { return true; },
+    share() {
+      const e = new Error('The user aborted a request.');
+      e.name = 'AbortError';
+      return Promise.reject(e);
+    },
+  });
+  await api.nfePartilharWhatsapp(chave);
+  assert(toastsAbort.length === 0, 'cancelar a folha de partilha não mostra toast');
+}
+
+testCliqueSemPdf().then(() => testBoletosPdf()).then(() => testBoletosParcelas()).then(() => testWhatsappPdf()).then(() => {
   if (failed) {
     console.error(failed + ' asserção(ões) falharam');
     process.exit(1);
