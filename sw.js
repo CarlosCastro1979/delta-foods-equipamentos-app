@@ -1,4 +1,4 @@
-// Service Worker v2026-10-16-volume-total-sim — limpa cache e auto-destrói
+// Service Worker v2026-10-20-mapa-editar-mes-freeze — limpa cache e auto-destrói
 // (a app não deve servir index.html antigo após merge no GitHub Pages)
 self.addEventListener('install', e => {
   self.skipWaiting();

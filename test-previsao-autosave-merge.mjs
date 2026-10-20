@@ -338,9 +338,11 @@ check('merge por id: filhas Institucional entram sem copiar o total do pai', () 
   assert.ok(merged.linhas.some(r => r.id === 'dfb_inst_horeca'));
 });
 
-check('mês: Agosto=7 Setembro=8 no selector e seeds', () => {
-  assert.ok(html.includes('value="7" selected>Agosto'));
+check('mês: Agosto=7 Setembro=8 no selector e seeds; omissão não é Agosto fixo', () => {
+  assert.ok(html.includes('value="7">Agosto'));
+  assert.ok(!html.includes('value="7" selected>Agosto'));
   assert.ok(html.includes('value="8">Setembro'));
+  assert.ok(html.includes('function pvMesPorOmissao'));
   assert.ok(html.includes("'2026_7': PV_SEED_AGOSTO_2026"));
   assert.ok(html.includes("'2026_8': PV_SEED_SETEMBRO_2026"));
 });

@@ -687,11 +687,37 @@
   .table-wrap {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    overflow: hidden;
-    overflow-x: auto;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    max-height: min(70vh, calc(100vh - 220px));
+    max-width: 100%;
     background: var(--surface);
     box-shadow: var(--shadow-sm);
   }
+  .table-wrap:not(.table-wrap--freeze) table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+  }
+  .table-wrap:not(.table-wrap--freeze) thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background-color: #f5f5f5;
+    background-clip: padding-box;
+  }
+  .table-wrap:not(.table-wrap--freeze) thead th:first-child,
+  .table-wrap:not(.table-wrap--freeze) tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background-clip: padding-box;
+  }
+  .table-wrap:not(.table-wrap--freeze) thead th:first-child {
+    z-index: 5;
+    background-color: #f5f5f5;
+  }
+  .table-wrap:not(.table-wrap--freeze) tbody tr:nth-child(odd) td:first-child { background-color: #fff; }
+  .table-wrap:not(.table-wrap--freeze) tbody tr:nth-child(even) td:first-child { background-color: #fafafa; }
 
   /* Freeze panes (Excel): cabeçalho + CÓD/CLIENTE no viewport da tabela */
   .table-wrap.table-wrap--freeze {
@@ -1467,7 +1493,7 @@
     color: #1e3a8a; background: #dbeafe; border: 1px solid #93c5fd;
     border-radius: 999px; padding: 2px 8px;
   }
-  .vq-scroll { overflow: auto; -webkit-overflow-scrolling: touch; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  .vq-scroll { overflow: auto; -webkit-overflow-scrolling: touch; max-width: 100%; max-height: min(70vh, calc(100vh - 220px)); border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
   .vq-scroll-main { max-height: min(68vh, 640px); }
   .vq-scroll-det { max-height: min(48vh, 420px); }
   .vq-legenda { font-size: 12px; color: var(--text-secondary); margin: 0 0 8px; line-height: 1.45; }
@@ -1481,8 +1507,26 @@
     border-bottom: 1px solid var(--border-strong); white-space: nowrap;
     box-shadow: 0 1px 0 var(--border);
   }
-  .vq-table thead th.vq-linha { text-align: left; z-index: 3; top: 0; left: 0; }
-  .vq-linha { text-align: left; position: sticky; left: 0; z-index: 1; min-width: 176px; background: #fff; box-shadow: 1px 0 0 var(--border); }
+  .vq-table thead th.vq-linha { text-align: left; z-index: 4; top: 0; left: 0; background-color: #f8fafc; }
+  .vq-linha { text-align: left; position: sticky; left: 0; z-index: 2; min-width: 176px; background: #fff; background-clip: padding-box; box-shadow: 1px 0 0 var(--border); }
+  .vq-table thead th:first-child,
+  .vq-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background-clip: padding-box;
+  }
+  .vq-table thead th:first-child {
+    z-index: 4;
+    top: 0;
+    left: 0;
+    background-color: #f8fafc;
+  }
+  .vq-table tbody td:first-child { background-color: #fff; }
+  .vq-table tbody tr.vq-emp td:first-child { background-color: #f4f7fb; }
+  .vq-table tbody tr.vq-total td:first-child { background-color: #e8eef5; }
+  .vq-table tbody tr.vq-can td:first-child,
+  .vq-table tbody tr.vq-vend td:first-child { background-color: #fff; }
   .vq-table tbody tr.vq-can td { background: #fff; font-weight: 400; }
   .vq-table tbody tr.vq-emp td { background: #f4f7fb; font-weight: 700; }
   .vq-table tbody tr.vq-total td { background: #e8eef5; font-weight: 700; border-top: 2px solid var(--border-strong); }
@@ -1937,6 +1981,47 @@
   .ct-section-title{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:8px;text-transform:uppercase;letter-spacing:.04em;}
   .ct-lbl{display:block;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--muted);margin-bottom:4px;letter-spacing:.04em;}
   .ct-req{color:var(--accent);}
+  /* Quadros largos: cabeçalho e 1.ª coluna ficam visíveis dentro do scroll. */
+  .quadro-freeze {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    max-height: min(70vh, calc(100vh - 220px));
+    max-width: 100%;
+  }
+  .quadro-freeze table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+  }
+  .quadro-freeze thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background-color: #f8fafc;
+    background-clip: padding-box;
+  }
+  .quadro-freeze thead th:first-child,
+  .quadro-freeze tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background-clip: padding-box;
+  }
+  .quadro-freeze thead th:first-child {
+    z-index: 5;
+    top: 0;
+    left: 0;
+    background-color: #f8fafc;
+  }
+  .quadro-freeze tbody td:first-child {
+    background-color: #fff;
+    box-shadow: 1px 0 0 #e2e8f0;
+  }
+  .quadro-freeze td.qf-roll {
+    position: static !important;
+    left: auto !important;
+    z-index: auto !important;
+    box-shadow: none !important;
+  }
   .ct-table{width:100%;border-collapse:collapse;font-size:12px;}
   .ct-table th{background:#f3f4f6;padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);}
   .ct-table td{padding:3px 3px;border:1px solid var(--border);}
@@ -2142,7 +2227,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas, Orçamento 2027 e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: só consulta no mapa mensal. Edição do mapa: direcção (Carlos, Christian, Andrea, Daniela K.). No Orçamento 2027 escrevem Previsão Out a Dez e Orçamento 2027, em valor e em volume, e Out–Dez da Sazonalidade.</div>
+          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas, Orçamento 2027 e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: escrevem a Previsão de fecho dos seus canais no mapa mensal. N, MYR e Publicar: direcção (Carlos, Christian, Andrea, Daniela K.). No Orçamento 2027 escrevem Previsão Out a Dez e Orçamento 2027, em valor e em volume, e Out–Dez da Sazonalidade.</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -2656,7 +2741,7 @@ var _unused_placeholder = 1;
         </div>
         <div class="form-group" style="margin:0;grid-column:1/-1">
           <label class="form-label">Equipamentos profissionais</label>
-          <div style="overflow:auto;max-height:320px;border:1px solid var(--border);border-radius:8px;background:var(--surface)">
+          <div class="quadro-freeze" style="max-height:320px;border:1px solid var(--border);border-radius:8px;background:var(--surface)">
             <table id="at-dist-eq-table" style="width:100%;border-collapse:collapse;font-size:13px;">
               <thead style="position:sticky;top:0;background:var(--surface);z-index:1">
                 <tr style="border-bottom:1px solid var(--border);text-align:left">
@@ -2714,7 +2799,7 @@ var _unused_placeholder = 1;
         </div>
         <div class="form-group" style="margin:0;grid-column:1/-1">
           <label class="form-label">Catálogo (dep. 0033)</label>
-          <div id="at-dist-pc-table-wrap" style="overflow:auto;max-height:340px;border:1px solid var(--border);border-radius:8px;background:var(--surface)">
+          <div id="at-dist-pc-table-wrap" class="quadro-freeze" style="max-height:340px;border:1px solid var(--border);border-radius:8px;background:var(--surface)">
             <table id="at-dist-pc-table" style="width:100%;border-collapse:collapse;font-size:13px;">
               <thead style="position:sticky;top:0;background:var(--surface);z-index:1">
                 <tr style="border-bottom:1px solid var(--border);text-align:left">
@@ -3818,7 +3903,7 @@ var _unused_placeholder = 1;
           <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:13px;background:var(--surface2);">
             Chamados <span id="ata-list-count" style="color:var(--muted);font-weight:500;"></span>
           </div>
-          <div id="ata-lista" style="max-height:70vh;overflow:auto;">
+          <div id="ata-lista" class="quadro-freeze" style="max-height:70vh;">
             <div style="padding:28px;text-align:center;color:var(--muted);font-size:13px;">A carregar…</div>
           </div>
         </div>
@@ -4004,7 +4089,7 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR — autosave do mapa só da direcção. Orçamento 2027 (Orç Valor, Volume e Sazonalidade): vendedores escrevem Previsão Out a Dez, Orçamento 2027 e Out–Dez da sazonalidade, autosave local + cloud.
+            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR — cada vendedor escreve a Previsão de fecho dos seus canais (autosave). O resto do mapa é da direcção. Orçamento 2027 (Orç Valor, Volume e Sazonalidade): vendedores escrevem Previsão Out a Dez, Orçamento 2027 e Out–Dez da sazonalidade, autosave local + cloud.
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
@@ -4016,7 +4101,7 @@ var _unused_placeholder = 1;
             </select>
           </label>
           <label style="font-size:12px;color:var(--muted);" id="pv-mes-wrap">Mês
-            <select id="pv-mes" class="form-input" style="height:36px;min-width:150px;margin-left:6px;white-space:nowrap;" onchange="pvEnsureCloudThenRender({reload:true})">
+            <select id="pv-mes" class="form-input" style="height:36px;min-width:150px;margin-left:6px;white-space:nowrap;" onchange="pvMemorizarMesEscolhido(this.value);pvEnsureCloudThenRender({reload:true})">
               <option value="0">Janeiro</option>
               <option value="1">Fevereiro</option>
               <option value="2">Março</option>
@@ -4024,7 +4109,7 @@ var _unused_placeholder = 1;
               <option value="4">Maio</option>
               <option value="5">Junho</option>
               <option value="6">Julho</option>
-              <option value="7" selected>Agosto</option>
+              <option value="7">Agosto</option>
               <option value="8">Setembro</option>
               <option value="9">Outubro</option>
               <option value="10">Novembro</option>
@@ -4049,7 +4134,7 @@ var _unused_placeholder = 1;
         <strong>Só consulta</strong> — a previsão é editada pela direcção.
       </div>
       <div id="pv-banner" style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e3a5f;margin-bottom:16px;">
-        <strong>Agosto</strong> — Previsão de fecho + N (fecho real após fecho do mês) · Accuracy = 100 × (1 − |N − Previsão| / Previsão), 0–100%.
+        <strong>Mapa mensal</strong> — Previsão de fecho + N (fecho real após fecho do mês) · Accuracy = 100 × (1 − |N − Previsão| / Previsão), 0–100%.
       </div>
 
       <div id="pv-canal-panels" style="overflow:auto;"></div>
@@ -11424,10 +11509,9 @@ const DADOS_AREA_ACESSO = ['Christian Souza', 'Andrea Albuquerque', 'Daniela Kuc
 
 /**
  * Previsão de vendas e acompanhamento.
- * Consulta do mapa mensal: Filipe, Diogo, Marcio, Massimo (+ admins).
- * Edição do mapa / Publicar produção / autosave do mapa: só a lista ADMINS
- * (Carlos, Christian, Andrea, Daniela K.). Sem rastreio de alterações —
- * vendedores não editam o mapa de fecho.
+ * Mapa mensal: Filipe, Diogo, Marcio e Massimo escrevem só a Previsão de fecho
+ * dos canais que já são deles (PV_ACC_CANAL_VENDEDOR). N, MYR, N-1, Budget,
+ * canais dos outros, grupos e Publicar produção continuam da direcção (ADMINS).
  * Orçamento 2027 (Orç Valor, Volume e Sazonalidade): quem abre a Previsão escreve
  * Previsão Out a Dez, Orçamento 2027 e Out/Nov/Dez da sazonalidade (orc27PodeEditar).
  */
@@ -11952,7 +12036,8 @@ let _pvView = 'mapa'; // 'mapa' | 'accuracy' | 'vendas' | 'orcamento'
 let _pvAccFiltro = '';
 
 function pvStoreKey(ano, mes) {
-  return 'dfb_previsao_mapa_v3_' + String(ano || 2026) + '_' + String(mes ?? 7);
+  const m = (mes == null || mes === '') ? pvMesPorOmissao() : mes;
+  return 'dfb_previsao_mapa_v3_' + String(ano || 2026) + '_' + String(m);
 }
 function pvStoreKeyV2(ano, mes) {
   return 'dfb_previsao_mapa_v2_' + String(ano || 2026) + '_' + String(mes ?? 7);
@@ -12161,7 +12246,7 @@ function pvDebugLocalMaps() {
 }
 
 function pvPersistLocalSilent(ano, mes, data) {
-  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar() && !pvPodeGravarPrevFecho()) return false;
   if (!data) return false;
   try {
     localStorage.setItem(pvStoreKey(ano, mes), JSON.stringify(data));
@@ -12255,7 +12340,7 @@ async function pvBuildMergedCloudPayload() {
 async function pvSyncMapsToCloud(opts) {
   const silent = !!(opts && opts.silent);
   const keepalive = !!(opts && opts.keepalive);
-  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar() && !pvPodeGravarPrevFecho()) return false;
   if (_pvData) pvSaveData();
   try {
     const built = await pvBuildMergedCloudPayload();
@@ -12277,7 +12362,7 @@ async function pvSyncMapsToCloud(opts) {
 }
 
 function pvScheduleCloudSync() {
-  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return;
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar() && !pvPodeGravarPrevFecho()) return;
   _pvNeedsCloudSync = true;
   clearTimeout(_pvCloudSyncTimer);
   _pvCloudSyncTimer = setTimeout(() => {
@@ -12776,7 +12861,7 @@ function pvNormalizeLinhas(linhas, fromV2) {
 function pvDefaultMapa(ano, mes) {
   const y = Number(ano) || 2026;
   const m = Number(mes);
-  const mesIdx = Number.isFinite(m) ? m : 7;
+  const mesIdx = Number.isFinite(m) ? m : pvMesCalendario();
   const linhas = pvSeedLinhas(y, mesIdx);
   return { ano: y, mes: mesIdx, linhas, actualizadoEm: null, actualizadoPor: null };
 }
@@ -12848,7 +12933,7 @@ function pvReadLocalMonthDoc(ano, mes) {
 
 function pvLoadData(ano, mes) {
   const y = String(ano || document.getElementById('pv-ano')?.value || 2026);
-  const m = String(mes ?? document.getElementById('pv-mes')?.value ?? 7);
+  const m = String(mes ?? document.getElementById('pv-mes')?.value ?? pvMesPorOmissao());
   const localDoc = pvReadLocalMonthDoc(y, m);
   const key = pvStoreKey(y, m);
   const cloudDoc = _pvCloudCache && _pvCloudCache.maps ? _pvCloudCache.maps[key] : null;
@@ -12877,8 +12962,14 @@ function pvOverlayCloudOnData(ano, mes) {
 }
 
 function pvSaveData() {
-  if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+  const direccao = typeof pvPodeEditar === 'function' && pvPodeEditar();
+  const prevFecho = !direccao && typeof pvPodeGravarPrevFecho === 'function' && pvPodeGravarPrevFecho();
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar() && !prevFecho) return false;
   if (!_pvData) return false;
+  if (prevFecho && typeof pvRestaurarCamposBloqueados === 'function') {
+    pvRestaurarCamposBloqueados();
+    if (typeof pvRecalcSomas === 'function') pvRecalcSomas('prevFecho');
+  }
   _pvData.actualizadoEm = new Date().toISOString();
   _pvData.actualizadoPor = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
   try {
@@ -12906,13 +12997,82 @@ function podeAcederPrevisaoVendas() {
   return PREV_VENDAS_ACESSO.some(n => normNomeUtilizador(n) === atual);
 }
 
-/** Só ADMINS editam o mapa mensal de fecho. Filipe/Diogo/Marcio/Massimo = consulta (PREV_VENDAS_SO_CONSULTA).
+/** Direcção edita o mapa inteiro (N, MYR, N-1, Budget, publicar).
+ *  Filipe/Diogo/Marcio/Massimo não passam aqui — só a Previsão de fecho dos seus canais.
  *  O Orçamento 2027 não usa esta função — usa orc27PodeEditar. */
 function pvPodeEditar() {
   const atual = typeof getUtilizadorAtual === 'function' ? normNomeUtilizador(getUtilizadorAtual()) : '';
   if (!atual) return false;
   if (PREV_VENDAS_SO_CONSULTA.some(n => normNomeUtilizador(n) === atual)) return false;
   return typeof isAdmin === 'function' && isAdmin();
+}
+
+/** Os quatro vendedores podem gravar a Previsão de fecho dos canais que lhes pertencem. */
+function pvPodeGravarPrevFecho() {
+  const atual = typeof getUtilizadorAtual === 'function' ? normNomeUtilizador(getUtilizadorAtual()) : '';
+  if (!atual) return false;
+  return PREV_VENDAS_SO_CONSULTA.some(n => normNomeUtilizador(n) === atual);
+}
+
+/** Admin: qualquer canal. Vendedor: só o canal cujo dono no ranking é ele. Grupos nunca. */
+function pvPodeEditarPrevFechoLinha(row) {
+  if (!row || row.tipo !== 'canal') return false;
+  if (typeof pvPodeEditar === 'function' && pvPodeEditar()) return true;
+  if (!pvPodeGravarPrevFecho()) return false;
+  const dono = typeof pvAccVendedorDeCanal === 'function' ? pvAccVendedorDeCanal(row.id) : '';
+  if (!dono) return false;
+  const atual = normNomeUtilizador(getUtilizadorAtual());
+  return normNomeUtilizador(dono) === atual;
+}
+
+function pvPodeEditarCampo(row, campo) {
+  if (!row || row.tipo !== 'canal') return false;
+  if (campo === 'n' && row.nLigado) return false;
+  if (campo === 'prevFecho') return pvPodeEditarPrevFechoLinha(row);
+  return typeof pvPodeEditar === 'function' && pvPodeEditar();
+}
+
+let _pvBaseVendedor = null;
+
+function pvCapturarBaseVendedor() {
+  if (!_pvData) { _pvBaseVendedor = null; return; }
+  try {
+    _pvBaseVendedor = JSON.parse(JSON.stringify({
+      linhas: _pvData.linhas || [],
+      cellTs: _pvData.cellTs || {},
+      actualizadoEm: _pvData.actualizadoEm || null,
+    }));
+  } catch (_) {
+    _pvBaseVendedor = null;
+  }
+}
+
+/** Vendedor não leva N/MYR/Budget nem canais alheios no gravar. A previsão dele mantém-se. */
+function pvRestaurarCamposBloqueados() {
+  if (typeof pvPodeEditar === 'function' && pvPodeEditar()) return;
+  const base = _pvBaseVendedor;
+  if (!base || !_pvData || !Array.isArray(_pvData.linhas)) return;
+  const byId = {};
+  (base.linhas || []).forEach(r => { if (r && r.id) byId[r.id] = r; });
+  const baseTs = base.cellTs || {};
+  const prevMonth = base.actualizadoEm || null;
+  _pvData.cellTs = _pvData.cellTs || {};
+  _pvData.linhas.forEach(row => {
+    if (!row || !row.id) return;
+    const b = byId[row.id];
+    const ownPrev = pvPodeEditarPrevFechoLinha(row);
+    _pvData.cellTs[row.id] = _pvData.cellTs[row.id] || {};
+    pvEditFieldNames().forEach(k => {
+      const mantem = ownPrev && k === 'prevFecho';
+      if (!mantem && b && Object.prototype.hasOwnProperty.call(b, k)) row[k] = b[k];
+      if (!mantem) {
+        const old = baseTs[row.id] && baseTs[row.id][k];
+        if (old) _pvData.cellTs[row.id][k] = old;
+        else if (prevMonth) _pvData.cellTs[row.id][k] = prevMonth;
+        else delete _pvData.cellTs[row.id][k];
+      }
+    });
+  });
 }
 
 /** Orç Valor e Volume: quem abre a Previsão escreve as células manuais.
@@ -13026,6 +13186,67 @@ async function abrirAreaFinanceiraHome() {
   }
 }
 
+const PV_MES_SESSAO_KEY = 'dfb_pv_mes_escolhido';
+
+/** Data de calendário em America/Sao_Paulo (o mês do mapa não segue o fuso do servidor). */
+function pvAgoraSaoPaulo() {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const parts = fmt.formatToParts(new Date());
+    const pick = (t) => {
+      const p = parts.find(x => x.type === t);
+      return p ? Number(p.value) : NaN;
+    };
+    const y = pick('year');
+    const mo = pick('month');
+    const day = pick('day');
+    if (y && mo >= 1 && mo <= 12 && day) return new Date(y, mo - 1, day);
+  } catch (_) {}
+  return new Date();
+}
+
+/** Índice 0–11. Com Date injectada usa esse calendário; sem argumento, o mês actual em São Paulo. */
+function pvMesCalendario(date) {
+  const d = (date instanceof Date && !Number.isNaN(date.getTime())) ? date : pvAgoraSaoPaulo();
+  const m = d.getMonth();
+  return (m >= 0 && m <= 11) ? m : 0;
+}
+
+/** Mês escolhido nesta sessão, senão o mês actual. Nunca fica preso a Agosto. */
+function pvMesPorOmissao(date) {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const raw = sessionStorage.getItem(PV_MES_SESSAO_KEY);
+      if (raw != null && raw !== '') {
+        const n = Number(raw);
+        if (Number.isInteger(n) && n >= 0 && n <= 11) return n;
+      }
+    }
+  } catch (_) {}
+  return pvMesCalendario(date);
+}
+
+function pvMemorizarMesEscolhido(mes) {
+  const n = Number(mes);
+  if (!Number.isInteger(n) || n < 0 || n > 11) return;
+  try {
+    const el = document.getElementById('pv-mes');
+    if (el) el.dataset.userPicked = '1';
+  } catch (_) {}
+  try { sessionStorage.setItem(PV_MES_SESSAO_KEY, String(n)); } catch (_) {}
+}
+
+function pvAplicarMesInicial() {
+  const mesEl = document.getElementById('pv-mes');
+  if (!mesEl) return;
+  mesEl.value = String(pvMesPorOmissao());
+}
+
 async function abrirPrevisaoVendasHome() {
   try {
     if (!getUtilizadorAtual()) {
@@ -13062,9 +13283,9 @@ async function abrirPrevisaoVendasHome() {
     if (gate) gate.style.display = 'none';
     if (content) content.style.display = 'block';
     const anoEl = document.getElementById('pv-ano');
-    if (anoEl) anoEl.value = '2026';
+    if (anoEl && !anoEl.dataset.userPicked) anoEl.value = '2026';
     const mesEl = document.getElementById('pv-mes');
-    if (mesEl) mesEl.value = '7';
+    if (mesEl) mesEl.value = String(pvMesPorOmissao());
     _pvView = 'mapa';
     const tabM = document.getElementById('pv-tab-mapa');
     const tabA = document.getElementById('pv-tab-accuracy');
@@ -14049,7 +14270,7 @@ function nfeListaHtml(notas, passa) {
     return `<section style="margin:0 0 16px;">
       <div style="font-size:15px;font-weight:700;margin:0 0 2px;">${escHtml(g.canal)}</div>
       ${vend}
-      <div style="overflow:auto;">
+      <div class="quadro-freeze">
         <table style="border-collapse:collapse;font-size:13px;width:100%;min-width:520px;">
           <thead><tr>
             <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);">Número</th>
@@ -14408,31 +14629,51 @@ function pvRender(opts) {
     return;
   }
   const ano = document.getElementById('pv-ano')?.value || '2026';
-  const mes = document.getElementById('pv-mes')?.value ?? '7';
+  const mes = document.getElementById('pv-mes')?.value ?? String(pvMesPorOmissao());
   const y = Number(ano);
   const m = Number(mes);
   const forceReload = !!(opts && opts.reload);
   if (_pvView === 'mapa') {
+    let carregou = false;
     if (forceReload || !_pvData || Number(_pvData.ano) !== y || Number(_pvData.mes) !== m) {
       if (_pvData && (Number(_pvData.ano) !== y || Number(_pvData.mes) !== m)) pvFlushAutosave();
       pvLoadData(ano, mes);
+      carregou = true;
     }
     if (_pvData) {
       _pvData.ano = y;
       _pvData.mes = m;
     }
+    if (carregou && _pvData && Array.isArray(_pvData.linhas)) {
+      pvPrepararLinhasMapa(_pvData.linhas, _pvData.ano, _pvData.mes);
+      pvCapturarBaseVendedor();
+    }
   }
 
   const edit = pvPodeEditar();
+  const prevParcial = !edit && _pvView === 'mapa' && typeof pvPodeGravarPrevFecho === 'function' && pvPodeGravarPrevFecho();
   const modo = document.getElementById('pv-modo-label');
   if (modo) {
     modo.textContent = edit
       ? '· Edição com autosave'
-      : '· Só consulta — a previsão é editada pela direcção.';
-    modo.style.color = edit ? '#166534' : '#9a3412';
+      : (prevParcial
+        ? '· Previsão de fecho dos teus canais (autosave)'
+        : '· Só consulta — a previsão é editada pela direcção.');
+    modo.style.color = (edit || prevParcial) ? '#166534' : '#9a3412';
   }
   const roBanner = document.getElementById('pv-readonly-banner');
-  if (roBanner) roBanner.style.display = edit ? 'none' : '';
+  if (roBanner) {
+    if (edit) roBanner.style.display = 'none';
+    else if (prevParcial) {
+      roBanner.style.display = '';
+      roBanner.innerHTML = '<strong>Os teus canais</strong> — podes escrever a Previsão de fecho (autosave). N, MYR, Budget e os canais dos outros ficam em consulta.';
+    } else {
+      roBanner.style.display = '';
+      if (!roBanner.innerHTML || roBanner.innerHTML.indexOf('Os teus canais') >= 0) {
+        roBanner.innerHTML = '<strong>Só consulta</strong> — a previsão é editada pela direcção.';
+      }
+    }
+  }
   const btnPub = document.getElementById('pv-btn-publicar');
   if (btnPub) {
     btnPub.style.display = edit ? '' : 'none';
@@ -14460,7 +14701,9 @@ function pvRender(opts) {
         : '';
       const editHint = edit
         ? `<strong>Previsão de fecho</strong> (autosave; o lançamento manual mantém-se) · <strong>N</strong> = vendas líquidas do mês nas Vendas ·`
-        : `<strong>Previsão de fecho</strong> · <strong>N</strong> = vendas líquidas do mês nas Vendas ·`;
+        : (prevParcial
+          ? `<strong>Previsão de fecho</strong> dos teus canais (autosave) · <strong>N</strong> = vendas líquidas do mês nas Vendas ·`
+          : `<strong>Previsão de fecho</strong> · <strong>N</strong> = vendas líquidas do mês nas Vendas ·`);
       banner.innerHTML = `<strong>${mesNome} ${ano}</strong> — N-1 = histórico · Budget = objectivo ·
         ${editHint}
         <strong>N VS N-1 %</strong> = (N, senão Previsão) vs N-1 ·
@@ -14515,7 +14758,7 @@ function pvFlashAutosave(ok) {
 
 function pvFlushAutosave() {
   try {
-    if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return false;
+    if (typeof pvPodeEditar === 'function' && !pvPodeEditar() && !pvPodeGravarPrevFecho()) return false;
   } catch (_) {}
   if (!_pvData) return false;
   clearTimeout(_pvAutosaveTimer);
@@ -14523,7 +14766,10 @@ function pvFlushAutosave() {
 }
 
 function pvAutosave() {
-  if (!pvPodeEditar() || !_pvData) return;
+  const direccao = typeof pvPodeEditar === 'function' && pvPodeEditar();
+  const prevFecho = !direccao && typeof pvPodeGravarPrevFecho === 'function' && pvPodeGravarPrevFecho();
+  if (typeof pvPodeEditar === 'function' && !pvPodeEditar() && !prevFecho) return;
+  if (!_pvData) return;
   clearTimeout(_pvAutosaveTimer);
   _pvAutosaveTimer = setTimeout(() => {
     const ok = pvSaveData();
@@ -14536,7 +14782,7 @@ function pvBindAutosaveLifecycle() {
   if (_pvLifecycleBound) return;
   _pvLifecycleBound = true;
   const flushHidden = () => {
-    if (typeof pvPodeEditar === 'function' && !pvPodeEditar()) return;
+    if (typeof pvPodeEditar === 'function' && !pvPodeEditar() && !pvPodeGravarPrevFecho()) return;
     const saved = pvFlushAutosave();
     if (saved || _pvNeedsCloudSync) {
       pvSyncMapsToCloud({ silent: true, keepalive: true }).catch(() => {});
@@ -14591,9 +14837,11 @@ function pvEditCell(campo, idx, row, edit, bg) {
   if (isGrupo) {
     return `<span class="pv-${campo}-soma" data-idx="${idx}">${row[campo] == null ? '—' : pvFmtEdit(row[campo])}</span>`;
   }
-  const canEdit = !!(edit && (typeof pvPodeEditar !== 'function' || pvPodeEditar()));
   // N ligado às vendas líquidas: mostra o número e não deixa um lançamento manual substituí-lo.
   if (campo === 'n' && row.nLigado) return pvFmtNum(row[campo]);
+  const canEdit = campo === 'prevFecho'
+    ? pvPodeEditarPrevFechoLinha(row)
+    : !!(edit && (typeof pvPodeEditar !== 'function' || pvPodeEditar()));
   if (!canEdit) return pvFmtNum(row[campo]);
   const handlers = {
     prevFecho: 'pvOnPrevInput(this)" onblur="pvOnPrevBlur(this)',
@@ -15305,8 +15553,9 @@ function orc27RenderHtml(edit, linhas) {
     const bg = row.tipo === 'total' ? '#f1f5f9' : (row.tipo === 'grupo' ? '#f8fafc' : 'transparent');
     const weight = isGrupo ? '700' : '400';
     const pad = typeof pvMapaPadLeft === 'function' ? pvMapaPadLeft(row, rows) : '8px';
+    const labelBg = bg === 'transparent' ? '#fff' : bg;
     body += '<tr data-orc-id="' + orc27Esc(row.id) + '" style="background:' + bg + ';font-weight:' + weight + ';">'
-      + '<td style="text-align:left;padding-left:' + pad + ';white-space:nowrap;">' + orc27Esc(row.empresa) + '</td>'
+      + '<td style="text-align:left;padding-left:' + pad + ';white-space:nowrap;background:' + labelBg + ';">' + orc27Esc(row.empresa) + '</td>'
       + '<td class="orc27-n1" style="text-align:right;font-variant-numeric:tabular-nums;">' + orc27FmtRs(row.n1, row.n1Tem) + '</td>'
       + '<td class="orc27-ytd" style="text-align:right;font-variant-numeric:tabular-nums;">' + orc27FmtRs(row.ytd, row.ytdTem) + '</td>'
       + '<td class="orc27-prev" style="text-align:right;background:#eff6ff;font-variant-numeric:tabular-nums;">' + orc27CelulaManualHtml(row, 'prevOutDez', edit) + '</td>'
@@ -15317,13 +15566,13 @@ function orc27RenderHtml(edit, linhas) {
       + '</tr>';
   });
   return orc27SubNavHtml('valor')
-    + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
+    + '<div class="quadro-freeze" style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);">'
     + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Orç Valor'
     + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Total 2026 = YTD até Set + Previsão Out a Dez · Var % vs 2025 = (Total 2026 − N-1) / N-1 · % 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026</span>'
     + '</div>'
     + '<table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1180px;">'
     + '<thead><tr>'
-    + '<th style="text-align:left;">Empresa</th>'
+    + '<th style="text-align:left;background:#f8fafc;">Empresa</th>'
     + '<th style="text-align:right;">Total N-1 até Dez</th>'
     + '<th style="text-align:right;">YTD 2026 até Set</th>'
     + '<th style="text-align:right;background:#dbeafe;">Previsão Out a Dez</th>'
@@ -16573,11 +16822,10 @@ function saz27RenderHtml(edit, linhas) {
     ['2026', '2027'].forEach(function (ano) {
       const bg = row.tipo === 'total' ? '#f1f5f9' : (row.tipo === 'grupo' ? '#f8fafc' : (ano === '2027' ? '#faf8ff' : 'transparent'));
       const borda = ano === '2027' ? 'border-bottom:1px solid #e2e8f0;' : '';
+      const labelBg = (bg === 'transparent' || !bg) ? '#fff' : bg;
       body += '<tr data-saz-id="' + orc27Esc(row.id) + '" data-saz-ano="' + ano + '" style="background:' + bg + ';font-weight:' + weight + ';' + borda + '">';
-      if (ano === '2026') {
-        body += '<td rowspan="2" style="text-align:left;padding-left:' + pad + ';white-space:nowrap;vertical-align:middle;">' + orc27Esc(row.empresa) + '</td>';
-      }
-      body += '<td style="text-align:center;white-space:nowrap;color:' + (ano === '2027' ? '#5b21b6' : '#1e3a8a') + ';">' + ano + '</td>';
+      body += '<td style="text-align:left;padding-left:' + pad + ';white-space:nowrap;vertical-align:middle;background:' + labelBg + ';">' + orc27Esc(row.empresa) + '</td>';
+      body += '<td class="qf-roll" style="text-align:center;white-space:nowrap;color:' + (ano === '2027' ? '#5b21b6' : '#1e3a8a') + ';">' + ano + '</td>';
       for (let i = 0; i < SAZ27_MESES.length; i++) {
         const mes = SAZ27_MESES[i];
         const q4 = ano === '2026' && saz27MesManual(mes.id);
@@ -16590,7 +16838,7 @@ function saz27RenderHtml(edit, linhas) {
       body += '</tr>';
     });
   });
-  let head = '<th style="text-align:left;">Empresa</th><th style="text-align:center;">Ano</th>';
+  let head = '<th style="text-align:left;background:#f8fafc;">Empresa</th><th class="qf-roll" style="text-align:center;">Ano</th>';
   SAZ27_MESES.forEach(function (mes) {
     const fundo = saz27MesManual(mes.id) ? 'background:#dbeafe;' : '';
     head += '<th style="text-align:right;' + fundo + '">' + mes.rotulo + '</th>';
@@ -16598,7 +16846,7 @@ function saz27RenderHtml(edit, linhas) {
   head += '<th style="text-align:right;">Total</th><th style="text-align:right;">Dif</th>';
   return orc27SubNavHtml('sazonalidade')
     + saz27FiltroHtml()
-    + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
+    + '<div class="quadro-freeze" style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);">'
     + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Sazonalidade'
     + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Out–Dez 2026 e os meses de 2027 editam-se no canal · Dif 2026 = soma dos meses − Total 2026 · Dif 2027 = soma de 2027 − Orçamento 2027</span>'
     + '</div>'
@@ -17819,7 +18067,7 @@ function vol27RodapeHtml(rotulo, rodape, sim26, sim26Tem, sim27, sim27Tem, prime
       + orc27FmtRs(valor, tem) + '</td>';
   }
   let html = '<tr data-vol-rodape="' + orc27Esc(rodape) + '">';
-  html += '<td style="text-align:left;padding-left:8px;font-weight:700;white-space:nowrap;' + borda + '">' + orc27Esc(rotulo) + '</td>';
+  html += '<td style="text-align:left;padding-left:8px;font-weight:700;white-space:nowrap;background:#f8fafc;' + borda + '">' + orc27Esc(rotulo) + '</td>';
   html += vazio + vazio + vazio;
   html += dinheiro(id26, sim26, sim26Tem);
   html += vazio + vazio + vazio + vazio + vazio;
@@ -17836,7 +18084,7 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
   let body = '';
   rows.forEach(function (row) {
     body += '<tr data-vol-fam="' + orc27Esc(row.id) + '">'
-      + '<td style="text-align:left;padding-left:8px;white-space:nowrap;">' + orc27Esc(row.nome) + '</td>'
+      + '<td style="text-align:left;padding-left:8px;white-space:nowrap;background:#fff;">' + orc27Esc(row.nome) + '</td>'
       + '<td class="vol27-n1" style="text-align:right;font-variant-numeric:tabular-nums;">' + vol27FmtQtd(row.n1, row.n1Tem) + '</td>'
       + '<td class="vol27-ytd" style="text-align:right;font-variant-numeric:tabular-nums;">' + vol27FmtQtd(row.ytd, row.ytdTem) + '</td>'
       + '<td class="vol27-prev" style="text-align:right;background:#eff6ff;font-variant-numeric:tabular-nums;">' + vol27CelulaManualHtml(row, 'prevOutDez', edit) + '</td>'
@@ -17864,7 +18112,7 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
     + '<div id="vol27-filtro" style="margin-bottom:10px;">' + vol27FiltroHtml(escolha) + '</div>'
     + '<div style="margin:0 0 10px;font-size:12px;color:var(--muted);">Grão e moído = Peso líq. (AA) em kg · vinho = AA em litros · cápsulas = AA ÷ 0,005 · máquina = QtFaturada + Qtd Bonifi + Qtd Doação. As colunas de kg, un e L não têm total.</div>'
     + notaHtml
-    + '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">'
+    + '<div class="quadro-freeze" style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);">'
     + '<div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">Volume'
     + '<span style="font-weight:400;color:var(--muted);margin-left:8px;">Total 2026 = YTD até Set + Previsão Out a Dez · Preço médio ' + orc27Esc(rotuloPreco) + ' = Fatur. líquido ÷ volume · Simulação valor 2026 = Previsão Out a Dez × preço médio · Var % vs 2025 = (Total 2026 − N-1) / N-1 · % 27 vs fecho 26 = (Orçamento 2027 − Total 2026) / Total 2026 · Simulação valor 27 = Orçamento 2027 × preço médio'
     + (ag && ag.ultimaData ? (' · Ficheiro até ' + String(ag.ultimaData).split('-').reverse().join('/') + '. YTD até Set é só Janeiro a Setembro' + (ag.ultimaData <= '2026-09-30' ? ' e cobre o ficheiro até ao último dia.' : '.')) : '')
@@ -17872,7 +18120,7 @@ function vol27RenderHtml(edit, ag, doc, filtro) {
     + '</div>'
     + '<table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1680px;">'
     + '<thead><tr>'
-    + '<th style="text-align:left;">Produto</th>'
+    + '<th style="text-align:left;background:#f8fafc;">Produto</th>'
     + '<th style="text-align:right;">Total N-1 até Dez</th>'
     + '<th style="text-align:right;">YTD 2026 até Set</th>'
     + '<th style="text-align:right;background:#dbeafe;">Previsão Out a Dez</th>'
@@ -19303,12 +19551,12 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
 
     const bg = row.tipo === 'total' ? '#f1f5f9'
       : row.tipo === 'grupo' ? '#f8fafc'
-      : 'transparent';
+      : '#fff';
     const weight = isGrupo ? '700' : '400';
     const padLeft = pvMapaPadLeft(row, _pvData.linhas);
 
     rows += `<tr data-pv-idx="${idx}" style="background:${bg};font-weight:${weight};">
-      <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;">${row.empresa}</td>
+      <td style="text-align:left;padding-left:${padLeft};white-space:nowrap;background:${bg};">${row.empresa}</td>
       <td style="text-align:right;font-variant-numeric:tabular-nums;">${n1Cell}</td>
       <td style="text-align:right;background:#eff6ff;font-variant-numeric:tabular-nums;">${prevCell}</td>
       <td style="text-align:right;background:#f0fdf4;font-variant-numeric:tabular-nums;">${nCell}</td>
@@ -19328,7 +19576,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
   });
 
   return `
-    <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
+    <div class="quadro-freeze" style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Mapa ${mesNome} ${ano}
         <span style="font-weight:400;color:var(--muted);margin-left:8px;">N VS N-1 % = (N ou Previsão − N-1) / N-1 · Var Prev/MYR % = (Previsão − MYR) / MYR · Var N/MYR % = (N − MYR) / MYR · Accuracy = 100×(1−|N−Previsão|/Previsão) (0–100%)</span>
@@ -19336,7 +19584,7 @@ function pvRenderMapaHtml(edit, ano, mesNome) {
       <table class="ct-table" style="width:100%;margin:0;font-size:12px;min-width:1380px;">
         <thead>
           <tr>
-            <th style="text-align:left;">Empresa</th>
+            <th style="text-align:left;background:#f8fafc;">Empresa</th>
             <th style="text-align:right;">N-1</th>
             <th style="text-align:right;background:#dbeafe;">Previsão de fecho</th>
             <th style="text-align:right;background:#bbf7d0;" title="Vendas líquidas do mês (Fatur. das Vendas)">N</th>
@@ -19493,7 +19741,7 @@ function pvRenderAccuracyRankingHtml(ranking, ano) {
       </tr>`;
     }).join('');
     incertoBox = `
-      <div style="margin-top:12px;border:1px solid #fdba74;border-radius:var(--radius-lg);background:#fff7ed;overflow:auto;">
+      <div class="quadro-freeze" style="margin-top:12px;border:1px solid #fdba74;border-radius:var(--radius-lg);background:#fff7ed;">
         <div style="padding:8px 14px;font-size:12px;color:#9a3412;">
           <strong ${nClick}>${semDono.length} canal(is) por confirmar</strong>
           — não entram na soma de nenhum vendedor. Confirma o dono (código / vendedor).
@@ -19511,7 +19759,7 @@ function pvRenderAccuracyRankingHtml(ranking, ano) {
   }
 
   return `
-    <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;margin-bottom:16px;">
+    <div class="quadro-freeze" style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);margin-bottom:16px;">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Ranking de Accuracy ${ano}
         <span style="font-weight:400;color:var(--muted);margin-left:8px;">
@@ -19647,7 +19895,7 @@ function pvRenderAccuracyHtml(edit, ano) {
   return `
     ${pvRenderAccuracyRankingHtml(ranking, ano)}
     ${bannerFiltro}
-    <div style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);overflow:auto;">
+    <div class="quadro-freeze" style="border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);">
       <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;">
         Accuracy de fecho ${ano}
         <span style="font-weight:400;color:var(--muted);margin-left:8px;">% = 100 × (1 − |N − Previsão| / Previsão) · 0–100% · ≥85% verde · &lt;85% vermelho · agrupado por vendedor (DFB + Q Brasil juntos) · Total = ΣPrev/ΣN · Média = meses com valor · mapa mensal não agrupa</span>
@@ -19666,9 +19914,12 @@ function pvRenderAccuracyHtml(edit, ano) {
 }
 
 function pvOnCampoInput(el, campo) {
-  if (!pvPodeEditar() || !_pvData) return;
+  if (!_pvData) return;
   const idx = Number(el.getAttribute('data-idx'));
-  if (!_pvData.linhas[idx] || _pvData.linhas[idx].tipo !== 'canal') return;
+  const row = _pvData.linhas[idx];
+  if (!row || row.tipo !== 'canal') return;
+  if (typeof pvPodeEditarCampo === 'function' && !pvPodeEditarCampo(row, campo)) return;
+  if (!(typeof pvPodeEditar === 'function' && pvPodeEditar()) && !_pvBaseVendedor) pvCapturarBaseVendedor();
   _pvData.linhas[idx][campo] = pvParseNumInput(el.value);
   pvTouchCell(idx, campo);
   pvRecalcSomas(campo);
@@ -19680,9 +19931,11 @@ function pvOnCampoInput(el, campo) {
 }
 
 function pvOnCampoBlur(el, campo) {
-  if (!pvPodeEditar() || !_pvData) return;
+  if (!_pvData) return;
   const idx = Number(el.getAttribute('data-idx'));
-  if (!_pvData.linhas[idx]) return;
+  const rowBlur = _pvData.linhas[idx];
+  if (!rowBlur) return;
+  if (typeof pvPodeEditarCampo === 'function' && !pvPodeEditarCampo(rowBlur, campo)) return;
   const v = pvParseNumInput(el.value);
   _pvData.linhas[idx][campo] = v;
   if (_pvData.linhas[idx].tipo === 'canal') pvTouchCell(idx, campo);
@@ -19712,7 +19965,7 @@ async function pvExportarExcel() {
   try {
     if (typeof pvFlushAutosave === 'function') pvFlushAutosave();
     const ano = document.getElementById('pv-ano')?.value || '2026';
-    const mes = document.getElementById('pv-mes')?.value ?? '7';
+    const mes = document.getElementById('pv-mes')?.value ?? String(pvMesPorOmissao());
     if (typeof ensureXLSX === 'function') await ensureXLSX();
     if (!window.XLSX) {
       toast('Biblioteca Excel indisponível.', 'error');
@@ -42567,6 +42820,7 @@ async function exportATHistoricoExcel() {
 // ─── INIT ────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   initLogin();
+  if (typeof pvAplicarMesInicial === 'function') pvAplicarMesInicial();
   voltarHome(); // abre na seleção de canais (+ Dados)
   if (typeof tentarAbrirComissaoRcDeepLink === 'function') tentarAbrirComissaoRcDeepLink();
   try { await carregarListaClientesLocalAsync(); } catch (_) {}
@@ -42585,7 +42839,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-16-volume-total-sim: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-20-mapa-editar-mes-freeze: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

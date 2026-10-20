@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Mapa mensal da Previsão: vendedores só consultam; só ADMINS persistem.
- * Filipe / Diogo / Marcio / Massimo não são editores (não estão em ADMINS).
+ * Mapa mensal: Filipe / Diogo / Marcio / Massimo editam só a Previsão de fecho
+ * dos canais que já são deles. N, MYR, Budget e canais alheios continuam bloqueados.
+ * Orçamento 2027 não passa por pvPodeEditar.
  */
 import fs from 'fs';
 import vm from 'vm';
@@ -25,6 +26,21 @@ function extractFn(src, name) {
     }
   }
   throw new Error('Chaveta não fechou: ' + name);
+}
+
+function extractObjectConst(src, name) {
+  const start = src.indexOf(`const ${name} =`);
+  if (start < 0) throw new Error('const em falta: ' + name);
+  const lb = src.indexOf('{', start);
+  let depth = 0;
+  for (let i = lb; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) return src.slice(start, i + 1);
+    }
+  }
+  throw new Error('Object não fechou: ' + name);
 }
 
 function extractArrayConst(src, name) {
@@ -54,6 +70,7 @@ function check(title, fn) {
 }
 
 const store = new Map();
+const sess = new Map();
 const context = {
   console,
   Date,
@@ -62,9 +79,27 @@ const context = {
   Array,
   JSON,
   Math,
+  Intl,
+  Object,
   _pvData: null,
+  _pvBaseVendedor: null,
+  _pvAutosaveTimer: null,
+  _pvAutosaveHintTimer: null,
+  PV_MES_SESSAO_KEY: 'dfb_pv_mes_escolhido',
   toast() {},
+  setTimeout() { return 1; },
+  clearTimeout() {},
+  pvRecalcSomas() {},
+  pvRefreshSomasDom() {},
+  pvUpdateRowPercents() {},
+  pvFlashAutosave() {},
+  pvScheduleCloudSync() {},
   document: { getElementById() { return null; } },
+  sessionStorage: {
+    getItem(k) { return sess.has(k) ? sess.get(k) : null; },
+    setItem(k, v) { sess.set(k, String(v)); },
+    removeItem(k) { sess.delete(k); },
+  },
   localStorage: {
     getItem(k) { return store.has(k) ? store.get(k) : null; },
     setItem(k, v) { store.set(k, String(v)); },
@@ -75,15 +110,30 @@ const context = {
 };
 vm.createContext(context);
 
-for (const name of ['ADMINS', 'PREV_VENDAS_ACESSO', 'PREV_VENDAS_SO_CONSULTA']) {
+for (const name of ['ADMINS', 'PREV_VENDAS_ACESSO', 'PREV_VENDAS_SO_CONSULTA', 'PV_ACC_RANKING_VENDEDORES']) {
   vm.runInContext(extractArrayConst(html, name), context);
 }
+vm.runInContext(extractObjectConst(html, 'PV_ACC_CANAL_VENDEDOR'), context);
 for (const name of [
   'normNomeUtilizador',
   'getUtilizadorAtual',
   'isAdmin',
   'podeAcederPrevisaoVendas',
   'pvPodeEditar',
+  'pvPodeGravarPrevFecho',
+  'pvPodeEditarPrevFechoLinha',
+  'pvPodeEditarCampo',
+  'pvAccMetaDeCanal',
+  'pvAccCertaintyForaDaSoma',
+  'pvAccVendedorDeCanal',
+  'pvEditFieldNames',
+  'pvCapturarBaseVendedor',
+  'pvRestaurarCamposBloqueados',
+  'pvTouchCell',
+  'pvMesCalendario',
+  'pvMesPorOmissao',
+  'pvMemorizarMesEscolhido',
+  'pvAgoraSaoPaulo',
   'pvStoreKey',
   'pvSaveData',
   'pvPersistLocalSilent',
@@ -158,30 +208,90 @@ check('UI: banner de consulta e Publicar escondido por omissão', () => {
   assert.ok(html.includes('id="pv-ano"'));
   assert.ok(html.includes('id="pv-mes"'));
   assert.ok(!/function pvExportarExcel\(\) \{\s*if \(!pvPodeEditar/.test(html));
-  assert.ok(html.includes('Vendedores: só consulta no mapa mensal. Edição do mapa: direcção'));
+  assert.ok(html.includes('Vendedores: escrevem a Previsão de fecho dos seus canais no mapa mensal'));
+  assert.ok(!html.includes('value="7" selected'));
+  assert.ok(html.includes("timeZone: 'America/Sao_Paulo'"));
 });
 
+const CANAIS = {
+  'Filipe Neves': ['dfb_rest', 'dfb_inst_horeca'],
+  'Diogo Oliveira': ['dfb_ret_mod', 'dfb_dist_ret', 'qb_ret_mod', 'qb_dist_ret'],
+  'Marcio Gorga': ['dfb_lojas', 'dfb_site', 'dfb_inst_balcao', 'qb_rest'],
+  'Massimo Bottello': ['dfb_dist_reg', 'qb_dist_reg'],
+};
+
+function linhaCanal(id, extra) {
+  return {
+    id,
+    empresa: id,
+    tipo: 'canal',
+    parent: id.startsWith('qb_') ? 'qb' : 'dfb',
+    prevFecho: 100,
+    n: 80,
+    myr: 90,
+    n1: 70,
+    budget: 110,
+    ...(extra || {}),
+  };
+}
+
 VENDEDORES.forEach(nome => {
-  check(nome + ': acede, não edita, não persiste', () => {
+  check(nome + ': previsão de fecho dos seus canais; N, MYR e canais alheios bloqueados', () => {
     clearPrevisaoStore();
+    sess.clear();
     setUser(nome);
+    context._pvBaseVendedor = null;
     assert.equal(context.isAdmin(), false);
     assert.equal(context.podeAcederPrevisaoVendas(), true);
-    assert.equal(context.pvPodeEditar(), false);
+    assert.equal(context.pvPodeEditar(), false, 'mapa inteiro continua fechado');
+    assert.equal(context.pvPodeGravarPrevFecho(), true);
 
-    context._pvData = sampleData({ prevFecho: 1 });
-    assert.equal(context.pvSaveData(), false);
-    assert.deepEqual(previsaoKeys(), []);
+    const meus = CANAIS[nome];
+    const alheio = meus.includes('dfb_lojas') ? 'dfb_rest' : 'dfb_lojas';
+    meus.forEach(id => {
+      const row = linhaCanal(id);
+      assert.equal(context.pvPodeEditarPrevFechoLinha(row), true, id);
+      const cell = context.pvEditCell('prevFecho', 0, row, false, '#eff6ff');
+      assert.ok(cell.includes('<input'), 'previsão editável: ' + id);
+      assert.ok(cell.includes('pvOnPrevInput'));
+      assert.ok(!context.pvEditCell('n', 0, row, false, '#f0fdf4').includes('<input'), 'N bloqueado ' + id);
+      assert.ok(!context.pvEditCell('myr', 0, row, false, '#fffbeb').includes('<input'), 'MYR bloqueado ' + id);
+      assert.ok(!context.pvEditCell('n1', 0, row, false, '#fff').includes('<input'), 'N-1 bloqueado ' + id);
+      assert.ok(!context.pvEditCell('budget', 0, row, false, '#fff').includes('<input'), 'Budget bloqueado ' + id);
+      const ligado = linhaCanal(id, { nLigado: true, n: 50 });
+      assert.ok(!context.pvEditCell('n', 0, ligado, true, '#f0fdf4').includes('<input'), 'N ligado bloqueado ' + id);
+    });
+    assert.equal(context.pvPodeEditarPrevFechoLinha(linhaCanal(alheio)), false, alheio);
+    assert.ok(!context.pvEditCell('prevFecho', 0, linhaCanal(alheio), false, '#eff6ff').includes('<input'));
+    assert.ok(!context.pvEditCell('prevFecho', 0, { id: 'dfb', tipo: 'grupo', prevFecho: 1 }, false, '#fff').includes('<input'));
+    assert.ok(!context.pvEditCell('prevFecho', 0, { id: 'total', tipo: 'total', prevFecho: 1 }, false, '#fff').includes('<input'));
 
-    const el = { getAttribute: () => '0', value: '999999' };
-    context._pvData = sampleData({ prevFecho: 858000 });
-    context.pvOnCampoInput(el, 'prevFecho');
-    assert.equal(context._pvData.linhas[0].prevFecho, 858000);
-    assert.deepEqual(previsaoKeys(), []);
+    context._pvData = {
+      ano: 2026,
+      mes: 9,
+      actualizadoEm: '2026-10-01T12:00:00.000Z',
+      linhas: [linhaCanal(meus[0]), linhaCanal(alheio)],
+      cellTs: {},
+    };
+    context.pvCapturarBaseVendedor();
+    context.pvOnCampoInput({ getAttribute: () => '0', value: '999' }, 'prevFecho');
+    assert.equal(context._pvData.linhas[0].prevFecho, 999);
+    context.pvOnCampoInput({ getAttribute: () => '0', value: '1' }, 'n');
+    assert.equal(context._pvData.linhas[0].n, 80, 'N não muda');
+    context.pvOnCampoInput({ getAttribute: () => '0', value: '2' }, 'myr');
+    assert.equal(context._pvData.linhas[0].myr, 90, 'MYR não muda');
+    context.pvOnCampoInput({ getAttribute: () => '1', value: '5' }, 'prevFecho');
+    assert.equal(context._pvData.linhas[1].prevFecho, 100, 'canal alheio não muda');
 
-    const cell = context.pvEditCell('prevFecho', 0, { tipo: 'canal', prevFecho: 858000 }, true, '#eff6ff');
-    assert.ok(!cell.includes('<input'), 'célula não pode ser input: ' + cell);
-    assert.ok(!cell.includes('oninput'));
+    assert.equal(context.pvSaveData(), true);
+    const key = context.pvStoreKey(2026, 9);
+    const parsed = JSON.parse(store.get(key));
+    assert.equal(parsed.linhas[0].prevFecho, 999);
+    assert.equal(parsed.linhas[0].n, 80);
+    assert.equal(parsed.linhas[0].myr, 90);
+    assert.equal(parsed.linhas[1].prevFecho, 100);
+    assert.equal(parsed.linhas[1].n, 80);
+    assert.equal(parsed.actualizadoPor, nome);
   });
 });
 
@@ -210,27 +320,31 @@ ADMINS_TEST.forEach(nome => {
   });
 });
 
-check('vendedor não sobrescreve o que o admin gravou', () => {
+check('vendedor não sobrescreve N nem a previsão de um canal que não é dele', () => {
   clearPrevisaoStore();
   setUser('Carlos Castro');
-  context._pvData = sampleData({ prevFecho: 777000, n: 700000 });
+  context._pvBaseVendedor = null;
+  context._pvData = {
+    ano: 2026,
+    mes: 8,
+    linhas: [linhaCanal('dfb_lojas', { prevFecho: 777000, n: 700000 })],
+    cellTs: {},
+  };
   assert.equal(context.pvSaveData(), true);
   const key = context.pvStoreKey(2026, 8);
-  const before = store.get(key);
 
   setUser('Diogo Oliveira');
+  context.pvCapturarBaseVendedor();
   context._pvData.linhas[0].prevFecho = 1;
   context._pvData.linhas[0].n = 1;
   context._pvData.linhas[0].myr = 1;
-  context._pvData.linhas[0].n1 = 1;
-  context._pvData.linhas[0].budget = 1;
   assert.equal(context.pvPodeEditar(), false);
-  assert.equal(context.pvSaveData(), false);
-  assert.equal(store.get(key), before);
+  assert.equal(context.pvPodeEditarPrevFechoLinha(context._pvData.linhas[0]), false);
+  assert.equal(context.pvSaveData(), true);
   const parsed = JSON.parse(store.get(key));
   assert.equal(parsed.linhas[0].prevFecho, 777000);
   assert.equal(parsed.linhas[0].n, 700000);
-  assert.equal(parsed.actualizadoPor, 'Carlos Castro');
+  assert.equal(parsed.linhas[0].myr, 90);
 });
 
 check('Hélcio (vendedor Horeca) sem acesso ao mapa e sem persist', () => {
@@ -259,26 +373,58 @@ check('admin com edit=false renderiza texto (Accuracy / consulta visual)', () =>
   assert.ok(!cell.includes('<input'));
 });
 
-check('pvAutosave de vendedor não agenda escrita', () => {
+check('pvAutosave de vendedor grava a previsão e o flush também', () => {
   clearPrevisaoStore();
   setUser('Massimo Bottello');
-  context._pvData = sampleData({ prevFecho: 42 });
-  context.pvAutosave();
-  assert.deepEqual(previsaoKeys(), []);
+  context._pvBaseVendedor = null;
+  context._pvData = {
+    ano: 2026,
+    mes: 9,
+    linhas: [linhaCanal('dfb_dist_reg', { prevFecho: 42, n: 10 })],
+    cellTs: {},
+  };
+  context.pvCapturarBaseVendedor();
+  context._pvData.linhas[0].prevFecho = 42000;
+  context.pvTouchCell(0, 'prevFecho');
+  assert.equal(context.pvFlushAutosave(), true);
+  const parsed = JSON.parse(store.get(context.pvStoreKey(2026, 9)));
+  assert.equal(parsed.linhas[0].prevFecho, 42000);
+  assert.equal(parsed.linhas[0].n, 10);
+  assert.ok(extractFn(html, 'pvAutosave').includes('150'));
+  assert.ok(extractFn(html, 'pvScheduleCloudSync').includes('1200'));
 });
 
-check('vendedor não grava localStorage (persist silent / flush / load)', () => {
+check('vendedor grava localStorage da previsão; campos bloqueados e Hélcio não', () => {
   clearPrevisaoStore();
   setUser('Filipe Neves');
-  const data = sampleData({ n: 810000 });
-  assert.equal(context.pvPersistLocalSilent(2026, 8, data), false);
-  context._pvData = data;
-  assert.equal(context.pvFlushAutosave(), false);
-  assert.deepEqual(previsaoKeys(), []);
+  const data = {
+    ano: 2026,
+    mes: 9,
+    linhas: [linhaCanal('dfb_rest', { prevFecho: 400000, n: 810000 })],
+  };
+  assert.equal(context.pvPersistLocalSilent(2026, 9, data), true);
+  assert.ok(store.get(context.pvStoreKey(2026, 9)));
   assert.ok(extractFn(html, 'pvPersistLocalSilent').includes('pvPodeEditar'));
   assert.ok(extractFn(html, 'pvScheduleCloudSync').includes('pvPodeEditar'));
   assert.ok(extractFn(html, 'pvSyncMapsToCloud').includes('pvPodeEditar'));
   assert.ok(extractFn(html, 'pvBindAutosaveLifecycle').includes('pvPodeEditar'));
+  assert.ok(extractFn(html, 'pvPublicarProducao').includes('if (!pvPodeEditar())'));
+});
+
+check('mês por omissão é o calendário actual, não Agosto; a escolha da sessão mantém-se', () => {
+  sess.clear();
+  assert.equal(context.pvMesCalendario(new Date(2026, 9, 20)), 9);
+  assert.equal(context.pvMesCalendario(new Date(2026, 10, 1)), 10);
+  assert.equal(context.pvMesPorOmissao(new Date(2026, 9, 20)), 9);
+  assert.notEqual(context.pvMesPorOmissao(new Date(2026, 9, 20)), 7);
+  assert.equal(context.pvMesPorOmissao(new Date(2026, 7, 15)), 7, 'Agosto só quando o calendário é Agosto');
+  context.pvMemorizarMesEscolhido('3');
+  assert.equal(context.pvMesPorOmissao(new Date(2026, 9, 20)), 3);
+  sess.clear();
+  assert.equal(context.pvMesPorOmissao(new Date(2026, 10, 20)), 10);
+  const agora = context.pvAgoraSaoPaulo();
+  assert.ok(agora instanceof Date);
+  assert.equal(context.pvMesCalendario(agora), agora.getMonth());
 });
 
 if (process.exitCode) {
