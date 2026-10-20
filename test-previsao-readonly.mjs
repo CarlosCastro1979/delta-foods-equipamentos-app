@@ -85,6 +85,7 @@ const context = {
   _pvBaseVendedor: null,
   _pvAutosaveTimer: null,
   _pvAutosaveHintTimer: null,
+  _pvRelogio() { return new Date(2026, 9, 20); },
   PV_MES_SESSAO_KEY: 'dfb_pv_mes_escolhido',
   toast() {},
   setTimeout() { return 1; },
@@ -131,6 +132,9 @@ for (const name of [
   'pvRestaurarCamposBloqueados',
   'pvTouchCell',
   'pvMesCalendario',
+  'pvAnoCalendario',
+  'pvMapaEhMesCorrente',
+  'pvDocumentoEhMesCorrente',
   'pvMesPorOmissao',
   'pvMemorizarMesEscolhido',
   'pvAgoraSaoPaulo',
@@ -165,7 +169,7 @@ function clearPrevisaoStore() {
 function sampleData(overrides) {
   return {
     ano: 2026,
-    mes: 8,
+    mes: 9,
     linhas: [{
       id: 'dfb_lojas',
       empresa: 'LOJAS ONLINE',
@@ -208,7 +212,8 @@ check('UI: banner de consulta e Publicar escondido por omissão', () => {
   assert.ok(html.includes('id="pv-ano"'));
   assert.ok(html.includes('id="pv-mes"'));
   assert.ok(!/function pvExportarExcel\(\) \{\s*if \(!pvPodeEditar/.test(html));
-  assert.ok(html.includes('Vendedores: escrevem a Previsão de fecho dos seus canais no mapa mensal'));
+  assert.ok(html.includes('Vendedores: escrevem a Previsão de fecho dos seus canais no mapa mensal, só no mês corrente'));
+  assert.ok(html.includes('function pvMapaEhMesCorrente('));
   assert.ok(!html.includes('value="7" selected'));
   assert.ok(html.includes("timeZone: 'America/Sao_Paulo'"));
 });
@@ -241,6 +246,8 @@ VENDEDORES.forEach(nome => {
     sess.clear();
     setUser(nome);
     context._pvBaseVendedor = null;
+    context._pvRelogio = () => new Date(2026, 9, 20);
+    context._pvData = { ano: 2026, mes: 9, linhas: [] };
     assert.equal(context.isAdmin(), false);
     assert.equal(context.podeAcederPrevisaoVendas(), true);
     assert.equal(context.pvPodeEditar(), false, 'mapa inteiro continua fechado');
@@ -305,7 +312,7 @@ ADMINS_TEST.forEach(nome => {
 
     context._pvData = sampleData({ prevFecho: 2521200 });
     assert.equal(context.pvSaveData(), true);
-    const key = context.pvStoreKey(2026, 8);
+    const key = context.pvStoreKey(2026, 9);
     const raw = store.get(key);
     assert.ok(raw, 'admin tem de gravar localStorage');
     const parsed = JSON.parse(raw);
@@ -326,12 +333,12 @@ check('vendedor não sobrescreve N nem a previsão de um canal que não é dele'
   context._pvBaseVendedor = null;
   context._pvData = {
     ano: 2026,
-    mes: 8,
+    mes: 9,
     linhas: [linhaCanal('dfb_lojas', { prevFecho: 777000, n: 700000 })],
     cellTs: {},
   };
   assert.equal(context.pvSaveData(), true);
-  const key = context.pvStoreKey(2026, 8);
+  const key = context.pvStoreKey(2026, 9);
 
   setUser('Diogo Oliveira');
   context.pvCapturarBaseVendedor();
@@ -409,6 +416,76 @@ check('vendedor grava localStorage da previsão; campos bloqueados e Hélcio nã
   assert.ok(extractFn(html, 'pvSyncMapsToCloud').includes('pvPodeEditar'));
   assert.ok(extractFn(html, 'pvBindAutosaveLifecycle').includes('pvPodeEditar'));
   assert.ok(extractFn(html, 'pvPublicarProducao').includes('if (!pvPodeEditar())'));
+});
+
+check('previsão de fecho só no mês corrente; Agosto 2026 fechado para vendedor e admin', () => {
+  const outubro = new Date(2026, 9, 20);
+  const novembro = new Date(2026, 10, 1);
+  context._pvRelogio = () => outubro;
+  assert.equal(context.pvMapaEhMesCorrente(2026, 9, outubro), true);
+  assert.equal(context.pvMapaEhMesCorrente(2026, 7, outubro), false, 'Agosto não é o corrente');
+  assert.equal(context.pvMapaEhMesCorrente(2026, 10, outubro), false, 'Novembro ainda é futuro');
+  assert.equal(context.pvMapaEhMesCorrente(2025, 9, outubro), false, 'Outubro de 2025 é histórico');
+  assert.equal(context.pvMapaEhMesCorrente(2026, 10, novembro), true, 'em Novembro o corrente muda');
+  assert.equal(context.pvMapaEhMesCorrente(2026, 9, novembro), false);
+
+  clearPrevisaoStore();
+  setUser('Diogo Oliveira');
+  context._pvBaseVendedor = null;
+  context._pvData = { ano: 2026, mes: 9, linhas: [linhaCanal('dfb_ret_mod', { prevFecho: 50 })], cellTs: {} };
+  assert.equal(context.pvPodeEditarPrevFechoLinha(context._pvData.linhas[0]), true);
+  assert.ok(context.pvEditCell('prevFecho', 0, context._pvData.linhas[0], false, '#eff6ff').includes('<input'));
+
+  context._pvData.mes = 7;
+  assert.equal(context.pvDocumentoEhMesCorrente(context._pvData), false);
+  assert.equal(context.pvPodeEditarPrevFechoLinha(context._pvData.linhas[0]), false);
+  assert.ok(!context.pvEditCell('prevFecho', 0, context._pvData.linhas[0], false, '#eff6ff').includes('<input'));
+  assert.ok(!context.pvEditCell('n', 0, context._pvData.linhas[0], true, '#fff').includes('<input'));
+  const keyAgo = context.pvStoreKey(2026, 7);
+  context._pvData.linhas[0].prevFecho = 1;
+  assert.equal(context.pvSaveData(), false, 'Agosto não grava');
+  assert.equal(context.pvPersistLocalSilent(2026, 7, context._pvData), false);
+  assert.equal(store.get(keyAgo) || null, null);
+  context.pvOnCampoInput({ getAttribute: () => '0', value: '999' }, 'prevFecho');
+  assert.equal(context._pvData.linhas[0].prevFecho, 1, 'input de Agosto não altera a previsão');
+
+  setUser('Carlos Castro');
+  context._pvData = { ano: 2026, mes: 7, linhas: [linhaCanal('dfb_lojas', { prevFecho: 80, n: 70 })], cellTs: {} };
+  assert.equal(context.pvPodeEditar(), true, 'admin continua admin');
+  assert.equal(context.pvPodeEditarPrevFechoLinha(context._pvData.linhas[0]), false);
+  assert.ok(!context.pvEditCell('prevFecho', 0, context._pvData.linhas[0], true, '#eff6ff').includes('<input'));
+  assert.ok(!context.pvEditCell('n', 0, context._pvData.linhas[0], true, '#f0fdf4').includes('<input'));
+  assert.ok(!context.pvEditCell('myr', 0, context._pvData.linhas[0], true, '#fffbeb').includes('<input'));
+  assert.equal(context.pvSaveData(), false);
+  assert.equal(context.pvPersistLocalSilent(2026, 7, context._pvData), false);
+  assert.equal(store.get(keyAgo) || null, null);
+
+  context._pvData.mes = 10;
+  assert.equal(context.pvPodeEditarPrevFechoLinha(context._pvData.linhas[0]), false, 'mês futuro fechado');
+  assert.equal(context.pvSaveData(), false);
+
+  setUser('Filipe Neves');
+  clearPrevisaoStore();
+  context._pvBaseVendedor = null;
+  context._pvData = {
+    ano: 2026,
+    mes: 9,
+    linhas: [linhaCanal('dfb_rest', { prevFecho: 400 })],
+    cellTs: {},
+  };
+  context.pvCapturarBaseVendedor();
+  context.pvOnCampoInput({ getAttribute: () => '0', value: '' }, 'prevFecho');
+  assert.equal(context._pvData.linhas[0].prevFecho, null);
+  assert.equal(context.pvSaveData(), true);
+  const limpo = JSON.parse(store.get(context.pvStoreKey(2026, 9)));
+  assert.equal(limpo.linhas[0].prevFecho, null, 'limpar o mês corrente fica vazio');
+
+  context._pvRelogio = () => novembro;
+  context._pvData = { ano: 2026, mes: 10, linhas: [linhaCanal('dfb_rest', { prevFecho: 10 })] };
+  assert.equal(context.pvPodeEditarPrevFechoLinha(context._pvData.linhas[0]), true, 'Novembro abre quando o calendário é Novembro');
+  context._pvData.mes = 9;
+  assert.equal(context.pvPodeEditarPrevFechoLinha(context._pvData.linhas[0]), false, 'Outubro passa a histórico');
+  context._pvRelogio = () => outubro;
 });
 
 check('mês por omissão é o calendário actual, não Agosto; a escolha da sessão mantém-se', () => {

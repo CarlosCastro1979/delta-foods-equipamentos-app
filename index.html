@@ -2227,7 +2227,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas, Orçamento 2027 e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: escrevem a Previsão de fecho dos seus canais no mapa mensal. N, MYR e Publicar: direcção (Carlos, Christian, Andrea, Daniela K.). No Orçamento 2027 escrevem Previsão Out a Dez e Orçamento 2027, em valor e em volume, e Out–Dez da Sazonalidade.</div>
+          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas, Orçamento 2027 e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: escrevem a Previsão de fecho dos seus canais no mapa mensal, só no mês corrente. N, MYR e Publicar: direcção (Carlos, Christian, Andrea, Daniela K.). No Orçamento 2027 escrevem Previsão Out a Dez e Orçamento 2027, em valor e em volume, e Out–Dez da Sazonalidade.</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -4089,7 +4089,7 @@ var _unused_placeholder = 1;
           <button type="button" class="btn btn-secondary btn-sm" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
           <h2 style="font-size:18px;font-weight:600;margin:0;">Previsão de vendas e acompanhamento</h2>
           <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
-            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR — cada vendedor escreve a Previsão de fecho dos seus canais (autosave). O resto do mapa é da direcção. Orçamento 2027 (Orç Valor, Volume e Sazonalidade): vendedores escrevem Previsão Out a Dez, Orçamento 2027 e Out–Dez da sazonalidade, autosave local + cloud.
+            Previsão de fecho · N (vendas líquidas do mês) · Accuracy · MYR — cada vendedor escreve a Previsão de fecho dos seus canais, só no mês corrente (autosave). Meses anteriores e futuros ficam em consulta. O resto do mapa é da direcção. Orçamento 2027 (Orç Valor, Volume e Sazonalidade): vendedores escrevem Previsão Out a Dez, Orçamento 2027 e Out–Dez da sazonalidade, autosave local + cloud.
             <span id="pv-modo-label" style="margin-left:6px;"></span>
           </p>
         </div>
@@ -12248,6 +12248,9 @@ function pvDebugLocalMaps() {
 function pvPersistLocalSilent(ano, mes, data) {
   if (typeof pvPodeEditar === 'function' && !pvPodeEditar() && !pvPodeGravarPrevFecho()) return false;
   if (!data) return false;
+  const y = (ano != null && ano !== '') ? ano : data.ano;
+  const m = (mes != null && mes !== '') ? mes : data.mes;
+  if (typeof pvMapaEhMesCorrente === 'function' && !pvMapaEhMesCorrente(y, m)) return false;
   try {
     localStorage.setItem(pvStoreKey(ano, mes), JSON.stringify(data));
     return true;
@@ -12363,6 +12366,7 @@ async function pvSyncMapsToCloud(opts) {
 
 function pvScheduleCloudSync() {
   if (typeof pvPodeEditar === 'function' && !pvPodeEditar() && !pvPodeGravarPrevFecho()) return;
+  if (_pvData && typeof pvDocumentoEhMesCorrente === 'function' && !pvDocumentoEhMesCorrente(_pvData)) return;
   _pvNeedsCloudSync = true;
   clearTimeout(_pvCloudSyncTimer);
   _pvCloudSyncTimer = setTimeout(() => {
@@ -12966,6 +12970,7 @@ function pvSaveData() {
   const prevFecho = !direccao && typeof pvPodeGravarPrevFecho === 'function' && pvPodeGravarPrevFecho();
   if (typeof pvPodeEditar === 'function' && !pvPodeEditar() && !prevFecho) return false;
   if (!_pvData) return false;
+  if (typeof pvDocumentoEhMesCorrente === 'function' && !pvDocumentoEhMesCorrente(_pvData)) return false;
   if (prevFecho && typeof pvRestaurarCamposBloqueados === 'function') {
     pvRestaurarCamposBloqueados();
     if (typeof pvRecalcSomas === 'function') pvRecalcSomas('prevFecho');
@@ -13014,9 +13019,11 @@ function pvPodeGravarPrevFecho() {
   return PREV_VENDAS_SO_CONSULTA.some(n => normNomeUtilizador(n) === atual);
 }
 
-/** Admin: qualquer canal. Vendedor: só o canal cujo dono no ranking é ele. Grupos nunca. */
+/** Admin: qualquer canal. Vendedor: só o canal cujo dono no ranking é ele. Grupos nunca.
+ *  Só o mês corrente: ninguém (nem a direcção) altera a previsão de um mês anterior ou futuro. */
 function pvPodeEditarPrevFechoLinha(row) {
   if (!row || row.tipo !== 'canal') return false;
+  if (typeof pvDocumentoEhMesCorrente === 'function' && !pvDocumentoEhMesCorrente(_pvData)) return false;
   if (typeof pvPodeEditar === 'function' && pvPodeEditar()) return true;
   if (!pvPodeGravarPrevFecho()) return false;
   const dono = typeof pvAccVendedorDeCanal === 'function' ? pvAccVendedorDeCanal(row.id) : '';
@@ -13027,6 +13034,7 @@ function pvPodeEditarPrevFechoLinha(row) {
 
 function pvPodeEditarCampo(row, campo) {
   if (!row || row.tipo !== 'canal') return false;
+  if (typeof pvDocumentoEhMesCorrente === 'function' && !pvDocumentoEhMesCorrente(_pvData)) return false;
   if (campo === 'n' && row.nLigado) return false;
   if (campo === 'prevFecho') return pvPodeEditarPrevFechoLinha(row);
   return typeof pvPodeEditar === 'function' && pvPodeEditar();
@@ -13188,8 +13196,17 @@ async function abrirAreaFinanceiraHome() {
 
 const PV_MES_SESSAO_KEY = 'dfb_pv_mes_escolhido';
 
+/** Relógio injectável nos testes. Em produção fica null e usa-se São Paulo. */
+let _pvRelogio = null;
+
 /** Data de calendário em America/Sao_Paulo (o mês do mapa não segue o fuso do servidor). */
 function pvAgoraSaoPaulo() {
+  try {
+    if (typeof _pvRelogio === 'function') {
+      const injected = _pvRelogio();
+      if (injected instanceof Date && !Number.isNaN(injected.getTime())) return injected;
+    }
+  } catch (_) {}
   try {
     const fmt = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/Sao_Paulo',
@@ -13215,6 +13232,26 @@ function pvMesCalendario(date) {
   const d = (date instanceof Date && !Number.isNaN(date.getTime())) ? date : pvAgoraSaoPaulo();
   const m = d.getMonth();
   return (m >= 0 && m <= 11) ? m : 0;
+}
+
+/** Ano civil do mesmo calendário (America/Sao_Paulo, ou a Date injectada). */
+function pvAnoCalendario(date) {
+  const d = (date instanceof Date && !Number.isNaN(date.getTime())) ? date : pvAgoraSaoPaulo();
+  return d.getFullYear();
+}
+
+/** true só quando ano+mês são o mês corrente. Meses anteriores e futuros ficam fechados. */
+function pvMapaEhMesCorrente(ano, mes, date) {
+  const y = Number(ano);
+  const m = Number(mes);
+  if (!Number.isFinite(y) || !Number.isInteger(m) || m < 0 || m > 11) return false;
+  const d = (date instanceof Date && !Number.isNaN(date.getTime())) ? date : pvAgoraSaoPaulo();
+  return y === d.getFullYear() && m === d.getMonth();
+}
+
+function pvDocumentoEhMesCorrente(data, date) {
+  if (!data) return false;
+  return pvMapaEhMesCorrente(data.ano, data.mes, date);
 }
 
 /** Mês escolhido nesta sessão, senão o mês actual. Nunca fica preso a Agosto. */
@@ -14651,22 +14688,28 @@ function pvRender(opts) {
   }
 
   const edit = pvPodeEditar();
-  const prevParcial = !edit && _pvView === 'mapa' && typeof pvPodeGravarPrevFecho === 'function' && pvPodeGravarPrevFecho();
+  const historico = _pvView === 'mapa' && !!_pvData && typeof pvDocumentoEhMesCorrente === 'function' && !pvDocumentoEhMesCorrente(_pvData);
+  const prevParcial = !historico && !edit && _pvView === 'mapa' && typeof pvPodeGravarPrevFecho === 'function' && pvPodeGravarPrevFecho();
   const modo = document.getElementById('pv-modo-label');
   if (modo) {
-    modo.textContent = edit
-      ? '· Edição com autosave'
-      : (prevParcial
-        ? '· Previsão de fecho dos teus canais (autosave)'
-        : '· Só consulta — a previsão é editada pela direcção.');
-    modo.style.color = (edit || prevParcial) ? '#166534' : '#9a3412';
+    modo.textContent = historico
+      ? '· Histórico — a Previsão de fecho só se edita no mês corrente'
+      : (edit
+        ? '· Edição com autosave'
+        : (prevParcial
+          ? '· Previsão de fecho dos teus canais (autosave)'
+          : '· Só consulta — a previsão é editada pela direcção.'));
+    modo.style.color = (!historico && (edit || prevParcial)) ? '#166534' : '#9a3412';
   }
   const roBanner = document.getElementById('pv-readonly-banner');
   if (roBanner) {
-    if (edit) roBanner.style.display = 'none';
+    if (historico) {
+      roBanner.style.display = '';
+      roBanner.innerHTML = '<strong>Histórico</strong> — a Previsão de fecho deste mês não se altera. Só o mês corrente se pode escrever.';
+    } else if (edit) roBanner.style.display = 'none';
     else if (prevParcial) {
       roBanner.style.display = '';
-      roBanner.innerHTML = '<strong>Os teus canais</strong> — podes escrever a Previsão de fecho (autosave). N, MYR, Budget e os canais dos outros ficam em consulta.';
+      roBanner.innerHTML = '<strong>Os teus canais</strong> — podes escrever a Previsão de fecho deste mês (autosave). Meses anteriores e futuros ficam fechados. N, MYR, Budget e os canais dos outros ficam em consulta.';
     } else {
       roBanner.style.display = '';
       if (!roBanner.innerHTML || roBanner.innerHTML.indexOf('Os teus canais') >= 0) {
@@ -14770,6 +14813,7 @@ function pvAutosave() {
   const prevFecho = !direccao && typeof pvPodeGravarPrevFecho === 'function' && pvPodeGravarPrevFecho();
   if (typeof pvPodeEditar === 'function' && !pvPodeEditar() && !prevFecho) return;
   if (!_pvData) return;
+  if (typeof pvDocumentoEhMesCorrente === 'function' && !pvDocumentoEhMesCorrente(_pvData)) return;
   clearTimeout(_pvAutosaveTimer);
   _pvAutosaveTimer = setTimeout(() => {
     const ok = pvSaveData();
@@ -14839,9 +14883,10 @@ function pvEditCell(campo, idx, row, edit, bg) {
   }
   // N ligado às vendas líquidas: mostra o número e não deixa um lançamento manual substituí-lo.
   if (campo === 'n' && row.nLigado) return pvFmtNum(row[campo]);
-  const canEdit = campo === 'prevFecho'
+  const mesAberto = typeof pvDocumentoEhMesCorrente !== 'function' || pvDocumentoEhMesCorrente(_pvData);
+  const canEdit = !mesAberto ? false : (campo === 'prevFecho'
     ? pvPodeEditarPrevFechoLinha(row)
-    : !!(edit && (typeof pvPodeEditar !== 'function' || pvPodeEditar()));
+    : !!(edit && (typeof pvPodeEditar !== 'function' || pvPodeEditar())));
   if (!canEdit) return pvFmtNum(row[campo]);
   const handlers = {
     prevFecho: 'pvOnPrevInput(this)" onblur="pvOnPrevBlur(this)',
