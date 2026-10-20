@@ -2065,6 +2065,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 var _unused_placeholder = 1;
 </script>
 <script src="simulador-template.js"></script>
+<script src="pdf-lib.min.js"></script>
 <script src="nfe-emitidas.js"></script>
 <script src="comissao-rc-mapa.js"></script>
 <script src="comissao-rc.js"></script>
@@ -4264,6 +4265,7 @@ var _unused_placeholder = 1;
             <div style="font-size:12px;color:var(--muted);line-height:1.5;">
               Ficheiro que sai do cockpit TTIN: XML de NF-e e o PDF de cada nota, dentro de um zip. Um XML ou um PDF avulso também entra.<br>
               O PDF liga-se à nota pelo nome: primeiro a chave de 44 dígitos, depois o número da NF. Vale NFe{chave}.pdf e a pasta do cockpit com barra invertida (NFe{chave}.pdf ao lado de NFe{chave}_prot.xml). Um PDF sem par não aparece como nota nova.<br>
+              O boleto (Boleto_{número}-{série} na pasta NFe{chave}) fica gravado com a nota. O clique no número abre um só PDF, pronto a imprimir: primeiro a NF, depois o boleto. Sem boleto, abre só a NF. Boleto sem PDF da NF fica guardado e não inventa DANFE.<br>
               O PDF que não cabe na mesma célula da lista fica gravado à parte e abre na mesma.<br>
               Cruza o CNPJ/CPF do destinatário com a lista de clientes. CPF sem vendedor fica no Marcio Gorga (Ecommerce, 99520001). CNPJ que já têm vendedor não mudam.<br>
               A mesma chave de NF não duplica. A gravação (nota e PDF) é só no fim da carga.<br>
@@ -13495,8 +13497,25 @@ async function nfeLoadRemote() {
   else if (Array.isArray(data)) notas = data;
   const pdfs = {};
   notas.forEach(n => {
-    if (!n || !n.chave || typeof n.pdfBase64 !== 'string' || !n.pdfBase64) return;
-    pdfs[n.chave] = { nome: n.pdfNome || '', b64: n.pdfBase64 };
+    if (!n || !n.chave) return;
+    const hit = {};
+    let algum = false;
+    if (typeof n.pdfBase64 === 'string' && n.pdfBase64) {
+      hit.nome = n.pdfNome || '';
+      hit.b64 = n.pdfBase64;
+      algum = true;
+    }
+    if (typeof n.boletoBase64 === 'string' && n.boletoBase64) {
+      hit.boletoNome = n.boletoNome || '';
+      hit.boletoB64 = n.boletoBase64;
+      algum = true;
+    }
+    if (typeof n.pdfJuntoBase64 === 'string' && n.pdfJuntoBase64) {
+      hit.juntoNome = n.pdfJuntoNome || '';
+      hit.juntoB64 = n.pdfJuntoBase64;
+      algum = true;
+    }
+    if (algum) pdfs[n.chave] = hit;
   });
   const nChunks = data && Number(data.__pdfChunks) || 0;
   if (nChunks > 0) {
@@ -13512,8 +13531,26 @@ async function nfeLoadRemote() {
 function nfeMapaPdfs(notas, prev) {
   const pdfs = Object.assign({}, prev || {});
   (notas || []).forEach(n => {
-    if (!n || !n.chave || typeof n.pdfBase64 !== 'string' || !n.pdfBase64) return;
-    pdfs[n.chave] = { nome: n.pdfNome || (n.chave + '.pdf'), b64: n.pdfBase64 };
+    if (!n || !n.chave) return;
+    const prevHit = pdfs[n.chave] || {};
+    const hit = Object.assign({}, prevHit);
+    let algum = !!(prevHit.b64 || prevHit.boletoB64 || prevHit.juntoB64);
+    if (typeof n.pdfBase64 === 'string' && n.pdfBase64) {
+      hit.nome = n.pdfNome || prevHit.nome || (n.chave + '.pdf');
+      hit.b64 = n.pdfBase64;
+      algum = true;
+    }
+    if (typeof n.boletoBase64 === 'string' && n.boletoBase64) {
+      hit.boletoNome = n.boletoNome || prevHit.boletoNome || '';
+      hit.boletoB64 = n.boletoBase64;
+      algum = true;
+    }
+    if (typeof n.pdfJuntoBase64 === 'string' && n.pdfJuntoBase64) {
+      hit.juntoNome = n.pdfJuntoNome || prevHit.juntoNome || '';
+      hit.juntoB64 = n.pdfJuntoBase64;
+      algum = true;
+    }
+    if (algum) pdfs[n.chave] = hit;
   });
   return pdfs;
 }
@@ -13822,27 +13859,45 @@ async function nfeOnFiles(ev) {
     const associado = typeof nfeAssociarPdfs === 'function'
       ? nfeAssociarPdfs(merged.notas, pdfs)
       : { notas: merged.notas, ligados: 0, soltos: pdfs.length };
-    const reap = nfeAplicarRegraGuardada(associado.notas, catalogoNomes);
+    const comBoleto = typeof nfeAssociarBoletos === 'function'
+      ? nfeAssociarBoletos(associado.notas, pdfs)
+      : { notas: associado.notas, ligados: 0, soltos: 0 };
+    const junto = typeof nfeAnexarDocsJuntos === 'function'
+      ? await nfeAnexarDocsJuntos(comBoleto.notas)
+      : { notas: comBoleto.notas, juntos: 0, falhas: 0 };
+    const reap = nfeAplicarRegraGuardada(junto.notas, catalogoNomes);
     _nfeNotas = reap.notas;
     const pdfsNuvem = _nfePdfsNuvem || {};
     const faltaBinarioNuvem = pdfs.length > 0 && (reap.notas || []).some(n => {
-      if (!n || !n.chave || typeof nfeTemPdfBinario !== 'function' || !nfeTemPdfBinario(n)) return false;
-      const hit = pdfsNuvem[n.chave];
-      return !(hit && (hit.b64 || hit.pdfBase64));
+      if (!n || !n.chave) return false;
+      const hit = pdfsNuvem[n.chave] || {};
+      if (typeof nfeTemPdfBinario === 'function' && nfeTemPdfBinario(n) && !(hit.b64 || hit.pdfBase64)) return true;
+      if (typeof nfeTemBoletoBinario === 'function' && nfeTemBoletoBinario(n) && !(hit.boletoB64 || hit.boletoBase64)) return true;
+      if (typeof nfeTemJuntoBinario === 'function' && nfeTemJuntoBinario(n) && !(hit.juntoB64 || hit.pdfJuntoBase64)) return true;
+      return false;
     });
-    if (merged.novas > 0 || reap.alteradas > 0 || associado.ligados > 0 || faltaBinarioNuvem) {
+    if (merged.novas > 0 || reap.alteradas > 0 || associado.ligados > 0 || (comBoleto.ligados || 0) > 0 || (junto.juntos || 0) > 0 || faltaBinarioNuvem) {
       await nfePersistir(_nfeNotas);
     }
     const com = atrib.filter(n => n.status === 'unico').length;
     const sem = atrib.filter(n => n.status === 'sem_cliente').length;
     const multi = atrib.filter(n => n.status === 'cnpj_multiplos').length;
-    const pdfOnde = (associado.ligados || faltaBinarioNuvem) ? ' · PDF gravado com a nota' : '';
+    const pdfOnde = (associado.ligados || comBoleto.ligados || junto.juntos || faltaBinarioNuvem) ? ' · PDF gravado com a nota' : '';
+    const bolTxt = comBoleto.ligados
+      ? ` · ${comBoleto.ligados} boleto${comBoleto.ligados === 1 ? '' : 's'}`
+      : '';
+    const juntoTxt = junto.juntos
+      ? ` · ${junto.juntos} PDF com NF e boleto`
+      : '';
     const pdfTxt = (pdfs.length
       ? (associado.ligados
         ? ` · ${associado.ligados} PDF associado${associado.ligados === 1 ? '' : 's'}`
         : '')
       : '')
+      + bolTxt
+      + juntoTxt
       + (associado.soltos ? ` · ${associado.soltos} PDF sem nota` : '')
+      + (comBoleto.soltos ? ` · ${comBoleto.soltos} boleto sem nota` : '')
       + pdfOnde;
     _nfeStatusMsg = parsed.length
       ? `${parsed.length} NF · ${merged.novas} novas · ${merged.repetidas} já guardadas · ${com} com cliente · ${sem} sem cliente · ${multi} com CNPJ em mais do que um código`
@@ -13853,18 +13908,23 @@ async function nfeOnFiles(ev) {
         : 'O PDF não corresponde a nenhuma nota já carregada.');
     if (typeof toast === 'function') {
       toast(merged.novas > 0
-        ? ('NF guardadas. ' + merged.novas + ' novas' + (associado.ligados ? (', ' + associado.ligados + ' com PDF.') : (faltaBinarioNuvem ? ', com PDF.' : '.')))
-        : (associado.ligados > 0
-          ? ('PDF associado a ' + associado.ligados + (associado.ligados === 1 ? ' nota.' : ' notas.'))
-          : (faltaBinarioNuvem
-            ? 'PDF gravado com a nota.'
-            : (reap.alteradas > 0
-              ? (reap.transferencias > 0 && reap.transferencias === reap.alteradas
-                ? 'Transferência interna saiu do vendedor.'
-                : 'CPF sem vendedor ficou no Marcio Gorga (Ecommerce).')
-              : (pdfs.length && !parsed.length
-                ? 'O PDF não corresponde a nenhuma nota já carregada.'
-                : 'Nenhuma nota nova — estas chaves já estavam guardadas.')))));
+        ? ('NF guardadas. ' + merged.novas + ' novas'
+          + (junto.juntos ? (', ' + junto.juntos + ' com NF e boleto.') : (comBoleto.ligados ? (', ' + comBoleto.ligados + ' com boleto.') : (associado.ligados ? (', ' + associado.ligados + ' com PDF.') : (faltaBinarioNuvem ? ', com PDF.' : '.')))))
+        : ((junto.juntos || comBoleto.ligados) > 0
+          ? (junto.juntos
+            ? ('NF e boleto num só PDF em ' + junto.juntos + (junto.juntos === 1 ? ' nota.' : ' notas.'))
+            : ('Boleto gravado em ' + comBoleto.ligados + (comBoleto.ligados === 1 ? ' nota.' : ' notas.')))
+          : (associado.ligados > 0
+            ? ('PDF associado a ' + associado.ligados + (associado.ligados === 1 ? ' nota.' : ' notas.'))
+            : (faltaBinarioNuvem
+              ? 'PDF gravado com a nota.'
+              : (reap.alteradas > 0
+                ? (reap.transferencias > 0 && reap.transferencias === reap.alteradas
+                  ? 'Transferência interna saiu do vendedor.'
+                  : 'CPF sem vendedor ficou no Marcio Gorga (Ecommerce).')
+                : (pdfs.length && !parsed.length
+                  ? 'O PDF não corresponde a nenhuma nota já carregada.'
+                  : 'Nenhuma nota nova — estas chaves já estavam guardadas.'))))));
     }
   } catch (e) {
     console.error(e);
@@ -14257,7 +14317,8 @@ function nfeNumeroCelula(n) {
   const serie = n && n.serie ? ` <span style="color:var(--muted);">sér. ${escHtml(n.serie)}</span>` : '';
   const ch = String((n && n.chave) || '').replace(/[^0-9A-Za-z]/g, '');
   if (!ch || !n || !n.numero) return num + serie;
-  return `<button type="button" class="nfe-click" title="Abrir o PDF desta NF" onclick="nfeAbrirPdf('${ch}')">${num}</button>${serie}`;
+  const titulo = (n.temPdfJunto || n.temBoleto) ? 'Abrir NF e boleto' : 'Abrir o PDF desta NF';
+  return `<button type="button" class="nfe-click" title="${titulo}" onclick="nfeAbrirPdf('${ch}')">${num}</button>${serie}`;
 }
 
 function nfeListaHtml(notas, passa) {
@@ -42884,7 +42945,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-20-mapa-editar-mes-freeze: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-20-nfe-boletos: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

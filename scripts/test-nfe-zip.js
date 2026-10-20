@@ -312,12 +312,12 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-20-mapa-editar-mes-freeze'), 'service worker referido no index');
+  assert(html.includes('v2026-10-20-nfe-boletos'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-perdas-sem-999'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-20-mapa-editar-mes-freeze'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-20-nfe-boletos'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
@@ -1075,7 +1075,100 @@ if (!zipPath) {
   testFiltrosETotal(zipPath);
 }
 
-testCliqueSemPdf().then(() => {
+async function pdfComTamanhos(sizes) {
+  const { PDFDocument } = require('../pdf-lib.min.js');
+  const doc = await PDFDocument.create();
+  sizes.forEach(function (s) { doc.addPage(s); });
+  return Buffer.from(await doc.save());
+}
+
+async function tamanhosPdf(buf) {
+  const { PDFDocument } = require('../pdf-lib.min.js');
+  const doc = await PDFDocument.load(buf);
+  const pages = [];
+  for (let i = 0; i < doc.getPageCount(); i++) {
+    const s = doc.getPage(i).getSize();
+    pages.push([Math.round(s.width), Math.round(s.height)]);
+  }
+  return pages;
+}
+
+async function testBoletosPdf() {
+  const chave = '35261014830817000100550020000000010000000000';
+  const chaveSem = '35261014830817000100550020000000020000000000';
+  const chaveSoBol = '35261014830817000100550020000000030000000000';
+  const xml = (ch, nNF) => `<?xml version="1.0"?><nfeProc><NFe><infNFe Id="NFe${ch}"><ide><serie>2</serie><nNF>${nNF}</nNF><dhEmi>2026-10-20T10:00:00-03:00</dhEmi></ide><emit><CNPJ>14830817000100</CNPJ></emit><dest><CNPJ>03852638000149</CNPJ><xNome>CLIENTE</xNome></dest><total><ICMSTot><vNF>10.50</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
+  const nfPaginas = [[200, 300], [210, 310]];
+  const bolPaginas = [[400, 120]];
+  const nfPdf = await pdfComTamanhos(nfPaginas);
+  const bolPdf = await pdfComTamanhos(bolPaginas);
+  const nfSo = await pdfComTamanhos([[180, 280]]);
+  const pasta = (ch) => '14830817000100_Delta Foods Brasil - SP/20_10_2026__20_10_2026/Saida/NFe' + ch + '/';
+  const zip = makeZip([
+    { name: pasta(chave) + 'NFe' + chave + '_prot.xml', data: Buffer.from(xml(chave, 1)) },
+    { name: pasta(chave) + 'NFe' + chave + '.pdf', data: nfPdf },
+    { name: pasta(chave) + 'Boleto_1-2_1_1.pdf', data: bolPdf },
+    { name: pasta(chaveSem) + 'NFe' + chaveSem + '_prot.xml', data: Buffer.from(xml(chaveSem, 2)) },
+    { name: pasta(chaveSem) + 'NFe' + chaveSem + '.pdf', data: nfSo },
+    { name: pasta(chaveSoBol) + 'NFe' + chaveSoBol + '_prot.xml', data: Buffer.from(xml(chaveSoBol, 3)) },
+    { name: pasta(chaveSoBol) + 'Boleto_3-2_1_1.pdf', data: bolPdf },
+    { name: 'Boleto_9-1_1_1.pdf', data: bolPdf },
+  ]);
+  const entries = nfe.nfeReadZipEntries(zip);
+  const xmls = entries.filter(e => e.xml);
+  const pdfs = entries.filter(e => e.pdfBase64);
+  assert(xmls.length === 3 && pdfs.length === 5, 'o zip de teste traz 3 XML e 5 PDF, veio ' + xmls.length + '/' + pdfs.length);
+  const notas = xmls.map(x => nfe.nfeParseXml(x.xml, x.name)).filter(Boolean);
+  const assoc = nfe.nfeAssociarPdfs(notas, pdfs);
+  assert(assoc.ligados === 2 && assoc.soltos === 0, 'os boletos não contam como PDF de NF solto, veio ' + assoc.ligados + '/' + assoc.soltos);
+  const comBol = nfe.nfeAssociarBoletos(assoc.notas, pdfs);
+  assert(comBol.ligados === 2 && comBol.soltos === 1, 'dois boletos ligam pela pasta e um fica sem nota, veio ' + comBol.ligados + '/' + comBol.soltos);
+  const porNum = comBol.notas.find(n => n.chave === chave);
+  const semBol = comBol.notas.find(n => n.chave === chaveSem);
+  const soBol = comBol.notas.find(n => n.chave === chaveSoBol);
+  assert(porNum && porNum.pdfNome === 'NFe' + chave + '.pdf', 'a DANFE continua a ser o PDF da NF');
+  assert(Buffer.from(porNum.pdfBase64, 'base64').equals(nfPdf), 'o PDF original da NF fica gravado');
+  assert(porNum.boletoNome === 'Boleto_1-2_1_1.pdf' && porNum.temBoleto, 'o boleto fica na mesma nota');
+  assert(Buffer.from(porNum.boletoBase64, 'base64').equals(bolPdf), 'o PDF original do boleto fica gravado');
+  assert(semBol && semBol.pdfBase64 && !semBol.boletoBase64 && !semBol.temBoleto, 'NF sem boleto mantém só o PDF da nota');
+  assert(soBol && soBol.boletoBase64 && !soBol.pdfBase64, 'boleto sem DANFE fica guardado e não inventa PDF da NF');
+
+  const junto = await nfe.nfeAnexarDocsJuntos(comBol.notas);
+  assert(junto.juntos === 1 && junto.falhas === 0, 'só a nota com os dois PDF gera o documento junto, veio ' + JSON.stringify({ juntos: junto.juntos, falhas: junto.falhas }));
+  const fundida = junto.notas.find(n => n.chave === chave);
+  const semJunto = junto.notas.find(n => n.chave === chaveSem);
+  const soBolJ = junto.notas.find(n => n.chave === chaveSoBol);
+  assert(fundida.temPdfJunto && fundida.pdfJuntoNome === 'NF-1-boleto.pdf', 'o nome do PDF junto identifica a NF e o boleto');
+  assert(fundida.pdfBase64 === porNum.pdfBase64 && fundida.boletoBase64 === porNum.boletoBase64, 'originais da NF e do boleto mantêm-se ao lado do PDF junto');
+  const pags = await tamanhosPdf(Buffer.from(fundida.pdfJuntoBase64, 'base64'));
+  assert(pags.length === nfPaginas.length + bolPaginas.length, 'o PDF junto soma as páginas, veio ' + pags.length);
+  assert(JSON.stringify(pags) === JSON.stringify(nfPaginas.concat(bolPaginas)), 'a ordem é NF e depois boleto, veio ' + JSON.stringify(pags));
+  assert(!semJunto.pdfJuntoBase64, 'sem boleto não há PDF junto');
+  assert(!soBolJ.pdfJuntoBase64, 'boleto sem DANFE não inventa PDF junto');
+
+  const aberto = nfe.nfePdfDaNota(fundida, null);
+  assert(aberto.ok && aberto.junto === true && aberto.pdfBase64 === fundida.pdfJuntoBase64, 'abrir/exportar devolve o PDF junto quando há boleto');
+  const soNf = nfe.nfePdfDaNota(semJunto, null);
+  assert(soNf.ok && soNf.junto === false && soNf.pdfBase64 === semJunto.pdfBase64, 'sem boleto abre só a NF');
+  const nada = nfe.nfePdfDaNota(soBolJ, null);
+  assert(nada.ok === false, 'boleto sem DANFE não abre um PDF inventado');
+
+  const leve = nfe.nfeNotaSemPdfBinario(fundida);
+  assert(!leve.pdfBase64 && !leve.boletoBase64 && !leve.pdfJuntoBase64, 'a célula leve não leva os binários');
+  assert(leve.temPdf && leve.temBoleto && leve.temPdfJunto, 'a célula leve guarda que há NF, boleto e PDF junto');
+  const mapa = nfe.nfeMapaPdfsDeChunks(nfe.nfePartirPdfsEmChunks([fundida]));
+  const volta = nfe.nfeJuntarPdfsLocais([leve], mapa)[0];
+  assert(volta.pdfBase64 === fundida.pdfBase64 && volta.boletoBase64 === fundida.boletoBase64 && volta.pdfJuntoBase64 === fundida.pdfJuntoBase64, 'os blocos repor NF, boleto e PDF junto');
+  assert(nfe.nfePdfDaNota(leve, mapa).pdfBase64 === fundida.pdfJuntoBase64, 'depois dos blocos a exportação continua a ser o PDF junto');
+
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  assert(html.includes('pdf-lib.min.js'), 'a página carrega o pdf-lib');
+  assert(html.includes('nfeAssociarBoletos'), 'a carga liga o boleto');
+  assert(html.includes('nfeAnexarDocsJuntos'), 'a carga grava o PDF junto ao ler o zip');
+  assert(html.includes('Abrir NF e boleto'), 'o número da NF com boleto abre o documento junto');
+}
+
+testCliqueSemPdf().then(() => testBoletosPdf()).then(() => {
   if (failed) {
     console.error(failed + ' asserção(ões) falharam');
     process.exit(1);
