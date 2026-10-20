@@ -312,12 +312,12 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-20-nfe-boleto-coluna'), 'service worker referido no index');
+  assert(html.includes('v2026-10-20-nfe-boletos-parcelas'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-perdas-sem-999'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-20-nfe-boleto-coluna'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-20-nfe-boletos-parcelas'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
@@ -1208,7 +1208,152 @@ async function testBoletosPdf() {
   assert(marcaNaLista(leves, '1') === 'S' && marcaNaLista(leves, '2') === 'N', 'a lista usa a marca da célula leve');
 }
 
-testCliqueSemPdf().then(() => testBoletosPdf()).then(() => {
+async function testBoletosParcelas() {
+  const chave = '35261014830817000100550020001026061000000000';
+  const xml = `<?xml version="1.0"?><nfeProc><NFe><infNFe Id="NFe${chave}"><ide><serie>2</serie><nNF>102606</nNF><dhEmi>2026-10-20T10:00:00-03:00</dhEmi></ide><emit><CNPJ>14830817000100</CNPJ></emit><dest><CNPJ>03852638000149</CNPJ><xNome>CLIENTE</xNome></dest><total><ICMSTot><vNF>10.50</vNF></ICMSTot></total></infNFe></NFe></nfeProc>`;
+  const nfPaginas = [[200, 300], [210, 310]];
+  const p1 = [[401, 101]];
+  const p2 = [[402, 102]];
+  const p3 = [[403, 103]];
+  const nfPdf = await pdfComTamanhos(nfPaginas);
+  const b1 = await pdfComTamanhos(p1);
+  const b2 = await pdfComTamanhos(p2);
+  const b3 = await pdfComTamanhos(p3);
+  const zip = makeZip([
+    { name: 'saida/NFe' + chave + '_prot.xml', data: Buffer.from(xml) },
+    { name: 'saida/NFe' + chave + '.pdf', data: nfPdf },
+    { name: 'saida/Boleto_102606-2_3_3.pdf', data: b3 },
+    { name: 'saida/Boleto_102606-2_1_3.pdf', data: b1 },
+    { name: 'saida/Boleto_102606-2_2_3.pdf', data: b2 },
+  ]);
+  const entries = nfe.nfeReadZipEntries(zip);
+  const pdfs = entries.filter(e => e.pdfBase64);
+  const notas = entries.filter(e => e.xml).map(x => nfe.nfeParseXml(x.xml, x.name)).filter(Boolean);
+  const assoc = nfe.nfeAssociarPdfs(notas, pdfs);
+  assert(assoc.ligados === 1 && assoc.soltos === 0, 'a DANFE liga e os boletos não contam como NF, veio ' + assoc.ligados + '/' + assoc.soltos);
+  const comBol = nfe.nfeAssociarBoletos(assoc.notas, pdfs);
+  assert(comBol.ligados === 3 && comBol.soltos === 0, 'os 3 boletos da 102606-2 ligam, veio ' + comBol.ligados + '/' + comBol.soltos);
+  const nota = comBol.notas.find(n => n.numero === '102606');
+  assert(nota && Array.isArray(nota.boletos) && nota.boletos.length === 3, 'a nota guarda os 3 boletos');
+  assert(nota.boletos.map(b => b.nome).join(',') === 'Boleto_102606-2_1_3.pdf,Boleto_102606-2_2_3.pdf,Boleto_102606-2_3_3.pdf', 'a ordem é a parcela, veio ' + nota.boletos.map(b => b.nome).join(','));
+  assert(nota.boletos.map(b => b.parcela).join(',') === '1,2,3', 'os índices são 1, 2 e 3');
+  assert(nota.boletoNome === 'Boleto_102606-2_1_3.pdf' && nota.temBoleto, 'o primeiro boleto gravado continua a ser a parcela 1');
+  assert(Buffer.from(nota.boletoBase64, 'base64').equals(b1), 'boletoBase64 é a parcela 1, não o primeiro ficheiro do zip');
+  assert(Buffer.from(nota.boletos[1].pdfBase64, 'base64').equals(b2), 'a parcela 2 fica guardada');
+  assert(Buffer.from(nota.boletos[2].pdfBase64, 'base64').equals(b3), 'a parcela 3 fica guardada');
+  const junto = await nfe.nfeAnexarDocsJuntos(comBol.notas);
+  assert(junto.juntos === 1 && junto.falhas === 0, 'a 102606 gera um PDF junto com as 3 parcelas');
+  const fundida = junto.notas[0];
+  const pags = await tamanhosPdf(Buffer.from(fundida.pdfJuntoBase64, 'base64'));
+  assert(pags.length === nfPaginas.length + 3, 'o PDF junto soma a DANFE e as 3 parcelas, veio ' + pags.length);
+  assert(JSON.stringify(pags) === JSON.stringify(nfPaginas.concat(p1, p2, p3)), 'a ordem é DANFE, parcela 1, 2 e 3, veio ' + JSON.stringify(pags));
+  assert(nfe.nfeMarcaBoleto(fundida) === 'S', 'com parcelas a coluna continua S');
+  const aberto = nfe.nfePdfDaNota(fundida, null);
+  assert(aberto.ok && aberto.junto === true && aberto.pdfBase64 === fundida.pdfJuntoBase64, 'abrir a NF devolve o PDF com as 3 parcelas');
+
+  const leve = nfe.nfeNotaSemPdfBinario(fundida);
+  assert(!leve.boletoBase64 && !(leve.boletos || []).some(b => b && b.pdfBase64), 'a célula leve não leva os PDF das parcelas');
+  assert(leve.temBoleto && leve.boletos && leve.boletos.length === 3, 'a célula leve lembra que há 3 parcelas');
+  const volta = nfe.nfeJuntarPdfsLocais([leve], nfe.nfeMapaPdfsDeChunks(nfe.nfePartirPdfsEmChunks([fundida])))[0];
+  assert(volta.boletos && volta.boletos.map(b => b.nome).join(',') === nota.boletos.map(b => b.nome).join(','), 'os blocos repõem as 3 parcelas por ordem');
+  assert(Buffer.from(volta.boletos[2].pdfBase64, 'base64').equals(b3), 'a parcela 3 volta dos blocos');
+  assert(nfe.nfePdfDaNota(leve, nfe.nfeMapaPdfsDeChunks(nfe.nfePartirPdfsEmChunks([fundida]))).pdfBase64 === fundida.pdfJuntoBase64, 'a exportação depois dos blocos é o PDF com as 3 parcelas');
+
+  const antiga = {
+    chave: chave,
+    numero: '102606',
+    serie: '2',
+    pdfBase64: nota.pdfBase64,
+    pdfNome: nota.pdfNome,
+    temPdf: true,
+    boletoNome: 'Boleto_102606-2_1_3.pdf',
+    boletoBase64: nota.boletos[0].pdfBase64,
+    temBoleto: true,
+    pdfJuntoBase64: 'QQ==',
+    pdfJuntoNome: 'NF-102606-boleto.pdf',
+    temPdfJunto: true,
+  };
+  const relida = nfe.nfeAssociarBoletos([antiga], pdfs);
+  assert(relida.notas[0].boletos.length === 3 && !relida.notas[0].pdfJuntoBase64, 'relêr o zip junta as parcelas em falta e descarta o PDF que só tinha a primeira');
+  const junto2 = await nfe.nfeAnexarDocsJuntos(relida.notas);
+  const pags2 = await tamanhosPdf(Buffer.from(junto2.notas[0].pdfJuntoBase64, 'base64'));
+  assert(JSON.stringify(pags2) === JSON.stringify(nfPaginas.concat(p1, p2, p3)), 'o PDF refeito inclui as 3 parcelas');
+
+  const semParc = makeZip([
+    { name: 'saida/NFe' + chave + '_prot.xml', data: Buffer.from(xml) },
+    { name: 'saida/NFe' + chave + '.pdf', data: nfPdf },
+    { name: 'saida/Boleto_102606-2.pdf', data: b1 },
+  ]);
+  const entSem = nfe.nfeReadZipEntries(semParc);
+  const notasSem = entSem.filter(e => e.xml).map(x => nfe.nfeParseXml(x.xml, x.name)).filter(Boolean);
+  const pdfsSem = entSem.filter(e => e.pdfBase64);
+  const um = nfe.nfeAssociarBoletos(nfe.nfeAssociarPdfs(notasSem, pdfsSem).notas, pdfsSem);
+  assert(um.ligados === 1 && um.soltos === 0, 'Boleto_102606-2.pdf sem parcela continua a ligar');
+  const notaUm = um.notas[0];
+  assert(notaUm.boletos.length === 1 && notaUm.boletoNome === 'Boleto_102606-2.pdf', 'o boleto único antigo fica gravado');
+  const juntoUm = await nfe.nfeAnexarDocsJuntos(um.notas);
+  const pagsUm = await tamanhosPdf(Buffer.from(juntoUm.notas[0].pdfJuntoBase64, 'base64'));
+  assert(JSON.stringify(pagsUm) === JSON.stringify(nfPaginas.concat(p1)), 'sem parcela o PDF junto é DANFE e esse boleto');
+
+  const chaveIx = '35261014830817000100550020000000081000000000';
+  const xmlIx = xml.replace(chave, chaveIx).replace('<nNF>102606</nNF>', '<nNF>8</nNF>');
+  const p2b = [[502, 112]];
+  const p10 = [[510, 120]];
+  const b2b = await pdfComTamanhos(p2b);
+  const b10 = await pdfComTamanhos(p10);
+  const zipIx = makeZip([
+    { name: 'NFe' + chaveIx + '_prot.xml', data: Buffer.from(xmlIx) },
+    { name: 'NFe' + chaveIx + '.pdf', data: nfPdf },
+    { name: 'Boleto_8-2_10_12.pdf', data: b10 },
+    { name: 'Boleto_8-2_2_12.pdf', data: b2b },
+  ]);
+  const entIx = nfe.nfeReadZipEntries(zipIx);
+  const pdfIx = entIx.filter(e => e.pdfBase64);
+  const notaIx0 = entIx.filter(e => e.xml).map(x => nfe.nfeParseXml(x.xml, x.name)).filter(Boolean);
+  const ix = nfe.nfeAssociarBoletos(nfe.nfeAssociarPdfs(notaIx0, pdfIx).notas, pdfIx).notas[0];
+  assert(ix.boletos.map(b => b.parcela).join(',') === '2,10', 'a parcela 2 fica antes da 10, veio ' + ix.boletos.map(b => b.nome).join(','));
+  const pagsIx = await tamanhosPdf(Buffer.from((await nfe.nfeAnexarDocsJuntos([ix])).notas[0].pdfJuntoBase64, 'base64'));
+  assert(JSON.stringify(pagsIx) === JSON.stringify(nfPaginas.concat(p2b, p10)), 'o PDF segue o índice numérico da parcela');
+
+  const chaveDup = '35261014830817000100550020000000071000000000';
+  const xmlDup = xml.replace(chave, chaveDup).replace('<nNF>102606</nNF>', '<nNF>7</nNF>');
+  const dA = [[611, 111]];
+  const dB = [[612, 112]];
+  const fA = await pdfComTamanhos(dA);
+  const fB = await pdfComTamanhos(dB);
+  const zipDup = makeZip([
+    { name: 'NFe' + chaveDup + '_prot.xml', data: Buffer.from(xmlDup) },
+    { name: 'NFe' + chaveDup + '.pdf', data: nfPdf },
+    { name: 'Boleto_7-2_1_2_b.pdf', data: fB },
+    { name: 'Boleto_7-2_1_2.pdf', data: fA },
+  ]);
+  const entDup = nfe.nfeReadZipEntries(zipDup);
+  const pdfDup = entDup.filter(e => e.pdfBase64);
+  const notaDup0 = entDup.filter(e => e.xml).map(x => nfe.nfeParseXml(x.xml, x.name)).filter(Boolean);
+  const dup = nfe.nfeAssociarBoletos(nfe.nfeAssociarPdfs(notaDup0, pdfDup).notas, pdfDup).notas[0];
+  assert(dup.boletos.length === 2 && dup.boletos.every(b => b.parcela === 1), 'dois ficheiros com a mesma parcela ficam os dois');
+  assert(dup.boletos.map(b => b.nome).join(',') === 'Boleto_7-2_1_2.pdf,Boleto_7-2_1_2_b.pdf', 'mesma parcela: ordem do nome, veio ' + dup.boletos.map(b => b.nome).join(','));
+  const pagsDup = await tamanhosPdf(Buffer.from((await nfe.nfeAnexarDocsJuntos([dup])).notas[0].pdfJuntoBase64, 'base64'));
+  assert(JSON.stringify(pagsDup) === JSON.stringify(nfPaginas.concat(dA, dB)), 'mesma parcela mantém a ordem do nome no PDF');
+
+  const chavePasta = '35261014830817000100550020000000061000000000';
+  const xmlPasta = xml.replace(chave, chavePasta).replace('<nNF>102606</nNF>', '<nNF>6</nNF>');
+  const pasta = 'NFe' + chavePasta + '/';
+  const zipPasta = makeZip([
+    { name: pasta + 'NFe' + chavePasta + '_prot.xml', data: Buffer.from(xmlPasta) },
+    { name: pasta + 'NFe' + chavePasta + '.pdf', data: nfPdf },
+    { name: pasta + 'Boleto_6-2_2_2.pdf', data: b2 },
+    { name: pasta + 'Boleto_6-2_1_2.pdf', data: b1 },
+  ]);
+  const entPasta = nfe.nfeReadZipEntries(zipPasta);
+  const pdfPasta = entPasta.filter(e => e.pdfBase64);
+  const notaPasta0 = entPasta.filter(e => e.xml).map(x => nfe.nfeParseXml(x.xml, x.name)).filter(Boolean);
+  const naPasta = nfe.nfeAssociarBoletos(nfe.nfeAssociarPdfs(notaPasta0, pdfPasta).notas, pdfPasta);
+  assert(naPasta.ligados === 2 && naPasta.soltos === 0, 'na pasta NFe{chave} entram as duas parcelas');
+  assert(naPasta.notas[0].boletos.map(b => b.nome).join(',') === 'Boleto_6-2_1_2.pdf,Boleto_6-2_2_2.pdf', 'na pasta a ordem também é a parcela');
+}
+
+testCliqueSemPdf().then(() => testBoletosPdf()).then(() => testBoletosParcelas()).then(() => {
   if (failed) {
     console.error(failed + ' asserção(ões) falharam');
     process.exit(1);

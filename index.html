@@ -4265,7 +4265,7 @@ var _unused_placeholder = 1;
             <div style="font-size:12px;color:var(--muted);line-height:1.5;">
               Ficheiro que sai do cockpit TTIN: XML de NF-e e o PDF de cada nota, dentro de um zip. Um XML ou um PDF avulso também entra.<br>
               O PDF liga-se à nota pelo nome: primeiro a chave de 44 dígitos, depois o número da NF. Vale NFe{chave}.pdf e a pasta do cockpit com barra invertida (NFe{chave}.pdf ao lado de NFe{chave}_prot.xml). Um PDF sem par não aparece como nota nova.<br>
-              O boleto (Boleto_{número}-{série} na pasta NFe{chave}) fica gravado com a nota. O clique no número abre um só PDF, pronto a imprimir: primeiro a NF, depois o boleto. Sem boleto, abre só a NF. Boleto sem PDF da NF fica guardado e não inventa DANFE.<br>
+              Os boletos (Boleto_{número}-{série} ou Boleto_{número}-{série}_{parcela}_{total}, na pasta NFe{chave} ou pelo número e série quando a pasta não tem chave) ficam gravados com a nota. O clique no número abre um só PDF, pronto a imprimir: primeiro a NF, depois cada boleto pela ordem da parcela. Sem boleto, abre só a NF. Boleto sem PDF da NF fica guardado e não inventa DANFE.<br>
               O PDF que não cabe na mesma célula da lista fica gravado à parte e abre na mesma.<br>
               Cruza o CNPJ/CPF do destinatário com a lista de clientes. CPF sem vendedor fica no Marcio Gorga (Ecommerce, 99520001). CNPJ que já têm vendedor não mudam.<br>
               A mesma chave de NF não duplica. A gravação (nota e PDF) é só no fim da carga.<br>
@@ -13505,7 +13505,8 @@ async function nfeLoadRemote() {
       hit.b64 = n.pdfBase64;
       algum = true;
     }
-    if (typeof n.boletoBase64 === 'string' && n.boletoBase64) {
+    if (typeof nfePreencherHitBoleto === 'function' && nfePreencherHitBoleto(hit, n)) algum = true;
+    else if (typeof n.boletoBase64 === 'string' && n.boletoBase64) {
       hit.boletoNome = n.boletoNome || '';
       hit.boletoB64 = n.boletoBase64;
       algum = true;
@@ -13534,13 +13535,14 @@ function nfeMapaPdfs(notas, prev) {
     if (!n || !n.chave) return;
     const prevHit = pdfs[n.chave] || {};
     const hit = Object.assign({}, prevHit);
-    let algum = !!(prevHit.b64 || prevHit.boletoB64 || prevHit.juntoB64);
+    let algum = !!(prevHit.b64 || prevHit.boletoB64 || prevHit.juntoB64 || (Array.isArray(prevHit.boletos) && prevHit.boletos.length));
     if (typeof n.pdfBase64 === 'string' && n.pdfBase64) {
       hit.nome = n.pdfNome || prevHit.nome || (n.chave + '.pdf');
       hit.b64 = n.pdfBase64;
       algum = true;
     }
-    if (typeof n.boletoBase64 === 'string' && n.boletoBase64) {
+    if (typeof nfePreencherHitBoleto === 'function' && nfePreencherHitBoleto(hit, n)) algum = true;
+    else if (typeof n.boletoBase64 === 'string' && n.boletoBase64) {
       hit.boletoNome = n.boletoNome || prevHit.boletoNome || '';
       hit.boletoB64 = n.boletoBase64;
       algum = true;
@@ -13872,7 +13874,13 @@ async function nfeOnFiles(ev) {
       if (!n || !n.chave) return false;
       const hit = pdfsNuvem[n.chave] || {};
       if (typeof nfeTemPdfBinario === 'function' && nfeTemPdfBinario(n) && !(hit.b64 || hit.pdfBase64)) return true;
-      if (typeof nfeTemBoletoBinario === 'function' && nfeTemBoletoBinario(n) && !(hit.boletoB64 || hit.boletoBase64)) return true;
+      if (typeof nfeTemBoletoBinario === 'function' && nfeTemBoletoBinario(n)) {
+        const naNota = typeof nfeContaBoletosBinario === 'function' ? nfeContaBoletosBinario(n) : 1;
+        const noHit = Array.isArray(hit.boletos) && hit.boletos.length
+          ? hit.boletos.filter(b => b && (b.b64 || b.pdfBase64)).length
+          : ((hit.boletoB64 || hit.boletoBase64) ? 1 : 0);
+        if (noHit < naNota) return true;
+      }
       if (typeof nfeTemJuntoBinario === 'function' && nfeTemJuntoBinario(n) && !(hit.juntoB64 || hit.pdfJuntoBase64)) return true;
       return false;
     });
@@ -43171,7 +43179,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-20-nfe-boleto-coluna: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-20-nfe-boletos-parcelas: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
