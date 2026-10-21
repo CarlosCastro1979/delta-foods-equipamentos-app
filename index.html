@@ -2907,7 +2907,9 @@ var _unused_placeholder = 1;
           <div id="ctP3" class="ct-step" onclick="ctGoto(3)">3 Equipamentos</div>
           <div id="ctP4" class="ct-step" onclick="ctGoto(4)">4 Revisão</div>
           <span id="ctStepLbl" style="margin-left:auto;font-size:12px;color:var(--muted);align-self:center">Passo 1 de 4</span>
+          <span id="ct-autosave-hint" style="font-size:11px;color:#64748b;align-self:center;"></span>
         </div>
+        <div style="font-size:11px;color:var(--muted);margin:-12px 0 16px;">Rascunho com autosave — podes sair e continuar mais tarde.</div>
 
         <!-- PASSO 1 -->
         <div id="ct-passo1">
@@ -44110,7 +44112,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-21-nfe-mes-quente: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-21-nfe-contratos-prod: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
@@ -44138,7 +44140,186 @@ function numToExtenso(n) {
 let ctCurrentStep = 1;
 let equipCatalog = [];
 
+/** Um rascunho em curso na criação (Gerar Contrato). localStorage — não sobrescreve contratos publicados. */
+const CT_DRAFT_LS = 'dfb_ct_gerar_draft';
+const CT_AUTOSAVE_MS = 1000;
+const CT_DRAFT_FIELD_IDS = [
+  'ct_cod', 'ct_num_contrato', 'ct_empresa', 'ct_cnpj', 'ct_endereco',
+  'ct_rep_nome', 'ct_rep_rg', 'ct_rep_cpf', 'ct_email', 'ct_vendedor',
+  'ct_lote', 'ct_unidade', 'ct_qtd_mes', 'ct_dur_num', 'ct_dias_num', 'ct_valor_equip',
+  'ct_t1_nome', 'ct_t1_cpf', 'ct_t2_nome', 'ct_t2_cpf'
+];
+let _ctAutosaveTimer = null;
+let _ctAutosaveHintTimer = null;
+let _ctAutosaveReady = false;
+let _ctAutosaveAbort = null;
+
+function ctFlashAutosave(ok) {
+  const hint = document.getElementById('ct-autosave-hint');
+  if (!hint) return;
+  hint.textContent = ok ? '✓ Guardado' : 'erro ao guardar';
+  hint.style.color = ok ? '#15803d' : '#b91c1c';
+  clearTimeout(_ctAutosaveHintTimer);
+  _ctAutosaveHintTimer = setTimeout(() => { hint.textContent = ''; }, 1200);
+}
+
+function ctCollectAnexoDraft(prefix, max) {
+  const rows = [];
+  for (let i = 1; i <= max; i++) {
+    rows.push({
+      qtd: (document.getElementById('ct_' + prefix + '_' + i + '_qtd') || {}).value || '',
+      equip: (document.getElementById('ct_' + prefix + '_' + i + '_equip') || {}).value || '',
+      serie: (document.getElementById('ct_' + prefix + '_' + i + '_serie') || {}).value || '',
+      nf: (document.getElementById('ct_' + prefix + '_' + i + '_nf') || {}).value || '',
+      valor: (document.getElementById('ct_' + prefix + '_' + i + '_valor') || {}).value || '',
+    });
+  }
+  return rows;
+}
+
+function ctCollectDraft() {
+  const fields = {};
+  CT_DRAFT_FIELD_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    fields[id] = el ? (el.value || '') : '';
+  });
+  const found = document.getElementById('ct_cliente_found');
+  const foundTxt = document.getElementById('ct_found_txt');
+  return {
+    v: 1,
+    savedAt: Date.now(),
+    step: ctCurrentStep || 1,
+    fields,
+    foundVisible: !!(found && found.style && found.style.display === 'block'),
+    foundTxt: foundTxt ? (foundTxt.textContent || '') : '',
+    a1: ctCollectAnexoDraft('a1', 8),
+    a2: ctCollectAnexoDraft('a2', 5),
+  };
+}
+
+function ctDraftIsEmpty(draft) {
+  if (!draft || !draft.fields) return true;
+  const hasField = Object.keys(draft.fields).some(k => String(draft.fields[k] || '').trim());
+  const rows = [].concat(draft.a1 || [], draft.a2 || []);
+  const hasA = rows.some(r =>
+    String(r.qtd || '').trim() || String(r.equip || '').trim() ||
+    String(r.serie || '').trim() || String(r.nf || '').trim()
+  );
+  return !hasField && !hasA;
+}
+
+function ctSaveDraftLocal() {
+  try {
+    const draft = ctCollectDraft();
+    if (ctDraftIsEmpty(draft)) {
+      localStorage.removeItem(CT_DRAFT_LS);
+      return true;
+    }
+    localStorage.setItem(CT_DRAFT_LS, JSON.stringify(draft));
+    return true;
+  } catch (e) {
+    console.warn('ctSaveDraftLocal', e);
+    return false;
+  }
+}
+
+function ctLoadDraftLocal() {
+  try {
+    const raw = localStorage.getItem(CT_DRAFT_LS);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    return d && typeof d === 'object' ? d : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function ctClearDraft() {
+  try { localStorage.removeItem(CT_DRAFT_LS); } catch (_) {}
+  clearTimeout(_ctAutosaveTimer);
+}
+
+function ctApplyAnexoDraft(prefix, rows) {
+  if (!Array.isArray(rows)) return;
+  rows.forEach((r, idx) => {
+    const i = idx + 1;
+    const set = (suf, val) => {
+      const el = document.getElementById('ct_' + prefix + '_' + i + '_' + suf);
+      if (el) el.value = val == null ? '' : String(val);
+    };
+    set('qtd', r.qtd);
+    set('serie', r.serie);
+    set('nf', r.nf);
+    const sel = document.getElementById('ct_' + prefix + '_' + i + '_equip');
+    if (sel) {
+      sel.value = r.equip != null ? String(r.equip) : '';
+      if (sel.value && typeof ctEquipSelected === 'function') ctEquipSelected(sel, prefix, i);
+      else set('valor', r.valor);
+    } else {
+      set('valor', r.valor);
+    }
+  });
+}
+
+function ctApplyDraft(draft) {
+  if (!draft || !draft.fields) return false;
+  _ctAutosaveReady = false;
+  Object.keys(draft.fields).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = draft.fields[id] == null ? '' : String(draft.fields[id]);
+  });
+  const found = document.getElementById('ct_cliente_found');
+  const foundTxt = document.getElementById('ct_found_txt');
+  if (foundTxt) foundTxt.textContent = draft.foundTxt || '';
+  if (found) found.style.display = draft.foundVisible ? 'block' : 'none';
+  ctApplyAnexoDraft('a1', draft.a1);
+  ctApplyAnexoDraft('a2', draft.a2);
+  if (typeof ctCalcTotal === 'function') ctCalcTotal();
+  if (typeof ctRecalcValor === 'function') ctRecalcValor();
+  if (typeof ctAplicarTestemunhasDelta === 'function') ctAplicarTestemunhasDelta();
+  const step = Math.min(4, Math.max(1, parseInt(draft.step, 10) || 1));
+  ctGoto(step);
+  setTimeout(() => { _ctAutosaveReady = true; }, 250);
+  return true;
+}
+
+function ctFlushAutosave() {
+  clearTimeout(_ctAutosaveTimer);
+  if (!_ctAutosaveReady) return false;
+  return ctSaveDraftLocal();
+}
+
+function ctScheduleAutosave(delay) {
+  if (!_ctAutosaveReady) return;
+  const ms = delay == null ? CT_AUTOSAVE_MS : delay;
+  clearTimeout(_ctAutosaveTimer);
+  const hint = document.getElementById('ct-autosave-hint');
+  if (hint) { hint.textContent = 'A gravar…'; hint.style.color = '#64748b'; }
+  _ctAutosaveTimer = setTimeout(() => {
+    const ok = ctSaveDraftLocal();
+    ctFlashAutosave(ok);
+  }, ms);
+}
+
+function ctBindAutosave() {
+  if (_ctAutosaveAbort) {
+    try { _ctAutosaveAbort.abort(); } catch (_) {}
+  }
+  _ctAutosaveAbort = new AbortController();
+  const { signal } = _ctAutosaveAbort;
+  const panel = document.getElementById('sub-panel-contratos-gerar');
+  if (!panel) return;
+  panel.addEventListener('input', () => ctScheduleAutosave(CT_AUTOSAVE_MS), { signal });
+  panel.addEventListener('change', () => ctScheduleAutosave(400), { signal });
+  if (!ctBindAutosave._unload) {
+    ctBindAutosave._unload = true;
+    window.addEventListener('beforeunload', () => { ctFlushAutosave(); });
+  }
+}
+
 function ctInit() {
+  ctBindAutosave();
+  _ctAutosaveReady = false;
   ctCurrentStep = 1;
   ctGoto(1);
   loadEquipCatalogForForm();
@@ -44153,6 +44334,12 @@ async function loadEquipCatalogForForm() {
   } catch(e) { equipCatalog = []; }
   ctBuildAnexoTable('ct_a1_table', 8, 'a1');
   ctBuildAnexoTable('ct_a2_table', 5, 'a2');
+  const draft = ctLoadDraftLocal();
+  if (draft && !ctDraftIsEmpty(draft)) {
+    ctApplyDraft(draft);
+  } else {
+    _ctAutosaveReady = true;
+  }
 }
 
 function ctBuildAnexoTable(containerId, rows, prefix) {
@@ -44286,6 +44473,7 @@ async function ctBuscarCliente() {
       if (vendEl) vendEl.value = '';
       ctAplicarTestemunhasDelta();
     }
+    if (_ctAutosaveReady) ctScheduleAutosave(400);
   } catch(e) { showToast('Erro: ' + e.message, 'error'); }
 }
 
@@ -44394,6 +44582,7 @@ function ctGoto(step) {
   if (step === 3 || step === 4) ctAplicarTestemunhasDelta();
   if (step === 4) ctBuildReview();
   if (step === 3) ctAutoExtenso();
+  if (_ctAutosaveReady) ctScheduleAutosave(400);
 }
 
 async function ctNext() {
@@ -44820,6 +45009,7 @@ async function ctGerar() {
     a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
     showToast('✅ Contrato gerado: ' + filename, 'success');
+    if (typeof ctClearDraft === 'function') ctClearDraft();
     setTimeout(() => ctAbrirEmail(filename, data, out), 800);
 
     // ─── Guardar contrato automaticamente no registo do cliente ───
