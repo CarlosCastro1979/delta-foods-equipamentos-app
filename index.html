@@ -2034,6 +2034,9 @@
   button.nfe-click:hover{color:var(--accent);}
   button.nfe-wa-btn{background:none;border:none;padding:4px;margin:0;line-height:0;cursor:pointer;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;min-width:32px;min-height:32px;}
   button.nfe-wa-btn:hover,button.nfe-wa-btn:focus-visible{background:#dcfce7;outline:none;}
+  .nfe-filtros{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:0 0 12px;}
+  .nfe-filtros label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);flex:1 1 140px;min-width:0;max-width:100%;}
+  .nfe-filtros input,.nfe-filtros select{width:100%;min-width:0;margin:0;padding:6px 8px;font-size:13px;box-sizing:border-box;}
   .nfe-wa-ico{display:block;width:18px;height:18px;}
   th.nfe-wa,td.nfe-wa{width:36px;max-width:40px;}
   .pv-acc-rank-active{background:#fff7ed;}
@@ -13426,6 +13429,8 @@ let _nfeBusy = false;
 let _nfePdfsNuvem = {};
 /** Blocos nfe_pdfs_N que falharam nesta leitura. O clique ainda tenta o bloco da nota. */
 let _nfePdfNuvemErros = 0;
+/** Quantos blocos nfe_pdfs_N a célula anuncia. A lista não os pede; o clique na NF ou no WhatsApp pede. */
+let _nfePdfChunks = 0;
 
 function nfeListaTemDocs(lista) {
   for (const c of lista || []) {
@@ -13449,7 +13454,7 @@ function nfePrepararChrome() {
   if (excel) excel.style.display = 'none';
   const banner = document.getElementById('pv-banner');
   if (banner) {
-    banner.innerHTML = '<strong>NF emitidas</strong> — consulta. A carga do ZIP de XML e PDF da TTI faz-se em Dados. Clique no número da NF para abrir o PDF. Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. CPF sem vendedor fica no Marcio Gorga, no Ecommerce. Transferência entre os CNPJ da Delta ES e da Delta SP fica em Transferências internas, sem vendedor. A mesma chave não duplica. A gravação é no fim da carga.';
+    banner.innerHTML = '<strong>NF emitidas</strong> — consulta do mês corrente. A carga do ZIP de XML e PDF da TTI faz-se em Dados. Clique no número da NF para abrir o PDF. Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. CPF sem vendedor fica no Marcio Gorga, no Ecommerce. O site próprio do Marcio (NPess 99520009) não entra neste menu. Transferência entre os CNPJ da Delta ES e da Delta SP fica em Transferências internas, sem vendedor. A mesma chave não duplica. A gravação é no fim da carga.';
   }
 }
 
@@ -13498,7 +13503,7 @@ async function nfeLimparChunksPdf(keep) {
   });
 }
 
-async function nfeLoadRemote() {
+async function nfeLoadRemote(opts) {
   const res = await fetch(
     `${LISTA_CLIENTES_SUPA_URL}?id=eq.${NFE_STORE_ID}&select=data`,
     { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
@@ -13533,14 +13538,15 @@ async function nfeLoadRemote() {
     if (algum) pdfs[n.chave] = hit;
   });
   const nChunks = data && Number(data.__pdfChunks) || 0;
-  if (nChunks > 0) {
+  const pedirChunks = !(opts && opts.chunks === false);
+  if (pedirChunks && nChunks > 0) {
     try {
       Object.assign(pdfs, await nfeLerPdfsNuvem(nChunks));
     } catch (e) {
       console.warn('nfe pdf nuvem', e);
     }
   }
-  return { notas, pdfs };
+  return { notas, pdfs, nChunks };
 }
 
 function nfeMapaPdfs(notas, prev) {
@@ -13714,6 +13720,7 @@ async function nfeHidrate() {
     if (pack && Array.isArray(pack.notas)) {
       remote = pack.notas;
       pdfsNuvem = pack.pdfs || {};
+      _nfePdfChunks = Number(pack.nChunks) || 0;
     } else if (Array.isArray(pack)) {
       remote = pack;
     }
@@ -13763,6 +13770,56 @@ async function nfeHidrate() {
   if (faltaNoIdb) {
     try {
       await idbSet(NFE_PDF_IDB_KEY, { pdfs: nfeMapaPdfs(_nfeNotas, pdfsLocais), ts: new Date().toISOString() });
+    } catch (_) {}
+  }
+}
+
+/**
+ * Abre o menu sem os binários. Notas leves (número, boleto S/N, cliente, valor, data, canal, vendedor)
+ * chegam da célula e do IndexedDB das notas. Os blocos nfe_pdfs_N e o blob delta_nfe_pdfs ficam para o clique.
+ * Não grava na nuvem: uma lista sem PDF não pode apagar os blocos.
+ */
+async function nfeHidrateMeta() {
+  let local = [];
+  try {
+    const packed = await idbGet(NFE_IDB_KEY);
+    if (packed && Array.isArray(packed.notas)) local = packed.notas;
+  } catch (_) {}
+  let remote = null;
+  let pdfsInline = {};
+  let nChunks = 0;
+  try {
+    const pack = await nfeLoadRemote({ chunks: false });
+    if (pack && Array.isArray(pack.notas)) {
+      remote = pack.notas;
+      pdfsInline = pack.pdfs || {};
+      nChunks = Number(pack.nChunks) || 0;
+    } else if (Array.isArray(pack)) {
+      remote = pack;
+    }
+  } catch (_) { remote = null; }
+  _nfePdfsNuvem = pdfsInline;
+  _nfePdfChunks = nChunks;
+  const catalogoNomes = await nfeCatalogoPronto();
+  let base = local;
+  let alteradas = 0;
+  let faltaLocal = false;
+  if (remote == null) {
+    const reap = nfeAplicarRegraGuardada(local, catalogoNomes);
+    base = reap.notas;
+    alteradas = reap.alteradas || 0;
+  } else {
+    const merged = nfeMergeNotas(local, remote);
+    const reap = nfeAplicarRegraGuardada(merged.notas, catalogoNomes);
+    base = reap.notas;
+    alteradas = reap.alteradas || 0;
+    const localSet = new Set(local.map(n => n && n.chave).filter(Boolean));
+    faltaLocal = base.some(n => n && n.chave && !localSet.has(n.chave));
+  }
+  _nfeNotas = base.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n));
+  if (faltaLocal || alteradas > 0) {
+    try {
+      await idbSet(NFE_IDB_KEY, { notas: _nfeNotas, ts: new Date().toISOString() });
     } catch (_) {}
   }
 }
@@ -14039,16 +14096,20 @@ let _nfeFiltrosTimer = null;
 let _nfeUi = null;
 
 function nfeUiBlank() {
-  return { vendedor: '', dia: '', numero: '', canal: '' };
+  return { vendedor: '', dia: '', numero: '', canal: '', mes: '', cliente: '' };
 }
 
 function nfeUiSan(o) {
   const s = nfeUiBlank();
   if (!o || typeof o !== 'object') return s;
   s.vendedor = String(o.vendedor || '').slice(0, 80);
+  s.mes = /^\d{4}-\d{2}$/.test(String(o.mes || '')) ? String(o.mes) : '';
   s.dia = /^\d{4}-\d{2}-\d{2}$/.test(String(o.dia || '')) ? String(o.dia) : '';
   s.numero = String(o.numero || '').slice(0, 20);
   s.canal = String(o.canal || '').slice(0, 80);
+  s.cliente = String(o.cliente || '').slice(0, 80);
+  if (s.dia && !s.mes) s.dia = '';
+  if (s.dia && s.mes && s.dia.slice(0, 7) !== s.mes) s.dia = '';
   return s;
 }
 
@@ -14114,9 +14175,9 @@ function nfeBindFiltrosAutosave() {
 }
 
 function nfeFocarCampo(prefix, campo) {
-  if (campo !== 'numero') return;
+  if (campo !== 'numero' && campo !== 'cliente') return;
   let el = null;
-  try { el = document.getElementById(prefix + '-numero'); } catch (_) { el = null; }
+  try { el = document.getElementById(prefix + '-' + campo); } catch (_) { el = null; }
   if (!el || typeof el.focus !== 'function') return;
   try {
     el.focus();
@@ -14131,9 +14192,16 @@ function nfeSetFiltro(scope, campo, valor) {
   const geral = scope === 'geral';
   const f = geral ? nfeFiltrosGeral() : nfeFiltrosCanalActivos();
   const v = valor == null ? '' : String(valor);
-  if (campo === 'dia') f.dia = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
-  else if (campo === 'numero') f.numero = v.slice(0, 20);
+  if (campo === 'mes') {
+    f.mes = /^\d{4}-\d{2}$/.test(v) ? v : '';
+    const efetivo = nfeMesEfetivo(f);
+    if (f.dia && f.dia.slice(0, 7) !== efetivo) f.dia = '';
+  } else if (campo === 'dia') {
+    f.dia = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
+    if (f.dia) f.mes = f.dia.slice(0, 7);
+  } else if (campo === 'numero') f.numero = v.slice(0, 20);
   else if (campo === 'vendedor') f.vendedor = v;
+  else if (campo === 'cliente') f.cliente = v.slice(0, 80);
   else if (campo === 'canal' && geral) f.canal = v;
   if (geral) _nfeFiltro = f.canal || '';
   else _nfeFiltroCanal = f.vendedor || '';
@@ -14157,6 +14225,8 @@ function nfeLimparFiltro() {
   const f = nfeFiltrosGeral();
   f.vendedor = '';
   f.dia = '';
+  f.mes = '';
+  f.cliente = '';
   f.numero = '';
   f.canal = '';
   _nfeFiltro = '';
@@ -14202,10 +14272,107 @@ function nfeFmtValor(v) {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+const NFE_MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+let _nfeRelogio = null;
+
+function nfeAgoraEcra() {
+  if (_nfeRelogio instanceof Date && !Number.isNaN(_nfeRelogio.getTime())) return _nfeRelogio;
+  try {
+    const g = (typeof globalThis !== 'undefined') ? globalThis : null;
+    const inj = g && g._nfeRelogio;
+    if (inj instanceof Date && !Number.isNaN(inj.getTime())) return inj;
+  } catch (_) {}
+  if (typeof pvAgoraSaoPaulo === 'function') return pvAgoraSaoPaulo();
+  return new Date();
+}
+
+function nfeMesCorrente() {
+  const d = nfeAgoraEcra();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+function nfeMesEfetivo(f) {
+  const m = f && String(f.mes || '');
+  if (/^\d{4}-\d{2}$/.test(m)) return m;
+  return nfeMesCorrente();
+}
+
+function nfeRotuloMes(ym) {
+  const m = String(ym || '').match(/^(\d{4})-(\d{2})$/);
+  if (!m) return String(ym || '');
+  const i = parseInt(m[2], 10) - 1;
+  const nome = (i >= 0 && i < 12) ? NFE_MESES[i] : m[2];
+  return nome + ' ' + m[1];
+}
+
+function nfeYmNota(n) {
+  if (typeof nfeYmDeData === 'function') return nfeYmDeData(n && n.data);
+  const iso = String((n && n.data) || '').match(/^(\d{4}-\d{2})/);
+  return iso ? iso[1] : '';
+}
+
+function nfeUltimoDia(ym) {
+  const m = String(ym || '').match(/^(\d{4})-(\d{2})$/);
+  if (!m) return 31;
+  return new Date(Number(m[1]), Number(m[2]), 0).getDate();
+}
+
+function nfeEhSiteMarcio(n) {
+  if (typeof nfeEhSiteProprio === 'function') return !!nfeEhSiteProprio(n);
+  if (!n) return false;
+  const np = String(n.npess == null ? '' : n.npess).replace(/\D/g, '');
+  if (np === '99520009') return true;
+  const norm = (s) => (typeof nfeNormNome === 'function' ? nfeNormNome(s) : String(s || '').toUpperCase()).replace(/_/g, ' ');
+  const id = norm(n.canalId);
+  if (id === 'DFB SITE' || id === 'SITE PROPRIO') return true;
+  return [n.canalNome, n.canal, n.canalPl].some(s => norm(s) === 'SITE PROPRIO');
+}
+
+function nfeNotasDesteMenu(notas) {
+  return (notas || []).filter(n => n && !nfeEhSiteMarcio(n));
+}
+
+function nfeNotasDoMesEcra(notas, f) {
+  const mes = nfeMesEfetivo(f);
+  return nfeNotasDesteMenu(notas).filter(n => nfeYmNota(n) === mes);
+}
+
+function nfeEstadoMes(notasMes, mes) {
+  const rot = nfeRotuloMes(mes);
+  const n = (notasMes || []).length;
+  if (!n) return 'Nenhuma nota em ' + rot + '.';
+  return (n === 1 ? '1 nota em ' : (n + ' notas em ')) + rot + '.';
+}
+
+function nfeClienteCasa(nota, filtro) {
+  const q = String(filtro || '').trim();
+  if (!q) return true;
+  const norm = typeof nfeNormNome === 'function' ? nfeNormNome(q) : q.toUpperCase();
+  const nome = typeof nfeNormNome === 'function' ? nfeNormNome(nota && nota.cliente) : String((nota && nota.cliente) || '').toUpperCase();
+  if (norm && nome.indexOf(norm) >= 0) return true;
+  const qDig = q.replace(/\D/g, '');
+  const qUp = q.toUpperCase();
+  const cods = [];
+  if (nota && nota.cod != null && String(nota.cod).trim()) cods.push(String(nota.cod));
+  if (nota && Array.isArray(nota.codigos)) {
+    nota.codigos.forEach(c => { if (c != null && String(c).trim()) cods.push(String(c)); });
+  }
+  return cods.some(c => {
+    const raw = String(c).trim();
+    if (!raw) return false;
+    if (raw.toUpperCase().indexOf(qUp) >= 0) return true;
+    if (qDig && raw.replace(/\D/g, '').indexOf(qDig) >= 0) return true;
+    return false;
+  });
+}
+
 function nfeCasaCampo(n, f, usarVend) {
+  if (nfeEhSiteMarcio(n)) return false;
+  if (nfeYmNota(n) !== nfeMesEfetivo(f)) return false;
   if (usarVend && f.vendedor && nfeBucketVend(n) !== f.vendedor) return false;
   if (f.dia && nfeDiaIso(n) !== f.dia) return false;
   if (!nfeNumeroCasa(n, f.numero)) return false;
+  if (!nfeClienteCasa(n, f && f.cliente)) return false;
   return true;
 }
 
@@ -14245,13 +14412,14 @@ function nfeOrdemCanal(nome) {
 
 function nfeTemFiltro(f, modo) {
   if (!f) return false;
-  if (f.vendedor || f.dia || String(f.numero || '').trim()) return true;
+  if (f.vendedor || f.dia || f.mes || String(f.cliente || '').trim() || String(f.numero || '').trim()) return true;
   if (modo === 'geral' && f.canal) return true;
   return false;
 }
 
 function nfeRotuloFiltro(modo, f, notas) {
-  const parts = [];
+  const parts = [nfeRotuloMes(nfeMesEfetivo(f))];
+  if (f.dia) parts.push(nfeFmtData(f.dia));
   if (modo === 'geral' && f.canal) {
     const hit = nfeResumoRows(notas).find(r => r.key === f.canal);
     parts.push(hit ? hit.label : f.canal);
@@ -14260,15 +14428,15 @@ function nfeRotuloFiltro(modo, f, notas) {
     const hit = nfeResumoCanalRows(notas).find(r => r.key === f.vendedor);
     parts.push(hit ? hit.label : String(f.vendedor).replace(/^vend:/, ''));
   }
-  if (f.dia) parts.push(nfeFmtData(f.dia));
+  const cli = String(f.cliente || '').trim();
+  if (cli) parts.push(cli);
   const num = String(f.numero || '').trim();
   if (num) parts.push('NF ' + num);
-  return parts.join(' · ') || 'activo';
+  return parts.join(' · ');
 }
 
 function nfeBannerDe(modo, notas) {
   const f = modo === 'geral' ? nfeFiltrosGeral() : nfeFiltrosCanalActivos();
-  if (!nfeTemFiltro(f, modo)) return '';
   const limpar = modo === 'geral' ? 'nfeLimparFiltro()' : 'nfeLimparFiltroCanal()';
   return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px;padding:8px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:13px;">
     <span>Filtro: <strong>${escHtml(nfeRotuloFiltro(modo, f, notas))}</strong></span>
@@ -14277,7 +14445,8 @@ function nfeBannerDe(modo, notas) {
 }
 
 function nfeBannerHtml() {
-  return nfeBannerDe('geral', _nfeNotas || []);
+  const f = nfeFiltrosGeral();
+  return nfeBannerDe('geral', nfeNotasDoMesEcra(_nfeNotas || [], f));
 }
 
 function nfeOpcoesVendedor(notas, actual) {
@@ -14320,21 +14489,29 @@ function nfeFiltrosHtml(scope, notas) {
   const geral = scope === 'geral';
   const f = geral ? nfeFiltrosGeral() : nfeFiltrosCanalActivos();
   const pre = geral ? 'nfe-geral' : 'nfe-canal';
+  const mes = nfeMesEfetivo(f);
+  const ultimo = String(nfeUltimoDia(mes)).padStart(2, '0');
   const canal = geral
-    ? `<label style="font-size:12px;color:var(--muted);">Canal
-        <select id="${pre}-canal" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;min-width:160px;" onchange="nfeSetFiltro('geral','canal',this.value)">${nfeOpcoesCanal(notas, f.canal)}</select>
+    ? `<label>Canal
+        <select id="${pre}-canal" class="form-input" onchange="nfeSetFiltro('geral','canal',this.value)">${nfeOpcoesCanal(notas, f.canal)}</select>
       </label>`
     : '';
-  return `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:0 0 12px;">
+  return `<div class="nfe-filtros">
     ${canal}
-    <label style="font-size:12px;color:var(--muted);">Vendedor
-      <select id="${pre}-vendedor" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;min-width:180px;" onchange="nfeSetFiltro('${scope}','vendedor',this.value)">${nfeOpcoesVendedor(notas, f.vendedor)}</select>
+    <label>Vendedor
+      <select id="${pre}-vendedor" class="form-input" onchange="nfeSetFiltro('${scope}','vendedor',this.value)">${nfeOpcoesVendedor(notas, f.vendedor)}</select>
     </label>
-    <label style="font-size:12px;color:var(--muted);">Dia
-      <input type="date" id="${pre}-dia" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" value="${escHtml(f.dia)}" onchange="nfeSetFiltro('${scope}','dia',this.value)">
+    <label>Mês
+      <input type="month" id="${pre}-mes" class="form-input" value="${escHtml(mes)}" onchange="nfeSetFiltro('${scope}','mes',this.value)">
     </label>
-    <label style="font-size:12px;color:var(--muted);">Número NF
-      <input type="text" id="${pre}-numero" class="form-input" inputmode="numeric" autocomplete="off" style="margin-left:4px;padding:6px 8px;font-size:13px;width:130px;" value="${escHtml(f.numero)}" placeholder="Número" oninput="nfeSetFiltro('${scope}','numero',this.value)">
+    <label>Dia
+      <input type="date" id="${pre}-dia" class="form-input" min="${escHtml(mes)}-01" max="${escHtml(mes)}-${ultimo}" value="${escHtml(f.dia)}" onchange="nfeSetFiltro('${scope}','dia',this.value)">
+    </label>
+    <label>Cliente
+      <input type="text" id="${pre}-cliente" class="form-input" autocomplete="off" value="${escHtml(f.cliente)}" placeholder="Nome ou código" oninput="nfeSetFiltro('${scope}','cliente',this.value)">
+    </label>
+    <label>Número NF
+      <input type="text" id="${pre}-numero" class="form-input" inputmode="numeric" autocomplete="off" value="${escHtml(f.numero)}" placeholder="Número" oninput="nfeSetFiltro('${scope}','numero',this.value)">
     </label>
   </div>`;
 }
@@ -14431,22 +14608,25 @@ function nfeListaHtml(notas, passa) {
 }
 
 function nfeHtml() {
-  const notas = _nfeNotas || [];
-  const rows = nfeResumoRows(nfeNotasParaResumoGeral(notas));
+  const f = nfeFiltrosGeral();
+  const doMes = nfeNotasDoMesEcra(_nfeNotas || [], f);
+  const rows = nfeResumoRows(nfeNotasParaResumoGeral(doMes));
   const resumo = nfeTabelaResumo(rows, 'nfeFiltrar');
-  const estado = escHtml(_nfeStatusMsg || (notas.length ? (notas.length + ' notas guardadas.') : 'Ainda sem carga. O ZIP de XML da TTI carrega-se em Dados.'));
+  const erro = _nfeStatusMsg && /não foi possível/i.test(_nfeStatusMsg);
+  const estado = escHtml(erro ? _nfeStatusMsg : nfeEstadoMes(doMes, nfeMesEfetivo(f)));
   return `<p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;">
-      Consulta das NF já carregadas. O ZIP de XML e PDF da TTI carrega-se em <strong>Dados</strong>. Clique no número da NF para abrir o PDF. A coluna Boleto mostra S quando a nota tem boleto gravado e N quando não tem. O ícone verde a seguir abre o WhatsApp com esse PDF para escolher o contacto. CPF sem vendedor fica no Marcio Gorga (Ecommerce). Transferência entre os CNPJ da Delta ES e da Delta SP fica em Transferências internas, sem vendedor. A mesma chave não duplica.
+      Consulta das NF do mês escolhido — por omissão, o mês corrente. O ZIP de XML e PDF da TTI carrega-se em <strong>Dados</strong>. Clique no número da NF para abrir o PDF. A coluna Boleto mostra S quando a nota tem boleto gravado e N quando não tem. O ícone verde a seguir abre o WhatsApp com esse PDF para escolher o contacto. CPF sem vendedor fica no Marcio Gorga (Ecommerce). O site próprio do Marcio (NPess 99520009) não entra neste menu. Transferência entre os CNPJ da Delta ES e da Delta SP fica em Transferências internas, sem vendedor. A mesma chave não duplica.
     </p>
     <div style="font-size:12px;color:var(--muted);margin:0 0 12px;">${estado}</div>
-    ${nfeFiltrosHtml('geral', notas)}
+    ${nfeFiltrosHtml('geral', doMes)}
     ${resumo}
     ${nfeBannerHtml()}
-    ${nfeListaHtml(notas)}`;
+    ${nfeListaHtml(doMes)}`;
 }
 
 function nfeTabelaResumo(rows, fnName) {
-  return `<table style="border-collapse:collapse;font-size:13px;margin:0 0 8px;min-width:420px;">
+  return `<div class="quadro-freeze" style="max-height:none;margin:0 0 8px;">
+  <table style="border-collapse:collapse;font-size:13px;width:100%;">
     <thead><tr>
       <th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);"></th>
       <th style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border);">Notas</th>
@@ -14465,6 +14645,7 @@ function nfeTabelaResumo(rows, fnName) {
     </tr>`;
     }).join('')}</tbody>
   </table>
+  </div>
   <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">Clique numa contagem para ver só essas notas. Zero e «—» não filtram.</p>`;
 }
 
@@ -14478,7 +14659,8 @@ function nfePaint() {
 function nfeSyncVistas() {
   const st = document.getElementById('dados-nfe-status');
   if (st) {
-    st.textContent = _nfeStatusMsg || ((_nfeNotas && _nfeNotas.length) ? (_nfeNotas.length + ' notas guardadas.') : 'Ainda sem carga.');
+    const nMenu = nfeNotasDesteMenu(_nfeNotas).length;
+    st.textContent = _nfeStatusMsg || (nMenu ? (nMenu + ' notas guardadas.') : 'Ainda sem carga.');
   }
   const btn = document.getElementById('dados-nfe-btn');
   if (btn) btn.disabled = !!_nfeBusy;
@@ -14489,9 +14671,10 @@ function nfeSyncVistas() {
 }
 
 async function nfeAoAbrirDados() {
-  try { await nfeHidrate(); } catch (_) {}
+  try { await nfeHidrateMeta(); } catch (_) {}
   if (!_nfeBusy && !_nfeStatusMsg && _nfeNotas && _nfeNotas.length) {
-    _nfeStatusMsg = _nfeNotas.length + ' notas guardadas.';
+    const nMenu = nfeNotasDesteMenu(_nfeNotas).length;
+    _nfeStatusMsg = nMenu + ' notas guardadas.';
   }
   nfeSyncVistas();
 }
@@ -14582,6 +14765,8 @@ function nfeLimparFiltroCanal() {
   const f = nfeFiltrosCanalActivos();
   f.vendedor = '';
   f.dia = '';
+  f.mes = '';
+  f.cliente = '';
   f.numero = '';
   f.canal = '';
   _nfeFiltroCanal = '';
@@ -14595,10 +14780,11 @@ function nfeBannerCanalHtml(notas) {
 }
 
 function nfeHtmlCanal(notas) {
-  return `${nfeFiltrosHtml('canal', notas)}
-    ${nfeTabelaResumo(nfeResumoCanalRows(nfeNotasParaResumoCanal(notas)), 'nfeFiltrarCanal')}
-    ${nfeBannerCanalHtml(notas)}
-    ${nfeListaHtml(notas, nfePassaFiltroCanal)}`;
+  const doMes = nfeNotasDoMesEcra(notas, nfeFiltrosCanalActivos());
+  return `${nfeFiltrosHtml('canal', doMes)}
+    ${nfeTabelaResumo(nfeResumoCanalRows(nfeNotasParaResumoCanal(doMes)), 'nfeFiltrarCanal')}
+    ${nfeBannerDe('canal', doMes)}
+    ${nfeListaHtml(doMes, nfePassaFiltroCanal)}`;
 }
 
 function nfePaintCanal() {
@@ -14620,7 +14806,7 @@ async function nfeMontarCanal() {
   const host = document.getElementById('canal-nfe-host');
   if (host) host.innerHTML = '<p style="color:var(--muted);font-size:13px;">A carregar notas deste canal…</p>';
   try {
-    await nfeHidrate();
+    await nfeHidrateMeta();
   } catch (e) {
     console.warn(e);
     _nfeStatusMsg = 'Não foi possível ler as NF guardadas.';
@@ -15062,7 +15248,7 @@ async function nfeMontarVista() {
   const host = document.getElementById('pv-canal-panels');
   if (host) host.innerHTML = '<p style="color:var(--muted);font-size:13px;">A carregar NF emitidas…</p>';
   try {
-    await nfeHidrate();
+    await nfeHidrateMeta();
   } catch (e) {
     console.warn(e);
     _nfeStatusMsg = 'Não foi possível ler as NF guardadas.';
@@ -43570,7 +43756,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-21-nfe-pdf-tablet: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-21-nfe-filtro-mes: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

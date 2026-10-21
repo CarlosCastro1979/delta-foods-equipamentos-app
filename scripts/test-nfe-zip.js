@@ -9,6 +9,8 @@ const fs = require('fs');
 const path = require('path');
 const nfe = require('../nfe-emitidas.js');
 
+global._nfeRelogio = new Date(2026, 9, 21, 12, 0, 0);
+
 let failed = 0;
 function assert(cond, msg) {
   if (!cond) {
@@ -263,13 +265,18 @@ function testHorecaNaoListaEcommerce() {
   assert(!host.innerHTML.includes('102240'), 'o menu Horeca não lista a NF do Ecommerce');
   assert(!host.innerHTML.includes('Ecommerce'), 'o menu Horeca não lista o canal Ecommerce');
   assert(!host.innerHTML.includes('Leandro'), 'o menu Horeca não lista o cliente do Ecommerce');
-  assert(host.innerHTML.includes('Limpar') === false, 'sem filtro ainda não há banner');
+  assert(host.innerHTML.includes('Outubro 2026'), 'abre no mês corrente');
+  assert(host.innerHTML.includes('Limpar</button>'), 'o mês corrente fica no banner com Limpar');
+  assert(host.innerHTML.includes('id="nfe-canal-mes"') && host.innerHTML.includes('type="month"'), 'o mês é um controlo à parte');
+  assert(host.innerHTML.includes('id="nfe-canal-dia"') && host.innerHTML.includes('type="date"'), 'o dia é um controlo à parte');
+  assert(!host.innerHTML.includes('value="2026-10-01"'), 'o dia começa vazio: o mês inteiro');
   api.nfeFiltrarCanal(encodeURIComponent('vend:' + nfe.nfeNormNome('Hélcio Grégio')));
   assert(host.innerHTML.includes('Limpar'), 'filtro activo tem botão Limpar');
   assert(host.innerHTML.includes('Cliente Horeca'), 'o filtro do vendedor mantém a nota do Horeca');
   assert(!host.innerHTML.includes('102240'), 'mesmo filtrado, a NF do Ecommerce não entra');
   api.nfeLimparFiltroCanal();
-  assert(!host.innerHTML.includes('>Limpar<') && !host.innerHTML.includes('Limpar</button>'), 'Limpar tira o banner');
+  assert(host.innerHTML.includes('Limpar</button>') && host.innerHTML.includes('Outubro 2026'), 'Limpar mantém o mês no banner');
+  assert(host.innerHTML.includes('Cliente Horeca'), 'Limpar devolve a nota do mês');
   const zero = api.nfeTabelaResumo([
     { key: 'total', label: 'Total', n: 0 },
     { key: 'x', label: '—', n: 4 },
@@ -312,13 +319,15 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker referido no index');
+  assert(html.includes('v2026-10-21-nfe-filtro-mes'), 'service worker referido no index');
+  assert(!html.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-perdas-sem-999'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-21-nfe-filtro-mes'), 'service worker actualizado');
+  assert(!sw.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
@@ -484,8 +493,9 @@ function testFiltrosETotal(zipPath) {
   assert(host.includes('Nenhuma nota neste filtro.'), 'Hélcio + NF do Paulo não devolve notas');
   horeca.nfeLimparFiltroCanal();
   host = horeca.el('canal-nfe-host').innerHTML;
-  assert(!host.includes('Limpar</button>'), 'Limpar repõe vendedor, dia e número');
-  assert(host.includes('102243') && host.includes('102255'), 'sem filtro voltam as notas do canal');
+  assert(!host.includes('value="2026-10-01"') && !host.includes('value="102255"'), 'Limpar tira dia e número');
+  assert(host.includes('Outubro 2026') && host.includes('Limpar</button>'), 'Limpar volta ao mês corrente e mantém o banner');
+  assert(host.includes('102243') && host.includes('102255'), 'sem filtro de dia voltam as notas do canal');
 
   const ecom = loadNfeUi(notas, 'ecommerce');
   ecom.nfePaintCanal();
@@ -510,6 +520,7 @@ function testFiltrosETotal(zipPath) {
   let g = geral.nfeHtml();
   assert(g.includes('id="nfe-geral-canal"'), 'o quadro geral tem filtro de canal');
   assert(g.includes('id="nfe-geral-vendedor"') && g.includes('id="nfe-geral-dia"') && g.includes('id="nfe-geral-numero"'), 'o quadro geral tem vendedor, dia e número');
+  assert(g.includes('id="nfe-geral-mes"') && g.includes('id="nfe-geral-cliente"'), 'o quadro geral tem mês e cliente');
   geral.nfeSetFiltro('geral', 'canal', 'canal:ecommerce');
   geral.nfeSetFiltro('geral', 'vendedor', 'vend:' + nfe.nfeNormNome('Marcio Gorga'));
   g = geral.nfeHtml();
@@ -971,7 +982,7 @@ function testTransferenciasInternas() {
   });
   const cpfGravado = {
     chave: 'CPF1', numero: '102240', destDoc: '31499205821', cliente: 'Leandro Falcone',
-    status: 'sem_cliente', canalId: '', vendedor: '', valor: 123.12,
+    status: 'sem_cliente', canalId: '', vendedor: '', valor: 123.12, data: '2026-10-01',
   };
   const helcio = nfe.nfeCruzarNota({
     chave: 'H1', numero: '102239', destDoc: '03852638000149', emitCnpj: '14830817000100',
@@ -1078,11 +1089,148 @@ function testTransferenciasInternas() {
   });
 }
 
+function testSiteProprioRegra() {
+  assert(nfe.NFE_SITE_MARCIO_NPESS === '99520009', 'o site do Marcio é o NPess 99520009');
+  assert(nfe.nfeEhSiteProprio({ npess: '99520009', canalId: 'ecommerce', canalNome: 'Ecommerce' }), 'NPess 99520009 é Site próprio mesmo gravado no Ecommerce');
+  assert(nfe.nfeEhSiteProprio({ canalNome: 'Site próprio', canalId: 'ecommerce' }), 'o nome Site próprio entra na regra');
+  assert(nfe.nfeEhSiteProprio({ canalId: 'dfb_site' }), 'o id dfb_site entra na regra');
+  assert(!nfe.nfeEhSiteProprio({ npess: '99520001', canalId: 'ecommerce', canalNome: 'Ecommerce', vendedor: 'Marcio Gorga' }), 'Lojas online e o CPF do Marcio (99520001) ficam');
+  assert(!nfe.nfeEhSiteProprio({ npess: '99520005', canalId: 'ecommerce' }), 'Institucional Balcão não sai');
+  assert(!nfe.nfeEhSiteProprio({ npess: '99530003', canalId: 'ecommerce' }), 'Restauração QB não sai');
+  assert(!nfe.nfeEhSiteProprio({ canalId: 'site', canalNome: 'Ecommerce' }), 'a palavra site sozinha não chega');
+  const guardadas = [
+    { chave: 'S', npess: '99520009' },
+    { chave: 'L', npess: '99520001' },
+  ];
+  const vis = nfe.nfeNotasSemSiteMarcio(guardadas);
+  assert(guardadas.length === 2 && vis.length === 1 && vis[0].chave === 'L', 'excluir o site não apaga a nota da lista original');
+}
+
+function testFiltroMesCliente() {
+  const mem = new Map();
+  global.localStorage = {
+    getItem(k) { return mem.has(k) ? mem.get(k) : null; },
+    setItem(k, v) { mem.set(k, String(v)); },
+  };
+  const notas = [
+    { chave: 'J1', numero: '102605', serie: '2', canalId: 'horeca', canalNome: 'Horeca', vendedor: 'Daniela Santos', cliente: 'JULES PANIFICADORA E CONFEITARIA', cod: '88021', valor: 1635.3, data: '2026-10-20', status: 'unico', temBoleto: true, temPdfJunto: true },
+    { chave: 'J2', numero: '102610', serie: '2', canalId: 'horeca', canalNome: 'Horeca', vendedor: 'Daniela Santos', cliente: 'José da Padaria', cod: '77001', valor: 10, data: '2026-10-02', status: 'unico' },
+    { chave: 'L1', numero: '102240', canalId: 'ecommerce', canalNome: 'Ecommerce', vendedor: 'Marcio Gorga', cliente: 'Loja Online', npess: '99520001', cod: '900', valor: 50, data: '2026-10-03', status: 'unico' },
+    { chave: 'I1', numero: '102710', canalId: 'ecommerce', canalNome: 'Ecommerce', vendedor: 'Marcio Gorga', cliente: 'Balcao Institucional', npess: '99520005', valor: 20, data: '2026-10-04', status: 'unico' },
+    { chave: 'S1', numero: '102700', canalId: 'ecommerce', canalNome: 'Ecommerce', vendedor: 'Marcio Gorga', cliente: 'Site do Marcio', npess: '99520009', cod: '995', valor: 99, data: '2026-10-05', status: 'unico', temBoleto: true },
+    { chave: 'P1', numero: '102500', canalId: 'horeca', canalNome: 'Horeca', vendedor: 'Daniela Santos', cliente: 'Setembro Ltda', cod: '66001', valor: 5, data: '2026-09-15', status: 'unico' },
+  ];
+  const ui = loadNfeUi(notas, '', 'nfe');
+  let g = ui.nfeHtml();
+  assert(g.includes('id="nfe-geral-mes"') && g.includes('type="month"'), 'há filtro de mês');
+  assert(g.includes('id="nfe-geral-dia"') && g.includes('type="date"'), 'há filtro de dia');
+  assert(g.includes('id="nfe-geral-cliente"') && g.includes('Nome ou código'), 'há filtro de cliente por nome ou código');
+  assert(g.includes('value="2026-10"') && !g.includes('value="2026-10-20"'), 'o mês corrente vem escolhido e o dia vem vazio');
+  assert(g.includes('Outubro 2026') && g.includes('Limpar</button>'), 'o banner nomeia o mês e tem Limpar');
+  assert(g.includes('102605') && g.includes('102610') && g.includes('102240') && g.includes('102710'), 'o mês corrente lista Horeca, Lojas online e Institucional');
+  assert(!g.includes('102500'), 'setembro não entra na lista de outubro');
+  assert(!g.includes('102700') && !g.includes('Site do Marcio'), 'o site próprio do Marcio não entra na lista');
+  assert(g.includes('notas em Outubro 2026'), 'a contagem do ecrã é a do mês, sem o site');
+  const tabela = g.indexOf('>Notas<');
+  const iEco = g.indexOf('>Ecommerce<', tabela);
+  const rowEco = g.slice(iEco, g.indexOf('</tr>', iEco));
+  assert(iEco > tabela && rowEco.includes('>2<'), 'Ecommerce conta Lojas online e Institucional, não o site, veio ' + rowEco);
+  const iVar = g.indexOf('>Varejo e Distr. Varejo<', tabela);
+  const rowVar = g.slice(iVar, g.indexOf('</tr>', iVar));
+  assert(iVar > tabela && rowVar.includes('>0<') && !rowVar.includes('<button'), 'zero não é clicável');
+  assert(g.includes('class="nfe-wa"') && g.includes('nfe-wa-btn'), 'a coluna WhatsApp mantém-se');
+  const iBol = g.indexOf('102605');
+  assert(g.slice(iBol, iBol + 500).includes('>S<'), 'a coluna Boleto mantém o S');
+
+  ui.nfeSetFiltro('geral', 'cliente', 'jules');
+  g = ui.nfeHtml();
+  assert(g.includes('102605') && !g.includes('102610') && !g.includes('102240'), 'o nome parcial filtra a lista');
+  const iTot = g.indexOf('>Total<');
+  const rowTot = g.slice(iTot, g.indexOf('</tr>', iTot));
+  assert(rowTot.includes('>1<'), 'o filtro de cliente também reduz o resumo');
+  ui.nfeSetFiltro('geral', 'cliente', 'jose');
+  g = ui.nfeHtml();
+  assert(g.includes('102610') && g.includes('José da Padaria') && !g.includes('102605'), 'o nome ignora acentos');
+  ui.nfeSetFiltro('geral', 'cliente', '88021');
+  g = ui.nfeHtml();
+  assert(g.includes('102605') && !g.includes('102610'), 'o código do cliente filtra');
+  ui.nfeSetFiltro('geral', 'cliente', '102605');
+  g = ui.nfeHtml();
+  assert(g.includes('Nenhuma nota neste filtro.'), 'o código do cliente não é o número da NF');
+  ui.nfeSetFiltro('geral', 'cliente', '');
+  ui.nfeSetFiltro('geral', 'dia', '2026-10-20');
+  g = ui.nfeHtml();
+  assert(g.includes('value="2026-10-20"') && g.includes('20/10/2026'), 'o dia escolhido fica no filtro e no banner');
+  assert(g.includes('102605') && !g.includes('102610') && !g.includes('102240'), 'com dia só entra essa data');
+  ui.nfeSetFiltro('geral', 'dia', '');
+  g = ui.nfeHtml();
+  assert(!g.includes('value="2026-10-20"'), 'dia vazio');
+  assert(g.includes('102605') && g.includes('102610') && g.includes('102240'), 'dia vazio é o mês inteiro');
+  ui.nfeSetFiltro('geral', 'dia', '2026-10-20');
+  ui.nfeSetFiltro('geral', 'mes', '2026-09');
+  g = ui.nfeHtml();
+  assert(g.includes('value="2026-09"') && !g.includes('value="2026-10-20"'), 'mudar o mês limpa o dia');
+  assert(g.includes('102500') && g.includes('Setembro 2026'), 'outro mês mostra as NF desse mês');
+  assert(!g.includes('102605') && !g.includes('102700'), 'outubro e o site ficam de fora');
+  ui.nfeLimparFiltro();
+  g = ui.nfeHtml();
+  assert(g.includes('value="2026-10"') && g.includes('102605') && !g.includes('102500'), 'Limpar volta ao mês corrente');
+
+  mem.clear();
+  const persist = loadNfeUi(notas, 'horeca');
+  persist.nfeSetFiltro('canal', 'dia', '2026-10-02');
+  persist.nfeSetFiltro('canal', 'numero', '102610');
+  persist.nfeGravarFiltros();
+  const gravado = JSON.parse(mem.get('delta_nfe_filtros'));
+  assert(gravado.porCanal.horeca.dia === '2026-10-02' && gravado.porCanal.horeca.mes === '2026-10' && gravado.porCanal.horeca.numero === '102610', 'dia escolhido grava o mês junto');
+  const reaberto = loadNfeUi(notas, 'horeca');
+  reaberto.nfePaintCanal();
+  const hostP = reaberto.el('canal-nfe-host').innerHTML;
+  assert(hostP.includes('value="2026-10-02"') && hostP.includes('value="102610"') && hostP.includes('José da Padaria'), 'ao reabrir, mês, dia e número voltam a filtrar');
+  assert(!hostP.includes('102605'), 'o dia restaurado não traz as outras notas do mês');
+  reaberto.nfeLimparFiltroCanal();
+  const limpo = JSON.parse(mem.get('delta_nfe_filtros'));
+  assert(limpo.porCanal.horeca.dia === '' && limpo.porCanal.horeca.mes === '' && limpo.porCanal.horeca.numero === '' && limpo.porCanal.horeca.cliente === '', 'Limpar grava mês, dia, cliente e número vazios');
+  mem.clear();
+
+  mem.set('delta_nfe_filtros', JSON.stringify({ geral: { dia: '2026-10-20' }, porCanal: {} }));
+  const legado = loadNfeUi(notas, '', 'nfe');
+  const leg = legado.nfeHtml();
+  assert(!leg.includes('value="2026-10-20"') && leg.includes('102605') && leg.includes('102610'), 'um dia gravado sem mês não prende a abertura a esse dia');
+}
+
+function testCargaLeve() {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const metaIni = html.indexOf('async function nfeHidrateMeta(');
+  const metaFim = html.indexOf('async function nfeGarantirClientes(');
+  const meta = html.slice(metaIni, metaFim);
+  assert(metaIni > 0 && metaFim > metaIni, 'há carga só de metadados');
+  assert(meta.includes('chunks: false'), 'a lista não pede os blocos de PDF');
+  assert(!meta.includes('nfeLerPdfsNuvem') && !meta.includes('nfeLerPdfsLocais') && !meta.includes('nfePersistir'), 'abrir o ecrã não lê PDF nem regrava a nuvem');
+  assert(html.includes('await nfeHidrateMeta()'), 'as vistas usam a carga leve');
+  const onIni = html.indexOf('async function nfeOnFiles(');
+  const on = html.slice(onIni, onIni + 900);
+  assert(on.includes('await nfeHidrate()') && !on.includes('nfeHidrateMeta'), 'a carga do ZIP continua a juntar os PDF');
+  const pdfIni = html.indexOf('async function nfePdfResolvido(');
+  const pdf = html.slice(pdfIni, html.indexOf('function nfeEhTelemovel('));
+  assert(pdf.includes("idbGet('delta_nfe_pdfs')") && pdf.includes('nfeCarregarPdfDaNuvem'), 'o PDF só é lido ao abrir a NF ou no WhatsApp (IndexedDB ou blocos nfe_pdfs_N)');
+  assert(!pdf.includes('nfeGarantirChunksPdf'), 'o clique não descarrega todos os blocos de uma vez');
+  const vista = html.slice(html.indexOf('async function nfeMontarVista('), html.indexOf('async function nfeMontarVista(') + 400);
+  const canal = html.slice(html.indexOf('async function nfeMontarCanal('), html.indexOf('async function nfeMontarCanal(') + 400);
+  const dados = html.slice(html.indexOf('async function nfeAoAbrirDados('), html.indexOf('async function nfeAoAbrirDados(') + 400);
+  [vista, canal, dados].forEach(function (bloco) {
+    assert(bloco.includes('nfeHidrateMeta') && !bloco.includes('nfeHidrate()'), 'o ecrã não usa a carga com PDF');
+  });
+}
+
 testAtribuicao();
 testCpfMarcio();
 testVendedorAtual();
 testMenuCanal();
 testHorecaNaoListaEcommerce();
+testSiteProprioRegra();
+testFiltroMesCliente();
+testCargaLeve();
 testXmlAvulso();
 testUiCarga();
 testPdfZipMinimo();

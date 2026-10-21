@@ -1271,6 +1271,34 @@
     };
   }
 
+  /**
+   * Site próprio do Marcio Gorga: NPess 99520009.
+   * Não é Lojas online (99520001), nem Institucional (99520005), nem Restauração QB (99530003).
+   * Notas deste canal entram no Ecommerce pelo mapa de vendedor; aqui identificam-se à parte.
+   */
+  var NFE_SITE_MARCIO_NPESS = '99520009';
+
+  function nfeNormCanal(s) {
+    return nfeNormNome(s).replace(/_/g, ' ');
+  }
+
+  function nfeEhSiteProprio(n) {
+    if (!n) return false;
+    var np = String(n.npess == null ? '' : n.npess).replace(/\D/g, '');
+    if (np === NFE_SITE_MARCIO_NPESS) return true;
+    var id = nfeNormCanal(n.canalId);
+    if (id === 'DFB SITE' || id === 'SITE PROPRIO') return true;
+    var nomes = [n.canalNome, n.canal, n.canalPl];
+    for (var i = 0; i < nomes.length; i++) {
+      if (nfeNormCanal(nomes[i]) === 'SITE PROPRIO') return true;
+    }
+    return false;
+  }
+
+  function nfeNotasSemSiteMarcio(notas) {
+    return (notas || []).filter(function (n) { return !nfeEhSiteProprio(n); });
+  }
+
   /** Notas de um menu de canal. Outro canal e notas sem canal ficam de fora. */
   function nfeNotasDoCanal(notas, canalId) {
     var id = String(canalId || '');
@@ -1368,6 +1396,9 @@
     nfeReaplicarCpfSemVendedor: nfeReaplicarCpfSemVendedor,
     nfeAtribDifere: nfeAtribDifere,
     nfeMergeNotas: nfeMergeNotas,
+    NFE_SITE_MARCIO_NPESS: NFE_SITE_MARCIO_NPESS,
+    nfeEhSiteProprio: nfeEhSiteProprio,
+    nfeNotasSemSiteMarcio: nfeNotasSemSiteMarcio,
     nfeNotasDoCanal: nfeNotasDoCanal,
     nfeTemPdfBinario: nfeTemPdfBinario,
     nfeTemBoletoBinario: nfeTemBoletoBinario,
