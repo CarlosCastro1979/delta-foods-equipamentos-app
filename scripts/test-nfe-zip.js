@@ -319,7 +319,8 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker referido no index');
+  assert(html.includes('v2026-10-21-contratos-autosave'), 'service worker referido no index');
+  assert(!html.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-filtro-mes'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker antigo já não está no index');
@@ -327,7 +328,8 @@ function testUiCarga() {
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-21-contratos-autosave'), 'service worker actualizado');
+  assert(!sw.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-filtro-mes'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker antigo já não está no sw');
