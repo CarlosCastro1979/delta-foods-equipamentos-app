@@ -241,7 +241,7 @@ function testHorecaNaoListaEcommerce() {
     { chave: 'H1', canalId: 'horeca', canalNome: 'Horeca', vendedor: 'Hélcio Grégio', numero: '10', cliente: 'Cliente Horeca', valor: 10, data: '2026-10-01', status: 'unico' },
     { chave: 'E1', canalId: 'ecommerce', canalNome: 'Ecommerce', vendedor: 'Marcio Gorga', numero: '102240', cliente: 'Leandro Falcone', valor: 123.12, data: '2026-10-01', status: 'unico', npess: '99520001' },
   ];
-  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfeFiltro', '_nfeStatusMsg', '_nfeBusy'];
+  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfePorMes', '_nfePorMesSrc', '_nfeFiltro', '_nfeStatusMsg', '_nfeBusy'];
   const vals = [
     { horeca: { id: 'horeca', nome: 'Horeca' }, ecommerce: { id: 'ecommerce', nome: 'Ecommerce' } },
     (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])),
@@ -251,6 +251,8 @@ function testHorecaNaoListaEcommerce() {
     { getElementById: el },
     'mapa',
     notas,
+    null,
+    null,
     '',
     '',
     false,
@@ -319,7 +321,8 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker referido no index');
+  assert(html.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker referido no index');
+  assert(!html.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-filtro-mes'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker antigo já não está no index');
@@ -327,7 +330,8 @@ function testUiCarga() {
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker actualizado');
+  assert(!sw.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-filtro-mes'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker antigo já não está no sw');
@@ -358,7 +362,7 @@ function loadNfeUi(notas, canalId, pvView) {
     }
     return els[id];
   }
-  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfeFiltro', '_nfeStatusMsg', '_nfeBusy'];
+  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfePorMes', '_nfePorMesSrc', '_nfeFiltro', '_nfeStatusMsg', '_nfeBusy'];
   const vals = [
     {
       horeca: { id: 'horeca', nome: 'Horeca' },
@@ -390,11 +394,13 @@ function loadNfeUi(notas, canalId, pvView) {
     },
     pvView || 'mapa',
     notas,
+    null,
+    null,
     '',
     '',
     false,
   ];
-  const api = new Function(...names, src + '\nreturn { nfePaintCanal, nfePaint, nfeHtml, nfeSetFiltro, nfeFlushPaintTexto, nfeFiltrarCanal, nfeLimparFiltroCanal, nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, nfeAbrirPdf, nfePartilharWhatsapp, nfeFiltrosGeral, nfeFiltrosCanalActivos, el: null };')(...vals);
+  const api = new Function(...names, src + '\nreturn { nfePaintCanal, nfePaint, nfeHtml, nfeSetFiltro, nfeFlushPaintTexto, nfeFiltrarCanal, nfeLimparFiltroCanal, nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, nfeAbrirPdf, nfePartilharWhatsapp, nfeFiltrosGeral, nfeFiltrosCanalActivos, nfeMostrarMais, nfeConteudoGeralHtml, nfeNotasDoMesEcra, el: null };')(...vals);
   api.el = el;
   return api;
 }
@@ -1160,7 +1166,9 @@ function testFiltroMesCliente() {
   assert(g.slice(iBol, iBol + 500).includes('>S<'), 'a coluna Boleto mantém o S');
 
   assert(g.includes("nfeSetFiltro('geral','cliente',this.value)"), 'o input de cliente usa this.value (não concatena event.data)');
-  assert(/NFE_TEXTO_MS\s*=\s*220/.test(fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8')), 'há debounce do re-paint ao escrever');
+  assert(/NFE_TEXTO_MS\s*=\s*120/.test(fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8')), 'há debounce curto do re-paint ao escrever');
+  assert(/NFE_LISTA_PAGE\s*=\s*100/.test(fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8')), 'a lista pagina de 100 em 100');
+  assert(g.includes('id="nfe-geral-conteudo"'), 'o conteúdo (resumo+lista) tem contentor próprio');
 
   const teclas = simularTeclasCliente(ui, 'geral', 'jules');
   assert(teclas.join('|') === 'j|ju|jul|jule|jules', 'cada tecla acrescenta só essa letra: ' + teclas.join('|'));
@@ -1186,7 +1194,15 @@ function testFiltroMesCliente() {
   ui.nfeSetFiltro('geral', 'cliente', '102605');
   g = ui.nfeHtml();
   assert(g.includes('Nenhuma nota neste filtro.'), 'o código do cliente não é o número da NF');
+  ui.nfeSetFiltro('geral', 'numero', '102605');
+  ui.nfeFlushPaintTexto();
+  g = ui.nfeHtml();
+  assert(g.includes('Nenhuma nota neste filtro.'), 'cliente errado + número certo: o cliente ainda exclui');
   ui.nfeSetFiltro('geral', 'cliente', '');
+  ui.nfeFlushPaintTexto();
+  g = ui.nfeHtml();
+  assert(g.includes('102605') && !g.includes('102610'), 'só o número da NF filtra');
+  ui.nfeSetFiltro('geral', 'numero', '');
   ui.nfeFlushPaintTexto();
   ui.nfeSetFiltro('geral', 'dia', '2026-10-20');
   g = ui.nfeHtml();
@@ -1205,6 +1221,19 @@ function testFiltroMesCliente() {
   ui.nfeLimparFiltro();
   g = ui.nfeHtml();
   assert(g.includes('value="2026-10"') && g.includes('102605') && !g.includes('102500'), 'Limpar volta ao mês corrente');
+
+  ui.nfeSetFiltro('geral', 'canal', 'canal:horeca');
+  ui.nfeSetFiltro('geral', 'vendedor', 'vend:' + nfe.nfeNormNome('Daniela Santos'));
+  ui.nfeSetFiltro('geral', 'cliente', 'jules');
+  ui.nfeFlushPaintTexto();
+  g = ui.nfeHtml();
+  assert(g.includes('102605') && !g.includes('102610') && !g.includes('102240'), 'canal + vendedor + cliente juntos');
+  const iTotComb = g.indexOf('>Total<');
+  const rowTotComb = g.slice(iTotComb, g.indexOf('</tr>', iTotComb));
+  assert(rowTotComb.includes('>1<'), 'o resumo combina com os filtros activos');
+  ui.nfeLimparFiltro();
+  g = ui.nfeHtml();
+  assert(g.includes('102605') && g.includes('102240') && !g.includes('102700'), 'Limpar tira canal/vendedor/cliente e mantém o site fora');
 
   mem.clear();
   const persist = loadNfeUi(notas, 'horeca');
@@ -1227,6 +1256,34 @@ function testFiltroMesCliente() {
   const legado = loadNfeUi(notas, '', 'nfe');
   const leg = legado.nfeHtml();
   assert(!leg.includes('value="2026-10-20"') && leg.includes('102605') && leg.includes('102610'), 'um dia gravado sem mês não prende a abertura a esse dia');
+
+  const muitas = [];
+  for (let i = 0; i < 120; i++) {
+    muitas.push({
+      chave: 'P' + i,
+      numero: String(200000 + i),
+      canalId: 'horeca',
+      canalNome: 'Horeca',
+      vendedor: 'Daniela Santos',
+      cliente: 'Cliente ' + i,
+      cod: String(50000 + i),
+      valor: 1 + (i % 7),
+      data: '2026-10-15',
+      status: 'unico',
+    });
+  }
+  const page = loadNfeUi(muitas, '', 'nfe');
+  let gp = page.nfeHtml();
+  assert(gp.includes('Total da lista: 120 notas'), 'o total da lista conta o mês filtrado completo');
+  assert(gp.includes('Mostrar mais (20)'), 'com mais de 100 notas aparece Mostrar mais');
+  /* Ordenação: número desc → 200119…200020 na 1.ª página; 200019…200000 ficam para Mostrar mais. */
+  assert(gp.includes('>200119<') && gp.includes('>200020<') && !gp.includes('>200000<'), 'a primeira página mostra 100 e esconde o resto');
+  const iTotP = gp.indexOf('>Total<');
+  const rowTotP = gp.slice(iTotP, gp.indexOf('</tr>', iTotP));
+  assert(rowTotP.includes('>120<'), 'o resumo mantém as 120 mesmo com lista paginada');
+  page.nfeMostrarMais('geral');
+  gp = page.el('pv-canal-panels').innerHTML;
+  assert(gp.includes('>200000<') && !gp.includes('Mostrar mais'), 'Mostrar mais revela o resto e tira o botão');
 }
 
 function testCargaLeve() {
@@ -1236,8 +1293,11 @@ function testCargaLeve() {
   const meta = html.slice(metaIni, metaFim);
   assert(metaIni > 0 && metaFim > metaIni, 'há carga só de metadados');
   assert(meta.includes('chunks: false'), 'a lista não pede os blocos de PDF');
+  assert(meta.includes('_nfeMetaPronta') && meta.includes('opts && opts.force'), 'na mesma sessão não volta a pedir a nuvem');
   assert(!meta.includes('nfeLerPdfsNuvem') && !meta.includes('nfeLerPdfsLocais') && !meta.includes('nfePersistir'), 'abrir o ecrã não lê PDF nem regrava a nuvem');
   assert(html.includes('await nfeHidrateMeta()'), 'as vistas usam a carga leve');
+  assert(html.includes('nfeIndicePorMes') && html.includes('nfeNotasDoMesDoCanal'), 'há índice por mês para filtrar sem varrer tudo');
+  assert(html.includes('nfePaintConteudo') && html.includes('nfe-geral-conteudo'), 'o filtro de texto actualiza só o conteúdo');
   const onIni = html.indexOf('async function nfeOnFiles(');
   const on = html.slice(onIni, onIni + 900);
   assert(on.includes('await nfeHidrate()') && !on.includes('nfeHidrateMeta'), 'a carga do ZIP continua a juntar os PDF');

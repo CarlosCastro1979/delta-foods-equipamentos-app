@@ -13421,10 +13421,20 @@ const NFE_IDB_KEY = 'delta_nfe_emitidas';
 const NFE_PDF_IDB_KEY = 'delta_nfe_pdfs';
 const NFE_PDF_CHUNK_PREFIX = 'nfe_pdfs_';
 let _nfeNotas = [];
+/** Índice ym → notas do menu (sem Site próprio). Reconstruído quando _nfeNotas muda. */
+let _nfePorMes = null;
+let _nfePorMesSrc = null;
+/** Evita repetir fetch + regras ao reabrir o menu na mesma sessão. */
+let _nfeMetaPronta = false;
 let _nfeFiltro = '';
 let _nfeStatusMsg = '';
 let _nfeGen = 0;
 let _nfeBusy = false;
+
+function nfeInvalidarIndiceMes() {
+  _nfePorMes = null;
+  _nfePorMesSrc = null;
+}
 /** PDF já gravados na nuvem (célula da nota ou blocos nfe_pdfs_N), chave → { nome, b64 }. */
 let _nfePdfsNuvem = {};
 /** Blocos nfe_pdfs_N que falharam nesta leitura. O clique ainda tenta o bloco da nota. */
@@ -13732,6 +13742,8 @@ async function nfeHidrate() {
   if (remote == null) {
     const reap = nfeAplicarRegraGuardada(local, catalogoNomes);
     _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsTodos) : reap.notas;
+    _nfeMetaPronta = true;
+    nfeInvalidarIndiceMes();
     if (reap.alteradas > 0) {
       try { await idbSet(NFE_IDB_KEY, { notas: reap.notas.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n)), ts: new Date().toISOString() }); } catch (_) {}
     }
@@ -13740,6 +13752,8 @@ async function nfeHidrate() {
   const merged = nfeMergeNotas(local, remote);
   const reap = nfeAplicarRegraGuardada(merged.notas, catalogoNomes);
   _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsTodos) : reap.notas;
+  _nfeMetaPronta = true;
+  nfeInvalidarIndiceMes();
   const localSet = new Set(local.map(n => n && n.chave).filter(Boolean));
   const remoteBy = new Map();
   remote.forEach(n => { if (n && n.chave && !remoteBy.has(n.chave)) remoteBy.set(n.chave, n); });
@@ -13778,8 +13792,10 @@ async function nfeHidrate() {
  * Abre o menu sem os binários. Notas leves (número, boleto S/N, cliente, valor, data, canal, vendedor)
  * chegam da célula e do IndexedDB das notas. Os blocos nfe_pdfs_N e o blob delta_nfe_pdfs ficam para o clique.
  * Não grava na nuvem: uma lista sem PDF não pode apagar os blocos.
+ * Na mesma sessão não volta a pedir a nuvem nem a reaplicar regras — o ecrã abre de imediato.
  */
-async function nfeHidrateMeta() {
+async function nfeHidrateMeta(opts) {
+  if (_nfeMetaPronta && !(opts && opts.force)) return;
   let local = [];
   try {
     const packed = await idbGet(NFE_IDB_KEY);
@@ -13817,6 +13833,8 @@ async function nfeHidrateMeta() {
     faltaLocal = base.some(n => n && n.chave && !localSet.has(n.chave));
   }
   _nfeNotas = base.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n));
+  _nfeMetaPronta = true;
+  nfeInvalidarIndiceMes();
   if (faltaLocal || alteradas > 0) {
     try {
       await idbSet(NFE_IDB_KEY, { notas: _nfeNotas, ts: new Date().toISOString() });
@@ -14092,11 +14110,15 @@ function nfeChaveFiltro(key) {
 
 const NFE_FILTROS_LS = 'delta_nfe_filtros';
 const NFE_FILTROS_MS = 1000;
-/** Debounce do re-paint ao escrever cliente/número — evita recriar o input a cada tecla (duplicava letras no tablet). */
-const NFE_TEXTO_MS = 220;
+/** Debounce do re-paint ao escrever cliente/número — o input fica estável; só o conteúdo (resumo+lista) actualiza. */
+const NFE_TEXTO_MS = 120;
+/** Quantas linhas da lista pintar de cada vez (o resumo continua a ser do mês filtrado completo). */
+const NFE_LISTA_PAGE = 100;
 let _nfeFiltrosTimer = null;
 let _nfeTextoTimer = null;
 let _nfeTextoFocus = null;
+let _nfeListaMaisGeral = NFE_LISTA_PAGE;
+let _nfeListaMaisCanal = NFE_LISTA_PAGE;
 let _nfeUi = null;
 
 function nfeUiBlank() {
@@ -14198,29 +14220,65 @@ function nfeCancelarPaintTexto() {
   _nfeTextoFocus = null;
 }
 
+function nfeResetListaMais(scope) {
+  if (scope === 'canal') _nfeListaMaisCanal = NFE_LISTA_PAGE;
+  else _nfeListaMaisGeral = NFE_LISTA_PAGE;
+}
+
+/** Só o bloco resumo+banner+lista — os inputs de texto não são recriados (sem perder o foco). */
+function nfePaintConteudo(scope) {
+  const geral = scope === 'geral';
+  const panelId = geral ? 'pv-canal-panels' : 'canal-nfe-host';
+  const contentId = geral ? 'nfe-geral-conteudo' : 'nfe-canal-conteudo';
+  let panel = null;
+  let host = null;
+  try {
+    panel = document.getElementById(panelId);
+    host = document.getElementById(contentId);
+  } catch (_) { panel = null; host = null; }
+  /* Sem DOM real (testes com innerHTML em string) faz paint completo. */
+  let dentro = false;
+  try {
+    dentro = !!(panel && host && typeof panel.contains === 'function' && panel.contains(host));
+  } catch (_) { dentro = false; }
+  if (!dentro) {
+    if (geral) nfePaint();
+    else nfePaintCanal();
+    return;
+  }
+  if (geral) {
+    const f = nfeFiltrosGeral();
+    const doMes = nfeNotasDoMesEcra(_nfeNotas || [], f);
+    host.innerHTML = nfeConteudoGeralHtml(doMes);
+  } else {
+    const canalId = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : '') || '';
+    const doMes = nfeNotasDoMesDoCanal(canalId, nfeFiltrosCanalActivos());
+    host.innerHTML = nfeConteudoCanalHtml(doMes);
+  }
+}
+
 /** Aplica o re-paint adiado do filtro de texto (cliente/número). */
 function nfeFlushPaintTexto() {
   const pending = _nfeTextoFocus;
   nfeCancelarPaintTexto();
   if (!pending) return;
   const geral = pending.prefix === 'nfe-geral';
-  if (geral) nfePaint();
-  else nfePaintCanal();
+  nfePaintConteudo(geral ? 'geral' : 'canal');
   nfeFocarCampo(pending.prefix, pending.campo);
 }
 
 function nfeAgendarPaint(scope, campo) {
   const geral = scope === 'geral';
   const texto = campo === 'cliente' || campo === 'numero';
+  nfeResetListaMais(scope);
   if (!texto) {
     nfeCancelarPaintTexto();
     if (geral) nfePaint();
     else nfePaintCanal();
     return;
   }
-  /* Estado já está actualizado; o input no DOM mantém o que o utilizador escreveu.
-     Só recriamos a lista depois de uma pausa — senão cada tecla destroi o input e
-     o teclado (tablet) reaplica a letra → "a"+"b" vira "aab" / "aabcab". */
+  /* Estado já actualizado; o input no DOM mantém o texto. Só o conteúdo abaixo
+     é repintado após uma pausa curta — assim o teclado (tablet) não duplica letras. */
   _nfeTextoFocus = { prefix: geral ? 'nfe-geral' : 'nfe-canal', campo: campo };
   try { clearTimeout(_nfeTextoTimer); } catch (_) {}
   _nfeTextoTimer = setTimeout(function () {
@@ -14261,6 +14319,7 @@ function nfeFiltrar(key) {
   else f.canal = (f.canal === k) ? '' : k;
   _nfeFiltro = f.canal || '';
   nfeCancelarPaintTexto();
+  nfeResetListaMais('geral');
   nfeAgendarFiltros();
   nfePaint();
 }
@@ -14275,9 +14334,20 @@ function nfeLimparFiltro() {
   f.canal = '';
   _nfeFiltro = '';
   nfeCancelarPaintTexto();
+  nfeResetListaMais('geral');
   try { clearTimeout(_nfeFiltrosTimer); } catch (_) {}
   nfeGravarFiltros();
   nfePaint();
+}
+
+function nfeMostrarMais(modo) {
+  if (modo === 'canal') {
+    _nfeListaMaisCanal = (_nfeListaMaisCanal || NFE_LISTA_PAGE) + NFE_LISTA_PAGE;
+    nfePaintConteudo('canal');
+  } else {
+    _nfeListaMaisGeral = (_nfeListaMaisGeral || NFE_LISTA_PAGE) + NFE_LISTA_PAGE;
+    nfePaintConteudo('geral');
+  }
 }
 
 function nfeDiaIso(nota) {
@@ -14377,9 +14447,37 @@ function nfeNotasDesteMenu(notas) {
   return (notas || []).filter(n => n && !nfeEhSiteMarcio(n));
 }
 
+/** Índice por mês das notas deste menu (Site próprio excluído). Reutilizado entre filtros. */
+function nfeIndicePorMes(notas) {
+  const src = notas || [];
+  if (_nfePorMes && _nfePorMesSrc === src) return _nfePorMes;
+  const map = new Map();
+  nfeNotasDesteMenu(src).forEach(n => {
+    const ym = nfeYmNota(n);
+    if (!ym) return;
+    let arr = map.get(ym);
+    if (!arr) { arr = []; map.set(ym, arr); }
+    arr.push(n);
+  });
+  _nfePorMes = map;
+  _nfePorMesSrc = src;
+  return map;
+}
+
 function nfeNotasDoMesEcra(notas, f) {
   const mes = nfeMesEfetivo(f);
-  return nfeNotasDesteMenu(notas).filter(n => nfeYmNota(n) === mes);
+  const src = notas || [];
+  /* Só indexa o store completo. Subconjuntos (menu do canal) filtram sem estragar o cache. */
+  if (src === _nfeNotas) return nfeIndicePorMes(src).get(mes) || [];
+  return nfeNotasDesteMenu(src).filter(n => nfeYmNota(n) === mes);
+}
+
+/** Notas do mês no menu de um canal — parte do índice global, depois corta pelo canal. */
+function nfeNotasDoMesDoCanal(canalId, f) {
+  const id = String(canalId || '');
+  const doMes = nfeNotasDoMesEcra(_nfeNotas || [], f);
+  if (!id) return [];
+  return doMes.filter(n => n && String(n.canalId || '') === id && !nfeEhSiteMarcio(n));
 }
 
 function nfeEstadoMes(notasMes, mes) {
@@ -14462,17 +14560,33 @@ function nfeTemFiltro(f, modo) {
   return false;
 }
 
-function nfeRotuloFiltro(modo, f, notas) {
+function nfeRotuloChaveCanal(key) {
+  const k = String(key || '');
+  if (!k) return '';
+  if (k === 'canal:transferencias') return 'Transferências internas';
+  if (k === 'sem_canal') return 'Cliente sem canal';
+  if (k === 'sem_cliente') return 'Sem cliente na lista';
+  if (k === 'cnpj_multiplos') return 'CNPJ em mais do que um código';
+  if (k.indexOf('canal:') === 0 && typeof CANAIS_APP !== 'undefined') {
+    const c = CANAIS_APP[k.slice(6)];
+    if (c && c.nome) return c.nome;
+  }
+  return k;
+}
+
+function nfeRotuloChaveVend(key) {
+  const k = String(key || '');
+  if (!k) return '';
+  if (k === 'sem_vendedor') return 'Sem vendedor';
+  if (k.indexOf('vend:') === 0) return k.slice(5);
+  return k;
+}
+
+function nfeRotuloFiltro(modo, f) {
   const parts = [nfeRotuloMes(nfeMesEfetivo(f))];
   if (f.dia) parts.push(nfeFmtData(f.dia));
-  if (modo === 'geral' && f.canal) {
-    const hit = nfeResumoRows(notas).find(r => r.key === f.canal);
-    parts.push(hit ? hit.label : f.canal);
-  }
-  if (f.vendedor) {
-    const hit = nfeResumoCanalRows(notas).find(r => r.key === f.vendedor);
-    parts.push(hit ? hit.label : String(f.vendedor).replace(/^vend:/, ''));
-  }
+  if (modo === 'geral' && f.canal) parts.push(nfeRotuloChaveCanal(f.canal));
+  if (f.vendedor) parts.push(nfeRotuloChaveVend(f.vendedor));
   const cli = String(f.cliente || '').trim();
   if (cli) parts.push(cli);
   const num = String(f.numero || '').trim();
@@ -14480,18 +14594,17 @@ function nfeRotuloFiltro(modo, f, notas) {
   return parts.join(' · ');
 }
 
-function nfeBannerDe(modo, notas) {
+function nfeBannerDe(modo) {
   const f = modo === 'geral' ? nfeFiltrosGeral() : nfeFiltrosCanalActivos();
   const limpar = modo === 'geral' ? 'nfeLimparFiltro()' : 'nfeLimparFiltroCanal()';
   return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px;padding:8px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:13px;">
-    <span>Filtro: <strong>${escHtml(nfeRotuloFiltro(modo, f, notas))}</strong></span>
+    <span>Filtro: <strong>${escHtml(nfeRotuloFiltro(modo, f))}</strong></span>
     <button type="button" class="btn btn-secondary btn-sm" onclick="${limpar}">Limpar</button>
   </div>`;
 }
 
 function nfeBannerHtml() {
-  const f = nfeFiltrosGeral();
-  return nfeBannerDe('geral', nfeNotasDoMesEcra(_nfeNotas || [], f));
+  return nfeBannerDe('geral');
 }
 
 function nfeOpcoesVendedor(notas, actual) {
@@ -14585,27 +14698,35 @@ function nfeWhatsappCelula(n) {
   return `<td class="nfe-wa" style="padding:4px;border-bottom:1px solid var(--border);text-align:center;width:36px;"><button type="button" class="nfe-wa-btn" title="WhatsApp" aria-label="WhatsApp" onpointerdown="nfePrepararWhatsapp('${ch}')" onclick="event.preventDefault();event.stopPropagation();nfePartilharWhatsapp('${ch}',event)">${nfeWhatsappIcone()}</button></td>`;
 }
 
-function nfeListaHtml(notas, passa) {
-  const pred = typeof passa === 'function' ? passa : nfePassaFiltro;
-  const vis = (notas || []).filter(pred).slice().sort(nfeCmpNota);
-  if (!vis.length) {
-    const temAlguma = Array.isArray(notas) && notas.length;
+/**
+ * Lista a partir de notas já filtradas (um só passe). O total/resumo usam o conjunto completo;
+ * a tabela pagina com «Mostrar mais» para não pintar centenas de linhas de uma vez.
+ */
+function nfeListaHtmlDe(filtradas, opts) {
+  const o = opts || {};
+  const visAll = (filtradas || []).slice().sort(nfeCmpNota);
+  const limite = Math.max(1, Number(o.limite) || NFE_LISTA_PAGE);
+  const modo = o.modo === 'canal' ? 'canal' : 'geral';
+  const vazioCanal = !!o.vazioCanal;
+  if (!visAll.length) {
+    const temAlguma = !!o.temMes;
     const vazio = temAlguma
       ? 'Nenhuma nota neste filtro.'
-      : (passa
+      : (vazioCanal
         ? 'Ainda sem NF deste canal. A carga do ZIP de XML da TTI faz-se em Dados.'
         : 'Ainda sem NF. A carga do ZIP de XML da TTI faz-se em Dados.');
     return `<p style="color:var(--muted);font-size:13px;">${vazio}</p>`;
   }
+  const vis = visAll.length > limite ? visAll.slice(0, limite) : visAll;
   const grupos = [];
   const map = new Map();
   vis.forEach(n => {
     const g = nfeGrupoDe(n);
     const k = g.canal + '\0' + g.vend;
     if (!map.has(k)) {
-      const o = { canal: g.canal, vend: g.vend, notas: [] };
-      map.set(k, o);
-      grupos.push(o);
+      const oG = { canal: g.canal, vend: g.vend, notas: [] };
+      map.set(k, oG);
+      grupos.push(oG);
     }
     map.get(k).notas.push(n);
   });
@@ -14614,9 +14735,9 @@ function nfeListaHtml(notas, passa) {
     if (d) return d;
     return String(a.vend).localeCompare(String(b.vend), 'pt');
   });
-  const nNotas = vis.length;
+  const nNotas = visAll.length;
   const rotulo = nNotas === 1 ? '1 nota' : (nNotas + ' notas');
-  const totalHtml = `<div style="font-size:13px;font-weight:700;margin:0 0 10px;">Total da lista: ${rotulo} · ${nfeFmtValor(nfeSomaValor(vis))}</div>`;
+  const totalHtml = `<div style="font-size:13px;font-weight:700;margin:0 0 10px;">Total da lista: ${rotulo} · ${nfeFmtValor(nfeSomaValor(visAll))}</div>`;
   const corpo = grupos.map(g => {
     const somaTxt = nfeFmtValor(nfeSomaValor(g.notas));
     const meta = `${g.notas.length} · ${somaTxt}`;
@@ -14649,14 +14770,47 @@ function nfeListaHtml(notas, passa) {
       </div>
     </section>`;
   }).join('');
-  return totalHtml + corpo;
+  const resto = nNotas - vis.length;
+  const mais = resto > 0
+    ? `<div style="margin:8px 0 16px;"><button type="button" class="btn btn-secondary btn-sm" onclick="nfeMostrarMais('${modo}')">Mostrar mais (${resto})</button></div>`
+    : '';
+  return totalHtml + corpo + mais;
+}
+
+function nfeListaHtml(notas, passa) {
+  const pred = typeof passa === 'function' ? passa : nfePassaFiltro;
+  const filtradas = (notas || []).filter(pred);
+  return nfeListaHtmlDe(filtradas, {
+    limite: passa ? _nfeListaMaisCanal : _nfeListaMaisGeral,
+    modo: passa ? 'canal' : 'geral',
+    temMes: Array.isArray(notas) && notas.length > 0,
+    vazioCanal: typeof passa === 'function',
+  });
+}
+
+/** Resumo + banner + lista do quadro geral (notas do mês já escolhido). Um passe de filtro. */
+function nfeConteudoGeralHtml(doMes) {
+  const f = nfeFiltrosGeral();
+  const paraResumo = (doMes || []).filter(n => nfeCasaCampo(n, f, true));
+  const paraLista = f.canal ? paraResumo.filter(n => nfeBucket(n) === f.canal) : paraResumo;
+  return `${nfeTabelaResumo(nfeResumoRows(paraResumo), 'nfeFiltrar')}
+    ${nfeBannerDe('geral')}
+    ${nfeListaHtmlDe(paraLista, { limite: _nfeListaMaisGeral, modo: 'geral', temMes: !!(doMes && doMes.length) })}`;
+}
+
+/** Resumo por vendedor + banner + lista do menu do canal. */
+function nfeConteudoCanalHtml(doMes) {
+  const f = nfeFiltrosCanalActivos();
+  const paraResumo = (doMes || []).filter(n => nfeCasaCampo(n, f, false));
+  const paraLista = f.vendedor ? paraResumo.filter(n => nfeBucketVend(n) === f.vendedor) : paraResumo;
+  return `${nfeTabelaResumo(nfeResumoCanalRows(paraResumo), 'nfeFiltrarCanal')}
+    ${nfeBannerDe('canal')}
+    ${nfeListaHtmlDe(paraLista, { limite: _nfeListaMaisCanal, modo: 'canal', temMes: !!(doMes && doMes.length), vazioCanal: true })}`;
 }
 
 function nfeHtml() {
   const f = nfeFiltrosGeral();
   const doMes = nfeNotasDoMesEcra(_nfeNotas || [], f);
-  const rows = nfeResumoRows(nfeNotasParaResumoGeral(doMes));
-  const resumo = nfeTabelaResumo(rows, 'nfeFiltrar');
   const erro = _nfeStatusMsg && /não foi possível/i.test(_nfeStatusMsg);
   const estado = escHtml(erro ? _nfeStatusMsg : nfeEstadoMes(doMes, nfeMesEfetivo(f)));
   return `<p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;">
@@ -14664,9 +14818,7 @@ function nfeHtml() {
     </p>
     <div style="font-size:12px;color:var(--muted);margin:0 0 12px;">${estado}</div>
     ${nfeFiltrosHtml('geral', doMes)}
-    ${resumo}
-    ${nfeBannerHtml()}
-    ${nfeListaHtml(doMes)}`;
+    <div id="nfe-geral-conteudo">${nfeConteudoGeralHtml(doMes)}</div>`;
 }
 
 function nfeTabelaResumo(rows, fnName) {
@@ -14803,6 +14955,7 @@ function nfeFiltrarCanal(key) {
   _nfeFiltroCanal = f.vendedor || '';
   _nfeFiltroCanalId = canalId;
   nfeCancelarPaintTexto();
+  nfeResetListaMais('canal');
   nfeAgendarFiltros();
   nfePaintCanal();
 }
@@ -14817,21 +14970,20 @@ function nfeLimparFiltroCanal() {
   f.canal = '';
   _nfeFiltroCanal = '';
   nfeCancelarPaintTexto();
+  nfeResetListaMais('canal');
   try { clearTimeout(_nfeFiltrosTimer); } catch (_) {}
   nfeGravarFiltros();
   nfePaintCanal();
 }
 
-function nfeBannerCanalHtml(notas) {
-  return nfeBannerDe('canal', notas);
+function nfeBannerCanalHtml() {
+  return nfeBannerDe('canal');
 }
 
-function nfeHtmlCanal(notas) {
-  const doMes = nfeNotasDoMesEcra(notas, nfeFiltrosCanalActivos());
-  return `${nfeFiltrosHtml('canal', doMes)}
-    ${nfeTabelaResumo(nfeResumoCanalRows(nfeNotasParaResumoCanal(doMes)), 'nfeFiltrarCanal')}
-    ${nfeBannerDe('canal', doMes)}
-    ${nfeListaHtml(doMes, nfePassaFiltroCanal)}`;
+function nfeHtmlCanal(doMes) {
+  const mesNotas = doMes || [];
+  return `${nfeFiltrosHtml('canal', mesNotas)}
+    <div id="nfe-canal-conteudo">${nfeConteudoCanalHtml(mesNotas)}</div>`;
 }
 
 function nfePaintCanal() {
@@ -14845,7 +14997,7 @@ function nfePaintCanal() {
   _nfeFiltroCanalId = canalId;
   const canal = (typeof CANAIS_APP !== 'undefined' && canalId && CANAIS_APP[canalId]) ? CANAIS_APP[canalId] : null;
   if (titulo) titulo.textContent = canal ? ('Notas fiscais · ' + canal.nome) : 'Notas fiscais';
-  host.innerHTML = nfeHtmlCanal(nfeNotasMenuCanal());
+  host.innerHTML = nfeHtmlCanal(nfeNotasDoMesDoCanal(canalId, f));
 }
 
 async function nfeMontarCanal() {
@@ -43803,7 +43955,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-21-nfe-filtro-tecla: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-21-nfe-filtros-rapidos: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
