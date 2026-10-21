@@ -312,12 +312,14 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker referido no index');
+  assert(html.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker referido no index');
+  assert(!html.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-perdas-sem-999'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker actualizado');
+  assert(!sw.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-vendedor-atual'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-02-nfe-pdf'), 'service worker actualizado');
@@ -1412,6 +1414,7 @@ async function testWhatsappPdf() {
     const iCell = pagina.lastIndexOf('class="nfe-wa"', iWa);
     const iCli = pagina.indexOf('Cliente WA', iWa);
     assert(iBtn > 0 && iBolCell > iBtn && iSn > iBolCell && iCell > iSn && iWa > iCell && iCli > iWa, onde + ': o botão WhatsApp fica a seguir à célula S/N');
+    assert(pagina.includes("onpointerdown=\"nfePrepararWhatsapp('" + chave + "')\" onclick=\"nfeAbrirPdf('" + chave + "')\""), onde + ': o número começa a ler o PDF no toque');
     const celula = pagina.slice(iCell, iCli);
     assert(celula.includes('nfe-wa-btn') && celula.includes('<svg') && celula.includes('#25D366'), onde + ': a célula tem o ícone verde');
     assert(celula.includes('nfePrepararWhatsapp'), onde + ': o toque prepara o PDF antes da folha');
@@ -1552,7 +1555,143 @@ async function testWhatsappPdf() {
   assert(abertosAbort.length === 0, 'cancelar no telemóvel não abre uma ligação só com texto');
 }
 
-testCliqueSemPdf().then(() => testBoletosPdf()).then(() => testBoletosParcelas()).then(() => testWhatsappPdf()).then(() => {
+async function testPdfTabletNuvem() {
+  const junto = Buffer.from('%PDF-1.4 nuvem-junto');
+  const danfe = Buffer.from('%PDF-1.4 so-danfe');
+  const chave = 'NUVEMTABLET1';
+  function notaLeve() {
+    return {
+      chave: chave,
+      numero: '55',
+      serie: '1',
+      canalId: 'horeca',
+      canalNome: 'Horeca',
+      cliente: 'Cliente Nuvem',
+      valor: 1,
+      data: '2026-10-21',
+      status: 'unico',
+      temPdf: true,
+      temBoleto: true,
+      temPdfJunto: true,
+      pdfNome: 'danfe.pdf',
+      pdfJuntoNome: 'NF-55-boleto.pdf',
+      boletoNome: 'Boleto_55-1.pdf',
+    };
+  }
+  const chunk = [{
+    data: {
+      __format: 'nfe_pdfs',
+      pdfs: [{
+        chave: chave,
+        nome: 'danfe.pdf',
+        b64: danfe.toString('base64'),
+        juntoB64: junto.toString('base64'),
+        juntoNome: 'NF-55-boleto.pdf',
+        boletoB64: Buffer.from('%PDF-bol').toString('base64'),
+        boletoNome: 'Boleto_55-1.pdf',
+      }],
+    },
+  }];
+  const fetches = [];
+  global.LISTA_CLIENTES_SUPA_URL = 'https://example.test/lista_clientes';
+  global.SUPA_KEY = 'test-key';
+  global.fetch = async (url) => {
+    fetches.push(String(url));
+    return { ok: true, status: 200, json: async () => chunk };
+  };
+  global.idbGet = async () => null;
+  const UA_ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  const UA_DESKTOP = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  const abertos = [];
+  const blobs = [];
+  if (!global.URL) global.URL = URL;
+  global.URL.createObjectURL = (b) => {
+    blobs.push(b);
+    return 'blob:nfe-teste';
+  };
+  global.URL.revokeObjectURL = () => {};
+  function popup() {
+    const loc = {};
+    Object.defineProperty(loc, 'href', { set(v) { abertos.push(v); }, configurable: true });
+    loc.replace = (v) => { abertos.push(v); };
+    return { closed: false, location: loc, close() { abertos.push('close'); } };
+  }
+  global.window = { open(url) { abertos.push(url); return url === 'about:blank' ? popup() : {}; } };
+  function porNavigator(nav) {
+    Object.defineProperty(global, 'navigator', { value: nav, configurable: true, writable: true });
+  }
+  porNavigator({ userAgent: UA_ANDROID, maxTouchPoints: 5, canShare() { return false; }, share() { return Promise.resolve(); } });
+  const toastsAbrir = [];
+  global.toast = (m) => { toastsAbrir.push(String(m)); };
+  const apiAbrir = loadNfeUi([notaLeve()], '', 'nfe');
+  await apiAbrir.nfeAbrirPdf(chave);
+  assert(!toastsAbrir.some(t => /não tem PDF|nao tem pdf|sem pdf/i.test(t)), 'abrir com bloco na nuvem não diz que não tem PDF, veio ' + toastsAbrir.join('|'));
+  assert(fetches.some(u => u.indexOf('nfe_pdfs_') >= 0 && u.indexOf('cs.') >= 0), 'abrir pede o bloco da nuvem, veio ' + fetches.join('|'));
+  assert(abertos.indexOf('about:blank') === 0, 'no tablet a janela abre no toque, antes do PDF chegar');
+  assert(blobs.some(b => b && b.size > 0), 'abrir recebe um PDF não vazio');
+  const aberto = blobs.find(b => b && b.size > 0);
+  assert(Buffer.from(await aberto.arrayBuffer()).equals(junto), 'o número abre o PDF junto que estava só no bloco');
+
+  const partilhas = [];
+  blobs.length = 0;
+  fetches.length = 0;
+  porNavigator({
+    userAgent: UA_ANDROID,
+    maxTouchPoints: 5,
+    canShare(data) { return !!(data && data.files && data.files[0] && data.files[0].size > 0); },
+    share(data) { partilhas.push(data); return Promise.resolve(); },
+  });
+  const toastsWa = [];
+  global.toast = (m) => { toastsWa.push(String(m)); };
+  const apiWa = loadNfeUi([notaLeve()], '', 'nfe');
+  await apiWa.nfePartilharWhatsapp(chave);
+  assert(!toastsWa.some(t => /não tem PDF|nao tem pdf|sem pdf/i.test(t)), 'WhatsApp com bloco na nuvem não diz que não tem PDF, veio ' + toastsWa.join('|'));
+  assert(fetches.some(u => u.indexOf('nfe_pdfs_') >= 0), 'partilhar também lê o bloco quando a memória e o IndexedDB estão vazios');
+  const f = partilhas[0] && partilhas[0].files && partilhas[0].files[0];
+  assert(f && f.size > 0 && f.type === 'application/pdf', 'o tablet partilha um PDF não vazio');
+  assert(Buffer.from(await f.arrayBuffer()).equals(junto), 'o WhatsApp recebe o PDF junto do bloco, não um ficheiro vazio');
+
+  blobs.length = 0;
+  const abertosPc = [];
+  global._nfeAnchorClicks = [];
+  global.window = { open(url) { abertosPc.push(url); return {}; } };
+  porNavigator({
+    userAgent: UA_DESKTOP,
+    maxTouchPoints: 0,
+    canShare() { return false; },
+    share() { throw new Error('no PC sem partilha de ficheiro o share não corre'); },
+  });
+  const toastsPc = [];
+  global.toast = (m) => { toastsPc.push(String(m)); };
+  const apiPc = loadNfeUi([notaLeve()], '', 'nfe');
+  await apiPc.nfePartilharWhatsapp(chave);
+  assert(toastsPc.some(t => t.indexOf('Neste browser o PDF foi descarregado para anexar no WhatsApp') >= 0), 'no PC o aviso de descarga mantém-se, veio ' + toastsPc.join('|'));
+  assert(abertosPc.some(u => String(u).indexOf('https://wa.me/?text=') === 0), 'no PC continua a abrir o WhatsApp');
+  const pcBlob = blobs.find(b => b && b.size > 0);
+  assert(pcBlob && pcBlob.size > 0 && Buffer.from(await pcBlob.arrayBuffer()).equals(junto), 'no PC o PDF descarregado para anexar não está vazio');
+
+  fetches.length = 0;
+  global.fetch = async () => { fetches.push('falha'); throw new Error('offline'); };
+  const toastsFalha = [];
+  global.toast = (m) => { toastsFalha.push(String(m)); };
+  global.window = { open() { return { close() {}, closed: true, location: null }; } };
+  porNavigator({ userAgent: UA_DESKTOP, maxTouchPoints: 0 });
+  const apiFalha = loadNfeUi([notaLeve()], '', 'nfe');
+  await apiFalha.nfeAbrirPdf(chave);
+  await apiFalha.nfePartilharWhatsapp(chave);
+  assert(toastsFalha.length >= 2 && toastsFalha.every(t => t.indexOf('Não consegui ler o PDF na nuvem') >= 0), 'se o bloco falha e a marca existe, não diz que o PDF não foi carregado, veio ' + toastsFalha.join('|'));
+  assert(!toastsFalha.some(t => t.indexOf('Esta NF não tem PDF') >= 0), 'falha de leitura não usa a mensagem de NF sem PDF');
+
+  global.fetch = async () => ({ ok: true, status: 200, json: async () => [] });
+  const toastsVazio = [];
+  global.toast = (m) => { toastsVazio.push(String(m)); };
+  const apiVazio = loadNfeUi([notaLeve()], '', 'nfe');
+  await apiVazio.nfeAbrirPdf(chave);
+  assert(toastsVazio.some(t => t.indexOf('não tem o PDF na nuvem') >= 0), 'bloco vazio com marca diz que o PDF não está na nuvem, veio ' + toastsVazio.join('|'));
+  assert(!toastsVazio.some(t => t.indexOf('Esta NF não tem PDF.') >= 0), 'bloco vazio não usa a mensagem genérica');
+}
+
+testCliqueSemPdf().then(() => testBoletosPdf()).then(() => testBoletosParcelas()).then(() => testWhatsappPdf()).then(() => testPdfTabletNuvem()).then(() => {
   if (failed) {
     console.error(failed + ' asserção(ões) falharam');
     process.exit(1);

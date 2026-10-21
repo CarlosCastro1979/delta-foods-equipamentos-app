@@ -13424,6 +13424,8 @@ let _nfeGen = 0;
 let _nfeBusy = false;
 /** PDF já gravados na nuvem (célula da nota ou blocos nfe_pdfs_N), chave → { nome, b64 }. */
 let _nfePdfsNuvem = {};
+/** Blocos nfe_pdfs_N que falharam nesta leitura. O clique ainda tenta o bloco da nota. */
+let _nfePdfNuvemErros = 0;
 
 function nfeListaTemDocs(lista) {
   for (const c of lista || []) {
@@ -13454,18 +13456,26 @@ function nfePrepararChrome() {
 async function nfeLerPdfsNuvem(nChunks) {
   const n = Number(nChunks) || 0;
   const pdfs = {};
+  let erros = 0;
   for (let i = 0; i < n; i++) {
-    const res = await fetch(
-      `${LISTA_CLIENTES_SUPA_URL}?id=eq.${NFE_PDF_CHUNK_PREFIX}${i}&select=data`,
-      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
-    );
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const rows = await res.json();
-    const data = rows && rows[0] && rows[0].data;
-    const lista = data && (Array.isArray(data.pdfs) ? data.pdfs : (Array.isArray(data) ? data : []));
-    const map = typeof nfeMapaPdfsDeChunks === 'function' ? nfeMapaPdfsDeChunks([lista]) : {};
-    Object.assign(pdfs, map);
+    try {
+      const res = await fetch(
+        `${LISTA_CLIENTES_SUPA_URL}?id=eq.${NFE_PDF_CHUNK_PREFIX}${i}&select=data`,
+        { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, Accept: 'application/json' }, cache: 'no-store' }
+      );
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const rows = await res.json();
+      const data = rows && rows[0] && rows[0].data;
+      const lista = data && (Array.isArray(data.pdfs) ? data.pdfs : (Array.isArray(data) ? data : []));
+      const map = typeof nfeMapaPdfsDeChunks === 'function' ? nfeMapaPdfsDeChunks([lista]) : {};
+      Object.assign(pdfs, map);
+    } catch (e) {
+      erros++;
+      console.warn('nfe pdf chunk', i, e);
+    }
   }
+  _nfePdfNuvemErros = erros;
+  if (n > 0 && erros === n) throw new Error('Não foi possível ler os PDF na nuvem.');
   return pdfs;
 }
 
@@ -13733,7 +13743,12 @@ async function nfeHidrate() {
     if (!r) return true;
     return typeof nfeAtribDifere === 'function' ? nfeAtribDifere(r, n) : false;
   });
-  if (remotoDesatualizado && _nfeNotas.length) {
+  // Sem os bytes neste ecrã, gravar por cima apagava os blocos nfe_pdfs_N que o PC já tinha posto na nuvem.
+  const faltaBytesNaNuvemLocal = (_nfeNotas || []).some(n => {
+    if (!n || typeof nfeNotaTemMarcaPdf !== 'function' || !nfeNotaTemMarcaPdf(n)) return false;
+    return !nfeNotaJaTemPdf(n);
+  });
+  if (remotoDesatualizado && _nfeNotas.length && !faltaBytesNaNuvemLocal) {
     await nfePersistir(_nfeNotas);
   } else if (faltaLocal || reap.alteradas > 0) {
     try {
@@ -14330,7 +14345,7 @@ function nfeNumeroCelula(n) {
   const ch = String((n && n.chave) || '').replace(/[^0-9A-Za-z]/g, '');
   if (!ch || !n || !n.numero) return num + serie;
   const titulo = (n.temPdfJunto || n.temBoleto) ? 'Abrir NF e boleto' : 'Abrir o PDF desta NF';
-  return `<button type="button" class="nfe-click" title="${titulo}" onclick="nfeAbrirPdf('${ch}')">${num}</button>${serie}`;
+  return `<button type="button" class="nfe-click" title="${titulo}" onpointerdown="nfePrepararWhatsapp('${ch}')" onclick="nfeAbrirPdf('${ch}')">${num}</button>${serie}`;
 }
 
 function nfeBoletoCelula(n) {
@@ -14639,7 +14654,15 @@ function cvmPeriodoMudou() {
 }
 
 function nfeBytesDeBase64(b64) {
-  const bin = atob(String(b64 || ''));
+  let s = String(b64 || '').trim();
+  const mark = s.indexOf('base64,');
+  if (mark >= 0) s = s.slice(mark + 7);
+  s = s.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  if (!s) return new Uint8Array(0);
+  const mod = s.length % 4;
+  if (mod === 1) throw new Error('base64');
+  if (mod) s += '='.repeat(4 - mod);
+  const bin = atob(s);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i) & 255;
   return bytes;
@@ -14654,6 +14677,136 @@ function nfeNotaJaTemPdf(nota) {
   return false;
 }
 
+/** A célula leve ficou com a marca (temPdf, nome, boleto) depois de tirar o base64. */
+function nfeNotaTemMarcaPdf(nota) {
+  if (!nota) return false;
+  if (nota.temPdf || nota.temPdfJunto || nota.temBoleto) return true;
+  if (typeof nota.pdfNome === 'string' && nota.pdfNome.length > 0) return true;
+  if (typeof nota.pdfJuntoNome === 'string' && nota.pdfJuntoNome.length > 0) return true;
+  if (typeof nota.boletoNome === 'string' && nota.boletoNome.length > 0) return true;
+  if (Array.isArray(nota.boletos) && nota.boletos.length > 0) return true;
+  return false;
+}
+
+function nfeListaUrlPdf() {
+  return (typeof LISTA_CLIENTES_SUPA_URL === 'string') ? LISTA_CLIENTES_SUPA_URL : '';
+}
+
+function nfePrefixPdfNuvem() {
+  return (typeof NFE_PDF_CHUNK_PREFIX === 'string' && NFE_PDF_CHUNK_PREFIX) ? NFE_PDF_CHUNK_PREFIX : 'nfe_pdfs_';
+}
+
+function nfeIdNotasNuvem() {
+  return (typeof NFE_STORE_ID === 'string' && NFE_STORE_ID) ? NFE_STORE_ID : 'nfe_emitidas';
+}
+
+function nfeMapaTemBytes(map, ch) {
+  const hit = map && map[ch];
+  if (!hit) return false;
+  if (hit.b64 || hit.pdfBase64 || hit.juntoB64 || hit.pdfJuntoBase64 || hit.boletoB64 || hit.boletoBase64) return true;
+  return Array.isArray(hit.boletos) && hit.boletos.some(b => b && (b.b64 || b.pdfBase64 || b.boletoBase64));
+}
+
+function nfeMapaDeRowsPdf(rows) {
+  const lista = Array.isArray(rows) ? rows : [];
+  const chunks = lista.map(r => (r && r.data) ? r.data : r).filter(Boolean);
+  return (typeof nfeMapaPdfsDeChunks === 'function') ? nfeMapaPdfsDeChunks(chunks) : {};
+}
+
+function nfeCopiarPdfParaNota(nota, map) {
+  if (!nota || !map || typeof nfeJuntarPdfsLocais !== 'function') return;
+  const j = nfeJuntarPdfsLocais([nota], map)[0];
+  if (!j) return;
+  ['pdfBase64', 'pdfNome', 'temPdf', 'boletoBase64', 'boletoNome', 'temBoleto', 'boletos', 'pdfJuntoBase64', 'pdfJuntoNome', 'temPdfJunto'].forEach(k => {
+    if (j[k] == null || j[k] === '') return;
+    if (Array.isArray(j[k]) && !j[k].length) return;
+    nota[k] = j[k];
+  });
+}
+
+function nfeGuardarHitNoIdb(ch, hit) {
+  if (!ch || !hit || typeof idbGet !== 'function' || typeof idbSet !== 'function') return;
+  idbGet('delta_nfe_pdfs').then(pack => {
+    const pdfs = Object.assign({}, (pack && pack.pdfs) || {});
+    pdfs[ch] = Object.assign({}, pdfs[ch] || {}, hit);
+    return idbSet('delta_nfe_pdfs', { pdfs: pdfs, ts: new Date().toISOString() });
+  }).catch(() => {});
+}
+
+async function nfeFetchJsonPdf(url) {
+  const key = (typeof SUPA_KEY === 'string') ? SUPA_KEY : '';
+  const res = await fetch(url, {
+    headers: { apikey: key, Authorization: 'Bearer ' + key, Accept: 'application/json' },
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const err = new Error('HTTP ' + res.status);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+async function nfeChunksPdfPorIndice(ch) {
+  const base = nfeListaUrlPdf();
+  const prefix = nfePrefixPdfNuvem();
+  const idRes = await nfeFetchJsonPdf(base + '?id=like.' + prefix + '*&select=id');
+  const ids = (idRes || []).map(r => r && r.id).filter(id => new RegExp('^' + prefix + '\\d+$').test(String(id || ''))).sort((a, b) => {
+    return parseInt(String(a).slice(prefix.length), 10) - parseInt(String(b).slice(prefix.length), 10);
+  });
+  for (let i = 0; i < ids.length; i++) {
+    const rows = await nfeFetchJsonPdf(base + '?id=eq.' + encodeURIComponent(ids[i]) + '&select=data');
+    if (nfeMapaTemBytes(nfeMapaDeRowsPdf(rows), ch)) return rows;
+  }
+  return [];
+}
+
+async function nfePdfInlineDaCelula(ch) {
+  const rows = await nfeFetchJsonPdf(nfeListaUrlPdf() + '?id=eq.' + nfeIdNotasNuvem() + '&select=data');
+  const data = Array.isArray(rows) && rows[0] && rows[0].data;
+  const notas = data && Array.isArray(data.notas) ? data.notas : [];
+  const n = notas.find(x => x && String(x.chave) === ch);
+  if (!n || typeof nfeMapaPdfs !== 'function') return null;
+  const map = nfeMapaPdfs([n], {});
+  return nfeMapaTemBytes(map, ch) ? map : null;
+}
+
+/**
+ * O tablet não tem o IndexedDB do PC. O binário está nos blocos nfe_pdfs_N
+ * (ou, se coube, na célula da nota). Uma leitura falhada não é «não tem PDF».
+ */
+async function nfeCarregarPdfDaNuvem(ch) {
+  const base = nfeListaUrlPdf();
+  if (!ch || !base || typeof fetch !== 'function') return { map: null, erro: false, semLigacao: true };
+  if (typeof _nfePdfsNuvem === 'object' && _nfePdfsNuvem && nfeMapaTemBytes(_nfePdfsNuvem, ch)) {
+    return { map: _nfePdfsNuvem, erro: false };
+  }
+  try {
+    const filtro = encodeURIComponent(JSON.stringify([{ chave: ch }]));
+    const url = base + '?id=like.' + nfePrefixPdfNuvem() + '*&select=data&data-%3Epdfs=cs.' + filtro;
+    let rows;
+    try {
+      rows = await nfeFetchJsonPdf(url);
+    } catch (e) {
+      if (e && e.status === 400) rows = await nfeChunksPdfPorIndice(ch);
+      else throw e;
+    }
+    let map = nfeMapaDeRowsPdf(rows);
+    if (!nfeMapaTemBytes(map, ch)) {
+      const inline = await nfePdfInlineDaCelula(ch);
+      if (inline) map = Object.assign({}, map || {}, inline);
+    }
+    if (nfeMapaTemBytes(map, ch)) {
+      if (typeof _nfePdfsNuvem === 'object' && _nfePdfsNuvem) _nfePdfsNuvem[ch] = map[ch];
+      nfeGuardarHitNoIdb(ch, map[ch]);
+    }
+    return { map: map || {}, erro: false };
+  } catch (e) {
+    console.warn('nfe pdf nuvem clique', e);
+    return { map: null, erro: true };
+  }
+}
+
 async function nfePdfResolvido(chave) {
   const ch = String(chave || '').replace(/[^0-9A-Za-z]/g, '');
   const nota = (_nfeNotas || []).find(n => n && String(n.chave) === ch) || null;
@@ -14664,9 +14817,25 @@ async function nfePdfResolvido(chave) {
       map = pack && pack.pdfs;
     } catch (_) { map = null; }
   }
-  const hit = (typeof nfePdfDaNota === 'function')
+  let hit = (typeof nfePdfDaNota === 'function')
     ? nfePdfDaNota(nota, map)
     : { ok: false, msg: 'Esta NF não tem PDF.' };
+  if (hit && hit.ok && hit.pdfBase64) return { nota, hit };
+  const nuvem = await nfeCarregarPdfDaNuvem(ch);
+  if (nuvem && nuvem.map) {
+    nfeCopiarPdfParaNota(nota, nuvem.map);
+    hit = (typeof nfePdfDaNota === 'function')
+      ? nfePdfDaNota(nota, Object.assign({}, map || {}, nuvem.map))
+      : hit;
+    if (hit && hit.ok && hit.pdfBase64) return { nota, hit };
+  }
+  if (nuvem && nuvem.erro && nfeNotaTemMarcaPdf(nota)) {
+    return { nota, hit: { ok: false, msg: 'Não consegui ler o PDF na nuvem. Tenta outra vez.' } };
+  }
+  if (nuvem && !nuvem.erro && !nuvem.semLigacao && nfeNotaTemMarcaPdf(nota)) {
+    return { nota, hit: { ok: false, msg: 'Esta NF não tem o PDF na nuvem. No PC, carrega outra vez o ZIP de XML e PDF da TTI.' } };
+  }
+  if (!hit || hit.ok) hit = { ok: false, msg: 'Esta NF não tem PDF.' };
   return { nota, hit };
 }
 
@@ -14688,7 +14857,8 @@ function nfeFicheiroPdf(hit, nota) {
     nome = num ? ('NF_' + num + '.pdf') : 'NF.pdf';
   }
   if (!/\.pdf$/i.test(nome)) nome += '.pdf';
-  return new File([bytes], nome, { type: 'application/pdf' });
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  return new File([blob], nome, { type: 'application/pdf' });
 }
 
 function nfePodePartilharFicheiro(file) {
@@ -14748,7 +14918,14 @@ function nfePrepararWhatsapp(chave) {
 
 async function nfePacoteWhatsapp(chave) {
   const { nota, hit } = await nfePdfResolvido(chave);
-  const file = (hit && hit.ok) ? nfeFicheiroPdf(hit, nota) : null;
+  let file = null;
+  if (hit && hit.ok) {
+    try { file = nfeFicheiroPdf(hit, nota); }
+    catch (_) { file = null; }
+  }
+  if (hit && hit.ok && !file) {
+    return { nota, hit: { ok: false, msg: 'O PDF está gravado, mas este ecrã não conseguiu abri-lo. Tenta outra vez.' }, file: null };
+  }
   return { nota, hit, file };
 }
 
@@ -14756,40 +14933,60 @@ function nfeErroSemFicheiro(err) {
   return !!(err && (err.name === 'TypeError' || err.name === 'DataError' || err.name === 'NotSupportedError'));
 }
 
-async function nfeAbrirPdf(chave) {
-  try {
-    const { hit } = await nfePdfResolvido(chave);
-    if (!hit.ok || !hit.pdfBase64) {
-      if (typeof toast === 'function') toast((hit && hit.msg) || 'Esta NF não tem PDF.', 'error');
-      return;
-    }
-    const bytes = nfeBytesDeBase64(hit.pdfBase64);
-    if (!bytes.length) {
-      if (typeof toast === 'function') toast('Esta NF não tem PDF.', 'error');
-      return;
-    }
-    const blob = new Blob([bytes], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    let aberto = false;
+function nfeAbrirBlobPdf(url, popup) {
+  if (popup && !popup.closed && popup.location) {
     try {
-      if (typeof window !== 'undefined' && typeof window.open === 'function') {
-        const w = window.open(url, '_blank');
-        aberto = !!w;
-      }
-    } catch (_) { aberto = false; }
-    if (!aberto && typeof document !== 'undefined' && document.createElement) {
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      if (document.body) document.body.appendChild(a);
-      a.click();
-      if (a.remove) a.remove();
+      if (typeof popup.location.replace === 'function') popup.location.replace(url);
+      else popup.location.href = url;
+      return true;
+    } catch (_) {}
+  }
+  let aberto = false;
+  try {
+    if (typeof window !== 'undefined' && typeof window.open === 'function') {
+      const w = window.open(url, '_blank');
+      aberto = !!w;
     }
+  } catch (_) { aberto = false; }
+  if (!aberto && typeof document !== 'undefined' && document.createElement) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    if (document.body) document.body.appendChild(a);
+    a.click();
+    if (a.remove) a.remove();
+  }
+  return true;
+}
+
+async function nfeAbrirPdf(chave) {
+  const ch = String(chave || '').replace(/[^0-9A-Za-z]/g, '');
+  // No Android o window.open depois do await é bloqueado. A janela abre já no toque.
+  let popup = null;
+  if (nfeEhTelemovel() && typeof window !== 'undefined' && typeof window.open === 'function') {
+    try { popup = window.open('about:blank', '_blank'); } catch (_) { popup = null; }
+  }
+  try {
+    let pendente = _nfeWaPronto.get(ch);
+    if (!pendente) pendente = nfePacoteWhatsapp(ch);
+    const pack = await pendente;
+    const hit = pack && pack.hit;
+    const file = pack && pack.file;
+    if (!hit || !hit.ok || !file || !file.size) {
+      if (popup && popup.close) { try { popup.close(); } catch (_) {} }
+      if (typeof toast === 'function') toast((hit && hit.msg) || 'Esta NF não tem PDF.', 'error');
+      _nfeWaPronto.delete(ch);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    nfeAbrirBlobPdf(url, popup);
     setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 120000);
   } catch (e) {
+    if (popup && popup.close) { try { popup.close(); } catch (_) {} }
+    _nfeWaPronto.delete(ch);
     console.warn('nfe pdf', e);
-    if (typeof toast === 'function') toast('Esta NF não tem PDF.', 'error');
+    if (typeof toast === 'function') toast('O PDF está gravado, mas este ecrã não conseguiu abri-lo. Tenta outra vez.', 'error');
   }
 }
 
@@ -14804,14 +15001,15 @@ async function nfePartilharWhatsapp(chave, ev) {
       _nfeWaPronto.set(ch, pendente);
     }
     const pack = await pendente;
-    _nfeWaPronto.delete(ch);
     const nota = pack && pack.nota;
     const hit = pack && pack.hit;
     const file = pack && pack.file;
     if (!hit || !hit.ok || !file || !file.size) {
+      _nfeWaPronto.delete(ch);
       if (typeof toast === 'function') toast((hit && hit.msg) || 'Esta NF não tem PDF.', 'error');
       return;
     }
+    _nfeWaPronto.delete(ch);
     const num = nota && nota.numero ? String(nota.numero) : '';
     const texto = num ? ('NF ' + num) : 'NF';
     const telemovel = nfeEhTelemovel();
@@ -14823,6 +15021,11 @@ async function nfePartilharWhatsapp(chave, ev) {
         await navigator.share({ files: [file], title: texto, text: texto });
       } catch (err) {
         if (err && err.name === 'AbortError') return;
+        if (err && err.name === 'NotAllowedError') {
+          _nfeWaPronto.set(ch, Promise.resolve(pack));
+          if (typeof toast === 'function') toast('O PDF já está pronto. Toca outra vez no WhatsApp para escolher o contacto.', 'warn');
+          return;
+        }
         if (telemovel) {
           if (nfeErroSemFicheiro(err)) {
             nfeDescarregarPdf(file);
@@ -43367,7 +43570,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-20-nfe-whatsapp-contacto: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-21-nfe-pdf-tablet: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
