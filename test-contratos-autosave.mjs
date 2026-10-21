@@ -11,7 +11,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-21-nfe-contratos-prod';
+const CACHE = 'v2026-10-21-vendas-merge-dias';
 
 function extractFn(src, name) {
   const start = src.indexOf(`function ${name}(`);

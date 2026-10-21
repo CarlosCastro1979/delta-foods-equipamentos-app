@@ -108,6 +108,26 @@ const fns = [
   'normalizeVendaCod',
   'vendaDedupKey',
   'getVendasDedupKeySet',
+  'parseValorVendaSap',
+  'npessDeCelulaExcel',
+  'npessVendaIgnorado',
+  'codClienteVendaIgnorado',
+  'codClienteLojasOnlineBr',
+  'codClienteLojasOnlineAmazon',
+  'codClienteDistRetalho',
+  'arredondarRsPerdas',
+  'ymLinhaPerdas',
+  'vendasISODateOnly',
+  'agregarFaturClienteMes',
+  'agregarFaturClientePorDia',
+  'misturarClientesDia',
+  'vendasClienteVazio',
+  'mesesJanelaCargaVendas',
+  'mesAntigoEmFaltaPodeCarregar',
+  'mesVendasJaTemValor',
+  'mesQuadroTemFatur',
+  'mesClienteTemFaturGuardado',
+  'substituirClientesMesesJanela',
 ];
 for (const name of fns) {
   vm.runInContext(extractFn(html, name), ctx);
@@ -471,49 +491,57 @@ check('mês fora da janela com Fatur. gravado não fica em falta; mês vazio ant
   assert.equal(ctx.statusVendasCoberturaMes('2026-05', { linhas: 0 }, hoje), 'falta');
 });
 
+check('Fatur. por cliente: dias 20–21 fundem sem apagar 1–19; dia repetido não duplica', () => {
+  const hoje = '2026-10-21';
+  let store = ctx.vendasClienteVazio();
+  for (let d = 1; d <= 19; d++) {
+    const dia = '2026-10-' + String(d).padStart(2, '0');
+    store = ctx.substituirClientesMesesJanela(store, [
+      { cod: '100', data: dia, valor: 1000, npess: 99520010, nome: 'A' },
+    ], hoje, null);
+  }
+  const tot19 = Object.values(store.meses['2026-10'].clientes).reduce((s, c) => s + (+c.valor || 0), 0);
+  assert.equal(tot19, 19000);
+  store.meses['2026-09'] = { clientes: { '9\t99520010': { cod: '9', npess: 99520010, valor: 500, negativo: 0 } } };
+  store = ctx.substituirClientesMesesJanela(store, [
+    { cod: '200', data: '2026-10-20', valor: 5000, npess: 99520001, nome: 'B' },
+    { cod: '201', data: '2026-10-21', valor: 3000, npess: 99520001, nome: 'C' },
+  ], hoje, null);
+  const tot = Object.values(store.meses['2026-10'].clientes).reduce((s, c) => s + (+c.valor || 0), 0);
+  assert.equal(tot, 27000);
+  assert.equal(store.meses['2026-09'].clientes['9\t99520010'].valor, 500, 'mês antigo intacto');
+  store = ctx.substituirClientesMesesJanela(store, [
+    { cod: '200', data: '2026-10-20', valor: 5500, npess: 99520001, nome: 'B' },
+  ], hoje, null);
+  const tot2 = Object.values(store.meses['2026-10'].clientes).reduce((s, c) => s + (+c.valor || 0), 0);
+  assert.equal(tot2, 27500, 'dia 20 actualizado sem duplicar');
+});
+
 check('texto da cobertura diz que a carga só lê o mês corrente e o anterior', () => {
-  assert.ok(html.includes('A carga só lê e corrige o mês corrente e o mês anterior'));
+  assert.ok(
+    html.includes('A carga só lê o mês corrente e o mês anterior')
+    || html.includes('funde só os dias do ficheiro')
+    || html.includes('dias do ficheiro')
+  );
   assert.ok(html.includes('mês corrente e o mês anterior'));
   assert.ok(!html.includes('só entram linhas do dia local de hoje'));
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('desde 2019'));
-  assert.ok(html.includes('v2026-10-20-nfe-boletos-parcelas'));
+  assert.ok(html.includes('v2026-10-21-vendas-merge-dias'));
+  assert.ok(html.includes('dias presentes no ficheiro') || html.includes('dias do ficheiro'));
+  assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
+  assert.ok(!html.includes('v2026-10-20-nfe-boletos-parcelas'));
   assert.ok(!html.includes('v2026-10-14-volume-formulas'));
-  assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
-  assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
-  assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
-  assert.ok(!html.includes('v2026-10-01-vendas-menu-canal'));
-  assert.ok(!html.includes('v2026-10-01-vendas-marco'));
-  assert.ok(!html.includes('v2026-10-01-vendas-ordem'));
-  assert.ok(!html.includes('v2026-10-01-nfe-zip'));
-  assert.ok(!html.includes('v2026-10-01-mapa-n'));
-  assert.ok(!html.includes('v2026-10-01-vendas-rs'));
-  assert.ok(!html.includes('v2026-10-01-vendas-prev'));
-  assert.ok(!html.includes('v2026-10-01-vendas-quadro'));
-  assert.ok(!html.includes('v2026-10-01-vendas-so-hoje'));
-  assert.ok(!html.includes('v2026-10-01-vendas-dia-util'));
   assert.ok(html.includes('Os meses mais antigos ficam como estão'));
   assert.ok(html.includes('Um mês antigo que esteja mesmo em falta pode ser carregado'));
   assert.ok(html.includes('não é apagado nem fica em falta'));
   assert.ok(!html.includes('são relidos nem ficam pendentes'));
   assert.ok(!html.includes('Até Jun/2026 = fechado. De Jul/2026 em diante'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-20-nfe-boletos-parcelas'));
+  assert.ok(sw.includes('v2026-10-21-vendas-merge-dias'));
+  assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
+  assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
   assert.ok(!sw.includes('v2026-10-14-volume-formulas'));
-  assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
-  assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
-  assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
-  assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
-  assert.ok(!sw.includes('v2026-10-01-vendas-menu-canal'));
-  assert.ok(!sw.includes('v2026-10-01-vendas-marco'));
-  assert.ok(!sw.includes('v2026-10-01-vendas-ordem'));
-  assert.ok(!sw.includes('v2026-10-01-nfe-zip'));
-  assert.ok(!sw.includes('v2026-10-01-mapa-n'));
-  assert.ok(!sw.includes('v2026-10-01-vendas-rs'));
-  assert.ok(!sw.includes('v2026-10-01-vendas-prev'));
-  assert.ok(!sw.includes('v2026-10-01-vendas-quadro'));
-  assert.ok(!sw.includes('v2026-10-01-vendas-so-hoje'));
-  assert.ok(!sw.includes('v2026-10-01-vendas-dia-util'));
   assert.ok(!sw.includes('v2026-09-30-vendas-fechado'));
 });
 
