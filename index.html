@@ -14092,7 +14092,11 @@ function nfeChaveFiltro(key) {
 
 const NFE_FILTROS_LS = 'delta_nfe_filtros';
 const NFE_FILTROS_MS = 1000;
+/** Debounce do re-paint ao escrever cliente/número — evita recriar o input a cada tecla (duplicava letras no tablet). */
+const NFE_TEXTO_MS = 220;
 let _nfeFiltrosTimer = null;
+let _nfeTextoTimer = null;
+let _nfeTextoFocus = null;
 let _nfeUi = null;
 
 function nfeUiBlank() {
@@ -14188,6 +14192,47 @@ function nfeFocarCampo(prefix, campo) {
   } catch (_) {}
 }
 
+function nfeCancelarPaintTexto() {
+  try { clearTimeout(_nfeTextoTimer); } catch (_) {}
+  _nfeTextoTimer = null;
+  _nfeTextoFocus = null;
+}
+
+/** Aplica o re-paint adiado do filtro de texto (cliente/número). */
+function nfeFlushPaintTexto() {
+  const pending = _nfeTextoFocus;
+  nfeCancelarPaintTexto();
+  if (!pending) return;
+  const geral = pending.prefix === 'nfe-geral';
+  if (geral) nfePaint();
+  else nfePaintCanal();
+  nfeFocarCampo(pending.prefix, pending.campo);
+}
+
+function nfeAgendarPaint(scope, campo) {
+  const geral = scope === 'geral';
+  const texto = campo === 'cliente' || campo === 'numero';
+  if (!texto) {
+    nfeCancelarPaintTexto();
+    if (geral) nfePaint();
+    else nfePaintCanal();
+    return;
+  }
+  /* Estado já está actualizado; o input no DOM mantém o que o utilizador escreveu.
+     Só recriamos a lista depois de uma pausa — senão cada tecla destroi o input e
+     o teclado (tablet) reaplica a letra → "a"+"b" vira "aab" / "aabcab". */
+  _nfeTextoFocus = { prefix: geral ? 'nfe-geral' : 'nfe-canal', campo: campo };
+  try { clearTimeout(_nfeTextoTimer); } catch (_) {}
+  _nfeTextoTimer = setTimeout(function () {
+    nfeFlushPaintTexto();
+  }, NFE_TEXTO_MS);
+  try { if (_nfeTextoTimer && typeof _nfeTextoTimer.unref === 'function') _nfeTextoTimer.unref(); } catch (_) {}
+}
+
+/**
+ * Actualiza um filtro. Para cliente/número o valor deve ser o input.value completo
+ * (nunca previous + event.data). O re-paint da lista é adiado nesses campos.
+ */
 function nfeSetFiltro(scope, campo, valor) {
   const geral = scope === 'geral';
   const f = geral ? nfeFiltrosGeral() : nfeFiltrosCanalActivos();
@@ -14206,9 +14251,7 @@ function nfeSetFiltro(scope, campo, valor) {
   if (geral) _nfeFiltro = f.canal || '';
   else _nfeFiltroCanal = f.vendedor || '';
   nfeAgendarFiltros();
-  if (geral) nfePaint();
-  else nfePaintCanal();
-  nfeFocarCampo(geral ? 'nfe-geral' : 'nfe-canal', campo);
+  nfeAgendarPaint(scope, campo);
 }
 
 function nfeFiltrar(key) {
@@ -14217,6 +14260,7 @@ function nfeFiltrar(key) {
   if (!k || k === 'total') f.canal = '';
   else f.canal = (f.canal === k) ? '' : k;
   _nfeFiltro = f.canal || '';
+  nfeCancelarPaintTexto();
   nfeAgendarFiltros();
   nfePaint();
 }
@@ -14230,6 +14274,7 @@ function nfeLimparFiltro() {
   f.numero = '';
   f.canal = '';
   _nfeFiltro = '';
+  nfeCancelarPaintTexto();
   try { clearTimeout(_nfeFiltrosTimer); } catch (_) {}
   nfeGravarFiltros();
   nfePaint();
@@ -14508,10 +14553,10 @@ function nfeFiltrosHtml(scope, notas) {
       <input type="date" id="${pre}-dia" class="form-input" min="${escHtml(mes)}-01" max="${escHtml(mes)}-${ultimo}" value="${escHtml(f.dia)}" onchange="nfeSetFiltro('${scope}','dia',this.value)">
     </label>
     <label>Cliente
-      <input type="text" id="${pre}-cliente" class="form-input" autocomplete="off" value="${escHtml(f.cliente)}" placeholder="Nome ou código" oninput="nfeSetFiltro('${scope}','cliente',this.value)">
+      <input type="text" id="${pre}-cliente" class="form-input" autocomplete="off" value="${escHtml(f.cliente)}" placeholder="Nome ou código" oninput="nfeSetFiltro('${scope}','cliente',this.value)" oncompositionend="nfeSetFiltro('${scope}','cliente',this.value)">
     </label>
     <label>Número NF
-      <input type="text" id="${pre}-numero" class="form-input" inputmode="numeric" autocomplete="off" value="${escHtml(f.numero)}" placeholder="Número" oninput="nfeSetFiltro('${scope}','numero',this.value)">
+      <input type="text" id="${pre}-numero" class="form-input" inputmode="numeric" autocomplete="off" value="${escHtml(f.numero)}" placeholder="Número" oninput="nfeSetFiltro('${scope}','numero',this.value)" oncompositionend="nfeSetFiltro('${scope}','numero',this.value)">
     </label>
   </div>`;
 }
@@ -14757,6 +14802,7 @@ function nfeFiltrarCanal(key) {
   f.canal = '';
   _nfeFiltroCanal = f.vendedor || '';
   _nfeFiltroCanalId = canalId;
+  nfeCancelarPaintTexto();
   nfeAgendarFiltros();
   nfePaintCanal();
 }
@@ -14770,6 +14816,7 @@ function nfeLimparFiltroCanal() {
   f.numero = '';
   f.canal = '';
   _nfeFiltroCanal = '';
+  nfeCancelarPaintTexto();
   try { clearTimeout(_nfeFiltrosTimer); } catch (_) {}
   nfeGravarFiltros();
   nfePaintCanal();
@@ -43756,7 +43803,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-21-nfe-filtro-mes: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-21-nfe-filtro-tecla: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

@@ -319,14 +319,16 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-21-nfe-filtro-mes'), 'service worker referido no index');
+  assert(html.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker referido no index');
+  assert(!html.includes('v2026-10-21-nfe-filtro-mes'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-perdas-sem-999'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-21-nfe-filtro-mes'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker actualizado');
+  assert(!sw.includes('v2026-10-21-nfe-filtro-mes'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-20-nfe-whatsapp-contacto'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker actualizado');
@@ -392,9 +394,22 @@ function loadNfeUi(notas, canalId, pvView) {
     '',
     false,
   ];
-  const api = new Function(...names, src + '\nreturn { nfePaintCanal, nfeHtml, nfeSetFiltro, nfeFiltrarCanal, nfeLimparFiltroCanal, nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, nfeAbrirPdf, nfePartilharWhatsapp, el: null };')(...vals);
+  const api = new Function(...names, src + '\nreturn { nfePaintCanal, nfePaint, nfeHtml, nfeSetFiltro, nfeFlushPaintTexto, nfeFiltrarCanal, nfeLimparFiltroCanal, nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, nfeAbrirPdf, nfePartilharWhatsapp, nfeFiltrosGeral, nfeFiltrosCanalActivos, el: null };')(...vals);
   api.el = el;
   return api;
+}
+
+/** Simula digitar letra a letra no filtro de cliente (valor = acumulado, como input.value). */
+function simularTeclasCliente(ui, scope, texto) {
+  const passos = [];
+  let acc = '';
+  for (const ch of String(texto || '')) {
+    acc += ch;
+    ui.nfeSetFiltro(scope, 'cliente', acc);
+    const f = scope === 'geral' ? ui.nfeFiltrosGeral() : ui.nfeFiltrosCanalActivos();
+    passos.push(String(f.cliente || ''));
+  }
+  return passos;
 }
 
 function brl(v) {
@@ -484,11 +499,13 @@ function testFiltrosETotal(zipPath) {
   assert(host.includes('Total da lista: 12 notas') && host.includes(brl(somaHelcio)), 'Hélcio + 01/10/2026 continua a ser as 12 notas');
   assert(host.includes('01/10/2026'), 'o banner junta o dia ao vendedor');
   horeca.nfeSetFiltro('canal', 'numero', '102255');
+  horeca.nfeFlushPaintTexto();
   host = horeca.el('canal-nfe-host').innerHTML;
   assert(host.includes('Total da lista: 1 nota'), 'filtro de número deixa uma nota');
   assert(host.includes(brl(nota255.valor)), 'o total dessa nota é o valor dela');
   assert(host.includes('102255') && !host.includes('102241') && !host.includes('2.409,79'), 'as outras notas do Hélcio saem da lista');
   horeca.nfeSetFiltro('canal', 'numero', '102243');
+  horeca.nfeFlushPaintTexto();
   host = horeca.el('canal-nfe-host').innerHTML;
   assert(host.includes('Nenhuma nota neste filtro.'), 'Hélcio + NF do Paulo não devolve notas');
   horeca.nfeLimparFiltroCanal();
@@ -1142,6 +1159,18 @@ function testFiltroMesCliente() {
   const iBol = g.indexOf('102605');
   assert(g.slice(iBol, iBol + 500).includes('>S<'), 'a coluna Boleto mantém o S');
 
+  assert(g.includes("nfeSetFiltro('geral','cliente',this.value)"), 'o input de cliente usa this.value (não concatena event.data)');
+  assert(/NFE_TEXTO_MS\s*=\s*220/.test(fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8')), 'há debounce do re-paint ao escrever');
+
+  const teclas = simularTeclasCliente(ui, 'geral', 'jules');
+  assert(teclas.join('|') === 'j|ju|jul|jule|jules', 'cada tecla acrescenta só essa letra: ' + teclas.join('|'));
+  assert(ui.nfeFiltrosGeral().cliente === 'jules', 'o estado final é jules sem duplicar');
+  const antesPaint = ui.el('pv-canal-panels').innerHTML;
+  assert(!antesPaint.includes('value="jules"') || !antesPaint.includes('102605'), 'durante a digitação o paint da lista ainda não correu (debounce)');
+  ui.nfeFlushPaintTexto();
+  g = ui.el('pv-canal-panels').innerHTML;
+  assert(g.includes('value="jules"') && g.includes('102605') && !g.includes('102610'), 'após o flush, o campo mostra jules e filtra');
+
   ui.nfeSetFiltro('geral', 'cliente', 'jules');
   g = ui.nfeHtml();
   assert(g.includes('102605') && !g.includes('102610') && !g.includes('102240'), 'o nome parcial filtra a lista');
@@ -1158,6 +1187,7 @@ function testFiltroMesCliente() {
   g = ui.nfeHtml();
   assert(g.includes('Nenhuma nota neste filtro.'), 'o código do cliente não é o número da NF');
   ui.nfeSetFiltro('geral', 'cliente', '');
+  ui.nfeFlushPaintTexto();
   ui.nfeSetFiltro('geral', 'dia', '2026-10-20');
   g = ui.nfeHtml();
   assert(g.includes('value="2026-10-20"') && g.includes('20/10/2026'), 'o dia escolhido fica no filtro e no banner');
