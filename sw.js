@@ -1,4 +1,4 @@
-// Service Worker v2026-10-21-nfe-filtros-rapidos — limpa cache e auto-destrói
+// Service Worker v2026-10-21-nfe-mes-quente — limpa cache e auto-destrói
 // (a app não deve servir index.html antigo após merge no GitHub Pages)
 self.addEventListener('install', e => {
   self.skipWaiting();

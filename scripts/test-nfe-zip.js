@@ -241,7 +241,7 @@ function testHorecaNaoListaEcommerce() {
     { chave: 'H1', canalId: 'horeca', canalNome: 'Horeca', vendedor: 'Hélcio Grégio', numero: '10', cliente: 'Cliente Horeca', valor: 10, data: '2026-10-01', status: 'unico' },
     { chave: 'E1', canalId: 'ecommerce', canalNome: 'Ecommerce', vendedor: 'Marcio Gorga', numero: '102240', cliente: 'Leandro Falcone', valor: 123.12, data: '2026-10-01', status: 'unico', npess: '99520001' },
   ];
-  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfePorMes', '_nfePorMesSrc', '_nfeFiltro', '_nfeStatusMsg', '_nfeBusy'];
+  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfeTodas', '_nfeMesesCarregados', '_nfeMesesDisponiveis', '_nfePorMes', '_nfePorMesSrc', '_nfeFiltro', '_nfeStatusMsg', '_nfeBusy'];
   const vals = [
     { horeca: { id: 'horeca', nome: 'Horeca' }, ecommerce: { id: 'ecommerce', nome: 'Ecommerce' } },
     (s) => String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])),
@@ -251,6 +251,9 @@ function testHorecaNaoListaEcommerce() {
     { getElementById: el },
     'mapa',
     notas,
+    null,
+    null,
+    [],
     null,
     null,
     '',
@@ -321,7 +324,8 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker referido no index');
+  assert(html.includes('v2026-10-21-nfe-mes-quente'), 'service worker referido no index');
+  assert(!html.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-filtro-mes'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker antigo já não está no index');
@@ -330,7 +334,8 @@ function testUiCarga() {
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-21-nfe-mes-quente'), 'service worker actualizado');
+  assert(!sw.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-filtro-tecla'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-filtro-mes'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-pdf-tablet'), 'service worker antigo já não está no sw');
@@ -362,7 +367,15 @@ function loadNfeUi(notas, canalId, pvView) {
     }
     return els[id];
   }
-  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfePorMes', '_nfePorMesSrc', '_nfeFiltro', '_nfeStatusMsg', '_nfeBusy'];
+  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfeTodas', '_nfeMesesCarregados', '_nfeMesesDisponiveis', '_nfePorMes', '_nfePorMesSrc', '_nfeFiltro', '_nfeStatusMsg', '_nfeBusy'];
+  const state = {
+    notas: notas,
+    todas: null,
+    mesesCarregados: null,
+    mesesDisponiveis: [],
+    porMes: null,
+    porMesSrc: null,
+  };
   const vals = [
     {
       horeca: { id: 'horeca', nome: 'Horeca' },
@@ -393,14 +406,30 @@ function loadNfeUi(notas, canalId, pvView) {
       },
     },
     pvView || 'mapa',
-    notas,
-    null,
-    null,
+    state.notas,
+    state.todas,
+    state.mesesCarregados,
+    state.mesesDisponiveis,
+    state.porMes,
+    state.porMesSrc,
     '',
     '',
     false,
   ];
-  const api = new Function(...names, src + '\nreturn { nfePaintCanal, nfePaint, nfeHtml, nfeSetFiltro, nfeFlushPaintTexto, nfeFiltrarCanal, nfeLimparFiltroCanal, nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, nfeAbrirPdf, nfePartilharWhatsapp, nfeFiltrosGeral, nfeFiltrosCanalActivos, nfeMostrarMais, nfeConteudoGeralHtml, nfeNotasDoMesEcra, el: null };')(...vals);
+  /* Getter/setter via object: nfeAplicarHotPath reatribui _nfeNotas/_nfeTodas no scope do Function. */
+  const api = new Function(...names, src + `
+    return {
+      nfePaintCanal, nfePaint, nfeHtml, nfeSetFiltro, nfeFlushPaintTexto, nfeFiltrarCanal, nfeLimparFiltroCanal,
+      nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, nfeAbrirPdf, nfePartilharWhatsapp,
+      nfeFiltrosGeral, nfeFiltrosCanalActivos, nfeMostrarMais, nfeConteudoGeralHtml, nfeNotasDoMesEcra,
+      nfeAplicarHotPath, nfeGarantirMes, nfeMesesQuentes, nfeMesAnterior, nfeMesCorrente, nfeAbrirMes, nfeMesJaCarregado,
+      getNotas: () => _nfeNotas,
+      getTodas: () => _nfeTodas,
+      getMesesCarregados: () => _nfeMesesCarregados,
+      getMesesDisponiveis: () => _nfeMesesDisponiveis,
+      el: null
+    };
+  `)(...vals);
   api.el = el;
   return api;
 }
@@ -1295,12 +1324,18 @@ function testCargaLeve() {
   assert(meta.includes('chunks: false'), 'a lista não pede os blocos de PDF');
   assert(meta.includes('_nfeMetaPronta') && meta.includes('opts && opts.force'), 'na mesma sessão não volta a pedir a nuvem');
   assert(!meta.includes('nfeLerPdfsNuvem') && !meta.includes('nfeLerPdfsLocais') && !meta.includes('nfePersistir'), 'abrir o ecrã não lê PDF nem regrava a nuvem');
+  assert(meta.includes('nfeAplicarHotPath(leves)'), 'abrir aplica o hot path (só corrente+anterior)');
+  assert(meta.includes('await idbSet(NFE_IDB_KEY, { notas: leves'), 'grava o arquivo completo, não só os meses quentes');
   assert(html.includes('await nfeHidrateMeta()'), 'as vistas usam a carga leve');
   assert(html.includes('nfeIndicePorMes') && html.includes('nfeNotasDoMesDoCanal'), 'há índice por mês para filtrar sem varrer tudo');
   assert(html.includes('nfePaintConteudo') && html.includes('nfe-geral-conteudo'), 'o filtro de texto actualiza só o conteúdo');
+  assert(html.includes('function nfeMesesQuentes(') && html.includes('function nfeGarantirMes('), 'há meses quentes e carga sob pesquisa');
+  assert(html.includes('A carregar ') && html.includes('nfeAbrirMes'), 'mês antigo mostra estado de carga');
   const onIni = html.indexOf('async function nfeOnFiles(');
-  const on = html.slice(onIni, onIni + 900);
+  const onFim = html.indexOf('\nasync function nfe', onIni + 10);
+  const on = html.slice(onIni, onFim > onIni ? onFim : onIni + 2500);
   assert(on.includes('await nfeHidrate()') && !on.includes('nfeHidrateMeta'), 'a carga do ZIP continua a juntar os PDF');
+  assert(on.includes('nfeArquivoNotas()') && on.includes('nfeAplicarHotPath(reap.notas)'), 'o ZIP junta ao arquivo completo e volta ao hot path');
   const pdfIni = html.indexOf('async function nfePdfResolvido(');
   const pdf = html.slice(pdfIni, html.indexOf('function nfeEhTelemovel('));
   assert(pdf.includes("idbGet('delta_nfe_pdfs')") && pdf.includes('nfeCarregarPdfDaNuvem'), 'o PDF só é lido ao abrir a NF ou no WhatsApp (IndexedDB ou blocos nfe_pdfs_N)');
@@ -1311,6 +1346,58 @@ function testCargaLeve() {
   [vista, canal, dados].forEach(function (bloco) {
     assert(bloco.includes('nfeHidrateMeta') && !bloco.includes('nfeHidrate()'), 'o ecrã não usa a carga com PDF');
   });
+}
+
+async function testMesesQuentesHotPath() {
+  const notas = [
+    { chave: 'O1', numero: '102605', canalId: 'horeca', canalNome: 'Horeca', vendedor: 'Daniela Santos', cliente: 'Outubro SA', cod: '1', valor: 10, data: '2026-10-20', status: 'unico' },
+    { chave: 'S1', numero: '102500', canalId: 'horeca', canalNome: 'Horeca', vendedor: 'Daniela Santos', cliente: 'Setembro Ltda', cod: '2', valor: 5, data: '2026-09-15', status: 'unico' },
+    { chave: 'A1', numero: '101100', canalId: 'horeca', canalNome: 'Horeca', vendedor: 'Daniela Santos', cliente: 'Agosto Ltda', cod: '3', valor: 7, data: '2026-08-10', status: 'unico' },
+    { chave: 'SP', numero: '102700', canalId: 'ecommerce', canalNome: 'Ecommerce', vendedor: 'Marcio Gorga', cliente: 'Site do Marcio', npess: '99520009', cod: '995', valor: 99, data: '2026-10-05', status: 'unico' },
+    { chave: 'SP9', numero: '101900', canalId: 'ecommerce', canalNome: 'Ecommerce', vendedor: 'Marcio Gorga', cliente: 'Site Setembro', npess: '99520009', valor: 1, data: '2026-09-01', status: 'unico' },
+  ];
+  const ui = loadNfeUi(notas, '', 'nfe');
+  assert(ui.nfeMesCorrente() === '2026-10', 'relógio de teste = Outubro 2026');
+  assert(ui.nfeMesAnterior('2026-10') === '2026-09', 'mês anterior de Outubro é Setembro');
+  assert(ui.nfeMesesQuentes().join(',') === '2026-10,2026-09', 'quentes = corrente + anterior');
+
+  ui.nfeAplicarHotPath(notas);
+  const hot = ui.getNotas();
+  const chaves = hot.map(n => n.chave).sort().join(',');
+  assert(chaves === 'O1,S1,SP,SP9', 'hot path traz Outubro+Setembro (inclui site no arquivo quente), veio ' + chaves);
+  assert(!hot.some(n => n.chave === 'A1'), 'Agosto não entra no hot path à abertura');
+  assert(ui.getTodas().length === 5, 'arquivo completo mantém os 5');
+  assert(Array.from(ui.getMesesCarregados()).sort().join(',') === '2026-09,2026-10', 'meses carregados = quentes');
+  assert(ui.getMesesDisponiveis().indexOf('2026-08') >= 0, 'Agosto continua listável (existe no arquivo)');
+
+  let g = ui.nfeHtml();
+  assert(g.includes('value="2026-10"') && g.includes('102605'), 'abre no mês corrente');
+  assert(!g.includes('102500') && !g.includes('101100'), 'lista do mês corrente não traz Setembro/Agosto');
+  assert(!g.includes('Site do Marcio') && !g.includes('102700'), 'Site próprio continua fora do menu');
+
+  ui.nfeSetFiltro('geral', 'cliente', 'outubro');
+  ui.nfeFlushPaintTexto();
+  g = ui.nfeHtml();
+  assert(g.includes('102605') && !g.includes('102500') && !g.includes('101100'), 'filtro no mês corrente não precisa de Agosto');
+
+  ui.nfeLimparFiltro();
+  assert(!ui.nfeMesJaCarregado('2026-08'), 'Agosto ainda não está no hot path');
+  await ui.nfeSetFiltro('geral', 'mes', '2026-08');
+  /* nfeSetFiltro dispara nfeAbrirMes (async); espera a hidratação sob pesquisa. */
+  await new Promise(r => setTimeout(r, 0));
+  await new Promise(r => setTimeout(r, 0));
+  assert(ui.nfeMesJaCarregado('2026-08'), 'escolher Agosto carrega esse mês');
+  assert(ui.getNotas().some(n => n.chave === 'A1'), 'Agosto entra em _nfeNotas após pesquisa');
+  g = ui.nfeHtml();
+  assert(g.includes('101100') && g.includes('Agosto 2026'), 'lista mostra Agosto após carga');
+  assert(!g.includes('102605') && !g.includes('102500'), 'só o mês escolhido');
+  assert(ui.getTodas().length === 5, 'arquivo não perdeu meses ao hidratar Agosto');
+
+  ui.nfeSetFiltro('geral', 'mes', '2026-10');
+  await new Promise(r => setTimeout(r, 0));
+  g = ui.nfeHtml();
+  assert(g.includes('102605') && !g.includes('101100'), 'voltar a Outubro é imediato (já estava quente)');
+  assert(ui.nfeMesJaCarregado('2026-08'), 'Agosto fica em cache na sessão');
 }
 
 testAtribuicao();
@@ -1929,13 +2016,19 @@ async function testPdfTabletNuvem() {
   assert(!toastsVazio.some(t => t.indexOf('Esta NF não tem PDF.') >= 0), 'bloco vazio não usa a mensagem genérica');
 }
 
-testCliqueSemPdf().then(() => testBoletosPdf()).then(() => testBoletosParcelas()).then(() => testWhatsappPdf()).then(() => testPdfTabletNuvem()).then(() => {
-  if (failed) {
-    console.error(failed + ' asserção(ões) falharam');
+testMesesQuentesHotPath()
+  .then(() => testCliqueSemPdf())
+  .then(() => testBoletosPdf())
+  .then(() => testBoletosParcelas())
+  .then(() => testWhatsappPdf())
+  .then(() => testPdfTabletNuvem())
+  .then(() => {
+    if (failed) {
+      console.error(failed + ' asserção(ões) falharam');
+      process.exit(1);
+    }
+    console.log('ok');
+  }).catch((e) => {
+    console.error(e);
     process.exit(1);
-  }
-  console.log('ok');
-}).catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+  });

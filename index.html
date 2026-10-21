@@ -13421,6 +13421,16 @@ const NFE_IDB_KEY = 'delta_nfe_emitidas';
 const NFE_PDF_IDB_KEY = 'delta_nfe_pdfs';
 const NFE_PDF_CHUNK_PREFIX = 'nfe_pdfs_';
 let _nfeNotas = [];
+/**
+ * Arquivo completo (todos os meses) lido do IndexedDB/nuvem.
+ * Os filtros e o índice rápido usam só `_nfeNotas` (meses quentes + os que o utilizador pediu).
+ * Nunca gravar só o hot path por cima do arquivo — apagaria meses antigos.
+ */
+let _nfeTodas = null;
+/** ym já presentes em `_nfeNotas`. null = ainda sem regra de hot path (ex.: testes injectam a lista). */
+let _nfeMesesCarregados = null;
+/** Meses que existem no arquivo (para o selector); não implica estarem no hot path. */
+let _nfeMesesDisponiveis = [];
 /** Índice ym → notas do menu (sem Site próprio). Reconstruído quando _nfeNotas muda. */
 let _nfePorMes = null;
 let _nfePorMesSrc = null;
@@ -13434,6 +13444,11 @@ let _nfeBusy = false;
 function nfeInvalidarIndiceMes() {
   _nfePorMes = null;
   _nfePorMesSrc = null;
+}
+
+/** Arquivo completo quando já hidratámos; senão a lista em memória. */
+function nfeArquivoNotas() {
+  return _nfeTodas || _nfeNotas || [];
 }
 /** PDF já gravados na nuvem (célula da nota ou blocos nfe_pdfs_N), chave → { nome, b64 }. */
 let _nfePdfsNuvem = {};
@@ -13741,19 +13756,17 @@ async function nfeHidrate() {
   const catalogoNomes = await nfeCatalogoPronto();
   if (remote == null) {
     const reap = nfeAplicarRegraGuardada(local, catalogoNomes);
-    _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsTodos) : reap.notas;
-    _nfeMetaPronta = true;
-    nfeInvalidarIndiceMes();
+    const todas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsTodos) : reap.notas;
     if (reap.alteradas > 0) {
       try { await idbSet(NFE_IDB_KEY, { notas: reap.notas.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n)), ts: new Date().toISOString() }); } catch (_) {}
     }
+    nfeAplicarHotPath(todas);
+    _nfeMetaPronta = true;
     return;
   }
   const merged = nfeMergeNotas(local, remote);
   const reap = nfeAplicarRegraGuardada(merged.notas, catalogoNomes);
-  _nfeNotas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsTodos) : reap.notas;
-  _nfeMetaPronta = true;
-  nfeInvalidarIndiceMes();
+  const todas = typeof nfeJuntarPdfsLocais === 'function' ? nfeJuntarPdfsLocais(reap.notas, pdfsTodos) : reap.notas;
   const localSet = new Set(local.map(n => n && n.chave).filter(Boolean));
   const remoteBy = new Map();
   remote.forEach(n => { if (n && n.chave && !remoteBy.has(n.chave)) remoteBy.set(n.chave, n); });
@@ -13765,12 +13778,12 @@ async function nfeHidrate() {
     return typeof nfeAtribDifere === 'function' ? nfeAtribDifere(r, n) : false;
   });
   // Sem os bytes neste ecrã, gravar por cima apagava os blocos nfe_pdfs_N que o PC já tinha posto na nuvem.
-  const faltaBytesNaNuvemLocal = (_nfeNotas || []).some(n => {
+  const faltaBytesNaNuvemLocal = (todas || []).some(n => {
     if (!n || typeof nfeNotaTemMarcaPdf !== 'function' || !nfeNotaTemMarcaPdf(n)) return false;
     return !nfeNotaJaTemPdf(n);
   });
-  if (remotoDesatualizado && _nfeNotas.length && !faltaBytesNaNuvemLocal) {
-    await nfePersistir(_nfeNotas);
+  if (remotoDesatualizado && todas.length && !faltaBytesNaNuvemLocal) {
+    await nfePersistir(todas);
   } else if (faltaLocal || reap.alteradas > 0) {
     try {
       const leves = reap.notas.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n));
@@ -13783,9 +13796,11 @@ async function nfeHidrate() {
   });
   if (faltaNoIdb) {
     try {
-      await idbSet(NFE_PDF_IDB_KEY, { pdfs: nfeMapaPdfs(_nfeNotas, pdfsLocais), ts: new Date().toISOString() });
+      await idbSet(NFE_PDF_IDB_KEY, { pdfs: nfeMapaPdfs(todas, pdfsLocais), ts: new Date().toISOString() });
     } catch (_) {}
   }
+  nfeAplicarHotPath(todas);
+  _nfeMetaPronta = true;
 }
 
 /**
@@ -13832,14 +13847,15 @@ async function nfeHidrateMeta(opts) {
     const localSet = new Set(local.map(n => n && n.chave).filter(Boolean));
     faltaLocal = base.some(n => n && n.chave && !localSet.has(n.chave));
   }
-  _nfeNotas = base.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n));
-  _nfeMetaPronta = true;
-  nfeInvalidarIndiceMes();
+  const leves = base.map(n => (typeof nfeNotaSemPdfBinario === 'function' ? nfeNotaSemPdfBinario(n) : n));
+  /* Grava o arquivo completo — nunca só os meses quentes. */
   if (faltaLocal || alteradas > 0) {
     try {
-      await idbSet(NFE_IDB_KEY, { notas: _nfeNotas, ts: new Date().toISOString() });
+      await idbSet(NFE_IDB_KEY, { notas: leves, ts: new Date().toISOString() });
     } catch (_) {}
   }
+  nfeAplicarHotPath(leves);
+  _nfeMetaPronta = true;
 }
 
 async function nfeGarantirClientes() {
@@ -13951,7 +13967,8 @@ async function nfeOnFiles(ev) {
       const index = nfeIndexClientes(clientes);
       atrib = parsed.map(n => nfeComCanal(nfeCruzarNota(n, index, nfeCanalDeNpess, catalogoNomes)));
     }
-    const merged = nfeMergeNotas(_nfeNotas, atrib);
+    /* Junta ao arquivo completo — `_nfeNotas` pode ser só os meses quentes. */
+    const merged = nfeMergeNotas(nfeArquivoNotas(), atrib);
     const associado = typeof nfeAssociarPdfs === 'function'
       ? nfeAssociarPdfs(merged.notas, pdfs)
       : { notas: merged.notas, ligados: 0, soltos: pdfs.length };
@@ -13962,7 +13979,6 @@ async function nfeOnFiles(ev) {
       ? await nfeAnexarDocsJuntos(comBoleto.notas)
       : { notas: comBoleto.notas, juntos: 0, falhas: 0 };
     const reap = nfeAplicarRegraGuardada(junto.notas, catalogoNomes);
-    _nfeNotas = reap.notas;
     const pdfsNuvem = _nfePdfsNuvem || {};
     const faltaBinarioNuvem = pdfs.length > 0 && (reap.notas || []).some(n => {
       if (!n || !n.chave) return false;
@@ -13979,8 +13995,9 @@ async function nfeOnFiles(ev) {
       return false;
     });
     if (merged.novas > 0 || reap.alteradas > 0 || associado.ligados > 0 || (comBoleto.ligados || 0) > 0 || (junto.juntos || 0) > 0 || faltaBinarioNuvem) {
-      await nfePersistir(_nfeNotas);
+      await nfePersistir(reap.notas);
     }
+    nfeAplicarHotPath(reap.notas);
     const com = atrib.filter(n => n.status === 'unico').length;
     const sem = atrib.filter(n => n.status === 'sem_cliente').length;
     const multi = atrib.filter(n => n.status === 'cnpj_multiplos').length;
@@ -14299,9 +14316,19 @@ function nfeSetFiltro(scope, campo, valor) {
     f.mes = /^\d{4}-\d{2}$/.test(v) ? v : '';
     const efetivo = nfeMesEfetivo(f);
     if (f.dia && f.dia.slice(0, 7) !== efetivo) f.dia = '';
+    if (geral) _nfeFiltro = f.canal || '';
+    else _nfeFiltroCanal = f.vendedor || '';
+    nfeAgendarFiltros();
+    /* Mês antigo (fora de corrente+anterior) entra no hot path só aqui. */
+    return nfeAbrirMes(scope, efetivo);
   } else if (campo === 'dia') {
     f.dia = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '';
     if (f.dia) f.mes = f.dia.slice(0, 7);
+    if (geral) _nfeFiltro = f.canal || '';
+    else _nfeFiltroCanal = f.vendedor || '';
+    nfeAgendarFiltros();
+    /* Dia noutro mês também pode exigir hidratar esse mês. */
+    return nfeAbrirMes(scope, nfeMesEfetivo(f));
   } else if (campo === 'numero') f.numero = v.slice(0, 20);
   else if (campo === 'vendedor') f.vendedor = v;
   else if (campo === 'cliente') f.cliente = v.slice(0, 80);
@@ -14404,6 +14431,118 @@ function nfeAgoraEcra() {
 function nfeMesCorrente() {
   const d = nfeAgoraEcra();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+function nfeYmDeIsoMes(ym) {
+  const m = String(ym || '').match(/^(\d{4})-(\d{2})$/);
+  return m ? (m[1] + '-' + m[2]) : '';
+}
+
+/** Mês civil anterior (YYYY-MM), calendário America/Sao_Paulo via nfeMesCorrente. */
+function nfeMesAnterior(ym) {
+  const m = String(ym || '').match(/^(\d{4})-(\d{2})$/);
+  if (!m) return '';
+  let y = Number(m[1]);
+  let mo = Number(m[2]) - 1;
+  if (mo < 1) { mo = 12; y -= 1; }
+  return y + '-' + String(mo).padStart(2, '0');
+}
+
+/** Meses no caminho rápido: corrente + anterior (fuso America/Sao_Paulo). */
+function nfeMesesQuentes() {
+  const cur = nfeMesCorrente();
+  const prev = nfeMesAnterior(cur);
+  const out = [];
+  if (cur) out.push(cur);
+  if (prev && prev !== cur) out.push(prev);
+  return out;
+}
+
+function nfeMesJaCarregado(ym) {
+  const m = nfeYmDeIsoMes(ym);
+  if (!m) return true;
+  /* Sem Set = lista injectada a cheio (testes) ou ainda sem hot path. */
+  if (!_nfeMesesCarregados) return true;
+  return _nfeMesesCarregados.has(m);
+}
+
+/**
+ * Parte o arquivo: `_nfeTodas` fica completo; `_nfeNotas` só com corrente+anterior.
+ * Site próprio continua no arquivo (e fora do menu via nfeNotasDesteMenu / nfeEhSiteMarcio).
+ */
+function nfeAplicarHotPath(todas) {
+  const arr = Array.isArray(todas) ? todas : [];
+  _nfeTodas = arr;
+  const quentes = nfeMesesQuentes();
+  const qset = new Set(quentes);
+  const meses = new Set();
+  const hot = [];
+  arr.forEach(n => {
+    if (!n) return;
+    const ym = nfeYmNota(n);
+    if (ym) meses.add(ym);
+    if (ym && qset.has(ym)) hot.push(n);
+  });
+  quentes.forEach(ym => meses.add(ym));
+  _nfeMesesDisponiveis = Array.from(meses).sort().reverse();
+  _nfeNotas = hot;
+  _nfeMesesCarregados = new Set(quentes);
+  _nfePorMes = null;
+  _nfePorMesSrc = null;
+  return hot;
+}
+
+/**
+ * Traz um mês do arquivo para o índice rápido (sob pesquisa / selector).
+ * Devolve true se acrescentou notas. Não apaga nada do arquivo.
+ */
+function nfeGarantirMes(ym) {
+  const m = nfeYmDeIsoMes(ym);
+  if (!m) return false;
+  if (nfeMesJaCarregado(m)) return false;
+  const arquivo = _nfeTodas || [];
+  const extras = arquivo.filter(n => n && nfeYmNota(n) === m);
+  const have = new Set((_nfeNotas || []).map(n => n && n.chave).filter(Boolean));
+  const add = extras.filter(n => n.chave && !have.has(n.chave));
+  if (add.length) {
+    _nfeNotas = (_nfeNotas || []).concat(add);
+    _nfePorMes = null;
+    _nfePorMesSrc = null;
+  }
+  if (!_nfeMesesCarregados) _nfeMesesCarregados = new Set();
+  _nfeMesesCarregados.add(m);
+  if (_nfeMesesDisponiveis.indexOf(m) < 0) {
+    _nfeMesesDisponiveis = _nfeMesesDisponiveis.concat([m]).sort().reverse();
+  }
+  return add.length > 0;
+}
+
+function nfeMostrarACarregarMes(scope, ym) {
+  const geral = scope === 'geral';
+  let host = null;
+  try {
+    host = document.getElementById(geral ? 'pv-canal-panels' : 'canal-nfe-host');
+  } catch (_) { host = null; }
+  if (!host) return;
+  const rot = nfeRotuloMes(ym);
+  host.innerHTML = '<p style="color:var(--muted);font-size:13px;">A carregar ' + escHtml(rot) + '…</p>';
+}
+
+/** Garante o mês no hot path e repinta. Meses antigos mostram «A carregar…» uma vez. */
+async function nfeAbrirMes(scope, ym) {
+  const m = nfeYmDeIsoMes(ym) || nfeMesCorrente();
+  if (!m || nfeMesJaCarregado(m)) {
+    nfeAgendarPaint(scope, 'mes');
+    return;
+  }
+  nfeMostrarACarregarMes(scope, m);
+  try {
+    /* Cedência ao browser para pintar o estado de carga antes de indexar. */
+    await Promise.resolve();
+    nfeGarantirMes(m);
+  } finally {
+    nfeAgendarPaint(scope, 'mes');
+  }
 }
 
 function nfeMesEfetivo(f) {
@@ -14856,7 +14995,7 @@ function nfePaint() {
 function nfeSyncVistas() {
   const st = document.getElementById('dados-nfe-status');
   if (st) {
-    const nMenu = nfeNotasDesteMenu(_nfeNotas).length;
+    const nMenu = nfeNotasDesteMenu(nfeArquivoNotas()).length;
     st.textContent = _nfeStatusMsg || (nMenu ? (nMenu + ' notas guardadas.') : 'Ainda sem carga.');
   }
   const btn = document.getElementById('dados-nfe-btn');
@@ -14869,8 +15008,8 @@ function nfeSyncVistas() {
 
 async function nfeAoAbrirDados() {
   try { await nfeHidrateMeta(); } catch (_) {}
-  if (!_nfeBusy && !_nfeStatusMsg && _nfeNotas && _nfeNotas.length) {
-    const nMenu = nfeNotasDesteMenu(_nfeNotas).length;
+  if (!_nfeBusy && !_nfeStatusMsg && nfeArquivoNotas().length) {
+    const nMenu = nfeNotasDesteMenu(nfeArquivoNotas()).length;
     _nfeStatusMsg = nMenu + ' notas guardadas.';
   }
   nfeSyncVistas();
@@ -15011,6 +15150,14 @@ async function nfeMontarCanal() {
     _nfeStatusMsg = 'Não foi possível ler as NF guardadas.';
   }
   if (gen !== _nfeCanalGen) return;
+  /* Filtro gravado noutro mês (além dos quentes) hidrata sob pesquisa na abertura. */
+  const mes = nfeMesEfetivo(nfeFiltrosCanalActivos());
+  if (!nfeMesJaCarregado(mes)) {
+    nfeMostrarACarregarMes('canal', mes);
+    await Promise.resolve();
+    nfeGarantirMes(mes);
+    if (gen !== _nfeCanalGen) return;
+  }
   nfePaintCanal();
 }
 
@@ -15453,6 +15600,14 @@ async function nfeMontarVista() {
     _nfeStatusMsg = 'Não foi possível ler as NF guardadas.';
   }
   if (gen !== _nfeGen || _pvView !== 'nfe') return;
+  /* Filtro gravado noutro mês (além dos quentes) hidrata sob pesquisa na abertura. */
+  const mes = nfeMesEfetivo(nfeFiltrosGeral());
+  if (!nfeMesJaCarregado(mes)) {
+    nfeMostrarACarregarMes('geral', mes);
+    await Promise.resolve();
+    nfeGarantirMes(mes);
+    if (gen !== _nfeGen || _pvView !== 'nfe') return;
+  }
   nfePaint();
 }
 
@@ -43955,7 +44110,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-21-nfe-filtros-rapidos: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-21-nfe-mes-quente: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());
