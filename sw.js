@@ -1,4 +1,4 @@
-// Service Worker v2026-10-21-vendas-merge-dias — limpa cache e auto-destrói
+// Service Worker v2026-10-22-nfe-wa-tablet — limpa cache e auto-destrói
 // (a app não deve servir index.html antigo após merge no GitHub Pages)
 self.addEventListener('install', e => {
   self.skipWaiting();

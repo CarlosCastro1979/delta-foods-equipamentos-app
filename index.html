@@ -15402,6 +15402,15 @@ function nfePodePartilharFicheiro(file) {
   try { return !!nav.canShare({ files: [file] }); } catch (_) { return false; }
 }
 
+/** No telemóvel o canShare ment em Chrome/Samsung antigos — tentar partilhar na mesma. */
+function nfeDeveTentarShareFicheiro(file, telemovel) {
+  if (!file || !file.size) return false;
+  const nav = (typeof navigator !== 'undefined') ? navigator : null;
+  if (!nav || typeof nav.share !== 'function') return false;
+  if (telemovel) return true;
+  return nfePodePartilharFicheiro(file);
+}
+
 function nfeDescarregarPdf(file) {
   const url = URL.createObjectURL(file);
   const a = document.createElement('a');
@@ -15442,12 +15451,27 @@ function nfeWhatsappSemFicheiro(file, nota) {
   if (typeof toast === 'function') toast('Neste browser o PDF foi descarregado para anexar no WhatsApp.', 'warn');
 }
 
-const _nfeWaPronto = new Map();
+const _nfeWaPronto = new Map(); // chave -> Promise<pack>
+const _nfeWaCache = new Map(); // chave -> pack com File pronto (leitura síncrona no 2.º toque)
+
+function nfeGuardarWaCache(ch, pack) {
+  if (ch && pack && pack.file && pack.file.size) _nfeWaCache.set(ch, pack);
+  else if (ch) _nfeWaCache.delete(ch);
+}
+
+function nfeIniciarPacoteWhatsapp(ch) {
+  const p = nfePacoteWhatsapp(ch).then((pack) => {
+    nfeGuardarWaCache(ch, pack);
+    return pack;
+  });
+  _nfeWaPronto.set(ch, p);
+  return p;
+}
 
 function nfePrepararWhatsapp(chave) {
   const ch = String(chave || '').replace(/[^0-9A-Za-z]/g, '');
-  if (!ch || _nfeWaPronto.has(ch)) return;
-  _nfeWaPronto.set(ch, nfePacoteWhatsapp(ch));
+  if (!ch || _nfeWaCache.has(ch) || _nfeWaPronto.has(ch)) return;
+  nfeIniciarPacoteWhatsapp(ch);
 }
 
 async function nfePacoteWhatsapp(chave) {
@@ -15502,15 +15526,19 @@ async function nfeAbrirPdf(chave) {
     try { popup = window.open('about:blank', '_blank'); } catch (_) { popup = null; }
   }
   try {
-    let pendente = _nfeWaPronto.get(ch);
-    if (!pendente) pendente = nfePacoteWhatsapp(ch);
-    const pack = await pendente;
+    let pack = _nfeWaCache.get(ch);
+    if (!pack || !pack.file || !pack.file.size) {
+      let pendente = _nfeWaPronto.get(ch);
+      if (!pendente) pendente = nfeIniciarPacoteWhatsapp(ch);
+      pack = await pendente;
+      _nfeWaPronto.delete(ch);
+    }
     const hit = pack && pack.hit;
     const file = pack && pack.file;
     if (!hit || !hit.ok || !file || !file.size) {
       if (popup && popup.close) { try { popup.close(); } catch (_) {} }
       if (typeof toast === 'function') toast((hit && hit.msg) || 'Esta NF não tem PDF.', 'error');
-      _nfeWaPronto.delete(ch);
+      _nfeWaCache.delete(ch);
       return;
     }
     const url = URL.createObjectURL(file);
@@ -15524,65 +15552,85 @@ async function nfeAbrirPdf(chave) {
   }
 }
 
+async function nfeEntregarWhatsapp(ch, pack) {
+  const nota = pack && pack.nota;
+  const file = pack && pack.file;
+  if (!file || !file.size) return;
+  const num = nota && nota.numero ? String(nota.numero) : '';
+  const texto = num ? ('NF ' + num) : 'NF';
+  const telemovel = nfeEhTelemovel();
+  // O browser não entrega um PDF ao pacote com.whatsapp: whatsapp:// e wa.me
+  // não aceitam ficheiro. No telemóvel, a folha do sistema é o passo que
+  // entrega o PDF ao WhatsApp; a app abre depois no escolhedor de contacto.
+  if (nfeDeveTentarShareFicheiro(file, telemovel)) {
+    try {
+      // share() tem de correr ainda no gesto do toque — sem await antes desta linha.
+      const partilha = navigator.share({ files: [file], title: texto, text: texto });
+      await partilha;
+      _nfeWaCache.delete(ch);
+      _nfeWaPronto.delete(ch);
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      if (err && err.name === 'NotAllowedError') {
+        nfeGuardarWaCache(ch, pack);
+        if (typeof toast === 'function') toast('O PDF já está pronto. Toca outra vez no WhatsApp para escolher o contacto.', 'warn');
+        return;
+      }
+      if (telemovel) {
+        if (nfeErroSemFicheiro(err)) {
+          nfeDescarregarPdf(file);
+          _nfeWaCache.delete(ch);
+          if (typeof toast === 'function') toast('Neste browser o PDF foi descarregado para anexar no WhatsApp.', 'warn');
+          return;
+        }
+        if (typeof toast === 'function') toast('Não foi possível abrir o WhatsApp com o PDF.', 'error');
+        return;
+      }
+      if (nfeErroSemFicheiro(err)) {
+        nfeWhatsappSemFicheiro(file, nota);
+        _nfeWaCache.delete(ch);
+        return;
+      }
+      if (typeof toast === 'function') toast('Não foi possível partilhar no WhatsApp.', 'error');
+      return;
+    }
+  }
+  _nfeWaCache.delete(ch);
+  if (telemovel) {
+    nfeDescarregarPdf(file);
+    if (typeof toast === 'function') toast('Neste browser o PDF foi descarregado para anexar no WhatsApp.', 'warn');
+    return;
+  }
+  nfeWhatsappSemFicheiro(file, nota);
+}
+
 async function nfePartilharWhatsapp(chave, ev) {
   if (ev && ev.preventDefault) ev.preventDefault();
   if (ev && ev.stopPropagation) ev.stopPropagation();
   const ch = String(chave || '').replace(/[^0-9A-Za-z]/g, '');
   try {
-    let pendente = _nfeWaPronto.get(ch);
-    if (!pendente) {
-      pendente = nfePacoteWhatsapp(ch);
-      _nfeWaPronto.set(ch, pendente);
+    // 2.º toque (ou 1.º se o PDF já veio do pointerdown): File em cache síncrono.
+    // Sem await antes do share — em Chrome/Samsung antigos o await quebra o gesto.
+    const pronto = _nfeWaCache.get(ch);
+    if (pronto && pronto.file && pronto.file.size) {
+      await nfeEntregarWhatsapp(ch, pronto);
+      return;
     }
+
+    let pendente = _nfeWaPronto.get(ch);
+    if (!pendente) pendente = nfeIniciarPacoteWhatsapp(ch);
     const pack = await pendente;
-    const nota = pack && pack.nota;
+    _nfeWaPronto.delete(ch);
     const hit = pack && pack.hit;
     const file = pack && pack.file;
     if (!hit || !hit.ok || !file || !file.size) {
-      _nfeWaPronto.delete(ch);
+      _nfeWaCache.delete(ch);
       if (typeof toast === 'function') toast((hit && hit.msg) || 'Esta NF não tem PDF.', 'error');
       return;
     }
-    _nfeWaPronto.delete(ch);
-    const num = nota && nota.numero ? String(nota.numero) : '';
-    const texto = num ? ('NF ' + num) : 'NF';
-    const telemovel = nfeEhTelemovel();
-    // O browser não entrega um PDF ao pacote com.whatsapp: whatsapp:// e wa.me
-    // não aceitam ficheiro. No telemóvel, a folha do sistema é o passo que
-    // entrega o PDF ao WhatsApp; a app abre depois no escolhedor de contacto.
-    if (nfePodePartilharFicheiro(file)) {
-      try {
-        await navigator.share({ files: [file], title: texto, text: texto });
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-        if (err && err.name === 'NotAllowedError') {
-          _nfeWaPronto.set(ch, Promise.resolve(pack));
-          if (typeof toast === 'function') toast('O PDF já está pronto. Toca outra vez no WhatsApp para escolher o contacto.', 'warn');
-          return;
-        }
-        if (telemovel) {
-          if (nfeErroSemFicheiro(err)) {
-            nfeDescarregarPdf(file);
-            if (typeof toast === 'function') toast('Neste browser o PDF foi descarregado para anexar no WhatsApp.', 'warn');
-            return;
-          }
-          if (typeof toast === 'function') toast('Não foi possível abrir o WhatsApp com o PDF.', 'error');
-          return;
-        }
-        if (nfeErroSemFicheiro(err)) {
-          nfeWhatsappSemFicheiro(file, nota);
-          return;
-        }
-        if (typeof toast === 'function') toast('Não foi possível partilhar no WhatsApp.', 'error');
-      }
-      return;
-    }
-    if (telemovel) {
-      nfeDescarregarPdf(file);
-      if (typeof toast === 'function') toast('Neste browser o PDF foi descarregado para anexar no WhatsApp.', 'warn');
-      return;
-    }
-    nfeWhatsappSemFicheiro(file, nota);
+    nfeGuardarWaCache(ch, pack);
+    await nfeEntregarWhatsapp(ch, pack);
   } catch (e) {
     _nfeWaPronto.delete(ch);
     console.warn('nfe whatsapp', e);
@@ -44352,7 +44400,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-21-vendas-merge-dias: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-22-nfe-wa-tablet: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.unregister());

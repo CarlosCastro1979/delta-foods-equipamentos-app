@@ -324,7 +324,7 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-21-vendas-merge-dias'), 'service worker referido no index');
+  assert(html.includes('v2026-10-22-nfe-wa-tablet'), 'service worker referido no index');
   assert(!html.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no index');
@@ -336,7 +336,7 @@ function testUiCarga() {
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-21-vendas-merge-dias'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-22-nfe-wa-tablet'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no sw');
@@ -1849,6 +1849,24 @@ async function testWhatsappPdf() {
   assert(abertos.some(u => String(u).indexOf('https://wa.me/?text=') === 0), 'no desktop sem partilha de ficheiro abre o WhatsApp, veio ' + abertos.join('|'));
   assert(global._nfeAnchorClicks.some(a => a.download === 'NF-99-boleto.pdf'), 'fallback descarrega o PDF junto');
 
+  // Android/Samsung: canShare({files}) mente — mesmo assim tenta navigator.share.
+  const partilhasCanShareFalso = [];
+  const toastsCanShareFalso = [];
+  global._nfeAnchorClicks = [];
+  global.toast = (m) => { toastsCanShareFalso.push(String(m)); };
+  global.window = { open() { return {}; } };
+  porNavigator({
+    userAgent: UA_ANDROID,
+    maxTouchPoints: 5,
+    canShare() { return false; },
+    share(data) { partilhasCanShareFalso.push(data); return Promise.resolve(); },
+  });
+  await api.nfePartilharWhatsapp(chave);
+  assert(partilhasCanShareFalso.length === 1, 'telemóvel com canShare falso ainda chama share');
+  const fCan = partilhasCanShareFalso[0] && partilhasCanShareFalso[0].files && partilhasCanShareFalso[0].files[0];
+  assert(fCan && fCan.size > 0 && fCan.type === 'application/pdf', 'com canShare falso o File partilhado não está vazio');
+  assert(toastsCanShareFalso.length === 0, 'canShare falso com share a funcionar não descarrega, veio ' + toastsCanShareFalso.join('|'));
+
   const toastsMovel = [];
   const abertosMovel = [];
   global._nfeAnchorClicks = [];
@@ -1858,12 +1876,76 @@ async function testWhatsappPdf() {
     userAgent: UA_ANDROID,
     maxTouchPoints: 5,
     canShare() { return false; },
-    share() { throw new Error('no telemóvel que não anexa ficheiro o share não é o caminho'); },
+    share() {
+      const e = new Error('Share not supported');
+      e.name = 'TypeError';
+      return Promise.reject(e);
+    },
   });
   await api.nfePartilharWhatsapp(chave);
   assert(toastsMovel.some(t => t.indexOf('Neste browser o PDF foi descarregado para anexar no WhatsApp') >= 0), 'telemóvel sem anexar ficheiro avisa a descarga, veio ' + toastsMovel.join('|'));
   assert(!abertosMovel.some(u => /wa\.me|whatsapp:\/\//i.test(String(u))), 'telemóvel sem partilha de ficheiro não abre WhatsApp só com texto');
   assert(global._nfeAnchorClicks.some(a => a.download === 'NF-99-boleto.pdf'), 'telemóvel sem partilha descarrega o PDF junto');
+
+  // 1.º toque perde o gesto (NotAllowedError) → toast; 2.º toque partilha o PDF em cache.
+  const partilhas2 = [];
+  const toasts2 = [];
+  let shareN = 0;
+  global._nfeAnchorClicks = [];
+  global.toast = (m) => { toasts2.push(String(m)); };
+  global.window = { open() { return {}; } };
+  porNavigator({
+    userAgent: UA_ANDROID,
+    maxTouchPoints: 5,
+    canShare() { return true; },
+    share(data) {
+      shareN += 1;
+      partilhas2.push(data);
+      if (shareN === 1) {
+        const e = new Error('Must be handling a user gesture');
+        e.name = 'NotAllowedError';
+        return Promise.reject(e);
+      }
+      return Promise.resolve();
+    },
+  });
+  await api.nfePartilharWhatsapp(chave);
+  assert(toasts2.some(t => t.indexOf('O PDF já está pronto. Toca outra vez no WhatsApp') >= 0), 'após preparar async avisa o 2.º toque, veio ' + toasts2.join('|'));
+  assert(partilhas2.length === 1, 'o 1.º toque tentou share e falhou com NotAllowedError');
+  toasts2.length = 0;
+  await api.nfePartilharWhatsapp(chave);
+  assert(partilhas2.length === 2, 'o 2.º toque chama share outra vez com o PDF em cache');
+  const f2tap = partilhas2[1] && partilhas2[1].files && partilhas2[1].files[0];
+  assert(f2tap instanceof File && f2tap.size > 0 && f2tap.type === 'application/pdf', 'o 2.º toque partilha um PDF não vazio');
+  assert(Buffer.from(await f2tap.arrayBuffer()).equals(junto), 'o 2.º toque envia o PDF junto completo');
+  assert(toasts2.length === 0, 'o 2.º toque com share a funcionar não mostra toast, veio ' + toasts2.join('|'));
+  assert(global._nfeAnchorClicks.length === 0, 'o caminho do toast não descarrega o PDF no 2.º toque');
+
+  // canShare falso + NotAllowedError no 1.º → 2.º toque ainda tenta share (sem gate canShare).
+  const partilhasMentira = [];
+  const toastsMentira = [];
+  let shareMentira = 0;
+  global.toast = (m) => { toastsMentira.push(String(m)); };
+  porNavigator({
+    userAgent: 'Mozilla/5.0 (Linux; Android 12; SM-T500) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/20.0 Chrome/106.0.0.0 Safari/537.36',
+    maxTouchPoints: 5,
+    canShare() { return false; },
+    share(data) {
+      shareMentira += 1;
+      partilhasMentira.push(data);
+      if (shareMentira === 1) {
+        const e = new Error('gesture');
+        e.name = 'NotAllowedError';
+        return Promise.reject(e);
+      }
+      return Promise.resolve();
+    },
+  });
+  await api.nfePartilharWhatsapp(chave);
+  assert(toastsMentira.some(t => t.indexOf('O PDF já está pronto') >= 0), 'Samsung com canShare falso também mostra o toast do 2.º toque');
+  await api.nfePartilharWhatsapp(chave);
+  assert(partilhasMentira.length === 2, 'no 2.º toque partilha mesmo com canShare falso');
+  assert(partilhasMentira[1].files[0].size > 0, '2.º toque Samsung entrega PDF não vazio');
 
   const toastsAbort = [];
   global.toast = (m) => { toastsAbort.push(String(m)); };
