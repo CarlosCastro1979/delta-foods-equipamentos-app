@@ -324,7 +324,7 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-22-pwa-instalar'), 'service worker referido no index');
+  assert(html.includes('v2026-10-22-nfe-wa-android'), 'service worker referido no index');
   assert(!html.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no index');
@@ -336,7 +336,7 @@ function testUiCarga() {
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-22-pwa-instalar'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-22-nfe-wa-android'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no sw');
@@ -425,6 +425,7 @@ function loadNfeUi(notas, canalId, pvView) {
     return {
       nfePaintCanal, nfePaint, nfeHtml, nfeSetFiltro, nfeFlushPaintTexto, nfeFiltrarCanal, nfeLimparFiltroCanal,
       nfeFiltrar, nfeLimparFiltro, nfeGravarFiltros, nfeCountHtml, nfeTabelaResumo, nfeAbrirPdf, nfePartilharWhatsapp,
+      nfeIniciarPacoteWhatsapp, nfePrefetchWhatsappChaves, nfeAgendarPrefetchWhatsapp, nfeEntregarWhatsapp, nfeEhPwaStandalone,
       nfeFiltrosGeral, nfeFiltrosCanalActivos, nfeMostrarMais, nfeConteudoGeralHtml, nfeNotasDoMesEcra,
       nfeAplicarHotPath, nfeGarantirMes, nfeMesesQuentes, nfeMesAnterior, nfeMesCorrente, nfeAbrirMes, nfeMesJaCarregado,
       getNotas: () => _nfeNotas,
@@ -1774,6 +1775,7 @@ async function testWhatsappPdf() {
   global.window = { open(url) { abertosCedo.push(url); return {}; } };
   global.idbGet = async () => null;
   global.toast = () => {};
+  await api.nfeIniciarPacoteWhatsapp(chave);
   await api.nfePartilharWhatsapp(chave);
   assert(partilhas.length === 1, 'navigator.share foi chamado com o PDF junto');
   const f = partilhas[0] && partilhas[0].files && partilhas[0].files[0];
@@ -1803,6 +1805,7 @@ async function testWhatsappPdf() {
   assert(semHtml.slice(iN, iN + 220).includes('>N<'), 'sem boleto a célula continua N');
   assert(semHtml.indexOf("nfePartilharWhatsapp('" + sem.chave + "'") > semHtml.indexOf('>N<'), 'o ícone também aparece quando o boleto é N');
   partilhas.length = 0;
+  await apiSem.nfeIniciarPacoteWhatsapp(sem.chave);
   await apiSem.nfePartilharWhatsapp(sem.chave);
   const f2 = partilhas[0] && partilhas[0].files && partilhas[0].files[0];
   assert(f2 && f2.name === 'NF_98.pdf' && Buffer.from(await f2.arrayBuffer()).equals(danfe), 'sem boleto partilha só a DANFE');
@@ -1828,6 +1831,7 @@ async function testWhatsappPdf() {
   };
   const apiIdb = loadNfeUi([leve], '', 'nfe');
   partilhas.length = 0;
+  await apiIdb.nfeIniciarPacoteWhatsapp('IDB1');
   await apiIdb.nfePartilharWhatsapp('IDB1');
   const f3 = partilhas[0] && partilhas[0].files && partilhas[0].files[0];
   assert(f3 && f3.size > 0 && Buffer.from(await f3.arrayBuffer()).equals(noIdb), 'com o binário no IndexedDB partilha o PDF junto');
@@ -1861,6 +1865,7 @@ async function testWhatsappPdf() {
     canShare() { return false; },
     share(data) { partilhasCanShareFalso.push(data); return Promise.resolve(); },
   });
+  await api.nfeIniciarPacoteWhatsapp(chave);
   await api.nfePartilharWhatsapp(chave);
   assert(partilhasCanShareFalso.length === 1, 'telemóvel com canShare falso ainda chama share');
   const fCan = partilhasCanShareFalso[0] && partilhasCanShareFalso[0].files && partilhasCanShareFalso[0].files[0];
@@ -1882,15 +1887,45 @@ async function testWhatsappPdf() {
       return Promise.reject(e);
     },
   });
+  await api.nfeIniciarPacoteWhatsapp(chave);
   await api.nfePartilharWhatsapp(chave);
-  assert(toastsMovel.some(t => t.indexOf('Neste browser o PDF foi descarregado para anexar no WhatsApp') >= 0), 'telemóvel sem anexar ficheiro avisa a descarga, veio ' + toastsMovel.join('|'));
+  assert(toastsMovel.some(t => t.indexOf('PDF descarregado. Abre o WhatsApp e anexa o ficheiro') >= 0), 'telemóvel sem anexar ficheiro avisa a descarga, veio ' + toastsMovel.join('|'));
   assert(!abertosMovel.some(u => /wa\.me|whatsapp:\/\//i.test(String(u))), 'telemóvel sem partilha de ficheiro não abre WhatsApp só com texto');
   assert(global._nfeAnchorClicks.some(a => a.download === 'NF-99-boleto.pdf'), 'telemóvel sem partilha descarrega o PDF junto');
 
-  // 1.º toque perde o gesto (NotAllowedError) → toast; 2.º toque partilha o PDF em cache.
+  // Prefetch helper existe e aquece a cache para o toque ser síncrono.
+  assert(typeof api.nfePrefetchWhatsappChaves === 'function', 'prefetch helper existe');
+  assert(typeof api.nfeIniciarPacoteWhatsapp === 'function', 'iniciar pacote exportado para testes');
+  const apiSync = loadNfeUi([nota], '', 'nfe');
+  const partilhasSync = [];
+  let shareAntesDeMicrotask = false;
+  let microtaskAntesShare = false;
+  global.toast = () => {};
+  global._nfeAnchorClicks = [];
+  global.window = { open() { return {}; } };
+  global.idbGet = async () => null;
+  await apiSync.nfeIniciarPacoteWhatsapp(chave);
+  Promise.resolve().then(() => { microtaskAntesShare = !shareAntesDeMicrotask; });
+  porNavigator({
+    userAgent: UA_ANDROID,
+    maxTouchPoints: 5,
+    canShare() { return true; },
+    share(data) {
+      shareAntesDeMicrotask = true;
+      partilhasSync.push(data);
+      return Promise.resolve();
+    },
+  });
+  await apiSync.nfePartilharWhatsapp(chave);
+  await Promise.resolve();
+  assert(partilhasSync.length === 1, 'com cache síncrono chama share');
+  assert(shareAntesDeMicrotask, 'share corre no toque com cache (sem await de fetch antes)');
+  assert(!microtaskAntesShare, 'nenhuma microtask de fetch corre antes do share com cache');
+  assert(global._nfeAnchorClicks.length === 0, 'cache síncrono com share a funcionar não descarrega');
+
+  // 1.º toque frio (await) → não tenta share; marca pronto. 2.º toque partilha em sync.
   const partilhas2 = [];
   const toasts2 = [];
-  let shareN = 0;
   global._nfeAnchorClicks = [];
   global.toast = (m) => { toasts2.push(String(m)); };
   global.window = { open() { return {}; } };
@@ -1899,41 +1934,37 @@ async function testWhatsappPdf() {
     maxTouchPoints: 5,
     canShare() { return true; },
     share(data) {
-      shareN += 1;
       partilhas2.push(data);
-      if (shareN === 1) {
-        const e = new Error('Must be handling a user gesture');
-        e.name = 'NotAllowedError';
-        return Promise.reject(e);
-      }
       return Promise.resolve();
     },
   });
   await api.nfePartilharWhatsapp(chave);
-  assert(toasts2.some(t => t.indexOf('O PDF já está pronto. Toca outra vez no WhatsApp') >= 0), 'após preparar async avisa o 2.º toque, veio ' + toasts2.join('|'));
-  assert(partilhas2.length === 1, 'o 1.º toque tentou share e falhou com NotAllowedError');
+  assert(toasts2.some(t => t.indexOf('PDF pronto. Toca outra vez no WhatsApp') >= 0), 'após preparar async avisa o 2.º toque, veio ' + toasts2.join('|'));
+  assert(!toasts2.some(t => t.indexOf('O PDF já está pronto. Toca outra vez no WhatsApp para escolher o contacto') >= 0), 'não usa o toast antigo em loop');
+  assert(partilhas2.length === 0, 'o 1.º toque frio não chama share depois do await');
   toasts2.length = 0;
   await api.nfePartilharWhatsapp(chave);
-  assert(partilhas2.length === 2, 'o 2.º toque chama share outra vez com o PDF em cache');
-  const f2tap = partilhas2[1] && partilhas2[1].files && partilhas2[1].files[0];
+  assert(partilhas2.length === 1, 'o 2.º toque chama share com o PDF em cache');
+  const f2tap = partilhas2[0] && partilhas2[0].files && partilhas2[0].files[0];
   assert(f2tap instanceof File && f2tap.size > 0 && f2tap.type === 'application/pdf', 'o 2.º toque partilha um PDF não vazio');
   assert(Buffer.from(await f2tap.arrayBuffer()).equals(junto), 'o 2.º toque envia o PDF junto completo');
   assert(toasts2.length === 0, 'o 2.º toque com share a funcionar não mostra toast, veio ' + toasts2.join('|'));
-  assert(global._nfeAnchorClicks.length === 0, 'o caminho do toast não descarrega o PDF no 2.º toque');
+  assert(global._nfeAnchorClicks.length === 0, 'o 2.º toque com share a funcionar não descarrega');
 
-  // canShare falso + NotAllowedError no 1.º → 2.º toque ainda tenta share (sem gate canShare).
-  const partilhasMentira = [];
-  const toastsMentira = [];
-  let shareMentira = 0;
-  global.toast = (m) => { toastsMentira.push(String(m)); };
+  // Cache quente + NotAllowedError / canShare falso → fallback descarga no mesmo toque (sem loop).
+  const apiFall = loadNfeUi([nota], '', 'nfe');
+  await apiFall.nfeIniciarPacoteWhatsapp(chave);
+  const toastsFall = [];
+  global._nfeAnchorClicks = [];
+  const abertosFall = [];
+  global.toast = (m) => { toastsFall.push(String(m)); };
+  global.window = { open(url) { abertosFall.push(url); return {}; } };
   porNavigator({
     userAgent: 'Mozilla/5.0 (Linux; Android 12; SM-T500) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/20.0 Chrome/106.0.0.0 Safari/537.36',
     maxTouchPoints: 5,
     canShare() { return false; },
     share(data) {
-      shareMentira += 1;
-      partilhasMentira.push(data);
-      if (shareMentira === 1) {
+      if (data && data.files) {
         const e = new Error('gesture');
         e.name = 'NotAllowedError';
         return Promise.reject(e);
@@ -1941,15 +1972,47 @@ async function testWhatsappPdf() {
       return Promise.resolve();
     },
   });
-  await api.nfePartilharWhatsapp(chave);
-  assert(toastsMentira.some(t => t.indexOf('O PDF já está pronto') >= 0), 'Samsung com canShare falso também mostra o toast do 2.º toque');
-  await api.nfePartilharWhatsapp(chave);
-  assert(partilhasMentira.length === 2, 'no 2.º toque partilha mesmo com canShare falso');
-  assert(partilhasMentira[1].files[0].size > 0, '2.º toque Samsung entrega PDF não vazio');
+  await apiFall.nfePartilharWhatsapp(chave);
+  assert(global._nfeAnchorClicks.some(a => a.download === 'NF-99-boleto.pdf'), 'NotAllowedError com cache descarrega o PDF no mesmo toque');
+  assert(toastsFall.some(t => t.indexOf('PDF descarregado. Abre o WhatsApp e anexa o ficheiro') >= 0), 'fallback avisa a descarga com o nome do ficheiro, veio ' + toastsFall.join('|'));
+  assert(!toastsFall.some(t => t.indexOf('O PDF já está pronto. Toca outra vez') >= 0), 'NotAllowedError já não entra em loop de toast');
+  assert(!abertosFall.some(u => /wa\.me|whatsapp:\/\//i.test(String(u))), 'fallback no tablet não abre wa.me só com texto');
+
+  // PWA standalone: prefere descarga sem insistir no share com ficheiros.
+  const apiPwa = loadNfeUi([nota], '', 'nfe');
+  await apiPwa.nfeIniciarPacoteWhatsapp(chave);
+  const toastsPwa = [];
+  const partilhasPwa = [];
+  global._nfeAnchorClicks = [];
+  global.toast = (m) => { toastsPwa.push(String(m)); };
+  global.window = {
+    open() { return {}; },
+    matchMedia(q) {
+      return { matches: String(q).indexOf('standalone') >= 0, media: q, addListener() {}, removeListener() {} };
+    },
+  };
+  porNavigator({
+    userAgent: UA_ANDROID,
+    maxTouchPoints: 5,
+    standalone: true,
+    canShare() { return true; },
+    share(data) {
+      partilhasPwa.push(data);
+      return Promise.resolve();
+    },
+  });
+  assert(apiPwa.nfeEhPwaStandalone(), 'detecta PWA standalone');
+  await apiPwa.nfePartilharWhatsapp(chave);
+  assert(!partilhasPwa.some(p => p && p.files && p.files.length), 'PWA standalone não tenta share com ficheiros');
+  assert(global._nfeAnchorClicks.some(a => a.download === 'NF-99-boleto.pdf'), 'PWA standalone descarrega o PDF');
+  assert(toastsPwa.some(t => t.indexOf('PDF descarregado. Abre o WhatsApp e anexa o ficheiro') >= 0), 'PWA standalone avisa a descarga');
 
   const toastsAbort = [];
+  const apiAbort = loadNfeUi([nota], '', 'nfe');
+  await apiAbort.nfeIniciarPacoteWhatsapp(chave);
   global.toast = (m) => { toastsAbort.push(String(m)); };
   const abertosAbort = [];
+  global._nfeAnchorClicks = [];
   global.window = { open(url) { abertosAbort.push(url); return {}; } };
   porNavigator({
     userAgent: UA_ANDROID,
@@ -1961,9 +2024,10 @@ async function testWhatsappPdf() {
       return Promise.reject(e);
     },
   });
-  await api.nfePartilharWhatsapp(chave);
+  await apiAbort.nfePartilharWhatsapp(chave);
   assert(toastsAbort.length === 0, 'cancelar a folha de partilha não mostra toast');
   assert(abertosAbort.length === 0, 'cancelar no telemóvel não abre uma ligação só com texto');
+  assert(global._nfeAnchorClicks.length === 0, 'cancelar não descarrega o PDF');
 }
 
 async function testPdfTabletNuvem() {
@@ -2055,9 +2119,10 @@ async function testPdfTabletNuvem() {
   const toastsWa = [];
   global.toast = (m) => { toastsWa.push(String(m)); };
   const apiWa = loadNfeUi([notaLeve()], '', 'nfe');
+  await apiWa.nfeIniciarPacoteWhatsapp(chave);
+  assert(fetches.some(u => u.indexOf('nfe_pdfs_') >= 0), 'partilhar também lê o bloco quando a memória e o IndexedDB estão vazios');
   await apiWa.nfePartilharWhatsapp(chave);
   assert(!toastsWa.some(t => /não tem PDF|nao tem pdf|sem pdf/i.test(t)), 'WhatsApp com bloco na nuvem não diz que não tem PDF, veio ' + toastsWa.join('|'));
-  assert(fetches.some(u => u.indexOf('nfe_pdfs_') >= 0), 'partilhar também lê o bloco quando a memória e o IndexedDB estão vazios');
   const f = partilhas[0] && partilhas[0].files && partilhas[0].files[0];
   assert(f && f.size > 0 && f.type === 'application/pdf', 'o tablet partilha um PDF não vazio');
   assert(Buffer.from(await f.arrayBuffer()).equals(junto), 'o WhatsApp recebe o PDF junto do bloco, não um ficheiro vazio');

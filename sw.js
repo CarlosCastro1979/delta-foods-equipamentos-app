@@ -1,6 +1,6 @@
-// Service Worker v2026-10-22-pwa-instalar — rede sempre; limpa Cache Storage antigo
+// Service Worker v2026-10-22-nfe-wa-android — rede sempre; limpa Cache Storage antigo
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-22-pwa-instalar';
+const CACHE = 'v2026-10-22-nfe-wa-android';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
