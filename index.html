@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-22-nfe-wa-android WhatsApp tablet fallback -->
+<!-- dfb-build: v2026-10-22-login-mudar Mudar → Quem és tu? -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -1289,17 +1289,21 @@
     border-radius: 20px; padding: 6px 14px;
   }
   .status-sep { opacity: 0.4; }
+  .app-header-right { position: relative; z-index: 2; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
   .user-pill {
     display: inline-flex; align-items: center; gap: 10px; background: var(--accent-soft);
     border: 1px solid rgba(200, 16, 46, 0.15); border-radius: 20px; padding: 6px 6px 6px 14px; font-size: 12px;
+    position: relative; z-index: 3; pointer-events: auto; flex-shrink: 0;
   }
   .user-pill-label strong { color: var(--accent); font-weight: 600; }
   .user-pill-prefix { color: var(--muted); font-weight: 500; }
   .user-pill-change {
     background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
     color: var(--muted); cursor: pointer; font-size: 11px; font-family: var(--font-main); padding: 4px 10px;
+    position: relative; z-index: 4; pointer-events: auto; touch-action: manipulation;
   }
   .user-pill-change:hover { color: var(--text); border-color: var(--border-strong); }
+  .pwa-install-header { position: relative; z-index: 1; pointer-events: auto; }
   .login-overlay {
     position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px);
     z-index: 3000; display: none; align-items: center; justify-content: center; padding: 20px;
@@ -2153,7 +2157,7 @@ var _unused_placeholder = 1;
     </div>
     <div id="user-bar" class="user-pill" style="display:none">
       <span class="user-pill-label"><span class="user-pill-prefix">Utilizador:</span> <strong id="user-bar-name"></strong></span>
-      <button type="button" class="user-pill-change" onclick="irHomeCanais()" title="Voltar ao menu inicial">Mudar</button>
+      <button type="button" class="user-pill-change" id="btn-mudar-utilizador" onclick="logoutUtilizador()" title="Trocar de utilizador">Mudar</button>
     </div>
   </div>
 </header>
@@ -21579,9 +21583,9 @@ function voltarHome() {
   atualizarHomeCanais();
 }
 
-/** Botão "Mudar" na barra: volta à escolha de canais. */
+/** Botão "Mudar" na barra: limpa utilizador e mostra «Quem és tu?». */
 function irHomeCanais() {
-  voltarHome();
+  logoutUtilizador();
 }
 
 // Expor no window (onclick HTML)
@@ -35403,11 +35407,11 @@ function aplicarUtilizador(nome) {
 }
 
 function logoutUtilizador() {
-  localStorage.removeItem('dfb_utilizador');
+  try { localStorage.removeItem('dfb_utilizador'); } catch (_) {}
   _canalPinOk = null;
   _canalPinPendente = null;
   try { clearSessionDataCaches(); } catch (_) {}
-  voltarHome();
+  try { voltarHome(); } catch (_) {}
   mostrarLoginModal();
   const sel = document.getElementById('login-select');
   if (sel) sel.value = '';
@@ -35415,11 +35419,15 @@ function logoutUtilizador() {
   if (err) err.style.display = 'none';
   const bar = document.getElementById('user-bar');
   if (bar) bar.style.display = 'none';
-  atualizarHomeCanais();
+  const homeName = document.getElementById('home-user-name');
+  if (homeName) homeName.textContent = '—';
+  try { atualizarHomeCanais(); } catch (_) {}
 }
+try { window.logoutUtilizador = logoutUtilizador; } catch (_) {}
+try { window.irHomeCanais = irHomeCanais; } catch (_) {}
 
 function getUtilizadorAtual() {
-  return localStorage.getItem('dfb_utilizador') || '';
+  try { return localStorage.getItem('dfb_utilizador') || ''; } catch (_) { return ''; }
 }
 
 // ─── ENCERRAMENTO DE CLIENTE ─────────────────────────
@@ -44618,14 +44626,14 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-22-nfe-wa-android: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-22-login-mudar: registar SW (necessário para instalar como app) + limpar caches antigos
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/delta-foods-equipamentos-app/sw.js', { scope: '/delta-foods-equipamentos-app/' })
     .catch(function (err) { console.warn('SW register', err); });
 }
 if (typeof caches !== 'undefined' && caches.keys) {
   caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-22-nfe-wa-android'; }).map(function (k) { return caches.delete(k); }));
+    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-22-login-mudar'; }).map(function (k) { return caches.delete(k); }));
   }).catch(function () {});
 }
 
