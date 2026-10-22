@@ -1,6 +1,6 @@
-// Service Worker v2026-10-22-login-mudar — Mudar limpa utilizador; limpa Cache Storage antigo
+// Service Worker v2026-10-22-login-mudar2 — Mudar → Quem és tu?; limpa Cache Storage antigo
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-22-login-mudar';
+const CACHE = 'v2026-10-22-login-mudar2';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
@@ -15,6 +15,19 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Sem cache de páginas — vai sempre à rede (evita index.html antigo no GitHub Pages)
-  e.respondWith(fetch(e.request));
+  const req = e.request;
+  const url = new URL(req.url);
+  const isNav = req.mode === 'navigate' || req.destination === 'document';
+  const isShell = /\/(index\.html)?$/.test(url.pathname) || url.pathname.endsWith('/delta-foods-equipamentos-app/');
+  // index.html / navegação: network-first (nunca servir shell antigo do Cache Storage)
+  if (isNav || isShell) {
+    e.respondWith(
+      fetch(req, { cache: 'no-store' }).catch(() =>
+        caches.match(req).then(c => c || fetch(req))
+      )
+    );
+    return;
+  }
+  // Restante: rede sempre (sem pin de assets antigos)
+  e.respondWith(fetch(req));
 });

@@ -514,8 +514,8 @@ check('submenus mensal e anual e o carregador de RC mantêm-se', () => {
   assert.ok(js.includes('ccExact: true'));
   assert.ok(js.includes('estadoMensalComissaoRc(_crMapa, store, periodo.ym)'));
   assert.ok(js.includes("emailBtn.style.display = _crVista === 'anual' ? 'none' : ''"));
-  assert.ok(sw.includes('v2026-10-22-login-mudar'));
-  assert.ok(html.includes('v2026-10-22-login-mudar'));
+  assert.ok(sw.includes('v2026-10-22-login-mudar2'));
+  assert.ok(html.includes('v2026-10-22-login-mudar2'));
 });
 
 check('email da comissão mensal: destinatários, saudação, quadro e detalhe 749002', () => {
@@ -677,8 +677,8 @@ check('o ecrã Dados tem o carregador por baixo da lista de clientes', () => {
   assert.ok(fn.includes("toast('Guardado')"));
   assert.ok(!fn.includes('publicarListaClientesSupabase'));
   assert.ok(!fn.includes('vendas_quadro'));
-  assert.ok(sw.includes('v2026-10-22-login-mudar'));
-  assert.ok(html.includes('v2026-10-22-login-mudar'));
+  assert.ok(sw.includes('v2026-10-22-login-mudar2'));
+  assert.ok(html.includes('v2026-10-22-login-mudar2'));
 });
 
 function folhaExcelFalsa() {

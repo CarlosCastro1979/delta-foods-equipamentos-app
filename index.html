@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-22-login-mudar Mudar → Quem és tu? -->
+<!-- dfb-build: v2026-10-22-login-mudar2 Mudar → Quem és tu? (force Pages) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -1306,9 +1306,13 @@
   .pwa-install-header { position: relative; z-index: 1; pointer-events: auto; }
   .login-overlay {
     position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px);
-    z-index: 3000; display: none; align-items: center; justify-content: center; padding: 20px;
+    /* Acima de canal-pin (3100), docs (3001) e toast (9999) — Mudar tem de ver «Quem és tu?» */
+    z-index: 10050; display: none; align-items: center; justify-content: center; padding: 20px;
+    visibility: hidden; pointer-events: none;
   }
-  .login-overlay.open { display: flex !important; }
+  .login-overlay.open {
+    display: flex !important; visibility: visible !important; pointer-events: auto !important;
+  }
   .login-card {
     background: var(--surface); border-radius: 18px; padding: 36px 32px; width: 100%; max-width: 380px;
     text-align: center; box-shadow: var(--shadow-lg);
@@ -2157,7 +2161,7 @@ var _unused_placeholder = 1;
     </div>
     <div id="user-bar" class="user-pill" style="display:none">
       <span class="user-pill-label"><span class="user-pill-prefix">Utilizador:</span> <strong id="user-bar-name"></strong></span>
-      <button type="button" class="user-pill-change" id="btn-mudar-utilizador" onclick="logoutUtilizador()" title="Trocar de utilizador">Mudar</button>
+      <button type="button" class="user-pill-change" id="btn-mudar-utilizador" data-action="mudar-utilizador" onclick="logoutUtilizador(); return false;" title="Trocar de utilizador">Mudar</button>
     </div>
   </div>
 </header>
@@ -2279,7 +2283,7 @@ var _unused_placeholder = 1;
       </div>
       <p id="home-trocar-user" style="margin:18px 0 0;font-size:12px;color:var(--muted);">
         Utilizador: <strong id="home-user-name">—</strong>
-        · <button type="button" class="user-pill-change" style="margin-left:4px;" onclick="logoutUtilizador()">Trocar utilizador</button>
+        · <button type="button" class="user-pill-change" id="btn-trocar-utilizador-home" data-action="mudar-utilizador" style="margin-left:4px;" onclick="logoutUtilizador(); return false;">Trocar utilizador</button>
       </p>
       <button type="button" class="home-at-card" id="home-at-card" onclick="abrirAreaTecnicaHome()">
         <span class="hd-icon">🔧</span>
@@ -35327,7 +35331,20 @@ function initLogin() {
 }
 
 function mostrarLoginModal() {
-  const lo = document.getElementById('login-overlay'); lo.style.display = 'flex'; lo.classList.add('open');
+  const lo = document.getElementById('login-overlay');
+  if (!lo) return;
+  try { lo.classList.remove('hidden', 'hide'); } catch (_) {}
+  lo.classList.add('open');
+  lo.style.display = 'flex';
+  lo.style.visibility = 'visible';
+  lo.style.opacity = '1';
+  lo.style.pointerEvents = 'auto';
+  lo.style.zIndex = '10050';
+  try {
+    // Esconder app principal atrás do overlay (PWA standalone)
+    const main = document.getElementById('app-main') || document.querySelector('.app-body') || document.getElementById('home-view');
+    if (main) { /* overlay fixed cobre tudo */ }
+  } catch (_) {}
 }
 
 function confirmarLogin() {
@@ -35407,10 +35424,23 @@ function aplicarUtilizador(nome) {
 }
 
 function logoutUtilizador() {
-  try { localStorage.removeItem('dfb_utilizador'); } catch (_) {}
+  // Limpar todas as chaves usadas por getUtilizadorAtual / login
+  try {
+    ['dfb_utilizador', 'dfb_user', 'utilizador', 'delta_utilizador'].forEach(k => {
+      try { localStorage.removeItem(k); } catch (_) {}
+    });
+  } catch (_) {}
   _canalPinOk = null;
   _canalPinPendente = null;
   try { clearSessionDataCaches(); } catch (_) {}
+  // Fechar overlays que possam tapar o login (canal-pin z-index 3100)
+  try {
+    const pin = document.getElementById('canal-pin-overlay');
+    if (pin) {
+      pin.classList.remove('open');
+      pin.style.display = 'none';
+    }
+  } catch (_) {}
   try { voltarHome(); } catch (_) {}
   mostrarLoginModal();
   const sel = document.getElementById('login-select');
@@ -35422,9 +35452,55 @@ function logoutUtilizador() {
   const homeName = document.getElementById('home-user-name');
   if (homeName) homeName.textContent = '—';
   try { atualizarHomeCanais(); } catch (_) {}
+  try { window.scrollTo(0, 0); } catch (_) {}
+  try {
+    if (typeof history !== 'undefined' && history.replaceState) {
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  } catch (_) {}
+  // Garantir foco visual no ecrã «Quem és tu?»
+  try {
+    const lo = document.getElementById('login-overlay');
+    if (lo && typeof lo.scrollIntoView === 'function') lo.scrollIntoView({ block: 'start' });
+  } catch (_) {}
 }
 try { window.logoutUtilizador = logoutUtilizador; } catch (_) {}
 try { window.irHomeCanais = irHomeCanais; } catch (_) {}
+try { window.mostrarLoginModal = mostrarLoginModal; } catch (_) {}
+
+/** Clique/toque delegado — à prova de SW antigo / onclick engolido no tablet */
+(function bindMudarUtilizadorDelegado() {
+  function alvoMudar(el) {
+    if (!el || !el.closest) return null;
+    return el.closest('[data-action="mudar-utilizador"], #btn-mudar-utilizador, #btn-trocar-utilizador-home');
+  }
+  let _mudarLock = 0;
+  function onMudar(ev) {
+    const btn = alvoMudar(ev && ev.target);
+    if (!btn) return;
+    const now = Date.now();
+    if (now - _mudarLock < 400) {
+      try { ev.preventDefault(); } catch (_) {}
+      try { ev.stopPropagation(); } catch (_) {}
+      return;
+    }
+    _mudarLock = now;
+    try { ev.preventDefault(); } catch (_) {}
+    try { ev.stopPropagation(); } catch (_) {}
+    try {
+      if (typeof logoutUtilizador === 'function') logoutUtilizador();
+      else if (window.logoutUtilizador) window.logoutUtilizador();
+    } catch (err) {
+      try { console.error('Mudar utilizador:', err); } catch (_) {}
+      try { localStorage.removeItem('dfb_utilizador'); } catch (_) {}
+      try { mostrarLoginModal(); } catch (_) {}
+    }
+  }
+  try {
+    document.addEventListener('click', onMudar, true);
+    document.addEventListener('touchend', onMudar, { capture: true, passive: false });
+  } catch (_) {}
+})();
 
 function getUtilizadorAtual() {
   try { return localStorage.getItem('dfb_utilizador') || ''; } catch (_) { return ''; }
@@ -44626,14 +44702,17 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-22-login-mudar: registar SW (necessário para instalar como app) + limpar caches antigos
+// v2026-10-22-login-mudar2: registar SW (necessário para instalar como app) + limpar caches antigos
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/delta-foods-equipamentos-app/sw.js', { scope: '/delta-foods-equipamentos-app/' })
+    .then(function (reg) {
+      try { if (reg && reg.update) reg.update(); } catch (_) {}
+    })
     .catch(function (err) { console.warn('SW register', err); });
 }
 if (typeof caches !== 'undefined' && caches.keys) {
   caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-22-login-mudar'; }).map(function (k) { return caches.delete(k); }));
+    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-22-login-mudar2'; }).map(function (k) { return caches.delete(k); }));
   }).catch(function () {});
 }
 
