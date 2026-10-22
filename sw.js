@@ -1,5 +1,7 @@
-// Service Worker v2026-10-22-nfe-wa-tablet — limpa cache e auto-destrói
-// (a app não deve servir index.html antigo após merge no GitHub Pages)
+// Service Worker v2026-10-22-pwa-instalar — rede sempre; limpa Cache Storage antigo
+// Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
+const CACHE = 'v2026-10-22-pwa-instalar';
+
 self.addEventListener('install', e => {
   self.skipWaiting();
 });
@@ -7,12 +9,12 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.map(k => caches.delete(k)))
-    ).then(() => self.registration.unregister())
+      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', e => {
-  // Sem cache — vai sempre à rede
+  // Sem cache de páginas — vai sempre à rede (evita index.html antigo no GitHub Pages)
   e.respondWith(fetch(e.request));
 });

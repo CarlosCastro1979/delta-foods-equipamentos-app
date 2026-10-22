@@ -1,19 +1,23 @@
 <!DOCTYPE html>
-<!-- dfb-build: app-menos-travar lista SAP em cache + tabelas em fatias -->
+<!-- dfb-build: v2026-10-22-pwa-instalar instalar como aplicação -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Delta Foods · Gestão Comercial</title>
 <link rel="manifest" href="/delta-foods-equipamentos-app/manifest.json">
 <meta name="theme-color" content="#c8102e">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Delta Foods">
+<meta name="application-name" content="Delta Foods">
 <link rel="apple-touch-icon" href="/delta-foods-equipamentos-app/icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/delta-foods-equipamentos-app/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/delta-foods-equipamentos-app/icon-512.png">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -1311,6 +1315,49 @@
   .login-select { margin-bottom: 16px; }
   .login-btn { width: 100%; justify-content: center; }
   .login-erro { color: var(--danger); font-size: 12px; margin-top: 12px; display: none; }
+  /* PWA — instalar como aplicação */
+  .pwa-install {
+    display: none;
+    margin-top: 18px;
+    padding: 14px 14px 12px;
+    text-align: left;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-xs);
+  }
+  .pwa-install.visible { display: block; }
+  .pwa-install-title {
+    font-size: 13px; font-weight: 600; color: var(--text); margin: 0 0 6px;
+  }
+  .pwa-install-desc {
+    font-size: 12px; color: var(--muted); margin: 0 0 10px; line-height: 1.45;
+  }
+  .pwa-install-steps {
+    font-size: 12px; color: var(--text-secondary); margin: 0 0 10px; padding-left: 18px; line-height: 1.5;
+  }
+  .pwa-install-steps li { margin-bottom: 4px; }
+  .pwa-install-btn {
+    width: 100%; justify-content: center; margin-top: 2px;
+  }
+  .pwa-install-dismiss {
+    display: block; width: 100%; margin-top: 8px; padding: 6px;
+    border: none; background: transparent; color: var(--muted);
+    font-size: 11px; font-family: var(--font-main); cursor: pointer; text-decoration: underline;
+  }
+  .pwa-install-dismiss:hover { color: var(--text-secondary); }
+  .pwa-install-header {
+    display: none; align-items: center; gap: 8px;
+  }
+  .pwa-install-header.visible { display: inline-flex; }
+  .pwa-install-header .btn {
+    font-size: 12px; padding: 6px 12px; white-space: nowrap;
+  }
+  body.pwa-standalone .pwa-install,
+  body.pwa-standalone .pwa-install-header { display: none !important; }
+  @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
+    body { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  }
   .main-nav {
     background: var(--surface); border-bottom: 1px solid var(--border);
     position: sticky; top: var(--header-h); z-index: 150; box-shadow: var(--shadow-xs);
@@ -2092,6 +2139,9 @@ var _unused_placeholder = 1;
     </div>
   </div>
   <div class="app-header-right">
+    <div id="pwa-install-header" class="pwa-install-header" aria-live="polite">
+      <button type="button" class="btn btn-secondary" id="pwa-install-header-btn" onclick="pwaInstallClick()">Instalar aplicação</button>
+    </div>
     <div id="status-bar" class="status-pill">
       <span class="dot" id="status-dot"></span>
       <span id="status-text">A ligar...</span>
@@ -2142,6 +2192,13 @@ var _unused_placeholder = 1;
     </select>
     <button class="btn btn-primary login-btn" onclick="if(typeof confirmarLogin==='function')confirmarLogin()">Entrar</button>
     <div id="login-erro" class="login-erro">Seleciona um nome para continuar.</div>
+    <div id="pwa-install-login" class="pwa-install" aria-live="polite">
+      <p class="pwa-install-title">Instalar como aplicação</p>
+      <p class="pwa-install-desc" id="pwa-install-login-desc">Assim a Delta Foods abre em ecrã completo, sem barra do browser.</p>
+      <ol class="pwa-install-steps" id="pwa-install-login-steps" style="display:none"></ol>
+      <button type="button" class="btn btn-primary pwa-install-btn" id="pwa-install-login-btn" onclick="pwaInstallClick()" style="display:none">Instalar aplicação</button>
+      <button type="button" class="pwa-install-dismiss" onclick="pwaInstallDismiss()">Agora não</button>
+    </div>
   </div>
 </div>
 
@@ -44400,15 +44457,155 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-22-nfe-wa-tablet: desinstalar SW + limpar Cache Storage (PWA não pode ficar com index antigo)
+// v2026-10-22-pwa-instalar: registar SW (necessário para instalar como app) + limpar caches antigos
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(r => r.unregister());
-  });
+  navigator.serviceWorker.register('/delta-foods-equipamentos-app/sw.js', { scope: '/delta-foods-equipamentos-app/' })
+    .catch(function (err) { console.warn('SW register', err); });
 }
 if (typeof caches !== 'undefined' && caches.keys) {
-  caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
+  caches.keys().then(function (keys) {
+    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-22-pwa-instalar'; }).map(function (k) { return caches.delete(k); }));
+  }).catch(function () {});
 }
+
+(function () {
+  var DISMISS_KEY = 'dfb_pwa_install_dismiss';
+  var deferredPrompt = null;
+  var dismissed = false;
+  try { dismissed = localStorage.getItem(DISMISS_KEY) === '1'; } catch (_) {}
+
+  function isStandalone() {
+    try {
+      if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+      if (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches) return true;
+      if (window.matchMedia && window.matchMedia('(display-mode: minimal-ui)').matches) return true;
+    } catch (_) {}
+    return window.navigator.standalone === true;
+  }
+
+  function isIosLike() {
+    var ua = (navigator.userAgent || '');
+    if (/iPad|iPhone|iPod/.test(ua)) return true;
+    // iPadOS 13+ pode reportar MacIntel + touch
+    if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
+    return false;
+  }
+
+  function isAndroidLike() {
+    var ua = (navigator.userAgent || '').toLowerCase();
+    if (/android/.test(ua)) return true;
+    // Galaxy Tab com teclado: UA desktop Linux + multi-touch
+    if (navigator.maxTouchPoints > 1 && /linux/.test(ua) && !/windows/.test(ua) && !isIosLike()) return true;
+    return false;
+  }
+
+  function setVisible(el, on) {
+    if (!el) return;
+    if (on) el.classList.add('visible');
+    else el.classList.remove('visible');
+  }
+
+  function renderInstallUi() {
+    if (isStandalone()) {
+      document.body.classList.add('pwa-standalone');
+      setVisible(document.getElementById('pwa-install-login'), false);
+      setVisible(document.getElementById('pwa-install-header'), false);
+      return;
+    }
+    document.body.classList.remove('pwa-standalone');
+    if (dismissed) {
+      setVisible(document.getElementById('pwa-install-login'), false);
+      setVisible(document.getElementById('pwa-install-header'), !!deferredPrompt);
+      return;
+    }
+
+    var box = document.getElementById('pwa-install-login');
+    var desc = document.getElementById('pwa-install-login-desc');
+    var steps = document.getElementById('pwa-install-login-steps');
+    var btn = document.getElementById('pwa-install-login-btn');
+    var header = document.getElementById('pwa-install-header');
+
+    if (deferredPrompt) {
+      if (desc) desc.textContent = 'Instala a Delta Foods no tablet — abre como aplicação, sem barra do Chrome.';
+      if (steps) { steps.style.display = 'none'; steps.innerHTML = ''; }
+      if (btn) btn.style.display = '';
+      setVisible(box, true);
+      setVisible(header, true);
+      return;
+    }
+
+    if (isIosLike()) {
+      if (desc) desc.textContent = 'No Safari / Chrome do iPad:';
+      if (steps) {
+        steps.style.display = '';
+        steps.innerHTML = '<li>Toca em <strong>Partilhar</strong> (□↑)</li><li>Escolhe <strong>Adicionar ao Ecrã Inicial</strong></li><li>Confirma <strong>Adicionar</strong></li>';
+      }
+      if (btn) btn.style.display = 'none';
+      setVisible(box, true);
+      setVisible(header, false);
+      return;
+    }
+
+    if (isAndroidLike()) {
+      if (desc) desc.textContent = 'No Chrome ou Samsung Internet do tablet:';
+      if (steps) {
+        steps.style.display = '';
+        steps.innerHTML = '<li>Abre o menu <strong>⋮</strong> (canto superior)</li><li>Escolhe <strong>Instalar aplicação</strong> ou <strong>Adicionar à página inicial</strong></li><li>Confirma — o ícone Delta Foods fica no ecrã inicial</li>';
+      }
+      if (btn) btn.style.display = 'none';
+      setVisible(box, true);
+      setVisible(header, false);
+      return;
+    }
+
+    // Desktop / outros: mostra passos genéricos Chrome
+    if (desc) desc.textContent = 'No Chrome: menu ⋮ → Instalar aplicação (ou Adicionar ao ecrã inicial).';
+    if (steps) { steps.style.display = 'none'; steps.innerHTML = ''; }
+    if (btn) btn.style.display = 'none';
+    setVisible(box, true);
+    setVisible(header, false);
+  }
+
+  window.pwaInstallClick = function () {
+    if (!deferredPrompt) {
+      renderInstallUi();
+      return;
+    }
+    var p = deferredPrompt;
+    deferredPrompt = null;
+    p.prompt();
+    p.userChoice.finally(function () {
+      renderInstallUi();
+    });
+  };
+
+  window.pwaInstallDismiss = function () {
+    dismissed = true;
+    try { localStorage.setItem(DISMISS_KEY, '1'); } catch (_) {}
+    renderInstallUi();
+  };
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    try { localStorage.removeItem(DISMISS_KEY); } catch (_) {}
+    dismissed = false;
+    renderInstallUi();
+  });
+
+  window.addEventListener('appinstalled', function () {
+    deferredPrompt = null;
+    dismissed = true;
+    try { localStorage.setItem(DISMISS_KEY, '1'); } catch (_) {}
+    renderInstallUi();
+  });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderInstallUi);
+  } else {
+    renderInstallUi();
+  }
+})();
 
 // ══════════════════════════════════════════
 // CONTRATOS DE COMODATO
