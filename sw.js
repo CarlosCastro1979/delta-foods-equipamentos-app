@@ -1,6 +1,6 @@
-// Service Worker v2026-10-26-contratos-pin-prod — multi-gama + testemunhas Dist Madeira + PIN sessão; limpa Cache Storage antigo
+// Service Worker v2026-10-26-eduardo-cpf — CPF Eduardo Madeira (testemunha Dist)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-26-contratos-pin-prod';
+const CACHE = 'v2026-10-26-eduardo-cpf';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

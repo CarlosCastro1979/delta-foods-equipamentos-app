@@ -985,10 +985,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-26-contratos-pin-prod'));
+  assert.ok(sw.includes('v2026-10-26-eduardo-cpf'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-10-26-contratos-pin-prod'));
+  assert.ok(html.includes('v2026-10-26-eduardo-cpf'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 

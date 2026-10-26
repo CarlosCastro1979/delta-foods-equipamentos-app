@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-26-contratos-pin-prod multi-gama + Madeira/testemunhas Dist + PIN sessão -->
+<!-- dfb-build: v2026-10-26-eduardo-cpf CPF Eduardo Madeira testemunha Dist -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -44774,7 +44774,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-26-contratos-pin-prod: registar SW (necessário para instalar como app) + limpar caches antigos
+// v2026-10-26-eduardo-cpf: registar SW (necessário para instalar como app) + limpar caches antigos
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/delta-foods-equipamentos-app/sw.js', { scope: '/delta-foods-equipamentos-app/' })
     .then(function (reg) {
@@ -44784,7 +44784,7 @@ if ('serviceWorker' in navigator) {
 }
 if (typeof caches !== 'undefined' && caches.keys) {
   caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-26-contratos-pin-prod'; }).map(function (k) { return caches.delete(k); }));
+    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-26-eduardo-cpf'; }).map(function (k) { return caches.delete(k); }));
   }).catch(function () {});
 }
 
@@ -45611,13 +45611,15 @@ function ctPrev() { ctGoto(ctCurrentStep - 1); }
  */
 const CT_TESTEMUNHA_FILIPE = { nome: 'Filipe Neves', cpf: '123.423.841-14' };
 const CT_TESTEMUNHA_MASSIMO = { nome: 'Massimo Bottello', cpf: '' };
-const CT_TESTEMUNHA_EDUARDO = { nome: 'Eduardo Madeira', cpf: '' };
+const CT_TESTEMUNHA_EDUARDO = { nome: 'Eduardo Madeira', cpf: '225.668.708-29' };
 const CT_TESTEMUNHAS_VENDEDOR_CPF = [
   { nome: 'Filipe Neves', cpf: '123.423.841-14', keys: ['filipe neves', 'filipe'] },
   { nome: 'Hélcio Grégio', cpf: '129.337.468-75', keys: ['helcio gregio', 'helcio'] },
   { nome: 'Paulo Fontes', cpf: '189.665.258-14', keys: ['paulo fontes', 'paulo'] },
   // App usa «Daniela Santos»; no contrato legal: Daniela Silva
   { nome: 'Daniela Silva', cpf: '324.143.528-84', keys: ['daniela silva', 'daniela santos', 'daniela'] },
+  // Dist — testemunha Delta 2 (também se o vendedor do contrato for Eduardo)
+  { nome: 'Eduardo Madeira', cpf: '225.668.708-29', keys: ['eduardo madeira', 'eduardo moreira', 'eduardo'] },
 ];
 
 function ctFmtCpfDigits(raw) {
