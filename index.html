@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-22-login-mudar2 Mudar → Quem és tu? (force Pages) -->
+<!-- dfb-build: v2026-10-26-pin-sessao PIN uma vez por sessão até Mudar -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -11418,17 +11418,82 @@ function atualizarCanalBar(label) {
 }
 
 let _canalPinPendente = null; // canalId à espera de PIN
-let _canalPinOk = null;       // canalId desbloqueado nesta sessão
+/** @deprecated usar isUserPinSessaoOk — mantido p/ compat (nome do user desbloqueado ou null) */
+let _canalPinOk = null;
+/** Nome do utilizador com PIN validado nesta sessão (até «Mudar»). */
+let _userPinSessaoOk = null;
+const USER_PIN_SESSAO_KEY = 'dfb_user_pin_sessao';
 let _pinGateResolve = null;
 let _pinGateMode = 'verify'; // 'verify' | 'create'
 let _pinGateStoredHash = null;
 let _pinGateBusy = false;
 // _pinGateOffline declarado junto ao bloco PIN (servidor indisponível → cache local)
 
+/** PIN já validado para este utilizador nesta sessão de browser (até Mudar). */
+function isUserPinSessaoOk(nome) {
+  const n = nome || (typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '');
+  if (!n) return false;
+  const nn = typeof normNomeUtilizador === 'function' ? normNomeUtilizador(n) : String(n).toUpperCase();
+  if (_userPinSessaoOk) {
+    const mem = typeof normNomeUtilizador === 'function'
+      ? normNomeUtilizador(_userPinSessaoOk)
+      : String(_userPinSessaoOk).toUpperCase();
+    if (mem === nn) return true;
+  }
+  if (_canalPinOk) {
+    const legacy = typeof normNomeUtilizador === 'function'
+      ? normNomeUtilizador(_canalPinOk)
+      : String(_canalPinOk).toUpperCase();
+    // legado: _canalPinOk era canalId; só aceitar se coincidir com o nome do user
+    if (legacy === nn) {
+      _userPinSessaoOk = n;
+      return true;
+    }
+  }
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const stored = sessionStorage.getItem(USER_PIN_SESSAO_KEY) || '';
+      if (stored) {
+        const sn = typeof normNomeUtilizador === 'function'
+          ? normNomeUtilizador(stored)
+          : String(stored).toUpperCase();
+        if (sn === nn) {
+          _userPinSessaoOk = n;
+          _canalPinOk = n;
+          return true;
+        }
+      }
+    }
+  } catch (_) {}
+  return false;
+}
+
+function marcarUserPinSessaoOk(nome) {
+  const n = nome || (typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '');
+  if (!n) return;
+  _userPinSessaoOk = n;
+  _canalPinOk = n;
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(USER_PIN_SESSAO_KEY, n);
+    }
+  } catch (_) {}
+}
+
+function limparUserPinSessao() {
+  _userPinSessaoOk = null;
+  _canalPinOk = null;
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(USER_PIN_SESSAO_KEY);
+    }
+  } catch (_) {}
+}
+
 function ensureCanalView() {
   if (document.body.classList.contains('view-canal') && _canalActivo) return;
   const last = localStorage.getItem('dfb_canal_activo') || '';
-  if (last && podeAcederCanal(last) && _canalPinOk === last) {
+  if (last && podeAcederCanal(last) && isUserPinSessaoOk()) {
     abrirCanalConfirmado(last);
     return;
   }
@@ -11451,8 +11516,8 @@ async function entrarCanal(canalId) {
       toast('Não tens acesso ao canal ' + c.nome + '.', 'error');
       return;
     }
-    // PIN obrigatório em cada entrada no canal (excepto se já desbloqueado nesta sessão)
-    if (_canalPinOk === canalId) {
+    // PIN uma vez por sessão de utilizador (menus/canais partilham a mesma validação)
+    if (isUserPinSessaoOk()) {
       abrirCanalConfirmado(canalId);
       return;
     }
@@ -11464,7 +11529,7 @@ async function entrarCanal(canalId) {
     });
     _canalPinPendente = null;
     if (!ok) return;
-    _canalPinOk = canalId;
+    marcarUserPinSessaoOk();
     abrirCanalConfirmado(canalId);
   } catch (e) {
     console.error('entrarCanal', e);
@@ -11549,7 +11614,6 @@ async function abrirDadosHome() {
       return;
     }
     _canalActivo = null;
-    _canalPinOk = null;
     setAppView('dados');
     atualizarCanalBar('Dados');
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -13201,7 +13265,6 @@ async function abrirAreaTecnicaHome() {
       return;
     }
     _canalActivo = null;
-    _canalPinOk = null;
     setAppView('area-tecnica');
     atualizarCanalBar('Área Técnica');
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -13243,7 +13306,6 @@ async function abrirAreaFinanceiraHome() {
       return;
     }
     _canalActivo = null;
-    _canalPinOk = null;
     setAppView('area-financeira');
     atualizarCanalBar('Área Financeira');
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -13375,7 +13437,6 @@ async function abrirPrevisaoVendasHome() {
       return;
     }
     _canalActivo = null;
-    _canalPinOk = null;
     setAppView('previsao-vendas');
     atualizarCanalBar('Previsão de vendas');
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -21565,18 +21626,18 @@ function voltarHome() {
   if (typeof vol27Flush === 'function') vol27Flush();
   if (typeof saz27Flush === 'function') saz27Flush();
   _canalActivo = null;
-  _canalPinOk = null;
+  // NÃO limpar PIN de sessão aqui — só «Mudar» (logoutUtilizador) pede PIN de novo
   _canalPinPendente = null;
   try { localStorage.removeItem('dfb_canal_activo'); } catch (e) {}
   // Fecha modal PIN sem disparar resolve se já não houver pedido pendente
   if (_pinGateResolve) cancelarUserPin();
   else fecharUserPinOverlay();
-  // Requer PIN de novo ao reentrar nas áreas (troca de utilizador / sessão)
-  ['ata-pin-gate', 'af-pin-gate', 'dados-pin-gate'].forEach(id => {
+  // Painéis escondidos na home; se PIN já válido, pedirPinUtilizador não volta a pedir
+  ['ata-pin-gate', 'af-pin-gate', 'dados-pin-gate', 'pv-pin-gate'].forEach(id => {
     const gate = document.getElementById(id);
     if (gate) gate.style.display = '';
   });
-  ['ata-content', 'af-content', 'dados-content'].forEach(id => {
+  ['ata-content', 'af-content', 'dados-content', 'pv-content'].forEach(id => {
     const content = document.getElementById(id);
     if (content) content.style.display = 'none';
   });
@@ -33922,6 +33983,10 @@ function pedirPinUtilizador(opts = {}) {
     toast('Selecciona o utilizador primeiro.', 'warn');
     return Promise.resolve(false);
   }
+  // Sessão já desbloqueada para este utilizador → não voltar a pedir ao mudar de menu
+  if (typeof isUserPinSessaoOk === 'function' && isUserPinSessaoOk(nome)) {
+    return Promise.resolve(true);
+  }
   if (_pinGateResolve) {
     try { _pinGateResolve(false); } catch (_) {}
     _pinGateResolve = null;
@@ -34068,6 +34133,7 @@ async function confirmarUserPin() {
     _pinGateResolve = null;
     _pinGateStoredHash = hash || _pinGateStoredHash;
     _pinGateOffline = false;
+    try { marcarUserPinSessaoOk(nome); } catch (_) {}
     if (r) r(true);
   };
 
@@ -34163,6 +34229,9 @@ window.pedirPinUtilizador = pedirPinUtilizador;
 window.onUserPinKeydown = onUserPinKeydown;
 window.esqueciUserPin = esqueciUserPin;
 window.adminResetUtilizadorPin = adminResetUtilizadorPin;
+window.isUserPinSessaoOk = isUserPinSessaoOk;
+window.marcarUserPinSessaoOk = marcarUserPinSessaoOk;
+window.limparUserPinSessao = limparUserPinSessao;
 
 const UTILIZADOR_EMAILS = {
   'PAULO FONTES':   'paulo.fontes@deltafoodsbrasil.com.br',
@@ -35355,7 +35424,7 @@ function confirmarLogin() {
     return;
   }
   localStorage.setItem('dfb_utilizador', nome);
-  _canalPinOk = null;
+  limparUserPinSessao(); // novo utilizador → PIN obrigatório na 1.ª área
   aplicarUtilizador(nome);
   const lo = document.getElementById('login-overlay');
   lo.classList.remove('open');
@@ -35430,7 +35499,7 @@ function logoutUtilizador() {
       try { localStorage.removeItem(k); } catch (_) {}
     });
   } catch (_) {}
-  _canalPinOk = null;
+  limparUserPinSessao();
   _canalPinPendente = null;
   try { clearSessionDataCaches(); } catch (_) {}
   // Fechar overlays que possam tapar o login (canal-pin z-index 3100)
@@ -44702,7 +44771,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-22-login-mudar2: registar SW (necessário para instalar como app) + limpar caches antigos
+// v2026-10-26-pin-sessao: registar SW (necessário para instalar como app) + limpar caches antigos
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/delta-foods-equipamentos-app/sw.js', { scope: '/delta-foods-equipamentos-app/' })
     .then(function (reg) {
@@ -44712,7 +44781,7 @@ if ('serviceWorker' in navigator) {
 }
 if (typeof caches !== 'undefined' && caches.keys) {
   caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-22-login-mudar2'; }).map(function (k) { return caches.delete(k); }));
+    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-26-pin-sessao'; }).map(function (k) { return caches.delete(k); }));
   }).catch(function () {});
 }
 

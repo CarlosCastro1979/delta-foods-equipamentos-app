@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const CACHE = 'v2026-10-22-login-mudar2';
+const CACHE = 'v2026-10-26-pin-sessao';
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
@@ -112,7 +112,19 @@ const context = {
     addEventListener(type, fn, opts) { listeners.push({ type, fn, opts }); },
   },
   _canalPinOk: 'x',
+  _userPinSessaoOk: 'x',
   _canalPinPendente: 'y',
+  USER_PIN_SESSAO_KEY: 'dfb_user_pin_sessao',
+  sessionStorage: {
+    getItem() { return null; },
+    setItem() {},
+    removeItem() {},
+  },
+  limparUserPinSessao() {
+    this._canalPinOk = null;
+    this._userPinSessaoOk = null;
+    try { this.sessionStorage.removeItem(this.USER_PIN_SESSAO_KEY); } catch (_) {}
+  },
   clearSessionDataCaches() { clearSessionCalls++; },
   voltarHome() { voltarHomeCalls++; },
   atualizarHomeCanais() { atualizarHomeCalls++; },
