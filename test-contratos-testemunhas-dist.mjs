@@ -13,7 +13,8 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-26-eduardo-cpf';
+const CACHE = 'v2026-10-26-massimo-cpf';
+const MASSIMO_CPF = '017.941.856-40';
 const EDUARDO_CPF = '225.668.708-29';
 
 function extractFn(src, name) {
@@ -179,8 +180,10 @@ check('Distribuidores: T1=Massimo, T2=Eduardo Madeira com CPF (sem Filipe)', () 
   els.ct_vendedor.value = 'Carlos Castro';
   context.ctAplicarTestemunhasDelta();
   assert.equal(els.ct_t1_nome.value, 'Massimo Bottello');
+  assert.equal(els.ct_t1_cpf.value, MASSIMO_CPF);
   assert.equal(els.ct_t2_nome.value, 'Eduardo Madeira');
   assert.equal(els.ct_t2_cpf.value, EDUARDO_CPF);
+  assert.equal(context.CT_TESTEMUNHA_MASSIMO.cpf, MASSIMO_CPF);
   assert.equal(context.CT_TESTEMUNHA_EDUARDO.cpf, EDUARDO_CPF);
   assert.ok(!els.ct_t1_nome.value.includes('Filipe'));
   assert.ok(!els.ct_t2_nome.value.includes('Filipe'));
@@ -189,6 +192,15 @@ check('Distribuidores: T1=Massimo, T2=Eduardo Madeira com CPF (sem Filipe)', () 
   assert.ok(els.ct_testemunhas_hint.innerHTML.includes('Eduardo Madeira'));
   assert.ok(!els.ct_testemunhas_hint.innerHTML.includes('Filipe'));
   assert.equal(els.ct_t2_lbl.textContent, 'Testemunha 2 — Nome');
+});
+
+check('mapa CPF resolve Massimo Bottello → 017.941.856-40', () => {
+  const t1 = context.ctResolveTestemunhaVendedor('Massimo Bottello');
+  assert.equal(t1.nome, 'Massimo Bottello');
+  assert.equal(t1.cpf, MASSIMO_CPF);
+  const curto = context.ctResolveTestemunhaVendedor('Massimo');
+  assert.equal(curto.nome, 'Massimo Bottello');
+  assert.equal(curto.cpf, MASSIMO_CPF);
 });
 
 check('mapa CPF resolve Eduardo Madeira → 225.668.708-29', () => {

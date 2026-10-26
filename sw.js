@@ -1,6 +1,6 @@
-// Service Worker v2026-10-26-eduardo-cpf — CPF Eduardo Madeira (testemunha Dist)
+// Service Worker v2026-10-26-massimo-cpf — CPF Massimo Bottello (testemunha Dist)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-26-eduardo-cpf';
+const CACHE = 'v2026-10-26-massimo-cpf';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
