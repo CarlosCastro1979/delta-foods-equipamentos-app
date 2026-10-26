@@ -60,7 +60,7 @@ let scMap = new Map();
 
 const CANAIS_APP = {
   horeca: { id: 'horeca', vendedores: ['Hélcio Grégio', 'Paulo Fontes'] },
-  distribuidores: { id: 'distribuidores', vendedores: ['Eduardo Moreira', 'Massimo Bottello'] },
+  distribuidores: { id: 'distribuidores', vendedores: ['Eduardo Madeira', 'Massimo Bottello'] },
   varejo: { id: 'varejo', vendedores: ['Diogo Oliveira'] },
 };
 

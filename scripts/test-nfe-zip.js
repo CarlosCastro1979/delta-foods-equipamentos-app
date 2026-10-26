@@ -324,7 +324,7 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-22-login-mudar2'), 'service worker referido no index');
+  assert(html.includes('v2026-10-26-contratos-testemunhas-dist'), 'service worker referido no index');
   assert(!html.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no index');
@@ -336,7 +336,7 @@ function testUiCarga() {
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-22-login-mudar2'), 'service worker actualizado');
+  assert(sw.includes('v2026-10-26-contratos-testemunhas-dist'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no sw');
@@ -888,7 +888,7 @@ function testVendedorAtual() {
   assert(semInterna['430787'].npess === 99520005, 'outro cliente no mesmo NPess mantém-se');
 
   const nomes = {
-    99520020: 'EDUARDO MOREIRA',
+    99520020: 'EDUARDO MADEIRA',
     99520004: 'DIOGO OLIVEIRA',
     99520008: 'MARCIO GORGA',
     99520003: 'MASSIMO BOTTELLO',
@@ -907,7 +907,7 @@ function testVendedorAtual() {
     cliente: 'F. J. RIBEIRO CAFÉ-ME RIBER COFFEE',
   }, vazio, canal, catalogo);
   assert(ribeiro.status === 'unico' && ribeiro.cod === '406016' && ribeiro.npess === '99520020', 'NF 102282 vai para o Eduardo do 406016, veio ' + ribeiro.npess + ' ' + ribeiro.cod);
-  assert(ribeiro.vendedor === 'EDUARDO MOREIRA' && ribeiro.canalId === 'distribuidores', '102282 canal distribuidores');
+  assert(ribeiro.vendedor === 'EDUARDO MADEIRA' && ribeiro.canalId === 'distribuidores', '102282 canal distribuidores');
   const difri = nfe.nfeCruzarNota({
     chave: 'NF102272', numero: '102272', destDoc: '83690339000194',
     cliente: 'DIFRISUL DISTRIBUIDORA LTDA DRIFISUL',
@@ -937,7 +937,7 @@ function testVendedorAtual() {
     chave: 'DIV', numero: '9', destDoc: '00000000000193', cliente: 'CASA DUPLA LTDA',
   }, vazio, canal, catalogo.concat([
     { cod: '111', npess: 99520004, nome: 'CASA DUPLA LTDA', vendedor: 'DIOGO OLIVEIRA' },
-    { cod: '222', npess: 99520020, nome: 'CASA DUPLA LTDA', vendedor: 'EDUARDO MOREIRA' },
+    { cod: '222', npess: 99520020, nome: 'CASA DUPLA LTDA', vendedor: 'EDUARDO MADEIRA' },
   ]));
   assert(divergente.status === 'sem_cliente' && !divergente.vendedor && !divergente.cod, 'dois códigos com vendedores diferentes não se atribuem');
   const so2025 = nfe.catalogoVendedorAtual([
@@ -963,7 +963,7 @@ function testVendedorAtual() {
     { chave: 'DIV', numero: '9', destDoc: '00000000000193', cliente: 'CASA DUPLA LTDA', status: 'sem_cliente', vendedor: '' },
   ], catalogo.concat([
     { cod: '111', npess: 99520004, nome: 'CASA DUPLA LTDA', vendedor: 'DIOGO OLIVEIRA' },
-    { cod: '222', npess: 99520020, nome: 'CASA DUPLA LTDA', vendedor: 'EDUARDO MOREIRA' },
+    { cod: '222', npess: 99520020, nome: 'CASA DUPLA LTDA', vendedor: 'EDUARDO MADEIRA' },
   ]), canal);
   assert(reap.alteradas === 2, 'o nome unívoco e a Beer Bev já gravada sem cliente mudam, veio ' + reap.alteradas);
   assert(reap.notas[0].npess === '99520020' && reap.notas[0].cod === '406016', '102282 já gravada passa ao Eduardo');
@@ -1052,9 +1052,9 @@ function testTransferenciasInternas() {
     chave: 'D1', numero: '102282', destDoc: '11239661000190', emitCnpj: '14830817000100',
     cliente: 'F. J. RIBEIRO CAFÉ-ME',
   }, new Map(), canalDeNpess, [
-    { cod: '406016', npess: 99520020, nome: 'F. J. RIBEIRO CAFÉ-ME', vendedor: 'EDUARDO MOREIRA' },
+    { cod: '406016', npess: 99520020, nome: 'F. J. RIBEIRO CAFÉ-ME', vendedor: 'EDUARDO MADEIRA' },
   ]);
-  assert(outroNome.vendedor === 'EDUARDO MOREIRA' && outroNome.canalId === 'distribuidores', 'venda da Delta SP para cliente normal continua nesse vendedor');
+  assert(outroNome.vendedor === 'EDUARDO MADEIRA' && outroNome.canalId === 'distribuidores', 'venda da Delta SP para cliente normal continua nesse vendedor');
   assert(outroNome.canalId !== 'transferencias', 'CNPJ de cliente normal não entra em Transferências internas');
 
   const inverso = nfe.nfeCruzarNota(

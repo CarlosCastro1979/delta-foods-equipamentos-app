@@ -1,6 +1,6 @@
-// Service Worker v2026-10-22-login-mudar2 — Mudar → Quem és tu?; limpa Cache Storage antigo
+// Service Worker v2026-10-26-contratos-testemunhas-dist — Dist: Massimo+Eduardo Madeira; Horeca: Filipe+vendedor
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-22-login-mudar2';
+const CACHE = 'v2026-10-26-contratos-testemunhas-dist';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

@@ -171,7 +171,7 @@ check('ADMINS e Eduardo não entram no ranking; os 4 do mapa sim', () => {
   ['Filipe Neves', 'Diogo Oliveira', 'Marcio Gorga', 'Massimo Bottello'].forEach(n => {
     assert.ok(rank.includes(n), n + ' deveria estar no ranking');
   });
-  ['Carlos Castro', 'Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski', 'Daniela Kucinsky', 'Eduardo Moreira'].forEach(n => {
+  ['Carlos Castro', 'Christian Souza', 'Andrea Albuquerque', 'Daniela Kucinski', 'Daniela Kucinsky', 'Eduardo Madeira'].forEach(n => {
     assert.ok(!rank.includes(n), n + ' não entra no ranking');
   });
 });

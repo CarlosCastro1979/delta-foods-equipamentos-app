@@ -527,7 +527,7 @@ check('texto da cobertura diz que a carga só lê o mês corrente e o anterior',
   assert.ok(!html.includes('só entram linhas do dia local de hoje'));
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('desde 2019'));
-  assert.ok(html.includes('v2026-10-22-login-mudar2'));
+  assert.ok(html.includes('v2026-10-26-contratos-testemunhas-dist'));
   assert.ok(html.includes('dias presentes no ficheiro') || html.includes('dias do ficheiro'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!html.includes('v2026-10-20-nfe-boletos-parcelas'));
@@ -538,7 +538,7 @@ check('texto da cobertura diz que a carga só lê o mês corrente e o anterior',
   assert.ok(!html.includes('são relidos nem ficam pendentes'));
   assert.ok(!html.includes('Até Jun/2026 = fechado. De Jul/2026 em diante'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-22-login-mudar2'));
+  assert.ok(sw.includes('v2026-10-26-contratos-testemunhas-dist'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
   assert.ok(!sw.includes('v2026-10-14-volume-formulas'));
