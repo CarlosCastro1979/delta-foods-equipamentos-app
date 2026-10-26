@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-22-login-mudar2 Mudar → Quem és tu? (force Pages) -->
+<!-- dfb-build: v2026-10-26-contratos-multi-gama várias gamas no mesmo contrato -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2102,6 +2102,11 @@
   .ct-review-item strong{display:block;font-size:10px;text-transform:uppercase;color:var(--muted);margin-bottom:2px;}
   .ct-review-item div{padding:5px 8px;background:#f5f5f5;border-radius:4px;font-size:13px;}
   .ct-review-item.missing div{background:#fef2f2;color:#dc2626;}
+  .ct-gama-block{border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px;background:#fafafa;}
+  .ct-gama-block-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .ct-gama-block-hd strong{font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;}
+  .ct-gama-rm{background:none;border:none;color:var(--danger,#dc2626);cursor:pointer;font-size:13px;padding:2px 6px;}
+  .ct-gama-rm:hover{text-decoration:underline;}
 
 </style>
 <script>
@@ -3013,22 +3018,16 @@ var _unused_placeholder = 1;
         <!-- PASSO 2 -->
         <div id="ct-passo2" style="display:none">
           <div class="ct-section-title">Condições Comerciais</div>
+          <div style="font-size:11px;color:var(--muted);margin:-4px 0 12px;">Podes juntar várias gamas (ex.: Cápsulas e Grão) no mesmo contrato. Prazo e duração são únicos.</div>
+          <div id="ct_gamas_list"></div>
+          <div style="margin:4px 0 16px;">
+            <button type="button" class="btn btn-secondary btn-sm" id="ct_btn_add_gama" onclick="ctAddGama()">+ Adicionar outra gama</button>
+          </div>
+          <!-- Campos legados (1.ª gama) — mantidos para rascunhos antigos / sync -->
+          <input type="hidden" id="ct_lote" value="">
+          <input type="hidden" id="ct_unidade" value="Caps">
+          <input type="hidden" id="ct_qtd_mes" value="">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div>
-              <label class="ct-lbl">Lote de produto <span class="ct-req">*</span></label>
-              <input id="ct_lote" class="form-input" placeholder="Ex: Delta Q Caps 10">
-            </div>
-            <div>
-              <label class="ct-lbl">Unidade <span class="ct-req">*</span></label>
-              <select id="ct_unidade" class="form-input" onchange="ctCalcTotal()">
-                <option value="Caps">Caps</option>
-                <option value="Kg">Kg</option>
-              </select>
-            </div>
-            <div>
-              <label class="ct-lbl">Quantidade mínima mensal <span class="ct-req">*</span></label>
-              <input id="ct_qtd_mes" class="form-input" type="number" min="1" placeholder="0" oninput="ctCalcTotal()">
-            </div>
             <div>
               <label class="ct-lbl">Duração do contrato (meses) <span class="ct-req">*</span></label>
               <input id="ct_dur_num" class="form-input" type="number" min="1" placeholder="24" oninput="ctCalcTotal()">
@@ -3048,10 +3047,10 @@ var _unused_placeholder = 1;
         <!-- PASSO 3 -->
         <div id="ct-passo3" style="display:none">
           <div class="ct-section-title">Anexo I — Equipamentos Comodato</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Escolhe da lista. Preenche pelo menos 1 linha.</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Escolhe da lista. Preenche pelo menos 1 linha. Com várias gamas, indica a gama de cada equipamento.</div>
           <div id="ct_a1_table"></div>
           <div class="ct-section-title" style="margin-top:20px">Anexo II — Bens a Título de Investimento</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Preenche se aplicável.</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Preenche se aplicável. Indica a gama quando houver mais do que uma.</div>
           <div id="ct_a2_table"></div>
           <div class="ct-section-title" style="margin-top:20px">Testemunhas (lado Delta Foods)</div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
@@ -44702,7 +44701,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-22-login-mudar2: registar SW (necessário para instalar como app) + limpar caches antigos
+// v2026-10-26-contratos-multi-gama: registar SW (necessário para instalar como app) + limpar caches antigos
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/delta-foods-equipamentos-app/sw.js', { scope: '/delta-foods-equipamentos-app/' })
     .then(function (reg) {
@@ -44712,7 +44711,7 @@ if ('serviceWorker' in navigator) {
 }
 if (typeof caches !== 'undefined' && caches.keys) {
   caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-22-login-mudar2'; }).map(function (k) { return caches.delete(k); }));
+    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-26-contratos-multi-gama'; }).map(function (k) { return caches.delete(k); }));
   }).catch(function () {});
 }
 
@@ -44872,6 +44871,8 @@ function numToExtenso(n) {
 
 let ctCurrentStep = 1;
 let equipCatalog = [];
+/** Nº de blocos de gama no passo 2 (mín. 1). */
+let ctGamaCount = 1;
 
 /** Um rascunho em curso na criação (Gerar Contrato). localStorage — não sobrescreve contratos publicados. */
 const CT_DRAFT_LS = 'dfb_ct_gerar_draft';
@@ -44886,6 +44887,146 @@ let _ctAutosaveTimer = null;
 let _ctAutosaveHintTimer = null;
 let _ctAutosaveReady = false;
 let _ctAutosaveAbort = null;
+
+function ctEmptyGama() {
+  return { lote: '', unidade: 'Caps', qtd: '' };
+}
+
+function ctGamaLabel(g, idx) {
+  const lote = String((g && g.lote) || '').trim();
+  const un = String((g && g.unidade) || 'Caps').trim() || 'Caps';
+  if (lote) return 'Gama ' + (idx + 1) + ' — ' + lote + ' (' + un + ')';
+  return 'Gama ' + (idx + 1) + ' (' + un + ')';
+}
+
+function ctCollectGamas() {
+  const list = [];
+  const n = Math.max(1, ctGamaCount || 1);
+  for (let i = 0; i < n; i++) {
+    const loteEl = document.getElementById('ct_gama_' + i + '_lote');
+    const unEl = document.getElementById('ct_gama_' + i + '_unidade');
+    const qtdEl = document.getElementById('ct_gama_' + i + '_qtd');
+    if (!loteEl && !unEl && !qtdEl) continue;
+    list.push({
+      lote: loteEl ? (loteEl.value || '') : '',
+      unidade: unEl ? (unEl.value || 'Caps') : 'Caps',
+      qtd: qtdEl ? (qtdEl.value || '') : '',
+    });
+  }
+  if (!list.length) {
+    // Compat: campos legados de rascunho single-gama
+    const lote = (document.getElementById('ct_lote') || {}).value || '';
+    const unidade = (document.getElementById('ct_unidade') || {}).value || 'Caps';
+    const qtd = (document.getElementById('ct_qtd_mes') || {}).value || '';
+    list.push({ lote, unidade, qtd });
+  }
+  return list;
+}
+
+/** Sync 1.ª gama → campos legados ct_lote / ct_unidade / ct_qtd_mes. */
+function ctSyncLegacyGamaFields() {
+  const gamas = ctCollectGamas();
+  const g = gamas[0] || ctEmptyGama();
+  const set = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.value = v == null ? '' : String(v);
+  };
+  set('ct_lote', g.lote || '');
+  set('ct_unidade', g.unidade || 'Caps');
+  set('ct_qtd_mes', g.qtd || '');
+}
+
+function ctNormalizeGamasDraft(draft) {
+  if (draft && Array.isArray(draft.gamas) && draft.gamas.length) {
+    return draft.gamas.map(g => ({
+      lote: g && g.lote != null ? String(g.lote) : '',
+      unidade: g && g.unidade ? String(g.unidade) : 'Caps',
+      qtd: g && g.qtd != null ? String(g.qtd) : (g && g.qtd_mes != null ? String(g.qtd_mes) : ''),
+    }));
+  }
+  const f = (draft && draft.fields) || {};
+  return [{
+    lote: f.ct_lote != null ? String(f.ct_lote) : '',
+    unidade: f.ct_unidade ? String(f.ct_unidade) : 'Caps',
+    qtd: f.ct_qtd_mes != null ? String(f.ct_qtd_mes) : '',
+  }];
+}
+
+function ctRenderGamas(gamas) {
+  const wrap = document.getElementById('ct_gamas_list');
+  if (!wrap) return;
+  const list = (Array.isArray(gamas) && gamas.length) ? gamas : [ctEmptyGama()];
+  ctGamaCount = list.length;
+  let html = '';
+  list.forEach((g, i) => {
+    const un = g.unidade === 'Kg' ? 'Kg' : 'Caps';
+    html += '<div class="ct-gama-block" data-gama-idx="' + i + '">';
+    html += '<div class="ct-gama-block-hd"><strong>Gama ' + (i + 1) + '</strong>';
+    if (list.length > 1) {
+      html += '<button type="button" class="ct-gama-rm" onclick="ctRemoveGama(' + i + ')" title="Remover gama">✕ Remover</button>';
+    }
+    html += '</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+    html += '<div><label class="ct-lbl">Lote de produto <span class="ct-req">*</span></label>';
+    html += '<input id="ct_gama_' + i + '_lote" class="form-input" placeholder="Ex: Delta Q Caps 10" value="' + String(g.lote || '').replace(/"/g, '&quot;') + '" oninput="ctOnGamaChange()"></div>';
+    html += '<div><label class="ct-lbl">Unidade <span class="ct-req">*</span></label>';
+    html += '<select id="ct_gama_' + i + '_unidade" class="form-input" onchange="ctOnGamaChange()">';
+    html += '<option value="Caps"' + (un === 'Caps' ? ' selected' : '') + '>Caps</option>';
+    html += '<option value="Kg"' + (un === 'Kg' ? ' selected' : '') + '>Kg</option>';
+    html += '</select></div>';
+    html += '<div><label class="ct-lbl">Quantidade mínima mensal <span class="ct-req">*</span></label>';
+    html += '<input id="ct_gama_' + i + '_qtd" class="form-input" type="number" min="1" placeholder="0" value="' + String(g.qtd || '').replace(/"/g, '&quot;') + '" oninput="ctOnGamaChange()"></div>';
+    html += '</div></div>';
+  });
+  wrap.innerHTML = html;
+  ctSyncLegacyGamaFields();
+  ctRefreshAnexoGamaSelects();
+  ctCalcTotal();
+}
+
+function ctOnGamaChange() {
+  ctSyncLegacyGamaFields();
+  ctRefreshAnexoGamaSelects();
+  ctCalcTotal();
+}
+
+function ctAddGama() {
+  const cur = ctCollectGamas();
+  cur.push(ctEmptyGama());
+  ctRenderGamas(cur);
+  if (_ctAutosaveReady) ctScheduleAutosave(400);
+}
+
+function ctRemoveGama(idx) {
+  const cur = ctCollectGamas();
+  if (cur.length <= 1) return;
+  cur.splice(idx, 1);
+  ctRenderGamas(cur);
+  if (_ctAutosaveReady) ctScheduleAutosave(400);
+}
+
+function ctFormatGamasLote(gamas) {
+  return (gamas || []).map(g => String(g.lote || '').trim()).filter(Boolean).join('; ');
+}
+
+function ctFormatGamasQtdMes(gamas) {
+  return (gamas || []).map(g => {
+    const q = String(g.qtd || '').trim();
+    const un = g.unidade || 'Caps';
+    if (!q) return '';
+    return q + ' ' + un;
+  }).filter(Boolean).join('; ');
+}
+
+function ctFormatGamasQtdTotal(gamas, durNum) {
+  const dur = parseInt(durNum, 10) || 0;
+  return (gamas || []).map(g => {
+    const q = parseInt(g.qtd, 10) || 0;
+    const un = g.unidade || 'Caps';
+    if (!q || !dur) return '';
+    return (q * dur).toLocaleString('pt-BR') + ' ' + un;
+  }).filter(Boolean).join('; ');
+}
 
 function ctFlashAutosave(ok) {
   const hint = document.getElementById('ct-autosave-hint');
@@ -44905,12 +45046,14 @@ function ctCollectAnexoDraft(prefix, max) {
       serie: (document.getElementById('ct_' + prefix + '_' + i + '_serie') || {}).value || '',
       nf: (document.getElementById('ct_' + prefix + '_' + i + '_nf') || {}).value || '',
       valor: (document.getElementById('ct_' + prefix + '_' + i + '_valor') || {}).value || '',
+      gama: (document.getElementById('ct_' + prefix + '_' + i + '_gama') || {}).value || '0',
     });
   }
   return rows;
 }
 
 function ctCollectDraft() {
+  ctSyncLegacyGamaFields();
   const fields = {};
   CT_DRAFT_FIELD_IDS.forEach(id => {
     const el = document.getElementById(id);
@@ -44919,10 +45062,11 @@ function ctCollectDraft() {
   const found = document.getElementById('ct_cliente_found');
   const foundTxt = document.getElementById('ct_found_txt');
   return {
-    v: 1,
+    v: 2,
     savedAt: Date.now(),
     step: ctCurrentStep || 1,
     fields,
+    gamas: ctCollectGamas(),
     foundVisible: !!(found && found.style && found.style.display === 'block'),
     foundTxt: foundTxt ? (foundTxt.textContent || '') : '',
     a1: ctCollectAnexoDraft('a1', 8),
@@ -44932,13 +45076,21 @@ function ctCollectDraft() {
 
 function ctDraftIsEmpty(draft) {
   if (!draft || !draft.fields) return true;
-  const hasField = Object.keys(draft.fields).some(k => String(draft.fields[k] || '').trim());
+  // ct_unidade tem default Caps no select — sozinha não conta como conteúdo
+  const hasField = Object.keys(draft.fields).some(k => {
+    if (k === 'ct_unidade') return false;
+    return String(draft.fields[k] || '').trim();
+  });
+  const gamas = Array.isArray(draft.gamas) ? draft.gamas : [];
+  const hasGama = gamas.some(g =>
+    String((g && g.lote) || '').trim() || String((g && g.qtd) || '').trim()
+  );
   const rows = [].concat(draft.a1 || [], draft.a2 || []);
   const hasA = rows.some(r =>
     String(r.qtd || '').trim() || String(r.equip || '').trim() ||
     String(r.serie || '').trim() || String(r.nf || '').trim()
   );
-  return !hasField && !hasA;
+  return !hasField && !hasGama && !hasA;
 }
 
 function ctSaveDraftLocal() {
@@ -44983,6 +45135,7 @@ function ctApplyAnexoDraft(prefix, rows) {
     set('qtd', r.qtd);
     set('serie', r.serie);
     set('nf', r.nf);
+    set('gama', r.gama != null && r.gama !== '' ? r.gama : '0');
     const sel = document.getElementById('ct_' + prefix + '_' + i + '_equip');
     if (sel) {
       sel.value = r.equip != null ? String(r.equip) : '';
@@ -45001,12 +45154,15 @@ function ctApplyDraft(draft) {
     const el = document.getElementById(id);
     if (el) el.value = draft.fields[id] == null ? '' : String(draft.fields[id]);
   });
+  const gamas = ctNormalizeGamasDraft(draft);
+  ctRenderGamas(gamas);
   const found = document.getElementById('ct_cliente_found');
   const foundTxt = document.getElementById('ct_found_txt');
   if (foundTxt) foundTxt.textContent = draft.foundTxt || '';
   if (found) found.style.display = draft.foundVisible ? 'block' : 'none';
   ctApplyAnexoDraft('a1', draft.a1);
   ctApplyAnexoDraft('a2', draft.a2);
+  ctRefreshAnexoGamaSelects();
   if (typeof ctCalcTotal === 'function') ctCalcTotal();
   if (typeof ctRecalcValor === 'function') ctRecalcValor();
   if (typeof ctAplicarTestemunhasDelta === 'function') ctAplicarTestemunhasDelta();
@@ -45054,6 +45210,7 @@ function ctInit() {
   ctBindAutosave();
   _ctAutosaveReady = false;
   ctCurrentStep = 1;
+  ctRenderGamas([ctEmptyGama()]);
   ctGoto(1);
   loadEquipCatalogForForm();
 }
@@ -45065,6 +45222,9 @@ async function loadEquipCatalogForForm() {
     });
     equipCatalog = await res.json();
   } catch(e) { equipCatalog = []; }
+  if (!document.getElementById('ct_gamas_list')?.children?.length) {
+    ctRenderGamas([ctEmptyGama()]);
+  }
   ctBuildAnexoTable('ct_a1_table', 8, 'a1');
   ctBuildAnexoTable('ct_a2_table', 5, 'a2');
   const draft = ctLoadDraftLocal();
@@ -45075,13 +45235,44 @@ async function loadEquipCatalogForForm() {
   }
 }
 
+function ctGamaSelectOptionsHtml(selected) {
+  const gamas = ctCollectGamas();
+  const sel = selected == null || selected === '' ? '0' : String(selected);
+  return gamas.map((g, idx) => {
+    const lab = ctGamaLabel(g, idx).replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    return '<option value="' + idx + '"' + (String(idx) === sel ? ' selected' : '') + '>' + lab + '</option>';
+  }).join('');
+}
+
+function ctRefreshAnexoGamaSelects() {
+  ['a1', 'a2'].forEach(prefix => {
+    const max = prefix === 'a1' ? 8 : 5;
+    for (let i = 1; i <= max; i++) {
+      const sel = document.getElementById('ct_' + prefix + '_' + i + '_gama');
+      if (!sel) continue;
+      const prev = sel.value || '0';
+      sel.innerHTML = ctGamaSelectOptionsHtml(prev);
+      if (![...sel.options].some(o => o.value === prev)) sel.value = '0';
+    }
+  });
+  const multi = (ctGamaCount || 1) > 1;
+  document.querySelectorAll('.ct-gama-col').forEach(el => {
+    el.style.display = multi ? '' : 'none';
+  });
+}
+
 function ctBuildAnexoTable(containerId, rows, prefix) {
   const container = document.getElementById(containerId);
   if (!container) return;
   const opts = equipCatalog.map(e => '<option value="' + e.id + '" data-desc="' + e.descricao + '" data-valor="' + e.valor + '">' + e.descricao + ' (R$ ' + parseFloat(e.valor).toLocaleString("pt-BR", {minimumFractionDigits:2}) + ')</option>').join('');
-  let html = '<table class="ct-table"><thead><tr><th style="width:50px">Qtd</th><th>Equipamento</th><th style="width:120px">Nº Série</th><th style="width:90px">Nº NF</th><th style="width:110px">Valor (R$)</th></tr></thead><tbody>';
+  const multi = (ctGamaCount || 1) > 1;
+  const gamaDisp = multi ? '' : 'none';
+  let html = '<table class="ct-table"><thead><tr>';
+  html += '<th class="ct-gama-col" style="width:140px;display:' + gamaDisp + '">Gama</th>';
+  html += '<th style="width:50px">Qtd</th><th>Equipamento</th><th style="width:120px">Nº Série</th><th style="width:90px">Nº NF</th><th style="width:110px">Valor (R$)</th></tr></thead><tbody>';
   for (let i = 1; i <= rows; i++) {
     html += '<tr>';
+    html += '<td class="ct-gama-col" style="display:' + gamaDisp + '"><select id="ct_' + prefix + '_' + i + '_gama">' + ctGamaSelectOptionsHtml(0) + '</select></td>';
     html += '<td><input type="number" min="1" id="ct_' + prefix + '_' + i + '_qtd" placeholder="—" style="width:46px" oninput="ctRecalcValor()"></td>';
     html += '<td><select id="ct_' + prefix + '_' + i + '_equip" onchange="ctEquipSelected(this,\'' + prefix + '\''+ ',' + i + ')"><option value="">— escolher —</option>' + opts + '</select></td>';
     html += '<td><input id="ct_' + prefix + '_' + i + '_serie" placeholder="—"></td>';
@@ -45117,12 +45308,21 @@ function ctRecalcValor() {
 }
 
 function ctCalcTotal() {
-  const qtd = parseInt(document.getElementById('ct_qtd_mes')?.value) || 0;
+  ctSyncLegacyGamaFields();
+  const gamas = ctCollectGamas();
   const dur = parseInt(document.getElementById('ct_dur_num')?.value) || 0;
-  const un = document.getElementById('ct_unidade')?.value || 'Caps';
-  const total = qtd * dur;
+  const parts = gamas.map(g => {
+    const qtd = parseInt(g.qtd, 10) || 0;
+    const un = g.unidade || 'Caps';
+    if (!qtd || !dur) return '';
+    return (qtd * dur).toLocaleString('pt-BR') + ' ' + un;
+  }).filter(Boolean);
   const el = document.getElementById('ct_total_info');
-  if (el) el.textContent = total > 0 ? 'Total: ' + total.toLocaleString('pt-BR') + ' ' + un + ' em ' + dur + ' meses' : 'Total calculado: —';
+  if (el) {
+    el.textContent = parts.length
+      ? 'Total: ' + parts.join(' · ') + ' em ' + dur + ' meses'
+      : 'Total calculado: —';
+  }
   const durExtEl = document.getElementById('ct_dur_ext_display');
   if (durExtEl) durExtEl.textContent = dur > 0 ? numToExtenso(dur) : '—';
   ctAutoExtenso();
@@ -45429,10 +45629,14 @@ function ctValidateStep(step) {
     if (!g('ct_email')) errs.push('Email do cliente obrigatorio');
   }
   if (step === 2) {
-    if (!g('ct_lote')) errs.push('Lote obrigatorio');
-    if (!g('ct_qtd_mes')) errs.push('Quantidade mensal obrigatoria');
-    if (!g('ct_dur_num')) errs.push('Duracao obrigatoria');
-    if (!g('ct_dias_num')) errs.push('Prazo de pagamento obrigatorio');
+    const gamas = ctCollectGamas();
+    if (!gamas.length) errs.push('Adiciona pelo menos uma gama');
+    gamas.forEach((gm, i) => {
+      if (!String(gm.lote || '').trim()) errs.push('Lote obrigatório (gama ' + (i + 1) + ')');
+      if (!String(gm.qtd || '').trim() || !(parseInt(gm.qtd, 10) > 0)) errs.push('Quantidade mensal obrigatória (gama ' + (i + 1) + ')');
+    });
+    if (!g('ct_dur_num')) errs.push('Duração obrigatória');
+    if (!g('ct_dias_num')) errs.push('Prazo de pagamento obrigatório');
   }
   if (step === 3) {
     const desc1 = document.getElementById('ct_a1_1_equip')?.value;
@@ -45447,28 +45651,32 @@ function ctValidateStep(step) {
 
 function ctBuildReview() {
   ctAplicarTestemunhasDelta();
+  ctSyncLegacyGamaFields();
   const g = id => (document.getElementById(id) || {}).value || '';
-  const un = g('ct_unidade');
-  const qtd = g('ct_qtd_mes');
+  const gamas = ctCollectGamas();
   const dur = g('ct_dur_num');
-  const total = ((parseInt(qtd)||0) * (parseInt(dur)||0)).toLocaleString('pt-BR');
+  const multi = gamas.length > 1;
 
   const field = (label, val) => '<div class="ct-review-item' + (!val ? ' missing' : '') + '"><strong>' + label + '</strong><div>' + (val || 'NAO PREENCHIDO') + '</div></div>';
 
   let html = '<div class="ct-review-grid">';
-    html += field('Empresa', g('ct_empresa'));
-    html += field('Morada', g('ct_endereco') || ctResolveEnderecoCliente());
-    html += field('Nº Contrato', g('ct_num_contrato'));
+  html += field('Empresa', g('ct_empresa'));
+  html += field('Morada', g('ct_endereco') || ctResolveEnderecoCliente());
+  html += field('Nº Contrato', g('ct_num_contrato'));
   html += field('CNPJ', g('ct_cnpj'));
   html += field('Vendedor (testemunha 2)', g('ct_vendedor') || g('ct_t2_nome'));
   html += field('Representante', g('ct_rep_nome'));
   html += field('RG', g('ct_rep_rg'));
   html += field('CPF', g('ct_rep_cpf'));
   html += field('Email (assinatura)', g('ct_email'));
-  html += field('Lote', g('ct_lote') + ' (' + un + ')');
-  html += field('Qtd/mes', qtd + ' ' + un);
-  html += field('Total contrato', total + ' ' + un);
-  html += field('Duracao', dur + ' meses (' + numToExtenso(parseInt(dur)||0) + ')');
+  gamas.forEach((gm, i) => {
+    const pref = multi ? 'Gama ' + (i + 1) + ' — ' : '';
+    html += field(pref + 'Lote', (gm.lote || '') + ' (' + (gm.unidade || 'Caps') + ')');
+    html += field(pref + 'Qtd/mês', (gm.qtd || '') + ' ' + (gm.unidade || 'Caps'));
+    const tot = ((parseInt(gm.qtd, 10) || 0) * (parseInt(dur, 10) || 0)).toLocaleString('pt-BR');
+    html += field(pref + 'Total', tot + ' ' + (gm.unidade || 'Caps'));
+  });
+  html += field('Duração', dur + ' meses (' + numToExtenso(parseInt(dur)||0) + ')');
   html += field('Prazo pagamento', g('ct_dias_num') + ' dias (' + numToExtenso(parseInt(g('ct_dias_num'))||0) + ')');
   html += field('Valor equipamentos', 'R$ ' + g('ct_valor_equip'));
   html += field('Testemunha Delta 1', g('ct_t1_nome') + ' / ' + g('ct_t1_cpf'));
@@ -45476,12 +45684,16 @@ function ctBuildReview() {
   html += '</div>';
 
   html += '<div style="font-size:13px;font-weight:700;color:var(--accent);margin:12px 0 6px">Anexo I</div>';
-  html += '<table class="ct-table"><thead><tr><th>Qtd</th><th>Equipamento</th><th>Serie</th><th>NF</th><th>Valor</th></tr></thead><tbody>';
+  html += '<table class="ct-table"><thead><tr>' + (multi ? '<th>Gama</th>' : '') + '<th>Qtd</th><th>Equipamento</th><th>Serie</th><th>NF</th><th>Valor</th></tr></thead><tbody>';
   for (let i = 1; i <= 8; i++) {
     const sel = document.getElementById('ct_a1_' + i + '_equip');
     if (!sel || !sel.value) continue;
     const desc = sel.options[sel.selectedIndex]?.dataset?.desc || sel.options[sel.selectedIndex]?.text || '';
-    html += '<tr><td>' + (document.getElementById('ct_a1_'+i+'_qtd')?.value||'1') + '</td><td>' + desc + '</td><td>' + (document.getElementById('ct_a1_'+i+'_serie')?.value||'—') + '</td><td>' + (document.getElementById('ct_a1_'+i+'_nf')?.value||'—') + '</td><td>' + (document.getElementById('ct_a1_'+i+'_valor')?.value||'—') + '</td></tr>';
+    const gIdx = parseInt(document.getElementById('ct_a1_' + i + '_gama')?.value, 10) || 0;
+    const gLab = ctGamaLabel(gamas[gIdx] || gamas[0] || ctEmptyGama(), gIdx);
+    html += '<tr>';
+    if (multi) html += '<td>' + gLab + '</td>';
+    html += '<td>' + (document.getElementById('ct_a1_'+i+'_qtd')?.value||'1') + '</td><td>' + desc + '</td><td>' + (document.getElementById('ct_a1_'+i+'_serie')?.value||'—') + '</td><td>' + (document.getElementById('ct_a1_'+i+'_nf')?.value||'—') + '</td><td>' + (document.getElementById('ct_a1_'+i+'_valor')?.value||'—') + '</td></tr>';
   }
   html += '</tbody></table>';
 
@@ -45493,9 +45705,12 @@ function ctGetData() {
   const now = new Date();
   const durNum = parseInt(g('ct_dur_num')) || 0;
   const diasNum = parseInt(g('ct_dias_num')) || 0;
-  const qtdMes = g('ct_qtd_mes');
-  const un = g('ct_unidade');
-  const total = ((parseInt(qtdMes)||0) * durNum).toLocaleString('pt-BR');
+  ctSyncLegacyGamaFields();
+  const gamas = ctCollectGamas();
+  const multi = gamas.length > 1;
+  const loteJoined = ctFormatGamasLote(gamas) || g('ct_lote');
+  const qtdMesJoined = ctFormatGamasQtdMes(gamas) || ((g('ct_qtd_mes') || '') + ' ' + (g('ct_unidade') || 'Caps'));
+  const qtdTotalJoined = ctFormatGamasQtdTotal(gamas, durNum) || ((((parseInt(g('ct_qtd_mes'), 10) || 0) * durNum).toLocaleString('pt-BR')) + ' ' + (g('ct_unidade') || 'Caps'));
   const ano2 = String(now.getFullYear()).slice(2);
 
   // Garantir testemunhas Delta actualizadas (Filipe + vendedor)
@@ -45510,9 +45725,10 @@ function ctGetData() {
     COMOD_RG: g('ct_rep_rg'),
     COMOD_CPF: g('ct_rep_cpf'),
     VALOR_EQUIP: g('ct_valor_equip'),
-    LOTE: g('ct_lote'),
-    QTD_MES: qtdMes + ' ' + un,
-    QTD_TOTAL: total + ' ' + un,
+    LOTE: loteJoined,
+    QTD_MES: qtdMesJoined,
+    QTD_TOTAL: qtdTotalJoined,
+    GAMAS: gamas,
     DIAS_PAG_NUM: String(diasNum),
     DIAS_PAG_EXT: numToExtenso(diasNum),
     DURACAO_NUM: String(durNum),
@@ -45532,21 +45748,33 @@ function ctGetData() {
 
   for (let i = 1; i <= 8; i++) {
     const sel = document.getElementById('ct_a1_' + i + '_equip');
-    const desc = sel && sel.value ? (sel.options[sel.selectedIndex]?.dataset?.desc || '') : '';
+    let desc = sel && sel.value ? (sel.options[sel.selectedIndex]?.dataset?.desc || '') : '';
+    const gIdx = parseInt(document.getElementById('ct_a1_' + i + '_gama')?.value, 10) || 0;
+    if (desc && multi) {
+      const lab = ctGamaLabel(gamas[gIdx] || gamas[0] || ctEmptyGama(), gIdx);
+      desc = lab + ' — ' + desc;
+    }
     data['A1_R' + i + '_QTD'] = document.getElementById('ct_a1_'+i+'_qtd')?.value || '';
     data['A1_R' + i + '_DESC'] = desc;
     data['A1_R' + i + '_SERIE'] = document.getElementById('ct_a1_'+i+'_serie')?.value || '';
     data['A1_R' + i + '_NF'] = document.getElementById('ct_a1_'+i+'_nf')?.value || '';
     data['A1_R' + i + '_VALOR'] = document.getElementById('ct_a1_'+i+'_valor')?.value || '';
+    data['A1_R' + i + '_GAMA'] = String(gIdx);
   }
   for (let i = 1; i <= 5; i++) {
     const sel = document.getElementById('ct_a2_' + i + '_equip');
-    const desc = sel && sel.value ? (sel.options[sel.selectedIndex]?.dataset?.desc || '') : '';
+    let desc = sel && sel.value ? (sel.options[sel.selectedIndex]?.dataset?.desc || '') : '';
+    const gIdx = parseInt(document.getElementById('ct_a2_' + i + '_gama')?.value, 10) || 0;
+    if (desc && multi) {
+      const lab = ctGamaLabel(gamas[gIdx] || gamas[0] || ctEmptyGama(), gIdx);
+      desc = lab + ' — ' + desc;
+    }
     data['A2_R' + i + '_QTD'] = document.getElementById('ct_a2_'+i+'_qtd')?.value || '';
     data['A2_R' + i + '_DESC'] = desc;
     data['A2_R' + i + '_SERIE'] = document.getElementById('ct_a2_'+i+'_serie')?.value || '';
     data['A2_R' + i + '_NF'] = document.getElementById('ct_a2_'+i+'_nf')?.value || '';
     data['A2_R' + i + '_VALOR'] = document.getElementById('ct_a2_'+i+'_valor')?.value || '';
+    data['A2_R' + i + '_GAMA'] = String(gIdx);
   }
   return data;
 }
@@ -45794,9 +46022,22 @@ function ctBuildDocumentXml(d) {
   xml += ctPar('', {sz:22});
 
   xml += ctPar('CLÁUSULA 2ª — DAS CONDIÇÕES COMERCIAIS', {bold:true, sz:22, space:160});
-  xml += ctPar('Produto / Lote: ' + d.LOTE, {sz:22});
-  xml += ctPar('Quantidade mínima mensal: ' + d.QTD_MES, {sz:22});
-  xml += ctPar('Volume total contratado: ' + d.QTD_TOTAL, {sz:22});
+  const gamasDoc = Array.isArray(d.GAMAS) && d.GAMAS.length ? d.GAMAS : null;
+  if (gamasDoc && gamasDoc.length > 1) {
+    gamasDoc.forEach((gm, i) => {
+      const un = gm.unidade || 'Caps';
+      const q = String(gm.qtd || '').trim();
+      const dur = parseInt(d.DURACAO_NUM, 10) || 0;
+      const tot = (parseInt(q, 10) || 0) * dur;
+      xml += ctPar('Gama ' + (i + 1) + ' — Produto / Lote: ' + (gm.lote || ''), {sz:22});
+      xml += ctPar('Quantidade mínima mensal: ' + (q ? (q + ' ' + un) : ''), {sz:22});
+      xml += ctPar('Volume total contratado: ' + (tot ? (tot.toLocaleString('pt-BR') + ' ' + un) : ''), {sz:22});
+    });
+  } else {
+    xml += ctPar('Produto / Lote: ' + d.LOTE, {sz:22});
+    xml += ctPar('Quantidade mínima mensal: ' + d.QTD_MES, {sz:22});
+    xml += ctPar('Volume total contratado: ' + d.QTD_TOTAL, {sz:22});
+  }
   xml += ctPar('Prazo de pagamento: ' + d.DIAS_PAG_NUM + ' (' + d.DIAS_PAG_EXT + ') dias', {sz:22});
   xml += ctPar('Duração do contrato: ' + d.DURACAO_NUM + ' (' + d.DURACAO_EXT + ') meses', {sz:22});
   xml += ctPar('', {sz:22});
@@ -45921,15 +46162,27 @@ async function ctGuardarContratoSuapbase(data) {
   const hoje = new Date();
   const inicioYYYYMM = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0');
 
+  ctSyncLegacyGamaFields();
+  const gamasSave = Array.isArray(data.GAMAS) && data.GAMAS.length
+    ? data.GAMAS
+    : ctCollectGamas();
+  const g0 = gamasSave[0] || {};
   const novoContrato = {
     num:      data.NUM_CONTRATO,
     inicio:   inicioYYYYMM,
-    consumo:  parseInt(g('ct_qtd_mes')) || 0,
+    consumo:  parseInt(g0.qtd != null ? g0.qtd : g('ct_qtd_mes'), 10) || 0,
     duracao:  parseInt(g('ct_dur_num')) || 0,
-    unidade:  g('ct_unidade') || 'Caps',
-    lote:     data.LOTE,
+    unidade:  g0.unidade || g('ct_unidade') || 'Caps',
+    lote:     g0.lote || data.LOTE,
     prazo:    parseInt(g('ct_dias_num')) || 30,
   };
+  if (gamasSave.length > 1) {
+    novoContrato.gamas = gamasSave.map(gm => ({
+      lote: gm.lote || '',
+      unidade: gm.unidade || 'Caps',
+      consumo: parseInt(gm.qtd, 10) || 0,
+    }));
+  }
 
   const colapsados = colapsarContratosArray(contratosActuais, registo);
   if (clienteJaTemNumero({ ...registo, contratos: colapsados.list }, novoContrato.num)) {

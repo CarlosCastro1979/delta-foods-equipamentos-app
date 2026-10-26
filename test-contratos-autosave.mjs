@@ -11,7 +11,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-22-login-mudar2';
+const CACHE = 'v2026-10-26-contratos-multi-gama';
 
 function extractFn(src, name) {
   const start = src.indexOf(`function ${name}(`);
@@ -69,6 +69,8 @@ check('cache SW e index actualizados', () => {
   assert.ok(html.includes('ctApplyDraft'));
   assert.ok(html.includes('ctClearDraft'));
   assert.ok(html.includes('Rascunho com autosave'));
+  assert.ok(html.includes('Adicionar outra gama'));
+  assert.ok(html.includes('ctCollectGamas'));
 });
 
 check('um só rascunho (chave única) e debounce ~1s', () => {
@@ -93,8 +95,9 @@ function makeEl(value) {
   'ct_rep_nome', 'ct_rep_rg', 'ct_rep_cpf', 'ct_email', 'ct_vendedor',
   'ct_lote', 'ct_unidade', 'ct_qtd_mes', 'ct_dur_num', 'ct_dias_num', 'ct_valor_equip',
   'ct_t1_nome', 'ct_t1_cpf', 'ct_t2_nome', 'ct_t2_cpf',
-  'ct_cliente_found', 'ct_found_txt', 'ct-autosave-hint',
+  'ct_cliente_found', 'ct_found_txt', 'ct-autosave-hint', 'ct_gamas_list',
 ].forEach(id => { els[id] = makeEl(''); });
+els.ct_gamas_list.children = { length: 0 };
 
 for (let i = 1; i <= 8; i++) {
   els[`ct_a1_${i}_qtd`] = makeEl('');
@@ -102,6 +105,7 @@ for (let i = 1; i <= 8; i++) {
   els[`ct_a1_${i}_serie`] = makeEl('');
   els[`ct_a1_${i}_nf`] = makeEl('');
   els[`ct_a1_${i}_valor`] = makeEl('');
+  els[`ct_a1_${i}_gama`] = makeEl('0');
 }
 for (let i = 1; i <= 5; i++) {
   els[`ct_a2_${i}_qtd`] = makeEl('');
@@ -109,6 +113,7 @@ for (let i = 1; i <= 5; i++) {
   els[`ct_a2_${i}_serie`] = makeEl('');
   els[`ct_a2_${i}_nf`] = makeEl('');
   els[`ct_a2_${i}_valor`] = makeEl('');
+  els[`ct_a2_${i}_gama`] = makeEl('0');
 }
 
 const context = {
@@ -124,6 +129,7 @@ const context = {
   setTimeout,
   clearTimeout,
   ctCurrentStep: 2,
+  ctGamaCount: 1,
   localStorage: {
     getItem(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
     setItem(k, v) { store[k] = String(v); },
@@ -131,6 +137,7 @@ const context = {
   },
   document: {
     getElementById(id) { return els[id] || null; },
+    querySelectorAll() { return []; },
   },
   ctCalcTotal() {},
   ctRecalcValor() {},
@@ -145,7 +152,29 @@ vm.runInContext(extractConstAsVar(html, 'CT_AUTOSAVE_MS'), context);
 vm.runInContext(extractConstAsVar(html, 'CT_DRAFT_FIELD_IDS'), context);
 vm.runInContext('var _ctAutosaveTimer = null; var _ctAutosaveHintTimer = null; var _ctAutosaveReady = true; var _ctAutosaveAbort = null;', context);
 
+context.ctRenderGamas = function (gamas) {
+  const list = (Array.isArray(gamas) && gamas.length) ? gamas : [{ lote: '', unidade: 'Caps', qtd: '' }];
+  context.ctGamaCount = list.length;
+  for (let i = 0; i < 8; i++) {
+    delete els[`ct_gama_${i}_lote`];
+    delete els[`ct_gama_${i}_unidade`];
+    delete els[`ct_gama_${i}_qtd`];
+  }
+  list.forEach((g, i) => {
+    els[`ct_gama_${i}_lote`] = makeEl(g.lote || '');
+    els[`ct_gama_${i}_unidade`] = makeEl(g.unidade || 'Caps');
+    els[`ct_gama_${i}_qtd`] = makeEl(g.qtd || '');
+  });
+  els.ct_gamas_list.children = { length: list.length };
+  context.ctSyncLegacyGamaFields();
+};
+context.ctRefreshAnexoGamaSelects = function () {};
+
 for (const name of [
+  'ctEmptyGama',
+  'ctCollectGamas',
+  'ctSyncLegacyGamaFields',
+  'ctNormalizeGamasDraft',
   'ctFlashAutosave',
   'ctCollectAnexoDraft',
   'ctCollectDraft',
@@ -160,6 +189,12 @@ for (const name of [
   vm.runInContext(extractFn(html, name), context);
 }
 
+// 1 gama inicial (compat single)
+els.ct_gama_0_lote = makeEl('');
+els.ct_gama_0_unidade = makeEl('Caps');
+els.ct_gama_0_qtd = makeEl('');
+els.ct_gamas_list.children = { length: 1 };
+
 check('ctDraftIsEmpty reconhece formulário vazio', () => {
   assert.equal(context.ctDraftIsEmpty(context.ctCollectDraft()), true);
 });
@@ -173,9 +208,10 @@ check('grava e restaura após reload simulado (localStorage)', () => {
   els.ct_rep_rg.value = '12.345.678-9';
   els.ct_rep_cpf.value = '123.456.789-00';
   els.ct_email.value = 'ana@cliente.com';
-  els.ct_lote.value = 'Delta Q Caps 10';
-  els.ct_unidade.value = 'Caps';
-  els.ct_qtd_mes.value = '40';
+  els.ct_gama_0_lote.value = 'Delta Q Caps 10';
+  els.ct_gama_0_unidade.value = 'Caps';
+  els.ct_gama_0_qtd.value = '40';
+  context.ctSyncLegacyGamaFields();
   els.ct_dur_num.value = '24';
   els.ct_dias_num.value = '30';
   els.ct_a1_1_qtd.value = '2';
@@ -188,6 +224,10 @@ check('grava e restaura após reload simulado (localStorage)', () => {
 
   assert.equal(context.ctSaveDraftLocal(), true);
   assert.ok(store[context.CT_DRAFT_LS], 'rascunho no localStorage');
+  const saved = JSON.parse(store[context.CT_DRAFT_LS]);
+  assert.ok(Array.isArray(saved.gamas));
+  assert.equal(saved.gamas.length, 1);
+  assert.equal(saved.gamas[0].lote, 'Delta Q Caps 10');
 
   // Simular reload: limpar DOM e reaplicar draft
   Object.keys(els).forEach(id => {
@@ -208,6 +248,7 @@ check('grava e restaura após reload simulado (localStorage)', () => {
   assert.equal(els.ct_email.value, 'ana@cliente.com');
   assert.equal(els.ct_lote.value, 'Delta Q Caps 10');
   assert.equal(els.ct_qtd_mes.value, '40');
+  assert.equal(els.ct_gama_0_lote.value, 'Delta Q Caps 10');
   assert.equal(els.ct_dur_num.value, '24');
   assert.equal(els.ct_a1_1_equip.value, 'eq-99');
   assert.equal(els.ct_a1_1_serie.value, 'SN-001');
