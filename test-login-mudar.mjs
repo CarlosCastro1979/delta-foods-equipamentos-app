@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const CACHE = 'v2026-10-26-contratos-testemunhas-dist';
+const CACHE = 'v2026-10-26-contratos-pin-prod';
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
@@ -112,10 +112,22 @@ const context = {
     addEventListener(type, fn, opts) { listeners.push({ type, fn, opts }); },
   },
   _canalPinOk: 'x',
+  _userPinSessaoOk: 'x',
   _canalPinPendente: 'y',
+  USER_PIN_SESSAO_KEY: 'dfb_user_pin_sessao',
+  sessionStorage: {
+    getItem() { return null; },
+    setItem() {},
+    removeItem() {},
+  },
   clearSessionDataCaches() { clearSessionCalls++; },
   voltarHome() { voltarHomeCalls++; },
   atualizarHomeCanais() { atualizarHomeCalls++; },
+};
+context.limparUserPinSessao = function limparUserPinSessao() {
+  context._canalPinOk = null;
+  context._userPinSessaoOk = null;
+  try { context.sessionStorage.removeItem(context.USER_PIN_SESSAO_KEY); } catch (_) {}
 };
 vm.createContext(context);
 vm.runInContext(extractFn(html, 'mostrarLoginModal'), context);

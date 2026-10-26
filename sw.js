@@ -1,6 +1,6 @@
-// Service Worker v2026-10-26-contratos-testemunhas-dist — Dist: Massimo+Eduardo Madeira; Horeca: Filipe+vendedor
+// Service Worker v2026-10-26-contratos-pin-prod — multi-gama + testemunhas Dist Madeira + PIN sessão; limpa Cache Storage antigo
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-26-contratos-testemunhas-dist';
+const CACHE = 'v2026-10-26-contratos-pin-prod';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
