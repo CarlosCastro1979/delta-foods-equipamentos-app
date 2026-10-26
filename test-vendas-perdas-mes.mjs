@@ -92,7 +92,7 @@ const ctx = {
       vendedorCods: [99520001],
     },
     varejo: { nome: 'Varejo e Distr. Varejo', vendedores: ['Diogo Oliveira'], vendedorCods: [99520018] },
-    distribuidores: { nome: 'Distribuidores', vendedores: ['Eduardo Moreira', 'Massimo Bottello'], vendedorCods: [99520003, 99520020] },
+    distribuidores: { nome: 'Distribuidores', vendedores: ['Eduardo Madeira', 'Massimo Bottello'], vendedorCods: [99520003, 99520020] },
   },
   VENDEDORES_DEFAULT: [
     { cod: 99520002, nome: 'HÉLCIO GRÉGIO' },
@@ -379,7 +379,7 @@ check('a carga grava Fatur. por cliente só no mês corrente e no anterior', () 
 check('NPess diferente entre anos junta o N ao N-1 do mesmo cliente', () => {
   const mapas = ctx.mapasVendasQuadro();
   mapas.vendedorPorNpess[99520003] = 'MASSIMO BOTTELLO';
-  mapas.vendedorPorNpess[99520020] = 'EDUARDO MOREIRA';
+  mapas.vendedorPorNpess[99520020] = 'EDUARDO MADEIRA';
   mapas.canalPorNpess[99520003] = 'Distribuidores regionais';
   mapas.canalPorNpess[99520020] = 'Distribuidores regionais';
   ctx._canalPorNpess = null;
@@ -408,7 +408,7 @@ check('NPess diferente entre anos junta o N ao N-1 do mesmo cliente', () => {
   const linhas = modelo.grupos.flatMap(g => g.linhas);
   const ribeiro = linhas.find(r => r.cod === '406016');
   assert.ok(ribeiro, 'o Ribeiro entra na lista');
-  assert.equal(ribeiro.vendedor, 'Eduardo Moreira');
+  assert.equal(ribeiro.vendedor, 'Eduardo Madeira');
   assert.equal(ribeiro.n1, 58480.46);
   assert.equal(ribeiro.n, 46662.6);
   assert.equal(ribeiro.perda, 11817.86);
@@ -423,7 +423,7 @@ check('NPess diferente entre anos junta o N ao N-1 do mesmo cliente', () => {
   assert.equal(parou.vendedor, 'Massimo Bottello');
   assert.equal(parou.n, 0);
   assert.equal(parou.perda, 1000);
-  const eduardo = modelo.grupos.find(g => g.vendedor === 'Eduardo Moreira');
+  const eduardo = modelo.grupos.find(g => g.vendedor === 'Eduardo Madeira');
   const massimo = modelo.grupos.find(g => g.vendedor === 'Massimo Bottello');
   assert.ok(eduardo.linhas.some(r => r.cod === '406016'));
   assert.ok(!massimo.linhas.some(r => r.cod === '406016'));
@@ -433,7 +433,7 @@ check('NPess diferente entre anos junta o N ao N-1 do mesmo cliente', () => {
 check('sem compras em N, a linha fica no NPess atual e o R$ não muda', () => {
   const mapas = ctx.mapasVendasQuadro();
   mapas.vendedorPorNpess[99520003] = 'MASSIMO BOTTELLO';
-  mapas.vendedorPorNpess[99520020] = 'EDUARDO MOREIRA';
+  mapas.vendedorPorNpess[99520020] = 'EDUARDO MADEIRA';
   mapas.canalPorNpess[99520003] = 'Distribuidores regionais';
   mapas.canalPorNpess[99520020] = 'Distribuidores regionais';
   ctx._canalPorNpess = null;
@@ -450,7 +450,7 @@ check('sem compras em N, a linha fica no NPess atual e o R$ não muda', () => {
   });
   const ribeiro = modelo.grupos.flatMap(g => g.linhas).find(r => r.cod === '406016');
   assert.ok(ribeiro, 'o Ribeiro entra mesmo sem compras em N');
-  assert.equal(ribeiro.vendedor, 'Eduardo Moreira');
+  assert.equal(ribeiro.vendedor, 'Eduardo Madeira');
   assert.equal(ribeiro.n1, 58480.46);
   assert.equal(ribeiro.n, 0);
   assert.equal(ribeiro.perda, 58480.46);
@@ -628,8 +628,8 @@ check('o filtro do vendedor grava no localStorage', () => {
   assert.equal(saved.porCanal.horeca, '');
   assert.equal(saved.geral, 'Filipe Neves');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-26-contratos-multi-gama'));
-  assert.ok(html.includes('v2026-10-26-contratos-multi-gama'));
+  assert.ok(sw.includes('v2026-10-26-contratos-testemunhas-dist'));
+  assert.ok(html.includes('v2026-10-26-contratos-testemunhas-dist'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);

@@ -454,8 +454,8 @@ check('Nº pessoal do Excel ganha à lista: 99520020 é Delta / Distribuidores r
   assert.equal(ctx.indiceColunaNpessVenda(['Vendedor']), 0);
   assert.equal(ctx.indiceColunaNpessVenda(['Nome do vendedor', 'Peso líq.']), -1);
   assert.equal(ctx.npessDeCelulaExcel(99520020), 99520020);
-  assert.equal(ctx.npessDeCelulaExcel('99520020 - MOREIRA EDUARDO'), 99520020);
-  assert.equal(ctx.npessDeCelulaExcel('EDUARDO MOREIRA'), 0);
+  assert.equal(ctx.npessDeCelulaExcel('99520020 - MADEIRA EDUARDO'), 99520020);
+  assert.equal(ctx.npessDeCelulaExcel('EDUARDO MADEIRA'), 0);
 
   const headers = ['Emissor da ordem', 'Vendas líquidas', 'Nº pessoal'];
   const iValor = ctx.indiceColunaValorVenda(headers);
@@ -471,7 +471,7 @@ check('Nº pessoal do Excel ganha à lista: 99520020 é Delta / Distribuidores r
   assert.equal(linha.cod, '427238');
 
   ctx.VENDEDORES_DEFAULT = [
-    { cod: 99520020, nome: 'EDUARDO MOREIRA' },
+    { cod: 99520020, nome: 'EDUARDO MADEIRA' },
     { cod: 99520001, nome: 'MARCIO GORGA' },
   ];
   const mapasExcel = ctx.mapasVendasQuadro();
@@ -479,8 +479,8 @@ check('Nº pessoal do Excel ganha à lista: 99520020 é Delta / Distribuidores r
     mapas: mapasExcel,
     npessPorCod: { '427238': 99520001 },
   });
-  const cell = celula(q, '2026-10', 'Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MOREIRA');
-  assert.ok(cell, 'Excel 99520020 classifica Delta / Distribuidores regionais / EDUARDO MOREIRA');
+  const cell = celula(q, '2026-10', 'Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA');
+  assert.ok(cell, 'Excel 99520020 classifica Delta / Distribuidores regionais / EDUARDO MADEIRA');
   assert.equal(cell.valor, 1500.5);
   const pelaLista = celula(q, '2026-10', 'Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA');
   assert.equal(pelaLista, null, 'a lista de clientes não substitui o NPess do Excel');
@@ -985,10 +985,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-26-contratos-multi-gama'));
+  assert.ok(sw.includes('v2026-10-26-contratos-testemunhas-dist'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-10-26-contratos-multi-gama'));
+  assert.ok(html.includes('v2026-10-26-contratos-testemunhas-dist'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 

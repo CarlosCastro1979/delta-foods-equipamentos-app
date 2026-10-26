@@ -268,7 +268,7 @@ check('NPess do P&L: Delta Lojas online, Q Brasil dist. retalho, 99520018 não �
 
   const esperado = {
     99520003: ['Delta Foods Brasil', 'Distribuidores regionais', 'MASSIMO BOTTELLO'],
-    99520020: ['Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MOREIRA'],
+    99520020: ['Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA'],
     99520002: ['Delta Foods Brasil', 'Restauração', 'HÉLCIO GRÉGIO'],
     99520006: ['Delta Foods Brasil', 'Restauração', 'DANIELA SANTOS'],
     99520007: ['Delta Foods Brasil', 'Restauração', 'PAULO FONTES'],
@@ -475,12 +475,12 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   assert.ok(act.includes('decidirActualizarQuadroVendas'));
   assert.ok(act.indexOf('decidirActualizarQuadroVendas') < act.indexOf('somarQuadrosVendas'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-10-26-contratos-multi-gama'));
+  assert.ok(sw.includes('v2026-10-26-contratos-testemunhas-dist'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
-  assert.ok(html.includes('v2026-10-26-contratos-multi-gama'));
+  assert.ok(html.includes('v2026-10-26-contratos-testemunhas-dist'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
