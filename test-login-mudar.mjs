@@ -120,14 +120,14 @@ const context = {
     setItem() {},
     removeItem() {},
   },
-  limparUserPinSessao() {
-    this._canalPinOk = null;
-    this._userPinSessaoOk = null;
-    try { this.sessionStorage.removeItem(this.USER_PIN_SESSAO_KEY); } catch (_) {}
-  },
   clearSessionDataCaches() { clearSessionCalls++; },
   voltarHome() { voltarHomeCalls++; },
   atualizarHomeCanais() { atualizarHomeCalls++; },
+};
+context.limparUserPinSessao = function limparUserPinSessao() {
+  context._canalPinOk = null;
+  context._userPinSessaoOk = null;
+  try { context.sessionStorage.removeItem(context.USER_PIN_SESSAO_KEY); } catch (_) {}
 };
 vm.createContext(context);
 vm.runInContext(extractFn(html, 'mostrarLoginModal'), context);
