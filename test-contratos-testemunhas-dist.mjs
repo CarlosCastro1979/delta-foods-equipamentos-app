@@ -13,7 +13,8 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-26-contratos-testemunhas-dist';
+const CACHE = 'v2026-10-26-eduardo-cpf';
+const EDUARDO_CPF = '225.668.708-29';
 
 function extractFn(src, name) {
   const start = src.indexOf(`function ${name}(`);
@@ -173,12 +174,14 @@ check('Horeca: T2=Paulo Fontes com CPF do mapa', () => {
   assert.equal(els.ct_t2_cpf.value, '189.665.258-14');
 });
 
-check('Distribuidores: T1=Massimo, T2=Eduardo Madeira (sem Filipe)', () => {
+check('Distribuidores: T1=Massimo, T2=Eduardo Madeira com CPF (sem Filipe)', () => {
   canalActivo = 'distribuidores';
   els.ct_vendedor.value = 'Carlos Castro';
   context.ctAplicarTestemunhasDelta();
   assert.equal(els.ct_t1_nome.value, 'Massimo Bottello');
   assert.equal(els.ct_t2_nome.value, 'Eduardo Madeira');
+  assert.equal(els.ct_t2_cpf.value, EDUARDO_CPF);
+  assert.equal(context.CT_TESTEMUNHA_EDUARDO.cpf, EDUARDO_CPF);
   assert.ok(!els.ct_t1_nome.value.includes('Filipe'));
   assert.ok(!els.ct_t2_nome.value.includes('Filipe'));
   assert.ok(!els.ct_t2_nome.value.includes('Carlos'));
@@ -186,6 +189,15 @@ check('Distribuidores: T1=Massimo, T2=Eduardo Madeira (sem Filipe)', () => {
   assert.ok(els.ct_testemunhas_hint.innerHTML.includes('Eduardo Madeira'));
   assert.ok(!els.ct_testemunhas_hint.innerHTML.includes('Filipe'));
   assert.equal(els.ct_t2_lbl.textContent, 'Testemunha 2 — Nome');
+});
+
+check('mapa CPF resolve Eduardo Madeira → 225.668.708-29', () => {
+  const t2 = context.ctResolveTestemunhaVendedor('Eduardo Madeira');
+  assert.equal(t2.nome, 'Eduardo Madeira');
+  assert.equal(t2.cpf, EDUARDO_CPF);
+  const legado = context.ctResolveTestemunhaVendedor('Eduardo Moreira');
+  assert.equal(legado.nome, 'Eduardo Madeira');
+  assert.equal(legado.cpf, EDUARDO_CPF);
 });
 
 check('normNomeUtilizador alias Moreira → Madeira', () => {

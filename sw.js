@@ -1,6 +1,6 @@
-// Service Worker v2026-10-26-contratos-testemunhas-dist — Dist: Massimo+Eduardo Madeira; Horeca: Filipe+vendedor
+// Service Worker v2026-10-26-eduardo-cpf — CPF Eduardo Madeira (testemunha Dist)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-26-contratos-testemunhas-dist';
+const CACHE = 'v2026-10-26-eduardo-cpf';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
