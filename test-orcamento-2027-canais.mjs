@@ -394,8 +394,8 @@ check('ecrã, autosave separado e cache do service worker', () => {
   assert.ok(!extractFn(html, 'orc27Flush').includes('pvSaveData'));
   assert.ok(extractFn(html, 'orc27Agendar').includes('ORC27_DEBOUNCE_MS'));
   assert.ok(extractFn(html, 'orc27Flush').includes('clearTimeout(_orc27Timer)'));
-  assert.ok(sw.includes('v2026-10-27-contratos-dist'));
-  assert.ok(html.includes('v2026-10-27-contratos-dist'));
+  assert.ok(sw.includes('v2026-10-27-contratos-draft-cli'));
+  assert.ok(html.includes('v2026-10-27-contratos-draft-cli'));
 
   const linhas = ctx.orc27Montar(quadro, { dfb_lojas: { prevOutDez: null, orcamento: null } });
   const vista = ctx.orc27RenderHtml(true, linhas);

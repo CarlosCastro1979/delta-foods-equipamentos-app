@@ -11,7 +11,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-10-27-contratos-dist';
+const CACHE = 'v2026-10-27-contratos-draft-cli';
 
 function extractFn(src, name) {
   const start = src.indexOf(`function ${name}(`);
@@ -159,7 +159,7 @@ vm.createContext(context);
 vm.runInContext(extractConstAsVar(html, 'CT_DRAFT_LS'), context);
 vm.runInContext(extractConstAsVar(html, 'CT_AUTOSAVE_MS'), context);
 vm.runInContext(extractConstAsVar(html, 'CT_DRAFT_FIELD_IDS'), context);
-vm.runInContext('var _ctAutosaveTimer = null; var _ctAutosaveHintTimer = null; var _ctAutosaveReady = true; var _ctAutosaveAbort = null;', context);
+vm.runInContext('var _ctAutosaveTimer = null; var _ctAutosaveHintTimer = null; var _ctAutosaveReady = true; var _ctAutosaveAbort = null; var _ctDraftActiveCod = ""; var _ctLegacyDraftMigrated = true;', context);
 
 function ensureGamaEls(n) {
   for (let i = 0; i < n; i++) {
@@ -205,9 +205,15 @@ for (const name of [
   'ctCollectAnexoDraft',
   'ctCollectDraft',
   'ctDraftIsEmpty',
+  'ctDraftCodKey',
+  'ctDraftStorageKey',
+  'ctMigrateLegacyDraftOnce',
+  'ctSaveDraftUnderCod',
+  'ctPersistActiveDraft',
   'ctSaveDraftLocal',
   'ctLoadDraftLocal',
   'ctClearDraft',
+  'ctBlankForm',
   'ctApplyAnexoDraft',
   'ctApplyDraft',
   'ctRefreshAnexoGamaSelects',
@@ -259,7 +265,8 @@ check('duas gamas gravadas e restauradas; prazo/duração únicos', () => {
   context.ctCurrentStep = 2;
 
   assert.equal(context.ctSaveDraftLocal(), true);
-  const raw = JSON.parse(store[context.CT_DRAFT_LS]);
+  const key = context.CT_DRAFT_LS + '_99901';
+  const raw = JSON.parse(store[key]);
   assert.ok(Array.isArray(raw.gamas));
   assert.equal(raw.gamas.length, 2);
   assert.equal(raw.gamas[0].lote, 'Delta Q Caps 10');
@@ -270,15 +277,18 @@ check('duas gamas gravadas e restauradas; prazo/duração únicos', () => {
   assert.equal(raw.gamas[0].duracao, undefined);
   assert.equal(raw.gamas[0].prazo, undefined);
 
-  // reload simulado
+  // reload simulado — só carrega com o código
   ensureGamaEls(1);
   els.ct_gama_0_lote.value = '';
   els.ct_dur_num.value = '';
   els.ct_dias_num.value = '';
   els.ct_empresa.value = '';
+  els.ct_cod.value = '';
   context.ctCurrentStep = 1;
+  assert.equal(context.ctLoadDraftLocal(), null);
 
-  const loaded = context.ctLoadDraftLocal();
+  els.ct_cod.value = '99901';
+  const loaded = context.ctLoadDraftLocal('99901');
   assert.ok(loaded);
   assert.equal(context.ctApplyDraft(loaded), true);
   assert.equal(context.ctGamaCount, 2);
@@ -356,6 +366,7 @@ check('validação exige pelo menos uma gama completa; remove deixa mínimo 1', 
 
 check('limpar campo de propósito fica vazio no rascunho (gama)', () => {
   ensureGamaEls(2);
+  els.ct_cod.value = '99901';
   els.ct_gama_0_lote.value = 'A';
   els.ct_gama_0_qtd.value = '1';
   els.ct_gama_1_lote.value = 'B';
@@ -364,7 +375,7 @@ check('limpar campo de propósito fica vazio no rascunho (gama)', () => {
   context.ctSaveDraftLocal();
   els.ct_gama_1_lote.value = '';
   context.ctSaveDraftLocal();
-  const again = context.ctLoadDraftLocal();
+  const again = context.ctLoadDraftLocal('99901');
   assert.equal(again.gamas[1].lote, '');
   assert.equal(again.gamas[0].lote, 'A');
 });
