@@ -1,6 +1,6 @@
-// Service Worker v2026-10-27-contratos-dist — Dist Contratos só Massimo/Eduardo
+// Service Worker v2026-10-27-contratos-dist-equip — Dist Word só nome equip + CC email
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-27-contratos-dist';
+const CACHE = 'v2026-10-27-contratos-dist-equip';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-27-contratos-dist Dist Contratos só Massimo+Eduardo -->
+<!-- dfb-build: v2026-10-27-contratos-dist-equip Dist Word só nome equip + CC email -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -44861,7 +44861,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-27-contratos-dist: registar SW (necessário para instalar como app) + limpar caches antigos
+// v2026-10-27-contratos-dist-equip: registar SW (necessário para instalar como app) + limpar caches antigos
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/delta-foods-equipamentos-app/sw.js', { scope: '/delta-foods-equipamentos-app/' })
     .then(function (reg) {
@@ -44871,7 +44871,7 @@ if ('serviceWorker' in navigator) {
 }
 if (typeof caches !== 'undefined' && caches.keys) {
   caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-27-contratos-dist'; }).map(function (k) { return caches.delete(k); }));
+    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-27-contratos-dist-equip'; }).map(function (k) { return caches.delete(k); }));
   }).catch(function () {});
 }
 
@@ -45733,6 +45733,25 @@ function ctContratoEhDistribuidores() {
   return id === 'distribuidores';
 }
 
+/**
+ * CC do email do contrato Dist conforme o criador (login).
+ * Eduardo → Massimo + Carlos; Massimo → Eduardo. Horeca: lista vazia (Filipe via ccString).
+ */
+function ctContratoEmailCc(criadorNome) {
+  if (!ctContratoEhDistribuidores()) return [];
+  const nome = (typeof normNomeUtilizador === 'function')
+    ? normNomeUtilizador(criadorNome != null ? criadorNome
+      : (typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : ''))
+    : String(criadorNome || '').toUpperCase().trim();
+  const em = n => (typeof getEmailUtilizador === 'function' ? getEmailUtilizador(n) : '') || '';
+  const massimo = em('MASSIMO BOTTELLO') || 'massimo.bottello@deltafoodsbrasil.com.br';
+  const eduardo = em('EDUARDO MADEIRA') || 'eduardo.moreira@deltafoodsbrasil.com.br';
+  const carlos = em('CARLOS CASTRO') || 'carlos.castro@deltafoodsbrasil.com.br';
+  if (nome === 'EDUARDO MADEIRA') return [massimo, carlos];
+  if (nome === 'MASSIMO BOTTELLO') return [eduardo];
+  return [];
+}
+
 function ctResolveTestemunhaVendedor(vendedorNome) {
   const key = ctNormVendKey(vendedorNome);
   if (!key) return null;
@@ -45961,11 +45980,13 @@ function ctGetData() {
     VENDEDOR: g('ct_vendedor') || ctResolveVendedorContrato(),
   };
 
+  // Dist: só o nome do equipamento no Word (sem «Gama N — lote —»). Horeca multi-gama mantém o prefixo.
+  const prefixGamaWord = multi && !ctContratoEhDistribuidores();
   for (let i = 1; i <= 8; i++) {
     const sel = document.getElementById('ct_a1_' + i + '_equip');
     let desc = sel && sel.value ? (sel.options[sel.selectedIndex]?.dataset?.desc || '') : '';
     const gIdx = parseInt(document.getElementById('ct_a1_' + i + '_gama')?.value, 10) || 0;
-    if (desc && multi) {
+    if (desc && prefixGamaWord) {
       const lab = ctGamaLabel(gamas[gIdx] || gamas[0] || ctEmptyGama(), gIdx);
       desc = lab + ' — ' + desc;
     }
@@ -45980,7 +46001,7 @@ function ctGetData() {
     const sel = document.getElementById('ct_a2_' + i + '_equip');
     let desc = sel && sel.value ? (sel.options[sel.selectedIndex]?.dataset?.desc || '') : '';
     const gIdx = parseInt(document.getElementById('ct_a2_' + i + '_gama')?.value, 10) || 0;
-    if (desc && multi) {
+    if (desc && prefixGamaWord) {
       const lab = ctGamaLabel(gamas[gIdx] || gamas[0] || ctEmptyGama(), gIdx);
       desc = lab + ' — ' + desc;
     }
@@ -46452,9 +46473,12 @@ para assinatura digital por <strong>${outlookEmailEsc(data.ASSINA_NOME || '')}</
 <p>Com os melhores cumprimentos,<br>Delta Foods Brasil</p>
 </body></html>`;
 
+  const toContrato = 'daniela.kucinski@deltafoodsbrasil.com.br';
+  const criador = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
+  const ccList = typeof ctContratoEmailCc === 'function' ? ctContratoEmailCc(criador) : [];
   await outlookAbrirRascunho({
-    to: 'daniela.kucinski@deltafoodsbrasil.com.br',
-    cc: ccString([]),
+    to: toContrato,
+    cc: ccString(ccList, { to: toContrato, remetente: criador }),
     subject: 'Contrato de Comodato Delta Q - ' + (data.COMOD_EMPRESA || 'Cliente') + ' - Para Assinatura',
     html,
     attachments: docBlob ? [{ blob: docBlob, filename: filename || 'Contrato.docx' }] : [],
