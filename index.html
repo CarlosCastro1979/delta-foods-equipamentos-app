@@ -2982,7 +2982,7 @@ var _unused_placeholder = 1;
           <span id="ctStepLbl" style="margin-left:auto;font-size:12px;color:var(--muted);align-self:center">Passo 1 de 4</span>
           <span id="ct-autosave-hint" style="font-size:11px;color:#64748b;align-self:center;"></span>
         </div>
-        <div style="font-size:11px;color:var(--muted);margin:-12px 0 16px;">Rascunho com autosave — podes sair e continuar mais tarde.</div>
+        <div style="font-size:11px;color:var(--muted);margin:-12px 0 16px;">Rascunho com autosave por código de cliente — introduz o código para continuar um rascunho. Sem código o formulário fica em branco.</div>
 
         <!-- PASSO 1 -->
         <div id="ct-passo1">
@@ -2991,7 +2991,7 @@ var _unused_placeholder = 1;
             <div>
               <label class="ct-lbl">Código do Cliente <span class="ct-req">*</span></label>
               <div style="display:flex;gap:6px">
-                <input id="ct_cod" class="form-input" placeholder="Cód." style="flex:1" onkeydown="if(event.key==='Enter')ctBuscarCliente()">
+                <input id="ct_cod" class="form-input" placeholder="Cód." style="flex:1" oninput="ctOnCodInput()" onchange="ctOnCodConfirm()" onkeydown="if(event.key==='Enter')ctBuscarCliente()">
                 <button class="btn btn-primary btn-sm" onclick="ctBuscarCliente()">🔍</button>
               </div>
             </div>
@@ -45034,7 +45034,10 @@ let equipCatalog = [];
 /** Nº de blocos de gama no passo 2 (mín. 1). */
 let ctGamaCount = 1;
 
-/** Um rascunho em curso na criação (Gerar Contrato). localStorage — não sobrescreve contratos publicados. */
+/**
+ * Rascunhos Gerar Contrato — um por código de cliente.
+ * Chave: dfb_ct_gerar_draft_<cod> (legado global dfb_ct_gerar_draft migrado 1×, nunca auto-aplicado ao abrir).
+ */
 const CT_DRAFT_LS = 'dfb_ct_gerar_draft';
 const CT_AUTOSAVE_MS = 1000;
 const CT_DRAFT_FIELD_IDS = [
@@ -45047,6 +45050,9 @@ let _ctAutosaveTimer = null;
 let _ctAutosaveHintTimer = null;
 let _ctAutosaveReady = false;
 let _ctAutosaveAbort = null;
+/** Código (normalizado) do rascunho activo — vazio = formulário sem cliente. */
+let _ctDraftActiveCod = '';
+let _ctLegacyDraftMigrated = false;
 
 function ctEmptyGama() {
   return { lote: '', unidade: 'Caps', qtd: '' };
@@ -45236,9 +45242,9 @@ function ctCollectDraft() {
 
 function ctDraftIsEmpty(draft) {
   if (!draft || !draft.fields) return true;
-  // ct_unidade tem default Caps no select — sozinha não conta como conteúdo
+  // ct_unidade (default Caps) e ct_cod sozinhos não contam — rascunho é por código
   const hasField = Object.keys(draft.fields).some(k => {
-    if (k === 'ct_unidade') return false;
+    if (k === 'ct_unidade' || k === 'ct_cod') return false;
     return String(draft.fields[k] || '').trim();
   });
   const gamas = Array.isArray(draft.gamas) ? draft.gamas : [];
@@ -45253,24 +45259,90 @@ function ctDraftIsEmpty(draft) {
   return !hasField && !hasGama && !hasA;
 }
 
-function ctSaveDraftLocal() {
+/** Normaliza código para chave de rascunho (sem zeros à esquerda). */
+function ctDraftCodKey(cod) {
+  const raw = String(cod == null ? '' : cod).trim();
+  if (!raw) return '';
+  return raw.replace(/^0+/, '') || '0';
+}
+
+function ctDraftStorageKey(cod) {
+  const key = ctDraftCodKey(cod);
+  return key ? (CT_DRAFT_LS + '_' + key) : null;
+}
+
+/** Migra rascunho global antigo → chave por código; remove o global. Nunca auto-aplica ao abrir. */
+function ctMigrateLegacyDraftOnce() {
+  if (_ctLegacyDraftMigrated) return;
+  _ctLegacyDraftMigrated = true;
   try {
-    const draft = ctCollectDraft();
+    const raw = localStorage.getItem(CT_DRAFT_LS);
+    if (!raw) return;
+    let d = null;
+    try { d = JSON.parse(raw); } catch (_) { d = null; }
+    const cod = d && d.fields && d.fields.ct_cod != null ? String(d.fields.ct_cod).trim() : '';
+    const storageKey = ctDraftStorageKey(cod);
+    if (storageKey && d && typeof d === 'object') {
+      try {
+        if (!localStorage.getItem(storageKey)) {
+          localStorage.setItem(storageKey, raw);
+        }
+      } catch (_) {}
+    }
+    localStorage.removeItem(CT_DRAFT_LS);
+  } catch (_) {}
+}
+
+function ctSaveDraftUnderCod(cod, draftOpt) {
+  ctMigrateLegacyDraftOnce();
+  const storageKey = ctDraftStorageKey(cod);
+  if (!storageKey) return true;
+  try {
+    const draft = draftOpt || ctCollectDraft();
+    const keyCod = ctDraftCodKey(cod);
+    if (draft.fields) draft.fields.ct_cod = keyCod;
     if (ctDraftIsEmpty(draft)) {
-      localStorage.removeItem(CT_DRAFT_LS);
+      localStorage.removeItem(storageKey);
       return true;
     }
-    localStorage.setItem(CT_DRAFT_LS, JSON.stringify(draft));
+    localStorage.setItem(storageKey, JSON.stringify(draft));
     return true;
+  } catch (e) {
+    console.warn('ctSaveDraftUnderCod', e);
+    return false;
+  }
+}
+
+function ctPersistActiveDraft() {
+  if (!_ctDraftActiveCod) return true;
+  return ctSaveDraftUnderCod(_ctDraftActiveCod);
+}
+
+function ctSaveDraftLocal() {
+  try {
+    ctMigrateLegacyDraftOnce();
+    const draft = ctCollectDraft();
+    const cod = (draft.fields && draft.fields.ct_cod) || _ctDraftActiveCod || '';
+    const storageKey = ctDraftStorageKey(cod);
+    // Sem código de cliente: não gravar rascunho global
+    if (!storageKey) return true;
+    _ctDraftActiveCod = ctDraftCodKey(cod);
+    return ctSaveDraftUnderCod(_ctDraftActiveCod, draft);
   } catch (e) {
     console.warn('ctSaveDraftLocal', e);
     return false;
   }
 }
 
-function ctLoadDraftLocal() {
+function ctLoadDraftLocal(codOpt) {
   try {
-    const raw = localStorage.getItem(CT_DRAFT_LS);
+    ctMigrateLegacyDraftOnce();
+    // Só carrega com código explícito ou o que está no campo — sem fallback ao último activo
+    const cod = codOpt != null ? codOpt
+      : ((document.getElementById('ct_cod') || {}).value || '');
+    const storageKey = ctDraftStorageKey(cod);
+    if (!storageKey) return null;
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return null;
     const d = JSON.parse(raw);
     return d && typeof d === 'object' ? d : null;
@@ -45279,9 +45351,120 @@ function ctLoadDraftLocal() {
   }
 }
 
-function ctClearDraft() {
-  try { localStorage.removeItem(CT_DRAFT_LS); } catch (_) {}
+function ctClearDraft(codOpt) {
+  try {
+    ctMigrateLegacyDraftOnce();
+    const cod = codOpt != null ? codOpt
+      : ((document.getElementById('ct_cod') || {}).value || _ctDraftActiveCod || '');
+    const storageKey = ctDraftStorageKey(cod);
+    if (storageKey) localStorage.removeItem(storageKey);
+    // Limpar também legado global se ainda existir
+    localStorage.removeItem(CT_DRAFT_LS);
+  } catch (_) {}
   clearTimeout(_ctAutosaveTimer);
+  _ctDraftActiveCod = '';
+}
+
+/** Formulário Gerar Contrato em branco (passo 1). keepCod / cod: preserva ou define o código. */
+function ctBlankForm(opts) {
+  const keepCod = !!(opts && opts.keepCod);
+  const keepCodVal = (opts && opts.cod != null && String(opts.cod).trim())
+    ? String(opts.cod).trim()
+    : (keepCod ? ((document.getElementById('ct_cod') || {}).value || '') : '');
+  _ctAutosaveReady = false;
+  clearTimeout(_ctAutosaveTimer);
+  CT_DRAFT_FIELD_IDS.forEach(id => {
+    if (keepCod && id === 'ct_cod') return;
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (id === 'ct_unidade') el.value = 'Caps';
+    else el.value = '';
+  });
+  if (keepCod || (opts && opts.cod != null)) {
+    const codEl = document.getElementById('ct_cod');
+    if (codEl) codEl.value = keepCodVal;
+  }
+  const found = document.getElementById('ct_cliente_found');
+  const foundTxt = document.getElementById('ct_found_txt');
+  if (foundTxt) foundTxt.textContent = '';
+  if (found) found.style.display = 'none';
+  const hint = document.getElementById('ct-autosave-hint');
+  if (hint) hint.textContent = '';
+  for (let i = 1; i <= 8; i++) {
+    ['qtd', 'equip', 'serie', 'nf', 'valor'].forEach(suf => {
+      const el = document.getElementById('ct_a1_' + i + '_' + suf);
+      if (el) el.value = '';
+    });
+    const g = document.getElementById('ct_a1_' + i + '_gama');
+    if (g) g.value = '0';
+  }
+  for (let i = 1; i <= 5; i++) {
+    ['qtd', 'equip', 'serie', 'nf', 'valor'].forEach(suf => {
+      const el = document.getElementById('ct_a2_' + i + '_' + suf);
+      if (el) el.value = '';
+    });
+    const g = document.getElementById('ct_a2_' + i + '_gama');
+    if (g) g.value = '0';
+  }
+  if (typeof ctRenderGamas === 'function') ctRenderGamas([ctEmptyGama()]);
+  ctCurrentStep = 1;
+  if (typeof ctGoto === 'function') ctGoto(1);
+  if (!keepCod) _ctDraftActiveCod = '';
+  setTimeout(() => { _ctAutosaveReady = true; }, 250);
+}
+
+/** Código apagado → grava rascunho do cliente anterior (se houver) e limpa o formulário. */
+function ctOnCodInput() {
+  const cod = ((document.getElementById('ct_cod') || {}).value || '').trim();
+  if (cod) return;
+  if (_ctDraftActiveCod && _ctAutosaveReady) {
+    try { ctPersistActiveDraft(); } catch (_) {}
+  }
+  _ctDraftActiveCod = '';
+  ctBlankForm({ keepCod: true });
+}
+
+/**
+ * Código confirmado (blur/change ou após pesquisa): carrega rascunho desse código
+ * ou deixa o formulário em branco (exceto o código) se não houver rascunho.
+ */
+function ctOnCodConfirm() {
+  const cod = ((document.getElementById('ct_cod') || {}).value || '').trim();
+  if (!cod) {
+    ctOnCodInput();
+    return;
+  }
+  ctLoadDraftForCod(cod, { blankIfMissing: true });
+}
+
+/**
+ * Carrega rascunho do código (se existir). Se blankIfMissing e não há rascunho,
+ * limpa campos do cliente anterior sem apagar o código.
+ * @returns {boolean} true se restaurou rascunho
+ */
+function ctLoadDraftForCod(cod, opts) {
+  const blankIfMissing = !(opts && opts.blankIfMissing === false);
+  const key = ctDraftCodKey(cod);
+  if (!key) {
+    ctBlankForm();
+    return false;
+  }
+  if (_ctDraftActiveCod && _ctDraftActiveCod !== key && _ctAutosaveReady) {
+    try { ctPersistActiveDraft(); } catch (_) {}
+  }
+  const draft = ctLoadDraftLocal(key);
+  if (draft && !ctDraftIsEmpty(draft)) {
+    _ctDraftActiveCod = key;
+    ctApplyDraft(draft);
+    const codEl = document.getElementById('ct_cod');
+    if (codEl && !String(codEl.value || '').trim()) codEl.value = String(cod).trim();
+    return true;
+  }
+  if (_ctDraftActiveCod !== key) {
+    if (blankIfMissing) ctBlankForm({ keepCod: true, cod: String(cod).trim() });
+    _ctDraftActiveCod = key;
+  }
+  return false;
 }
 
 function ctApplyAnexoDraft(prefix, rows) {
@@ -45369,7 +45552,11 @@ function ctBindAutosave() {
 function ctInit() {
   ctBindAutosave();
   _ctAutosaveReady = false;
+  _ctDraftActiveCod = '';
+  ctMigrateLegacyDraftOnce();
   ctCurrentStep = 1;
+  // Ao abrir: sempre em branco — só carrega rascunho depois de introduzir o código
+  ctBlankForm();
   ctRenderGamas([ctEmptyGama()]);
   ctGoto(1);
   loadEquipCatalogForForm();
@@ -45387,12 +45574,8 @@ async function loadEquipCatalogForForm() {
   }
   ctBuildAnexoTable('ct_a1_table', 8, 'a1');
   ctBuildAnexoTable('ct_a2_table', 5, 'a2');
-  const draft = ctLoadDraftLocal();
-  if (draft && !ctDraftIsEmpty(draft)) {
-    ctApplyDraft(draft);
-  } else {
-    _ctAutosaveReady = true;
-  }
+  // Não restaurar rascunho global ao abrir — formulário fica em branco até haver código
+  _ctAutosaveReady = true;
 }
 
 function ctGamaSelectOptionsHtml(selected) {
@@ -45500,6 +45683,13 @@ function ctAutoExtenso() {
 async function ctBuscarCliente() {
   const cod = document.getElementById('ct_cod').value.trim();
   if (!cod) { showToast('Introduz o código do cliente','error'); return; }
+  // Troca de cliente: gravar rascunho anterior e carregar o deste código (se existir)
+  const restored = ctLoadDraftForCod(cod, { blankIfMissing: true });
+  if (restored) {
+    showToast('Rascunho restaurado para o código ' + cod, 'success');
+    if (_ctAutosaveReady) ctScheduleAutosave(400);
+    return;
+  }
   try {
     const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/registos?cod=ilike.*' + encodeURIComponent(cod) + '*&limit=5', {
       headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY }
@@ -45525,6 +45715,8 @@ async function ctBuscarCliente() {
       if (d.length === 14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
       return raw;
     };
+
+    _ctDraftActiveCod = ctDraftCodKey(cod);
 
     if (data && data.length) {
       const r = data[0];

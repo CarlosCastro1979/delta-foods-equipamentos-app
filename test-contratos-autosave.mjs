@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Autosave rascunho — Gerar Contrato: gravar campos, simular reload, restaurar.
+ * Autosave rascunho — Gerar Contrato por código de cliente:
+ * abrir sem código = branco; código A restaura A; código B ≠ dados de A.
  */
 import fs from 'fs';
 import vm from 'vm';
@@ -68,15 +69,24 @@ check('cache SW e index actualizados', () => {
   assert.ok(html.includes('ctScheduleAutosave'));
   assert.ok(html.includes('ctApplyDraft'));
   assert.ok(html.includes('ctClearDraft'));
+  assert.ok(html.includes('ctBlankForm'));
+  assert.ok(html.includes('ctLoadDraftForCod'));
+  assert.ok(html.includes('ctDraftStorageKey'));
   assert.ok(html.includes('Rascunho com autosave'));
   assert.ok(html.includes('Adicionar outra gama'));
   assert.ok(html.includes('ctCollectGamas'));
+  assert.ok(html.includes('ctOnCodInput'));
+  // Ao abrir NÃO restaura rascunho global
+  assert.ok(html.includes('Não restaurar rascunho global ao abrir'));
+  assert.ok(!/const draft = ctLoadDraftLocal\(\);\s*\n\s*if \(draft && !ctDraftIsEmpty\(draft\)\) \{\s*\n\s*ctApplyDraft\(draft\);/.test(html));
 });
 
-check('um só rascunho (chave única) e debounce ~1s', () => {
+check('rascunho por código (não só chave global) e debounce ~1s', () => {
   assert.ok(html.includes("const CT_DRAFT_LS = 'dfb_ct_gerar_draft'"));
+  assert.ok(html.includes('CT_DRAFT_LS + \'_\' + key') || html.includes("CT_DRAFT_LS + '_' + key"));
   assert.ok(html.includes('const CT_AUTOSAVE_MS = 1000'));
   assert.ok(html.includes('ctClearDraft()'), 'limpa rascunho após gerar');
+  assert.ok(html.includes('ctMigrateLegacyDraftOnce'));
 });
 
 const store = Object.create(null);
@@ -90,6 +100,20 @@ function makeEl(value) {
   };
 }
 
+function resetDom() {
+  Object.keys(els).forEach(id => {
+    if (els[id].value !== undefined) {
+      if (id === 'ct_unidade') els[id].value = 'Caps';
+      else els[id].value = '';
+    }
+    if (els[id].textContent !== undefined) els[id].textContent = '';
+    if (els[id].style) els[id].style.display = 'none';
+  });
+  context.ctCurrentStep = 1;
+  context._ctDraftActiveCod = '';
+  context.ctRenderGamas([{ lote: '', unidade: 'Caps', qtd: '' }]);
+}
+
 [
   'ct_cod', 'ct_num_contrato', 'ct_empresa', 'ct_cnpj', 'ct_endereco',
   'ct_rep_nome', 'ct_rep_rg', 'ct_rep_cpf', 'ct_email', 'ct_vendedor',
@@ -98,6 +122,7 @@ function makeEl(value) {
   'ct_cliente_found', 'ct_found_txt', 'ct-autosave-hint', 'ct_gamas_list',
 ].forEach(id => { els[id] = makeEl(''); });
 els.ct_gamas_list.children = { length: 0 };
+els.ct_unidade.value = 'Caps';
 
 for (let i = 1; i <= 8; i++) {
   els[`ct_a1_${i}_qtd`] = makeEl('');
@@ -130,6 +155,8 @@ const context = {
   clearTimeout,
   ctCurrentStep: 2,
   ctGamaCount: 1,
+  _ctDraftActiveCod: '',
+  _ctLegacyDraftMigrated: false,
   localStorage: {
     getItem(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
     setItem(k, v) { store[k] = String(v); },
@@ -150,7 +177,7 @@ vm.createContext(context);
 vm.runInContext(extractConstAsVar(html, 'CT_DRAFT_LS'), context);
 vm.runInContext(extractConstAsVar(html, 'CT_AUTOSAVE_MS'), context);
 vm.runInContext(extractConstAsVar(html, 'CT_DRAFT_FIELD_IDS'), context);
-vm.runInContext('var _ctAutosaveTimer = null; var _ctAutosaveHintTimer = null; var _ctAutosaveReady = true; var _ctAutosaveAbort = null;', context);
+vm.runInContext('var _ctAutosaveTimer = null; var _ctAutosaveHintTimer = null; var _ctAutosaveReady = true; var _ctAutosaveAbort = null; var _ctDraftActiveCod = ""; var _ctLegacyDraftMigrated = false;', context);
 
 context.ctRenderGamas = function (gamas) {
   const list = (Array.isArray(gamas) && gamas.length) ? gamas : [{ lote: '', unidade: 'Caps', qtd: '' }];
@@ -179,9 +206,18 @@ for (const name of [
   'ctCollectAnexoDraft',
   'ctCollectDraft',
   'ctDraftIsEmpty',
+  'ctDraftCodKey',
+  'ctDraftStorageKey',
+  'ctMigrateLegacyDraftOnce',
+  'ctSaveDraftUnderCod',
+  'ctPersistActiveDraft',
   'ctSaveDraftLocal',
   'ctLoadDraftLocal',
   'ctClearDraft',
+  'ctBlankForm',
+  'ctOnCodInput',
+  'ctOnCodConfirm',
+  'ctLoadDraftForCod',
   'ctApplyAnexoDraft',
   'ctApplyDraft',
   'ctFlushAutosave',
@@ -199,7 +235,33 @@ check('ctDraftIsEmpty reconhece formulário vazio', () => {
   assert.equal(context.ctDraftIsEmpty(context.ctCollectDraft()), true);
 });
 
-check('grava e restaura após reload simulado (localStorage)', () => {
+check('abrir sem código: load sem cod = null; formulário em branco', () => {
+  resetDom();
+  Object.keys(store).forEach(k => delete store[k]);
+  // Simular rascunho legado global — NÃO deve ser aplicado só por existir
+  store[context.CT_DRAFT_LS] = JSON.stringify({
+    v: 2,
+    fields: { ct_cod: '111', ct_empresa: 'Legado SA', ct_email: 'x@y.z' },
+    gamas: [{ lote: 'X', unidade: 'Caps', qtd: '1' }],
+    a1: [], a2: [],
+  });
+  context._ctLegacyDraftMigrated = false;
+  assert.equal(context.ctLoadDraftLocal(''), null);
+  assert.equal(context.ctLoadDraftLocal(), null);
+  // Migração move para chave do código, remove global
+  context.ctMigrateLegacyDraftOnce();
+  assert.equal(store[context.CT_DRAFT_LS], undefined);
+  assert.ok(store[context.CT_DRAFT_LS + '_111']);
+  // Sem introduzir código, formulário continua vazio
+  assert.equal(els.ct_empresa.value, '');
+  assert.equal(els.ct_email.value, '');
+});
+
+check('grava sob chave do código e restaura só com esse código', () => {
+  resetDom();
+  Object.keys(store).forEach(k => delete store[k]);
+  context._ctLegacyDraftMigrated = true;
+
   els.ct_cod.value = '12345';
   els.ct_num_contrato.value = 'B0099/26';
   els.ct_empresa.value = 'Cliente Teste Lda';
@@ -221,24 +283,25 @@ check('grava e restaura após reload simulado (localStorage)', () => {
   els.ct_cliente_found.style.display = 'block';
   els.ct_found_txt.textContent = 'Cliente Teste Lda · Ana';
   context.ctCurrentStep = 3;
+  context._ctDraftActiveCod = '12345';
 
   assert.equal(context.ctSaveDraftLocal(), true);
-  assert.ok(store[context.CT_DRAFT_LS], 'rascunho no localStorage');
-  const saved = JSON.parse(store[context.CT_DRAFT_LS]);
+  const keyA = context.CT_DRAFT_LS + '_12345';
+  assert.ok(store[keyA], 'rascunho na chave por código');
+  assert.equal(store[context.CT_DRAFT_LS], undefined, 'sem chave global');
+  const saved = JSON.parse(store[keyA]);
   assert.ok(Array.isArray(saved.gamas));
-  assert.equal(saved.gamas.length, 1);
   assert.equal(saved.gamas[0].lote, 'Delta Q Caps 10');
 
-  // Simular reload: limpar DOM e reaplicar draft
-  Object.keys(els).forEach(id => {
-    if (els[id].value !== undefined) els[id].value = '';
-    if (els[id].textContent !== undefined) els[id].textContent = '';
-    if (els[id].style) els[id].style.display = 'none';
-  });
-  context.ctCurrentStep = 1;
+  // Simular sair/voltar: limpar DOM — sem código não carrega
+  resetDom();
+  assert.equal(context.ctLoadDraftLocal(), null);
+  assert.equal(els.ct_empresa.value, '');
 
-  const loaded = context.ctLoadDraftLocal();
-  assert.ok(loaded, 'carrega rascunho');
+  // Introduzir código A → restaura
+  els.ct_cod.value = '12345';
+  const loaded = context.ctLoadDraftLocal('12345');
+  assert.ok(loaded, 'carrega rascunho A');
   assert.equal(context.ctDraftIsEmpty(loaded), false);
   assert.equal(context.ctApplyDraft(loaded), true);
 
@@ -258,18 +321,80 @@ check('grava e restaura após reload simulado (localStorage)', () => {
   assert.equal(context.ctCurrentStep, 3);
 });
 
+check('código B não mostra dados do cliente A', () => {
+  // A já está no store; gravar B distinto
+  resetDom();
+  els.ct_cod.value = '99999';
+  els.ct_empresa.value = 'Cliente B';
+  els.ct_email.value = 'b@b.com';
+  els.ct_num_contrato.value = 'B0001/26';
+  context._ctDraftActiveCod = '99999';
+  context.ctCurrentStep = 1;
+  assert.equal(context.ctSaveDraftLocal(), true);
+
+  // Carregar B
+  resetDom();
+  assert.equal(context.ctLoadDraftForCod('99999'), true);
+  assert.equal(els.ct_empresa.value, 'Cliente B');
+  assert.equal(els.ct_email.value, 'b@b.com');
+  assert.notEqual(els.ct_empresa.value, 'Cliente Teste Lda');
+
+  // Trocar para A
+  assert.equal(context.ctLoadDraftForCod('12345'), true);
+  assert.equal(els.ct_empresa.value, 'Cliente Teste Lda');
+  assert.equal(els.ct_email.value, 'ana@cliente.com');
+
+  // Código sem rascunho → branco (com o novo código)
+  assert.equal(context.ctLoadDraftForCod('77777', { blankIfMissing: true }), false);
+  assert.equal(els.ct_empresa.value, '');
+  assert.equal(els.ct_email.value, '');
+  assert.equal(els.ct_cod.value, '77777');
+});
+
+check('sem código não grava rascunho global', () => {
+  resetDom();
+  const before = Object.keys(store).filter(k => k === context.CT_DRAFT_LS).length;
+  els.ct_cod.value = '';
+  els.ct_empresa.value = 'Não deve gravar';
+  context._ctDraftActiveCod = '';
+  assert.equal(context.ctSaveDraftLocal(), true);
+  assert.equal(store[context.CT_DRAFT_LS], undefined);
+  assert.equal(Object.keys(store).filter(k => k === context.CT_DRAFT_LS).length, before);
+});
+
 check('limpar campo de propósito fica vazio no rascunho', () => {
+  resetDom();
+  els.ct_cod.value = '12345';
+  context._ctDraftActiveCod = '12345';
+  const draft = context.ctLoadDraftLocal('12345');
+  context.ctApplyDraft(draft);
   els.ct_email.value = '';
   context.ctCurrentStep = 3;
   assert.equal(context.ctSaveDraftLocal(), true);
-  const again = context.ctLoadDraftLocal();
+  const again = context.ctLoadDraftLocal('12345');
   assert.equal(again.fields.ct_email, '');
   assert.equal(again.fields.ct_empresa, 'Cliente Teste Lda');
 });
 
-check('ctClearDraft remove o rascunho (após gerar)', () => {
+check('ctClearDraft remove só o rascunho do código (após gerar)', () => {
+  context._ctDraftActiveCod = '12345';
+  els.ct_cod.value = '12345';
   context.ctClearDraft();
-  assert.equal(context.ctLoadDraftLocal(), null);
+  assert.equal(context.ctLoadDraftLocal('12345'), null);
+  // B continua
+  assert.ok(context.ctLoadDraftLocal('99999'));
+});
+
+check('ctOnCodInput com código vazio limpa formulário', () => {
+  resetDom();
+  els.ct_cod.value = '99999';
+  context.ctLoadDraftForCod('99999');
+  assert.equal(els.ct_empresa.value, 'Cliente B');
+  els.ct_cod.value = '';
+  context._ctAutosaveReady = true;
+  context.ctOnCodInput();
+  assert.equal(els.ct_empresa.value, '');
+  assert.equal(els.ct_email.value, '');
 });
 
 if (!process.exitCode) console.log('\nTodos os testes de autosave de contratos passaram.');
