@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-26-massimo-cpf CPF Massimo Bottello testemunha Dist -->
+<!-- dfb-build: v2026-10-27-contratos-dist Dist Contratos só Massimo+Eduardo -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -5131,6 +5131,7 @@ function clearSessionDataCaches() {
   try { contratosCache = null; } catch (_) {}
   try { _contratoUniqCache = { at: 0, rows: null }; } catch (_) {}
   try { window._contratosAllRows = null; } catch (_) {}
+  try { window._contratosAllRowsCanal = null; } catch (_) {}
   try { window._contratosPorRegistar = null; } catch (_) {}
   try { window._clientesContenciosoView = null; } catch (_) {}
 }
@@ -11545,8 +11546,21 @@ function cancelarCanalPin() {
 function abrirCanalConfirmado(canalId) {
   const c = CANAIS_APP[canalId];
   if (!c) return;
+  const prevCanal = _canalActivo;
   _canalActivo = canalId;
   try { localStorage.setItem('dfb_canal_activo', canalId); } catch (e) {}
+  // Ao mudar de canal (Horeca ↔ Dist): limpar memória de Contratos para não misturar vendedores
+  if (prevCanal && prevCanal !== canalId) {
+    try {
+      contratosCache = null;
+      window._contratosAllRows = null;
+      window._contratosAllRowsCanal = null;
+      window._contratosTabFp = null;
+      window._contratosPorRegistar = null;
+      window._contratosNivelFiltro = null;
+      sessionCacheInvalidate('contratosTabCompute');
+    } catch (_) {}
+  }
   setAppView('canal');
   atualizarCanalBar(c.nome);
   // Ecommerce: sem Registo Clientes → abrir Análise
@@ -32142,7 +32156,49 @@ function loadContratos(prefix, contratos = []) {
 }
 
 let contratosCache = null; // HTML legado; a fonte de verdade é _contratosAllRows + IndexedDB
-const CONTRATOS_TAB_IDB_KEY = 'delta_contratos_tab_v2';
+// v3: cache por canal (Dist ≠ Horeca) — evita pintar Paulo/Hélcio/Daniela na aba Distribuidores
+const CONTRATOS_TAB_IDB_KEY = 'delta_contratos_tab_v3';
+
+/** Id do canal para a cache de Contratos Registados ('' se sem canal). */
+function contratosCanalCacheKey() {
+  try {
+    return (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : null)
+      || (typeof _canalActivo !== 'undefined' ? _canalActivo : null)
+      || '';
+  } catch (_) { return ''; }
+}
+
+/**
+ * Só linhas do canal activo.
+ * Dist → Massimo Bottello + Eduardo Madeira (alias Moreira via normNomeUtilizador).
+ * Horeca → Paulo/Hélcio/Daniela/Filipe — sem Dist.
+ */
+function contratosRowsDoCanalActivo(rows) {
+  if (!rows || !rows.length) return [];
+  if (typeof filterByCanalActivo === 'function') {
+    return filterByCanalActivo(rows, r => r && r.vendedor);
+  }
+  if (typeof vendedorPertenceAoCanalActivo === 'function') {
+    return rows.filter(r => vendedorPertenceAoCanalActivo(r && r.vendedor));
+  }
+  return rows.slice();
+}
+
+/** Memória `_contratosAllRows` só vale se foi calculada para o canal activo. */
+function contratosMemoriaDoCanalActivo() {
+  const canal = contratosCanalCacheKey();
+  if (!Array.isArray(window._contratosAllRows) || !window._contratosAllRows.length) return false;
+  if (window._contratosAllRowsCanal == null || window._contratosAllRowsCanal !== canal) {
+    try {
+      window._contratosAllRows = null;
+      window._contratosTabFp = null;
+      window._contratosAllRowsCanal = null;
+      contratosCache = null;
+    } catch (_) {}
+    return false;
+  }
+  return true;
+}
 
 function contratosYmKey(d) {
   const x = d instanceof Date ? d : new Date();
@@ -32183,6 +32239,7 @@ function contratosSigFromRegistos(registos) {
 
 function contratosFpIgual(a, b) {
   if (!a || !b) return false;
+  if ((a.canalId || '') !== (b.canalId || '')) return false;
   if (a.ym !== b.ym) return false;
   if (a.vendasCarga && b.vendasCarga && a.vendasCarga !== b.vendasCarga) return false;
   if (a.vendasN != null && b.vendasN != null && a.vendasN !== b.vendasN) return false;
@@ -32262,17 +32319,28 @@ async function loadRegistosParaContratos() {
 }
 
 function contratosTabApplyPacked(packed) {
-  window._contratosAllRows = packed.rows || [];
+  if (!packed || !Array.isArray(packed.rows)) return false;
+  const canal = contratosCanalCacheKey();
+  const packedCanal = (packed.canalId != null ? packed.canalId : (packed.fp && packed.fp.canalId)) || '';
+  // Recusar cache de outro canal (ex.: Horeca → Dist)
+  if (packedCanal !== canal) return false;
+  window._contratosAllRows = packed.rows;
+  window._contratosAllRowsCanal = canal;
   window._contratosDocsMap = packed.docsMap || {};
   window._contratosDuplicados = typeof resolverContratosDuplicados === 'function'
     ? resolverContratosDuplicados(packed.dups || [])
     : (packed.dups || []);
   window._contratosTabFp = packed.fp || null;
-  contratosCache = packed.rows && packed.rows.length ? 'rows' : null;
+  contratosCache = packed.rows.length ? 'rows' : null;
+  return true;
 }
 
 function persistContratosTabPacked(packed) {
+  const canal = contratosCanalCacheKey();
+  packed.canalId = canal;
+  if (packed.fp) packed.fp.canalId = canal;
   window._contratosTabFp = packed.fp || null;
+  window._contratosAllRowsCanal = canal;
   try {
     if (typeof idbSet === 'function') idbSet(CONTRATOS_TAB_IDB_KEY, packed).catch(() => {});
   } catch (_) {}
@@ -32280,6 +32348,7 @@ function persistContratosTabPacked(packed) {
 
 async function contratosLiveFingerprint() {
   const ym = contratosYmKey();
+  const canalId = contratosCanalCacheKey();
   const vendasCarga = vendasCargaStamp();
   let vendasN = null;
   try { vendasN = await countSupabaseRows(SUPA_VENDAS); } catch (_) {}
@@ -32297,7 +32366,7 @@ async function contratosLiveFingerprint() {
       }
     } catch (_) {}
   }
-  return { ym, vendasN, nRegs, sig, vendasCarga };
+  return { ym, canalId, vendasN, nRegs, sig, vendasCarga };
 }
 
 function contratosEnsureResumoListener(cont) {
@@ -32345,7 +32414,7 @@ async function loadContratosTab(forceRefresh = false) {
   const cont = document.getElementById('contratos-content');
   if (!cont) return;
 
-  if (!forceRefresh && Array.isArray(window._contratosAllRows) && window._contratosAllRows.length) {
+  if (!forceRefresh && contratosMemoriaDoCanalActivo()) {
     contratosTabPaint();
     contratosRevalidateBg();
     return;
@@ -32354,21 +32423,20 @@ async function loadContratosTab(forceRefresh = false) {
   if (!forceRefresh) {
     try {
       const packed = typeof idbGet === 'function' ? await idbGet(CONTRATOS_TAB_IDB_KEY) : null;
-      if (packed && Array.isArray(packed.rows) && packed.rows.length && packed.fp && packed.fp.ym === contratosYmKey()) {
-        contratosTabApplyPacked(packed);
+      if (packed && Array.isArray(packed.rows) && packed.rows.length && packed.fp && packed.fp.ym === contratosYmKey()
+          && contratosTabApplyPacked(packed)) {
         contratosTabPaint();
         contratosRevalidateBg();
         return;
       }
     } catch (_) {}
+    // HTML legado sem canal — não reutilizar (risco Dist ver Horeca)
     if (contratosCache && contratosCache !== 'rows') {
-      renderContratosFromCache(contratosCache);
-      try { if (typeof filtrarContratosVendedor === 'function') filtrarContratosVendedor(); } catch (_) {}
-      return;
+      contratosCache = null;
     }
   }
 
-  if (!forceRefresh && window._contratosAllRows?.length) {
+  if (!forceRefresh && contratosMemoriaDoCanalActivo()) {
     contratosTabPaint();
     return;
   }
@@ -32595,14 +32663,17 @@ async function loadContratosTab(forceRefresh = false) {
     window._contratosDocsHydrated = false;
     window._contratosDocsHydrateInflight = null;
     window._contratosAllRows = rows;
+    window._contratosAllRowsCanal = contratosCanalCacheKey();
     html = htmlBannerContratosDuplicados(dupsCt) + html;
     contratosCache = html;
     persistContratosTabPacked({
       rows,
       docsMap,
       dups: dupsCt,
+      canalId: contratosCanalCacheKey(),
       fp: {
         ym: contratosYmKey(),
+        canalId: contratosCanalCacheKey(),
         vendasN,
         nRegs: nRegsAll,
         sig: sigAll,
@@ -32792,10 +32863,15 @@ function filtrarContratosVendedor() {
   const vendFilt = typeof resolveVendFilt === 'function'
     ? resolveVendFilt('contratos-vendedor')
     : (document.getElementById('contratos-vendedor')?.value || '');
+  if (!contratosMemoriaDoCanalActivo()) { loadContratosTab(false); return; }
   let allRows = window._contratosAllRows;
   if (!allRows) { loadContratosTab(false); return; }
   const seenPar = [];
   allRows = allRows.filter(r => marcarContratoParSeNovo(seenPar, r.cod, r.contrato));
+  // Rede de segurança: Dist só Massimo/Eduardo; Horeca sem Dist
+  allRows = typeof contratosRowsDoCanalActivo === 'function'
+    ? contratosRowsDoCanalActivo(allRows)
+    : allRows;
   if (typeof filterByUtilizadorActivo === 'function') {
     allRows = filterByUtilizadorActivo(allRows, r => r && r.vendedor);
   }
@@ -33652,12 +33728,17 @@ function renderContratosFromCache(html) {
 function clearContratosCache() {
   contratosCache = null;
   window._contratosAllRows = null;
+  window._contratosAllRowsCanal = null;
   window._contratosTabFp = null;
   window._contratosPorRegistar = null;
   window._contratosDocsHydrated = false;
   try { sessionCacheInvalidate('contratosTabCompute'); } catch (_) {}
   try {
     if (typeof idbSet === 'function') idbSet(CONTRATOS_TAB_IDB_KEY, null).catch(() => {});
+  } catch (_) {}
+  // Limpar chave legada v2 (sem canal) para não ressuscitar dados Horeca no Dist
+  try {
+    if (typeof idbSet === 'function') idbSet('delta_contratos_tab_v2', null).catch(() => {});
   } catch (_) {}
 }
 
@@ -33669,6 +33750,9 @@ function contratoAlertaLabel(a) {
 }
 
 async function exportContratosExcel() {
+  if (!contratosMemoriaDoCanalActivo()) {
+    await loadContratosTab();
+  }
   let allRows = window._contratosAllRows;
   if (!allRows?.length) {
     await loadContratosTab();
@@ -33677,6 +33761,9 @@ async function exportContratosExcel() {
   if (!allRows?.length) { toast('Nenhum dado para exportar.', 'error'); return; }
   await ensureXLSX();
 
+  allRows = typeof contratosRowsDoCanalActivo === 'function'
+    ? contratosRowsDoCanalActivo(allRows)
+    : allRows;
   if (typeof filterByUtilizadorActivo === 'function') {
     allRows = filterByUtilizadorActivo(allRows, r => r && r.vendedor);
   }
@@ -44774,7 +44861,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-26-massimo-cpf: registar SW (necessário para instalar como app) + limpar caches antigos
+// v2026-10-27-contratos-dist: registar SW (necessário para instalar como app) + limpar caches antigos
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/delta-foods-equipamentos-app/sw.js', { scope: '/delta-foods-equipamentos-app/' })
     .then(function (reg) {
@@ -44784,7 +44871,7 @@ if ('serviceWorker' in navigator) {
 }
 if (typeof caches !== 'undefined' && caches.keys) {
   caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-26-massimo-cpf'; }).map(function (k) { return caches.delete(k); }));
+    return Promise.all(keys.filter(function (k) { return k !== 'v2026-10-27-contratos-dist'; }).map(function (k) { return caches.delete(k); }));
   }).catch(function () {});
 }
 

@@ -1,6 +1,6 @@
-// Service Worker v2026-10-26-massimo-cpf — CPF Massimo Bottello (testemunha Dist)
+// Service Worker v2026-10-27-contratos-dist — Dist Contratos só Massimo/Eduardo
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-26-massimo-cpf';
+const CACHE = 'v2026-10-27-contratos-dist';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

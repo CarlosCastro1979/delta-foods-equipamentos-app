@@ -54,14 +54,16 @@ check('pinta cache em memória/IndexedDB sem spinner', () => {
   assert.ok(loadFn.includes('CONTRATOS_TAB_IDB_KEY') || html.includes("idbGet(CONTRATOS_TAB_IDB_KEY)"));
   assert.ok(html.includes("idbGet(CONTRATOS_TAB_IDB_KEY)"));
   assert.ok(loadFn.includes('contratosRevalidateBg'));
-  assert.ok(loadFn.includes('_contratosAllRows.length'));
+  assert.ok(loadFn.includes('contratosMemoriaDoCanalActivo') || loadFn.includes('_contratosAllRows.length'));
 });
 
-check('cache IndexedDB de contratos usa v2 para não reutilizar dups antigos', () => {
-  assert.ok(html.includes("delta_contratos_tab_v2"));
+check('cache IndexedDB de contratos usa v3 (por canal) e limpa v2 legado', () => {
+  assert.ok(html.includes("delta_contratos_tab_v3"));
+  assert.ok(html.includes("delta_contratos_tab_v2")); // limpeza explícita do legado
   assert.ok(!html.includes("delta_contratos_tab_v1"));
   const apply = extractFn(html, 'contratosTabApplyPacked');
   assert.ok(apply.includes('resolverContratosDuplicados'));
+  assert.ok(apply.includes('canalId') || apply.includes('packedCanal'));
 });
 
 check('filtro já não força refresh completo', () => {
