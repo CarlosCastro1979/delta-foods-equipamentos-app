@@ -1,6 +1,6 @@
-// Service Worker v2026-10-28-voltar-menu — Voltar ao menu sem logout / PIN
+// Service Worker v2026-10-28-dividas-balancete — dívidas do balancete (total, vencido, +120)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-28-voltar-menu';
+const CACHE = 'v2026-10-28-dividas-balancete';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

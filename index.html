@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-28-voltar-menu Voltar ao menu sem logout / PIN -->
+<!-- dfb-build: v2026-10-28-dividas-balancete dívidas do balancete na AF e no canal -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2260,6 +2260,7 @@ var _unused_placeholder = 1;
 <nav class="main-nav" id="main-nav">
   <div class="main-nav-inner">
     <button type="button" class="tab tab-voltar-home" id="tab-voltar-home" onclick="voltarHome()" title="Menu principal — canais, Dados, Áreas">← Menu</button>
+    <button class="tab" id="tab-dividas-canal" onclick="switchTab('dividas-canal')">Dívidas</button>
     <button class="tab" id="tab-vendas-canal" onclick="switchTab('vendas-canal')">Vendas</button>
     <button class="tab active" id="tab-registos" onclick="switchTab('registos')">Registo Clientes</button>
     <button class="tab" id="tab-analise" onclick="switchTab('analise')">Análise Clientes</button>
@@ -2272,6 +2273,17 @@ var _unused_placeholder = 1;
 </nav>
 
 <div class="app-content">
+
+  <!-- Dívidas do canal — primeira vista ao entrar -->
+  <div class="panel" id="panel-dividas-canal">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+      <div>
+        <h2 style="font-size:18px;font-weight:600;margin:0;">Clientes com dívida</h2>
+        <p id="canal-dividas-info" style="font-size:12px;color:var(--muted);margin:4px 0 0;"></p>
+      </div>
+    </div>
+    <div id="canal-dividas-content"><div style="color:var(--muted);font-size:13px;padding:20px 0;">A carregar…</div></div>
+  </div>
 
   <!-- HOME: seleção de canal + Dados -->
   <div id="home-screen" class="visible">
@@ -4336,7 +4348,7 @@ var _unused_placeholder = 1;
           <span style="font-size:22px;">💰</span>
           <div>
             <div style="font-weight:600;font-size:15px;">Carregar Dívidas</div>
-            <div style="font-size:12px;color:var(--muted);">Excel de dívidas — usa a coluna G (total em aberto: vencida ou a vencer). Fica no Supabase para todos os PCs.</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5;">Balancete Excel. Lê <strong>Saldo Total</strong> (coluna H), <strong>Saldo Vencido</strong> (coluna O) e <strong>Vencido +120 dias</strong> (coluna N). Cada carga substitui a fotografia das dívidas no Supabase — não mexe nas vendas.</div>
           </div>
         </div>
         <input type="file" id="dados-dividas-input" accept=".xlsx,.xls" style="display:none" onchange="handleSCDividasImport(event)">
@@ -7299,6 +7311,44 @@ function getValorDivida(div) {
   return parseValorDivida(t);
 }
 
+function round2Divida(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 0;
+  return Math.round(x * 100) / 100;
+}
+
+function valorDividaNaoZero(n) {
+  return Math.abs(Number(n) || 0) >= 0.005;
+}
+
+/** Saldo Total do balancete (coluna H). Sem balancete, cai no total legado. */
+function saldoTotalDivida(div) {
+  if (!div) return 0;
+  if (div.saldoTotal != null) return round2Divida(div.saldoTotal);
+  return round2Divida(getValorDivida(div));
+}
+
+/** Saldo Vencido do balancete (coluna O). Legado sem split: o único valor guardado. */
+function saldoVencidoDivida(div) {
+  if (!div) return 0;
+  if (div.saldoVencido != null) return round2Divida(div.saldoVencido);
+  if (div.fonte === 'balancete') return 0;
+  return round2Divida(div.vencido);
+}
+
+/** Vencido +120 dias do balancete (coluna N). */
+function vencido120Divida(div) {
+  if (!div) return 0;
+  if (div.vencido120 != null) return round2Divida(div.vencido120);
+  return round2Divida(div.a120);
+}
+
+function formatBrl(v) {
+  const n = typeof v === 'number' ? v : parseValorDivida(v);
+  const x = Number.isFinite(n) ? n : 0;
+  return 'R$ ' + x.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 // Dívidas: carregadas do ficheiro mensal, guardadas no Supabase, substituídas a cada upload
 async function _scLoadDividasFetch() {
   try {
@@ -7311,16 +7361,12 @@ async function _scLoadDividasFetch() {
         `${typeof DIVIDAS_SUPA_URL !== 'undefined' ? DIVIDAS_SUPA_URL : 'https://qnscwppgljobelplgbkp.supabase.co/rest/v1/dividas_historico'}?select=*`,
         { headers: { ...HEADERS, Range: `${from}-${to}`, Prefer: 'count=exact' } }
       );
-      if (!res.ok) { console.error('scLoadDividas HTTP:', res.status); return false; }
+      if (!res.ok) { console.error('scLoadDividas HTTP:', res.status); break; }
       const chunk = await res.json();
       if (!Array.isArray(chunk) || !chunk.length) break;
       data.push(...chunk);
       if (chunk.length < pageSize) break;
       if (from + pageSize >= 20000) break; // segurança
-    }
-    if (!data.length) {
-      console.warn('scLoadDividas: tabela vazia');
-      return false;
     }
     const novo = {};
     for (const row of data) {
@@ -7337,7 +7383,27 @@ async function _scLoadDividasFetch() {
         };
       }
     }
-    scDividasData = novo;
+    // Balancete (Saldo Total / Saldo Vencido / +120) é a fotografia nova.
+    // Se existir, substitui a lista — não deixa clientes da carga anterior.
+    let usouBalancete = false;
+    try {
+      const bal = await fetchDividasBalanceteRemoto();
+      if (bal && Array.isArray(bal.itens) && bal.itens.length) {
+        const fromBal = {};
+        aplicarItensBalancete(fromBal, bal.itens);
+        scDividasData = fromBal;
+        usouBalancete = true;
+      }
+    } catch (eBal) {
+      console.warn('scLoadDividas balancete:', eBal && eBal.message ? eBal.message : eBal);
+    }
+    if (!usouBalancete) {
+      if (!Object.keys(novo).length) {
+        console.warn('scLoadDividas: tabela vazia');
+        return false;
+      }
+      scDividasData = novo;
+    }
     if (!scDividasRefDate) setDividasRefDate(new Date());
     scDividasLoaded = true;
     sessionCacheTouch('dividas');
@@ -7361,7 +7427,9 @@ function clienteTemDivida(cod) {
   if (!cod) return false;
   const codStr = String(cod).trim();
   const div = scDividasData[codStr] || scDividasData[normalizaCodSC(codStr)];
-  return getValorDivida(div) !== 0;
+  return valorDividaNaoZero(saldoTotalDivida(div))
+    || valorDividaNaoZero(saldoVencidoDivida(div))
+    || valorDividaNaoZero(vencido120Divida(div));
 }
 
 function bloquearEncerramentoSeDivida(cod) {
@@ -7458,6 +7526,305 @@ async function carregarDividasMetaRemoto() {
   return null;
 }
 
+const DIVIDAS_BALANCETE_ID = 'dividas_balancete';
+
+function normHeaderDivida(h) {
+  return String(h == null ? '' : h)
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function celulaCodClienteDivida(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    if (Math.abs(v) >= 100 && Math.abs(v - Math.round(v)) < 1e-6) {
+      return String(Math.round(Math.abs(v))).replace(/^0+/, '') || '0';
+    }
+    return '';
+  }
+  const s = String(v).trim();
+  if (!s || /^(TOTAL|SOMA|SUBTOTAL|SALDO)$/i.test(s)) return '';
+  const m = s.match(/^0*(\d{3,})/);
+  return m ? m[1] : '';
+}
+
+/**
+ * Lê a folha do balancete.
+ * Cabeçalho (não precisa ser a 1ª linha): Saldo Total, Saldo Vencido, Vencido +120 dias.
+ * Posição esperada: H, O e N — o título manda se a coluna estiver noutro sítio.
+ * @returns {{ok:boolean, quase?:boolean, error?:string, headerRow?:number, itens?:Array}}
+ */
+function parseBalanceteDividasSheet(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const max = Math.min(list.length, 40);
+  for (let r = 0; r < max; r++) {
+    const headers = (list[r] || []).map(normHeaderDivida);
+    const i120 = headers.findIndex(h => (/VENCIDO/.test(h) && /120/.test(h)) || /^\+\s*120/.test(h));
+    const iVenc = headers.findIndex((h, i) => i !== i120 && (h === 'SALDO VENCIDO' || /^SALDO VENCIDO\b/.test(h)));
+    const iTotal = headers.findIndex(h => h === 'SALDO TOTAL' || /^SALDO TOTAL\b/.test(h));
+    if (iTotal < 0 || iVenc < 0 || i120 < 0) continue;
+    let iCod = -1;
+    let best = 0;
+    headers.forEach((h, i) => {
+      let s = 0;
+      if (/^(CODIGO|CODIGO CLIENTE|COD CLIENTE|COD\. CLIENTE|CONTA|CONTA CLIENTE|CONTA DO CLIENTE)$/.test(h)) s = 5;
+      else if (/CODIGO/.test(h) && !/VENDEDOR|BARRAS|POSTAL/.test(h)) s = 4;
+      else if (h === 'CLIENTE' || h === 'COD' || h === 'CONTA') s = 3;
+      else if (/^CLIENTE\b/.test(h) && !/NOME/.test(h)) s = 2;
+      if (s > best) { best = s; iCod = i; }
+    });
+    if (iCod < 0) {
+      return {
+        ok: false,
+        quase: true,
+        error: 'Encontrei Saldo Total, Saldo Vencido e Vencido +120 dias, mas não a coluna do código do cliente.',
+      };
+    }
+    const iNome = headers.findIndex(h => !/VENDEDOR|REPRESENTANTE/.test(h) && (
+      h === 'NOME' || h === 'RAZAO SOCIAL' || h === 'RAZAO' || h === 'NOME 1'
+      || h === 'NOME CLIENTE' || h === 'CLIENTE NOME' || h === 'NOME DO CLIENTE'
+    ));
+    const iVend = headers.findIndex(h => /VENDEDOR|REPRESENTANTE|CONSULTOR/.test(h));
+    const acc = new Map();
+    for (let i = r + 1; i < list.length; i++) {
+      const row = list[i] || [];
+      const cod = celulaCodClienteDivida(row[iCod]);
+      if (!cod || cod === '0') continue;
+      const saldoTotal = round2Divida(parseValorDivida(row[iTotal]));
+      const saldoVencido = round2Divida(parseValorDivida(row[iVenc]));
+      const vencido120 = round2Divida(parseValorDivida(row[i120]));
+      if (!valorDividaNaoZero(saldoTotal) && !valorDividaNaoZero(saldoVencido) && !valorDividaNaoZero(vencido120)) continue;
+      const nome = iNome >= 0 ? String(row[iNome] == null ? '' : row[iNome]).trim() : '';
+      const vendedor = iVend >= 0 ? String(row[iVend] == null ? '' : row[iVend]).trim() : '';
+      const prev = acc.get(cod);
+      if (!prev) {
+        acc.set(cod, { cod, nome, vendedor, saldoTotal, saldoVencido, vencido120 });
+      } else {
+        prev.saldoTotal = round2Divida(prev.saldoTotal + saldoTotal);
+        prev.saldoVencido = round2Divida(prev.saldoVencido + saldoVencido);
+        prev.vencido120 = round2Divida(prev.vencido120 + vencido120);
+        if (!prev.nome && nome) prev.nome = nome;
+        if (!prev.vendedor && vendedor) prev.vendedor = vendedor;
+      }
+    }
+    return {
+      ok: true,
+      headerRow: r,
+      cols: { codigo: iCod, saldoTotal: iTotal, saldoVencido: iVenc, vencido120: i120 },
+      itens: [...acc.values()],
+    };
+  }
+  return { ok: false };
+}
+
+function escolherFolhaBalancete(wb) {
+  if (!wb || !window.XLSX) return null;
+  let best = null;
+  let quase = null;
+  for (const name of wb.SheetNames || []) {
+    const ws = wb.Sheets[name];
+    if (!ws) continue;
+    const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+    const parsed = parseBalanceteDividasSheet(rows);
+    if (parsed && parsed.ok) {
+      parsed.sheet = name;
+      if (!best || parsed.itens.length > best.itens.length) best = parsed;
+    } else if (parsed && parsed.quase && !quase) {
+      quase = parsed;
+    }
+  }
+  if (best) return best;
+  return quase;
+}
+
+function aplicarItensBalancete(novo, itens) {
+  for (const it of itens || []) {
+    const cod = normalizaCodSC(it.c != null ? it.c : it.cod);
+    if (!cod || cod === '0') continue;
+    const total = round2Divida(parseValorDivida(it.t != null ? it.t : it.saldoTotal));
+    const sv = round2Divida(parseValorDivida(it.sv != null ? it.sv : it.saldoVencido));
+    const d120 = round2Divida(parseValorDivida(it.d120 != null ? it.d120 : it.vencido120));
+    if (!valorDividaNaoZero(total) && !valorDividaNaoZero(sv) && !valorDividaNaoZero(d120)) continue;
+    const prev = novo[cod] || {};
+    novo[cod] = {
+      ...prev,
+      total,
+      vencido: total,
+      saldoTotal: total,
+      saldoVencido: sv,
+      vencido120: d120,
+      a120: d120,
+      nome: it.n || it.nome || prev.nome || '',
+      vendedor: it.vd || it.vendedor || prev.vendedor || '',
+      fonte: 'balancete',
+    };
+  }
+  return novo;
+}
+
+async function fetchDividasBalanceteRemoto() {
+  const res = await fetch(
+    `${LISTA_CLIENTES_SUPA_URL}?id=eq.${DIVIDAS_BALANCETE_ID}&select=data`,
+    { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
+  );
+  if (!res.ok) return null;
+  const rows = await res.json();
+  const data = rows && rows[0] && rows[0].data;
+  if (!data || typeof data !== 'object') return null;
+  return data;
+}
+
+async function publicarDividasBalancete(itens, meta) {
+  const body = {
+    id: DIVIDAS_BALANCETE_ID,
+    data: {
+      v: 1,
+      ficheiro: meta.ficheiro || '',
+      data: meta.data,
+      sheet: meta.sheet || '',
+      itens: (itens || []).map(it => {
+        const o = {
+          c: it.cod,
+          t: round2Divida(it.saldoTotal),
+          sv: round2Divida(it.saldoVencido),
+          d120: round2Divida(it.vencido120),
+        };
+        if (it.nome) o.n = String(it.nome).slice(0, 180);
+        if (it.vendedor) o.vd = String(it.vendedor).slice(0, 80);
+        return o;
+      }),
+    },
+    atualizado_em: meta.data,
+  };
+  const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
+    method: 'POST',
+    headers: { ...HEADERS, Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error('Balancete HTTP ' + res.status + (t ? ': ' + t.slice(0, 140) : ''));
+  }
+}
+
+async function gravarDividasBalancete(file, bal) {
+  const itens = bal.itens || [];
+  if (!itens.length) {
+    const msg = 'Nenhum cliente com saldo no balancete (Saldo Total, Saldo Vencido ou Vencido +120 dias).';
+    setDividasStatus('', false);
+    setDividasResult(false, '❌ ' + msg);
+    toast(msg, 'error');
+    return;
+  }
+  const sheetName = bal.sheet || '';
+  setDividasRefDate(new Date());
+  setDividasStatus(`⏳ A actualizar Supabase… (${itens.length.toLocaleString('pt-BR')} clientes, aba ${escHtml(sheetName)})`, true);
+  const novasDividas = {};
+  aplicarItensBalancete(novasDividas, itens);
+  try {
+    const delRes = await fetch(`${DIVIDAS_SUPA_URL}?cod_cliente=not.is.null`, {
+      method: 'DELETE',
+      headers: { ...HEADERS, Prefer: 'return=minimal' },
+    });
+    if (!delRes.ok) {
+      const del2 = await fetch(`${DIVIDAS_SUPA_URL}?vencido=gte.-999999999`, {
+        method: 'DELETE',
+        headers: { ...HEADERS, Prefer: 'return=minimal' },
+      });
+      if (!del2.ok) {
+        const errText = await del2.text().catch(() => '');
+        throw new Error('DELETE falhou (HTTP ' + del2.status + ')' + (errText ? ': ' + errText.slice(0, 120) : ''));
+      }
+    }
+    const rowsIns = itens.map(d => ({
+      cod_cliente: d.cod,
+      vencido: round2Divida(d.saldoTotal),
+      aging_0_15: 0,
+      aging_15_30: 0,
+      aging_30_60: 0,
+      aging_60_90: 0,
+      aging_90_120: 0,
+      aging_120: round2Divida(d.vencido120),
+    }));
+    let inserted = 0;
+    for (let i = 0; i < rowsIns.length; i += 100) {
+      const slice = rowsIns.slice(i, i + 100);
+      setDividasStatus(
+        `⏳ A gravar no Supabase… ${Math.min(i + slice.length, rowsIns.length).toLocaleString('pt-BR')} / ${rowsIns.length.toLocaleString('pt-BR')}`,
+        true
+      );
+      const res = await fetch(DIVIDAS_SUPA_URL, {
+        method: 'POST',
+        headers: { ...HEADERS, Prefer: 'return=minimal' },
+        body: JSON.stringify(slice),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const errText = err.message || err.hint || err.error || ('HTTP ' + res.status);
+        throw new Error('INSERT falhou: ' + errText);
+      }
+      inserted += slice.length;
+    }
+    const meta = {
+      data: new Date().toISOString(),
+      ficheiro: file.name,
+      total: inserted,
+      sheet: sheetName,
+      supabaseOk: true,
+      tipo: 'balancete',
+    };
+    await publicarDividasBalancete(itens, meta);
+    scDividasData = novasDividas;
+    scDividasLoaded = true;
+    sessionCacheTouch('dividas');
+    try { localStorage.setItem(DIVIDAS_ULTIMA_LS_KEY, JSON.stringify(meta)); } catch (_) {}
+    await publicarDividasMetaSupabase(meta);
+    renderUltimaCargaDividas(meta);
+    const somaT = itens.reduce((s, d) => s + (Number(d.saldoTotal) || 0), 0);
+    const somaV = itens.reduce((s, d) => s + (Number(d.saldoVencido) || 0), 0);
+    const soma120 = itens.reduce((s, d) => s + (Number(d.vencido120) || 0), 0);
+    const msg = `✅ Balancete actualizado: ${inserted.toLocaleString('pt-BR')} clientes (aba «${sheetName}»). `
+      + `Saldo total ${formatBrl(somaT)} · Saldo vencido ${formatBrl(somaV)} · +120 dias ${formatBrl(soma120)}.`;
+    setDividasStatus('', false);
+    setDividasResult(true, msg);
+    toast('Dívidas do balancete actualizadas.');
+  } catch (e) {
+    scDividasData = novasDividas;
+    scDividasLoaded = true;
+    sessionCacheTouch('dividas');
+    const meta = {
+      data: new Date().toISOString(),
+      ficheiro: file.name,
+      total: itens.length,
+      sheet: sheetName,
+      supabaseOk: false,
+      tipo: 'balancete',
+      erro: String(e && e.message || e),
+    };
+    try { localStorage.setItem(DIVIDAS_ULTIMA_LS_KEY, JSON.stringify(meta)); } catch (_) {}
+    renderUltimaCargaDividas(meta);
+    const msg = `❌ FALHA ao gravar no Supabase: ${e.message || e}. `
+      + `Neste PC ficaram ${itens.length.toLocaleString('pt-BR')} clientes em memória, mas os outros PCs não vão ver esta carga. Tenta de novo.`;
+    setDividasStatus('', false);
+    setDividasResult(false, msg);
+    toast(msg, 'error');
+  }
+  try { renderSemCompras(); } catch (_) {}
+  try {
+    if (typeof _afSubActiva !== 'undefined' && _afSubActiva === 'divida-sem-compras' && typeof loadAfDividaSemCompras === 'function') {
+      loadAfDividaSemCompras();
+    }
+  } catch (_) {}
+  try {
+    _canalDivLista = montarListaDividasCanal();
+    if (typeof pintarCanalDividas === 'function') pintarCanalDividas();
+  } catch (_) {}
+}
+
 async function handleSCDividasImport(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -7482,7 +7849,19 @@ async function handleSCDividasImport(event) {
     const buf = await file.arrayBuffer();
     const wb = window.XLSX.read(buf, { type: 'array' });
 
-    // Procura aba "COLAR PENDENTES"
+    const balPick = escolherFolhaBalancete(wb);
+    if (balPick && balPick.ok) {
+      await gravarDividasBalancete(file, balPick);
+      return;
+    }
+    if (balPick && balPick.quase) {
+      setDividasStatus('', false);
+      setDividasResult(false, '❌ ' + (balPick.error || 'Cabeçalho do balancete incompleto.'));
+      toast(balPick.error || 'Cabeçalho do balancete incompleto.', 'error');
+      return;
+    }
+
+    // Legado: aba "COLAR PENDENTES" / coluna G (ficheiros antigos)
     const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes('COLAR') || n.toUpperCase().includes('PENDENTE')) || wb.SheetNames[0];
     const ws = wb.Sheets[sheetName];
     const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1 });
@@ -11855,6 +12234,226 @@ function cancelarCanalPin() {
   cancelarUserPin();
 }
 
+let _canalDivLista = [];
+let _canalDivVendFiltro = '';
+let _canalDivSeq = 0;
+
+/** Admin vê o canal todo. Vendedor vê só os seus clientes (Filipe, no Horeca, vê o canal). */
+function scopeVendedorDividasCanal() {
+  if (typeof isAdmin === 'function' && isAdmin()) return null;
+  const canalId = typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : null;
+  if (canalId === 'horeca' && typeof getVendedorScope === 'function') return getVendedorScope();
+  const atual = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
+  if (!atual) return null;
+  const an = normNomeUtilizador(atual);
+  const vends = typeof getVendedoresCanalActivo === 'function' ? getVendedoresCanalActivo(canalId) : [];
+  const match = (vends || []).find(v => normNomeUtilizador(v) === an);
+  return match || null;
+}
+
+function montarListaDividasCanal() {
+  const canalId = typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : null;
+  const lista = typeof getListaClientesCompleta === 'function' ? getListaClientesCompleta() : [];
+  const byCod = new Map();
+  for (const cli of lista) {
+    const k = normalizaCodSC(cli && cli.cod);
+    if (k && k !== '0' && !byCod.has(k)) byCod.set(k, cli);
+  }
+  const rows = [];
+  const data = (typeof scDividasData === 'object' && scDividasData) ? scDividasData : {};
+  for (const [cod, div] of Object.entries(data)) {
+    const saldoTotal = saldoTotalDivida(div);
+    const saldoVencido = saldoVencidoDivida(div);
+    const vencido120 = vencido120Divida(div);
+    if (!valorDividaNaoZero(saldoTotal) && !valorDividaNaoZero(saldoVencido) && !valorDividaNaoZero(vencido120)) continue;
+    const k = normalizaCodSC(cod);
+    const cli = byCod.get(k) || null;
+    const nome = (cli && cli.nome) || (div && div.nome) || '—';
+    const vendedor = (cli && cli.vendedor) || (div && div.vendedor) || '—';
+    const base = cli || { cod: k, nome, vendedor, npess: div && div.npess };
+    if (canalId && typeof clientePertenceAoCanal === 'function' && !clientePertenceAoCanal(base, canalId)) {
+      if (typeof vendedorPertenceAoCanalActivo !== 'function' || !vendedorPertenceAoCanalActivo(vendedor)) continue;
+    }
+    rows.push({
+      cod: (cli && cli.cod) || k,
+      nome,
+      vendedor: vendedor || '—',
+      canal: (cli && cli.canal) || '',
+      saldoTotal,
+      saldoVencido,
+      vencido120,
+    });
+  }
+  const scope = scopeVendedorDividasCanal();
+  const filtradas = scope
+    ? rows.filter(r => normNomeUtilizador(r.vendedor) === normNomeUtilizador(scope))
+    : rows;
+  filtradas.sort((a, b) =>
+    (b.saldoVencido - a.saldoVencido)
+    || (b.vencido120 - a.vencido120)
+    || (b.saldoTotal - a.saldoTotal)
+    || String(a.nome || '').localeCompare(String(b.nome || ''), 'pt')
+  );
+  return filtradas;
+}
+
+function canalDivFiltrarResumo(vendEnc) {
+  _canalDivVendFiltro = !vendEnc || vendEnc === 'todos' ? '' : decodeURIComponent(vendEnc);
+  pintarCanalDividas();
+}
+
+function canalDivLimparFiltro() {
+  _canalDivVendFiltro = '';
+  pintarCanalDividas();
+}
+
+function pintarCanalDividas() {
+  const el = document.getElementById('canal-dividas-content');
+  const info = document.getElementById('canal-dividas-info');
+  if (!el) return;
+  const canalId = typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : null;
+  const canalNome = (canalId && typeof CANAIS_APP !== 'undefined' && CANAIS_APP[canalId])
+    ? CANAIS_APP[canalId].nome
+    : 'canal';
+  const scope = scopeVendedorDividasCanal();
+  const all = Array.isArray(_canalDivLista) ? _canalDivLista : [];
+  if (_canalDivVendFiltro && !all.some(c => (c.vendedor || '—') === _canalDivVendFiltro)) {
+    _canalDivVendFiltro = '';
+  }
+  const soma = (rows, key) => rows.reduce((s, c) => s + (Number(c[key]) || 0), 0);
+  if (info) {
+    if (!all.length) {
+      info.textContent = `Nenhum cliente com dívida em ${canalNome}. A carga do balancete faz-se em Dados.`;
+    } else {
+      const quem = scope ? `${scope} · ` : '';
+      info.innerHTML = `${escHtml(quem)}<b>${all.length}</b> cliente(s) com dívida em ${escHtml(canalNome)}`
+        + ` · Saldo total <b>${formatBrl(soma(all, 'saldoTotal'))}</b>`
+        + ` · Saldo vencido <b>${formatBrl(soma(all, 'saldoVencido'))}</b>`
+        + ` · +120 dias <b>${formatBrl(soma(all, 'vencido120'))}</b>`;
+    }
+  }
+  if (!all.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:36px 0;text-align:center;">Sem clientes com saldo neste canal. Quando o balancete for carregado em Dados, a lista aparece aqui.</div>';
+    return;
+  }
+  const vendedores = [...new Set(all.map(c => c.vendedor || '—'))];
+  const mostrarResumo = !scope && vendedores.length > 1;
+  const filtered = _canalDivVendFiltro
+    ? all.filter(c => (c.vendedor || '—') === _canalDivVendFiltro)
+    : all;
+
+  let resumoHtml = '';
+  if (mostrarResumo) {
+    const resumo = {};
+    all.forEach(c => {
+      const v = c.vendedor || '—';
+      if (!resumo[v]) resumo[v] = { n: 0, saldoTotal: 0, saldoVencido: 0, vencido120: 0 };
+      resumo[v].n++;
+      resumo[v].saldoTotal += Number(c.saldoTotal) || 0;
+      resumo[v].saldoVencido += Number(c.saldoVencido) || 0;
+      resumo[v].vencido120 += Number(c.vencido120) || 0;
+    });
+    const resumoRows = Object.entries(resumo).sort((a, b) => b[1].saldoVencido - a[1].saldoVencido || a[0].localeCompare(b[0], 'pt'));
+    const moeda = (n, ve) => {
+      if (!valorDividaNaoZero(n)) return '<td style="padding:7px 14px;text-align:right;color:var(--muted);">—</td>';
+      return `<td style="padding:7px 14px;text-align:right;font-weight:600;color:#7f1d1d;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="canalDivFiltrarResumo('${ve}')" title="Ver estes clientes">${formatBrl(n)}</td>`;
+    };
+    resumoHtml = `<div style="margin-bottom:16px;display:inline-block;min-width:640px;max-width:100%;">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por vendedor <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica nos números para filtrar)</span></div>
+      <table style="border-collapse:collapse;font-size:13px;width:100%;">
+        <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
+          <th style="padding:7px 14px;text-align:left;">Vendedor</th>
+          <th style="padding:7px 14px;text-align:center;">Clientes</th>
+          <th style="padding:7px 14px;text-align:right;">Saldo Total</th>
+          <th style="padding:7px 14px;text-align:right;">Saldo Vencido</th>
+          <th style="padding:7px 14px;text-align:right;">Vencido +120 dias</th>
+        </tr></thead>
+        <tbody>
+          ${resumoRows.map(([v, d], i) => {
+            const ve = encodeURIComponent(v);
+            const on = _canalDivVendFiltro === v;
+            const nClick = d.n > 0 ? 'cursor:pointer;text-decoration:underline;text-underline-offset:2px;' : 'color:var(--muted);';
+            return `<tr style="border-bottom:1px solid #f0f0f0;background:${on ? '#fff7ed' : (i % 2 ? '#fafafa' : '#fff')};">
+              <td style="padding:7px 14px;font-weight:500;cursor:pointer;" onclick="canalDivFiltrarResumo('${ve}')">🔍 ${escHtml(v)}</td>
+              <td style="padding:7px 14px;text-align:center;font-weight:600;${nClick}" ${d.n > 0 ? `onclick="canalDivFiltrarResumo('${ve}')"` : ''}>${d.n > 0 ? d.n : '—'}</td>
+              ${moeda(d.saldoTotal, ve)}${moeda(d.saldoVencido, ve)}${moeda(d.vencido120, ve)}
+            </tr>`;
+          }).join('')}
+          <tr style="border-top:2px solid var(--border);background:#f9f9f9;">
+            <td style="padding:7px 14px;font-weight:700;cursor:pointer;" onclick="canalDivLimparFiltro()">🔍 Total</td>
+            <td style="padding:7px 14px;text-align:center;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="canalDivLimparFiltro()">${all.length}</td>
+            <td style="padding:7px 14px;text-align:right;font-weight:700;cursor:pointer;text-decoration:underline;" onclick="canalDivLimparFiltro()">${valorDividaNaoZero(soma(all, 'saldoTotal')) ? formatBrl(soma(all, 'saldoTotal')) : '—'}</td>
+            <td style="padding:7px 14px;text-align:right;font-weight:700;color:#7f1d1d;cursor:pointer;text-decoration:underline;" onclick="canalDivLimparFiltro()">${valorDividaNaoZero(soma(all, 'saldoVencido')) ? formatBrl(soma(all, 'saldoVencido')) : '—'}</td>
+            <td style="padding:7px 14px;text-align:right;font-weight:700;color:#7f1d1d;cursor:pointer;text-decoration:underline;" onclick="canalDivLimparFiltro()">${valorDividaNaoZero(soma(all, 'vencido120')) ? formatBrl(soma(all, 'vencido120')) : '—'}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  const banner = _canalDivVendFiltro
+    ? `<div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:12px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;padding:4px 10px;border-radius:16px;font-weight:600;">Filtro: ${escHtml(_canalDivVendFiltro)}</span>
+        <button type="button" onclick="canalDivLimparFiltro()" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid #ccc;background:#fff;cursor:pointer;">✕ Limpar</button>
+      </div>`
+    : '';
+
+  const rows = filtered.map(c => `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px 10px;font-size:12px;font-family:var(--font-mono);">${escHtml(c.cod || '—')}</td>
+      <td style="padding:8px 10px;font-size:12px;font-weight:500;">${escHtml(c.nome || '—')}</td>
+      <td style="padding:8px 10px;font-size:12px;">${escHtml(c.vendedor || '—')}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;" data-sort="${c.saldoTotal || 0}">${formatBrl(c.saldoTotal)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;color:#7f1d1d;" data-sort="${c.saldoVencido || 0}">${formatBrl(c.saldoVencido)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;color:#7f1d1d;" data-sort="${c.vencido120 || 0}">${formatBrl(c.vencido120)}</td>
+    </tr>`).join('');
+
+  const detalhe = _canalDivVendFiltro
+    ? `${filtered.length} de ${all.length} cliente(s)`
+    : `${filtered.length} cliente(s)`;
+
+  el.innerHTML = `${banner}${resumoHtml}
+    <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;">Lista — ${detalhe}</div>
+    <div class="table-wrap"><table class="data-table" id="canal-dividas-table" style="width:100%;">
+      <thead><tr style="background:var(--surface2);">
+        <th>Cód.</th><th>Nome</th><th>Vendedor</th><th>Saldo Total</th><th>Saldo Vencido</th><th>Vencido +120 dias</th>
+      </tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--muted);">Sem linhas para este filtro.</td></tr>'}</tbody>
+    </table></div>`;
+
+  const tbl = document.getElementById('canal-dividas-table');
+  if (tbl && filtered.length && typeof enableTableColFilters === 'function') {
+    const infoBase = info ? info.innerHTML : '';
+    enableTableColFilters(tbl, { infoId: 'canal-dividas-info', total: filtered.length, infoBase });
+    if (typeof enableTableSort === 'function') enableTableSort(tbl);
+  }
+}
+
+async function renderCanalDividas() {
+  const seq = ++_canalDivSeq;
+  const el = document.getElementById('canal-dividas-content');
+  if (el && !scDividasLoaded) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:20px 0;">A carregar dívidas…</div>';
+  }
+  try {
+    const listaCurta = typeof getListaClientesCompleta !== 'function' || getListaClientesCompleta().length < 50;
+    await Promise.all([
+      typeof scLoadDividasFromSupabase === 'function' ? scLoadDividasFromSupabase() : Promise.resolve(),
+      (listaCurta && typeof sincronizarListaClientes === 'function') ? sincronizarListaClientes() : Promise.resolve(),
+    ]);
+  } catch (e) {
+    if (seq !== _canalDivSeq) return;
+    if (el) el.innerHTML = `<div style="color:var(--danger);font-size:13px;">Erro ao carregar dívidas: ${escHtml(e && e.message ? e.message : e)}</div>`;
+    return;
+  }
+  if (seq !== _canalDivSeq) return;
+  _canalDivLista = montarListaDividasCanal();
+  pintarCanalDividas();
+}
+
+window.canalDivFiltrarResumo = canalDivFiltrarResumo;
+window.canalDivLimparFiltro = canalDivLimparFiltro;
+window.renderCanalDividas = renderCanalDividas;
+
 function abrirCanalConfirmado(canalId) {
   const c = CANAIS_APP[canalId];
   if (!c) return;
@@ -11875,20 +12474,6 @@ function abrirCanalConfirmado(canalId) {
   }
   setAppView('canal');
   atualizarCanalBar(c.nome);
-  // Ecommerce: sem Registo Clientes → abrir Análise
-  if (canalId === 'ecommerce') {
-    switchTab('analise');
-    setTimeout(() => {
-      try { aplicarUtilizador(getUtilizadorAtual()); } catch (_) {}
-    }, 80);
-    return;
-  }
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  const panel = document.getElementById('panel-registos');
-  if (panel) panel.classList.add('active');
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  const tabReg = document.querySelector(`.tab[onclick*="'registos'"]`);
-  if (tabReg) tabReg.classList.add('active');
   // Selects de vendedor = só os do canal (Dist → Massimo/Eduardo; Ecommerce → Marcio; …)
   try {
     fillVendedorSelectCanal('f-vendedor', { emptyLabel: '— Selecionar vendedor —' });
@@ -11903,21 +12488,10 @@ function abrirCanalConfirmado(canalId) {
     fillVendedorSelectCanal('cp-vendedor', { emptyLabel: 'Todos os vendedores' });
     fillVendedorSelectCanal('at-hist-vendedor', { emptyLabel: 'Todos os vendedores' });
   } catch (eFill) { console.warn('fillVendedorSelectCanal:', eFill); }
-  try {
-    if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal();
-    const start = (typeof canalRegistosTabsState === 'function'
-      ? canalRegistosTabsState(canalId).startSub
-      : (canalId === 'distribuidores' ? 'pendentes' : 'novo'));
-    window._registosSubTab = start;
-    switchSubTab('registos', start);
-  } catch (e2) {
-    console.warn('switchSubTab:', e2);
-    const startId = (canalId === 'distribuidores')
-      ? 'sub-panel-pendentes'
-      : (canalId === 'varejo' ? 'sub-panel-lista' : 'sub-panel-novo');
-    const sub = document.getElementById(startId);
-    if (sub) sub.style.display = 'block';
-  }
+  try { if (typeof adaptarRegistoTabsCanal === 'function') adaptarRegistoTabsCanal(); } catch (_) {}
+  _canalDivVendFiltro = '';
+  // Primeira vista do canal: clientes com dívida deste vendedor (ou do canal, se for admin).
+  try { switchTab('dividas-canal'); } catch (e2) { console.warn('dividas-canal:', e2); }
   setTimeout(() => {
     try { aplicarUtilizador(getUtilizadorAtual()); } catch (_) {}
     try { if (typeof adaptarFormRegistoCanal === 'function') adaptarFormRegistoCanal(); } catch (_) {}
@@ -22054,6 +22628,9 @@ function switchTab(tab) {
   if (tab === 'prospeccao') initProsTab();
   if (tab === 'visitas') initVisitasTab();
   if (tab === 'vendas-canal') initVendasMenuCanal();
+  if (tab === 'dividas-canal') {
+    try { renderCanalDividas(); } catch (eDiv) { console.warn('renderCanalDividas', eDiv); }
+  }
 }
 
 // ─── VISITAS DO DIA (Horeca) ─────────────────────────
@@ -42765,7 +43342,9 @@ async function exportAfDividaSemComprasExcel() {
       Nome: c.nome || '',
       Vendedor: c.vendedor || '',
       Canal: c.canal || '',
-      Divida_vencida: c.vencido != null ? c.vencido : '',
+      Saldo_total: c.saldoTotal != null ? c.saldoTotal : '',
+      Saldo_vencido: c.saldoVencido != null ? c.saldoVencido : (c.vencido != null ? c.vencido : ''),
+      Vencido_120: c.vencido120 != null ? c.vencido120 : '',
       Dias_atraso: c.diasAtraso != null ? c.diasAtraso : '',
       Meses_sem_compra: c.mesesCal != null ? c.mesesCal : '',
       Ultima_compra: ult,
@@ -43342,12 +43921,16 @@ function renderAfDividaSemCompras() {
   const resumoVend = {};
   out.forEach(c => {
     const v = c.vendedor || '—';
-    if (!resumoVend[v]) resumoVend[v] = { n: 0, divida: 0 };
+    if (!resumoVend[v]) resumoVend[v] = { n: 0, saldoTotal: 0, saldoVencido: 0, vencido120: 0 };
     resumoVend[v].n++;
-    resumoVend[v].divida += Number(c.vencido) || 0;
+    resumoVend[v].saldoTotal += Number(c.saldoTotal) || 0;
+    resumoVend[v].saldoVencido += Number(c.saldoVencido) || 0;
+    resumoVend[v].vencido120 += Number(c.vencido120) || 0;
   });
-  const resumoRows = Object.entries(resumoVend).sort((a, b) => b[1].divida - a[1].divida || a[0].localeCompare(b[0], 'pt'));
-  const totalDividaAll = out.reduce((s, c) => s + (Number(c.vencido) || 0), 0);
+  const resumoRows = Object.entries(resumoVend).sort((a, b) => b[1].saldoVencido - a[1].saldoVencido || b[1].saldoTotal - a[1].saldoTotal || a[0].localeCompare(b[0], 'pt'));
+  const totalSaldo = out.reduce((s, c) => s + (Number(c.saldoTotal) || 0), 0);
+  const totalVencido = out.reduce((s, c) => s + (Number(c.saldoVencido) || 0), 0);
+  const total120 = out.reduce((s, c) => s + (Number(c.vencido120) || 0), 0);
 
   const filtered = _afDscVendFiltro
     ? out.filter(c => (c.vendedor || '—') === _afDscVendFiltro)
@@ -43360,13 +43943,19 @@ function renderAfDividaSemCompras() {
       </div>`
     : '';
 
-  const resumoHtml = `<div style="margin-bottom:20px;display:inline-block;min-width:420px;max-width:100%;">
+  const afDscMoeda = (n, ve) => {
+    if (!valorDividaNaoZero(n)) return '<td style="padding:7px 14px;text-align:right;color:var(--muted);">—</td>';
+    return `<td style="padding:7px 14px;text-align:right;font-weight:600;color:#7f1d1d;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="afDscFiltrarResumo('${ve}')" title="Ver estes clientes">${formatBrl(n)}</td>`;
+  };
+  const resumoHtml = `<div style="margin-bottom:20px;display:inline-block;min-width:640px;max-width:100%;">
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Resumo por vendedor <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica nos números para filtrar)</span></div>
     <table style="border-collapse:collapse;font-size:13px;width:100%;" id="af-dsc-resumo-tbl">
       <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
         <th style="padding:7px 14px;text-align:left;font-weight:600;">Vendedor</th>
         <th style="padding:7px 14px;text-align:center;font-weight:600;">Clientes</th>
-        <th style="padding:7px 14px;text-align:right;font-weight:600;">Dívida total</th>
+        <th style="padding:7px 14px;text-align:right;font-weight:600;">Saldo Total</th>
+        <th style="padding:7px 14px;text-align:right;font-weight:600;">Saldo Vencido</th>
+        <th style="padding:7px 14px;text-align:right;font-weight:600;">Vencido +120 dias</th>
       </tr></thead>
       <tbody>
         ${resumoRows.map(([v, d], i) => {
@@ -43375,20 +43964,21 @@ function renderAfDividaSemCompras() {
           const nClick = d.n > 0
             ? `cursor:pointer;text-decoration:underline;text-underline-offset:2px;`
             : `cursor:default;color:var(--muted);`;
-          const divClick = d.divida > 0
-            ? `cursor:pointer;text-decoration:underline;text-underline-offset:2px;`
-            : `cursor:default;`;
           const activeBg = isActive ? 'background:#fff7ed;outline:2px solid #fdba74;outline-offset:-2px;' : '';
           return `<tr style="border-bottom:1px solid #f0f0f0;background:${i % 2 === 0 ? '#fff' : '#fafafa'};${activeBg}">
             <td style="padding:7px 14px;font-weight:500;cursor:pointer;" onclick="afDscFiltrarResumo('${ve}')" title="Filtrar este vendedor">🔍 ${escHtml(v)}</td>
             <td style="padding:7px 14px;text-align:center;font-weight:600;${nClick}" ${d.n > 0 ? `onclick="afDscFiltrarResumo('${ve}')" title="Ver estes clientes"` : ''}>${d.n > 0 ? d.n : '—'}</td>
-            <td style="padding:7px 14px;text-align:right;font-weight:${d.divida > 0 ? '600' : '400'};color:${d.divida > 0 ? '#7f1d1d' : 'var(--muted)'};${divClick}" ${d.divida > 0 ? `onclick="afDscFiltrarResumo('${ve}')" title="Ver estes clientes"` : ''}>${d.divida > 0 ? formatEur(d.divida) : '—'}</td>
+            ${afDscMoeda(d.saldoTotal, ve)}
+            ${afDscMoeda(d.saldoVencido, ve)}
+            ${afDscMoeda(d.vencido120, ve)}
           </tr>`;
         }).join('')}
         <tr style="border-top:2px solid var(--border);background:#f9f9f9;">
           <td style="padding:7px 14px;font-weight:700;cursor:pointer;" onclick="afDscLimparFiltro()" title="Mostrar todos">🔍 Total</td>
           <td style="padding:7px 14px;text-align:center;font-weight:700;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="afDscLimparFiltro()">${out.length}</td>
-          <td style="padding:7px 14px;text-align:right;font-weight:700;color:#7f1d1d;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="afDscLimparFiltro()">${totalDividaAll > 0 ? formatEur(totalDividaAll) : '—'}</td>
+          <td style="padding:7px 14px;text-align:right;font-weight:700;color:#7f1d1d;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="afDscLimparFiltro()">${valorDividaNaoZero(totalSaldo) ? formatBrl(totalSaldo) : '—'}</td>
+          <td style="padding:7px 14px;text-align:right;font-weight:700;color:#7f1d1d;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="afDscLimparFiltro()">${valorDividaNaoZero(totalVencido) ? formatBrl(totalVencido) : '—'}</td>
+          <td style="padding:7px 14px;text-align:right;font-weight:700;color:#7f1d1d;cursor:pointer;text-decoration:underline;text-underline-offset:2px;" onclick="afDscLimparFiltro()">${valorDividaNaoZero(total120) ? formatBrl(total120) : '—'}</td>
         </tr>
       </tbody>
     </table>
@@ -43412,7 +44002,9 @@ function renderAfDividaSemCompras() {
       <td style="padding:8px 10px;font-size:12px;font-weight:500;">${escHtml(c.nome || '—')}</td>
       <td style="padding:8px 10px;font-size:12px;">${escHtml(c.vendedor || '—')}</td>
       <td style="padding:8px 10px;font-size:12px;">${escHtml(c.canal || '—')}</td>
-      <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;color:#7f1d1d;" data-sort="${c.vencido || 0}">${formatEur(c.vencido)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;" data-sort="${c.saldoTotal || 0}">${formatBrl(c.saldoTotal)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;color:#7f1d1d;" data-sort="${c.saldoVencido || 0}">${formatBrl(c.saldoVencido)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600;color:#7f1d1d;" data-sort="${c.vencido120 || 0}">${formatBrl(c.vencido120)}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center;font-weight:600;${dias != null && dias >= AF_DSC_DIAS_PROVISAO ? 'color:#7f1d1d;' : ''}" data-sort="${diasSort}">${diasTxt}</td>
       <td style="padding:8px 10px;font-size:12px;text-align:center;font-weight:600;" data-sort="${c.mesesCal || 0}">${c.mesesCal}m</td>
       <td style="padding:8px 10px;font-size:12px;color:var(--muted);" data-sort="${ultSort}">${escHtml(ult)}</td>
@@ -43435,8 +44027,8 @@ function renderAfDividaSemCompras() {
     <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;">Lista detalhada — ${detalheLabel} <span style="font-weight:400;">· Observações com autosave</span></div>
     <div class="table-wrap"><table class="data-table" id="af-dsc-table" style="width:100%;">
       <thead><tr style="background:var(--surface2);">
-        <th>Cód.</th><th>Nome</th><th>Vendedor</th><th>Canal</th><th>Dívida vencida</th><th>Dias atraso</th><th>Meses s/ compra</th><th>Última compra</th><th>Observações</th>
-      </tr></thead><tbody>${rows || '<tr><td colspan="9" style="padding:24px;text-align:center;color:var(--muted);">Sem linhas para este filtro.</td></tr>'}</tbody></table></div>`;
+        <th>Cód.</th><th>Nome</th><th>Vendedor</th><th>Canal</th><th>Saldo Total</th><th>Saldo Vencido</th><th>Vencido +120 dias</th><th>Dias atraso</th><th>Meses s/ compra</th><th>Última compra</th><th>Observações</th>
+      </tr></thead><tbody>${rows || '<tr><td colspan="11" style="padding:24px;text-align:center;color:var(--muted);">Sem linhas para este filtro.</td></tr>'}</tbody></table></div>`;
 
   const tbl = document.getElementById('af-dsc-table') || el.querySelector('#af-dsc-table');
   if (tbl && filtered.length) {
@@ -43475,7 +44067,10 @@ async function loadAfDividaSemCompras() {
       if (canalSap === '09' || String(cli.canal || '').trim() === '09') continue;
       const div = (typeof getDividaCliente === 'function' ? getDividaCliente(cli.cod) : null)
         || scDividasData[cli.cod] || scDividasData[normalizaCodSC(cli.cod)];
-      if (!div || !(Number(div.vencido) > 0 || Number(div.total) > 0)) continue;
+      const saldoTotal = typeof saldoTotalDivida === 'function' ? saldoTotalDivida(div) : (div.total || div.vencido || 0);
+      const saldoVencido = typeof saldoVencidoDivida === 'function' ? saldoVencidoDivida(div) : (div.vencido || 0);
+      const vencido120 = typeof vencido120Divida === 'function' ? vencido120Divida(div) : (div.a120 || 0);
+      if (!valorDividaNaoZero(saldoTotal) && !valorDividaNaoZero(saldoVencido) && !valorDividaNaoZero(vencido120)) continue;
       const ultima = typeof getUltimaCompraFamilia === 'function' ? getUltimaCompraFamilia(cli.cod) : null;
       const mesesCal = typeof mesesCalendarioSemCompra === 'function'
         ? mesesCalendarioSemCompra(ultima, hoje)
@@ -43491,8 +44086,11 @@ async function loadAfDividaSemCompras() {
         canal: cli.canal,
         mesesCal,
         ultima: ultima || null,
-        vencido: div.vencido || 0,
-        total: div.total || 0,
+        vencido: saldoVencido,
+        total: saldoTotal,
+        saldoTotal,
+        saldoVencido,
+        vencido120,
         diasAtraso: diasAtraso != null ? diasAtraso : null,
         _antiguidade: antiguidadeDivida(div),
       });
@@ -45285,12 +45883,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-28-voltar-menu: SW só após load + documento activo (evita InvalidStateError)
+// v2026-10-28-dividas-balancete: SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-10-28-voltar-menu';
+  var CACHE_KEEP = 'v2026-10-28-dividas-balancete';
 
   function tryRegister() {
     try {
