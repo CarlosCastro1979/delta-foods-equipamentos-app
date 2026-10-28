@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-28-app-nao-carrega Timeout boot/agregado + SW register seguro -->
+<!-- dfb-build: v2026-10-28-contratos-editar Editar contrato em Registados -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -8881,6 +8881,251 @@ function abrirRegistarContrato(cod) {
 function fecharRegistarContrato() {
   const m = document.getElementById('ct-registar-modal');
   if (m) m.style.display = 'none';
+}
+
+/** Renomeia chaves de docs (NF/Contrato) quando o nº do contrato muda. */
+function contratoDocsRenameNum(docs, oldNum, newNum) {
+  if (!docs || typeof docs !== 'object') return docs || {};
+  const oldS = String(oldNum || '').trim();
+  const newS = String(newNum || '').trim();
+  if (!oldS || !newS) return docs;
+  if (typeof numsContratoIguais === 'function' ? numsContratoIguais(oldS, newS) : oldS === newS) {
+    return docs;
+  }
+  const out = { ...docs };
+  const merge = typeof contratoDocsMergeValor === 'function'
+    ? contratoDocsMergeValor
+    : ((a, b) => (b != null ? b : a));
+  for (const key of Object.keys(docs)) {
+    const match = (typeof numsContratoIguais === 'function')
+      ? numsContratoIguais(key, oldS)
+      : (String(key) === oldS);
+    if (!match && key !== oldS) continue;
+    const val = out[key];
+    delete out[key];
+    if (!out[newS] || typeof out[newS] !== 'object') out[newS] = {};
+    if (val && typeof val === 'object') {
+      ['nf', 'ct'].forEach(t => {
+        if (val[t] != null) out[newS][t] = merge(out[newS][t], val[t], 'add');
+      });
+    }
+  }
+  return out;
+}
+
+/** Actualiza um item do array `contratos` (preserva gamas/lote/prazo/pdv). */
+function aplicarEdicaoContratoArray(contratos, oldNum, patch) {
+  const list = Array.isArray(contratos) ? contratos.map(c => (c && typeof c === 'object' ? { ...c } : c)) : [];
+  const idx = list.findIndex(c => {
+    if (!c || typeof c !== 'object') return false;
+    const n = c.num || c.numero || '';
+    return typeof numsContratoIguais === 'function'
+      ? numsContratoIguais(n, oldNum)
+      : String(n) === String(oldNum);
+  });
+  if (idx < 0) return { list, changed: false, found: false };
+  const cur = list[idx];
+  const next = { ...cur };
+  if (patch.num != null) {
+    next.num = patch.num;
+    if ('numero' in next) next.numero = patch.num;
+  }
+  if (patch.inicio != null) next.inicio = patch.inicio;
+  if (patch.duracao != null) next.duracao = patch.duracao;
+  if (patch.consumo != null) next.consumo = patch.consumo;
+  if (patch.unidade != null) next.unidade = patch.unidade;
+  list[idx] = next;
+  return { list, changed: true, found: true, index: idx };
+}
+
+function encontrarLinhaContratoRegistado(cod, num) {
+  const rows = Array.isArray(window._contratosAllRows) ? window._contratosAllRows : [];
+  const codK = typeof normCod === 'function' ? String(normCod(cod)) : String(cod || '');
+  return rows.find(r => {
+    const rk = typeof normCod === 'function' ? String(normCod(r.cod)) : String(r.cod || '');
+    if (rk !== codK && String(r.cod) !== String(cod)) {
+      if (!(Array.isArray(r.cods) && r.cods.some(c => {
+        const ck = typeof normCod === 'function' ? String(normCod(c)) : String(c);
+        return ck === codK || String(c) === String(cod);
+      }))) return false;
+    }
+    return typeof numsContratoIguais === 'function'
+      ? numsContratoIguais(r.contrato, num)
+      : String(r.contrato) === String(num);
+  }) || null;
+}
+
+function fecharEditarContratoRegistado() {
+  const m = document.getElementById('ct-editar-modal');
+  if (m) m.style.display = 'none';
+  window._ctEditCtx = null;
+}
+
+function abrirEditarContratoRegistado(cod, num) {
+  const row = encontrarLinhaContratoRegistado(cod, num);
+  if (!row) {
+    toast('Contrato não encontrado na lista Registados.', 'error');
+    return;
+  }
+  if (typeof podeEditarContratoRegistado === 'function' && !podeEditarContratoRegistado(row.vendedor)) {
+    toast('Sem permissão para editar este contrato.', 'error');
+    return;
+  }
+  window._ctEditCtx = {
+    cod: String(row.cod || cod || '').trim(),
+    numOriginal: String(row.contrato || num || '').trim(),
+    regId: row.regId || null,
+    vendedor: row.vendedor || '',
+    pdv: row.pdv || 'unico',
+    cods: Array.isArray(row.cods) ? row.cods.slice() : [row.cod],
+  };
+  const nomeEl = document.getElementById('ct-edit-nome');
+  if (nomeEl) nomeEl.textContent = `${row.cod} · ${row.nome || ''}`;
+  const infoEl = document.getElementById('ct-edit-info');
+  if (infoEl) {
+    const pdvLbl = row.pdv === 'multi' ? 'PDV Multi' : 'PDV único';
+    infoEl.textContent = `${row.vendedor || '—'} · ${pdvLbl}` +
+      (row.pdv === 'multi' && Array.isArray(row.cods) ? ` (${row.cods.length} casas)` : '');
+  }
+  const numEl = document.getElementById('ct-edit-num');
+  if (numEl) numEl.value = String(row.contrato || '').trim();
+  const inicioEl = document.getElementById('ct-edit-inicio');
+  if (inicioEl) inicioEl.value = String(row.inicio || '').trim();
+  const durEl = document.getElementById('ct-edit-duracao');
+  if (durEl) durEl.value = row.duracao != null ? String(row.duracao) : '';
+  const consEl = document.getElementById('ct-edit-consumo');
+  if (consEl) consEl.value = row.consumoMes != null ? String(row.consumoMes) : '';
+  const uniEl = document.getElementById('ct-edit-unidade');
+  if (uniEl) {
+    const u = String(row.unidade || 'Capsulas');
+    uniEl.value = (u === 'Kg' || /^kg$/i.test(u)) ? 'Kg' : 'Capsulas';
+  }
+  const statusEl = document.getElementById('ct-edit-status');
+  if (statusEl) { statusEl.textContent = ''; statusEl.style.color = 'var(--muted)'; }
+  const m = document.getElementById('ct-editar-modal');
+  if (m) m.style.display = 'flex';
+}
+
+async function guardarEditarContratoRegistado() {
+  const ctx = window._ctEditCtx;
+  if (!ctx || !ctx.cod || !ctx.numOriginal) {
+    toast('Sessão de edição inválida. Reabre o contrato.', 'error');
+    return;
+  }
+  const num = String(document.getElementById('ct-edit-num')?.value || '').trim().toUpperCase();
+  const inicio = String(document.getElementById('ct-edit-inicio')?.value || '').trim();
+  const duracao = parseInt(document.getElementById('ct-edit-duracao')?.value, 10) || 0;
+  const consumo = parseFloat(document.getElementById('ct-edit-consumo')?.value) || 0;
+  const unidade = document.getElementById('ct-edit-unidade')?.value || 'Capsulas';
+  const statusEl = document.getElementById('ct-edit-status');
+  const btn = document.getElementById('ct-edit-guardar');
+  if (!num) { toast('Indica o nº do contrato.', 'error'); return; }
+  const vInicio = typeof validarDataContrato === 'function' ? validarDataContrato(inicio) : { ok: !!inicio };
+  if (!vInicio.ok) { toast(vInicio.erro || 'Início inválido.', 'error'); return; }
+  if (!inicio) { toast('Indica o início do contrato.', 'error'); return; }
+  if (duracao < 1) { toast('Indica a duração em meses.', 'error'); return; }
+  if (!(consumo > 0)) { toast('Indica o consumo mensal.', 'error'); return; }
+
+  if (statusEl) { statusEl.textContent = 'A guardar...'; statusEl.style.color = 'var(--muted)'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'A guardar...'; }
+
+  const patchFields = { num, inicio, duracao, consumo, unidade };
+  const numMudou = typeof numsContratoIguais === 'function'
+    ? !numsContratoIguais(num, ctx.numOriginal)
+    : String(num) !== String(ctx.numOriginal);
+
+  try {
+    const hdr = typeof registosReadHeaders === 'function'
+      ? registosReadHeaders()
+      : { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY };
+    const patchHdr = {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    };
+    const codsAlvo = (Array.isArray(ctx.cods) && ctx.cods.length)
+      ? ctx.cods.map(c => String(c).trim()).filter(Boolean)
+      : [ctx.cod];
+    const seenCod = new Set();
+    let patched = 0;
+    for (const cod of codsAlvo) {
+      const ck = typeof normCod === 'function' ? String(normCod(cod)) : String(cod);
+      if (seenCod.has(ck)) continue;
+      seenCod.add(ck);
+      const res = await fetch(
+        `${SUPA_URL}?cod=eq.${encodeURIComponent(cod)}&select=id,cod,nome,vendedor,contrato,contratos,docs`,
+        { headers: hdr }
+      );
+      if (!res.ok) throw new Error('HTTP ' + res.status + ' a ler ' + cod);
+      let regs = await res.json();
+      if (!Array.isArray(regs) || !regs.length) continue;
+      if (typeof filterByCanalActivo === 'function') regs = filterByCanalActivo(regs);
+      else if (typeof vendedorPertenceAoCanalActivo === 'function') {
+        regs = regs.filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
+      }
+      if (!regs.length) continue;
+      const reg = regs[0];
+      if (typeof podeEditarContratoRegistado === 'function' && !podeEditarContratoRegistado(reg.vendedor)) {
+        throw new Error('Sem permissão para editar contrato em ' + cod);
+      }
+      if (numMudou && typeof clienteJaTemNumero === 'function' && clienteJaTemNumero(reg, num)) {
+        // Mesmo nº noutro item deste cliente — bloquear
+        const jaNeste = (Array.isArray(reg.contratos) ? reg.contratos : []).some(c => {
+          const n = c && (c.num || c.numero);
+          return numsContratoIguais(n, num) && !numsContratoIguais(n, ctx.numOriginal);
+        });
+        if (jaNeste) {
+          throw new Error(typeof msgContratoJaCriado === 'function'
+            ? msgContratoJaCriado(num, reg)
+            : ('Este cliente já tem o contrato ' + num));
+        }
+      }
+      const applied = aplicarEdicaoContratoArray(reg.contratos, ctx.numOriginal, patchFields);
+      if (!applied.found) {
+        // PDV Multi secundário pode não ter a linha — ignorar
+        if (ck !== (typeof normCod === 'function' ? String(normCod(ctx.cod)) : String(ctx.cod))) continue;
+        throw new Error('Contrato ' + ctx.numOriginal + ' não encontrado no registo ' + cod);
+      }
+      const body = { contratos: applied.list };
+      if (reg.contrato && (typeof numsContratoIguais === 'function'
+        ? numsContratoIguais(reg.contrato, ctx.numOriginal)
+        : String(reg.contrato) === String(ctx.numOriginal))) {
+        body.contrato = num;
+      }
+      if (numMudou && reg.docs) {
+        body.docs = contratoDocsRenameNum(reg.docs, ctx.numOriginal, num);
+      }
+      const patch = await fetch(`${SUPA_URL}?id=eq.${encodeURIComponent(reg.id)}`, {
+        method: 'PATCH',
+        headers: patchHdr,
+        body: JSON.stringify(body),
+      });
+      if (!patch.ok) throw new Error('PATCH HTTP ' + patch.status + ' em ' + cod);
+      patched++;
+      if (numMudou) {
+        try {
+          const localKey = 'delta_docs_' + String(reg.cod);
+          const saved = JSON.parse(localStorage.getItem(localKey) || '{}') || {};
+          const renamed = contratoDocsRenameNum(saved, ctx.numOriginal, num);
+          localStorage.setItem(localKey, JSON.stringify(renamed));
+        } catch (_) {}
+      }
+    }
+    if (!patched) throw new Error('Nenhum registo actualizado.');
+    try { if (typeof clearRegistosCache === 'function') clearRegistosCache(); } catch (_) {}
+    try { if (typeof clearContratosCache === 'function') clearContratosCache(); } catch (_) {}
+    try { _contratoUniqCache = { at: 0, rows: null }; } catch (_) {}
+    toast('✅ Contrato actualizado' + (numMudou ? (' → ' + num) : '') + '.');
+    fecharEditarContratoRegistado();
+    if (typeof loadContratosTab === 'function') await loadContratosTab(true);
+  } catch (e) {
+    console.warn(e);
+    toast('Erro a guardar: ' + (e.message || e), 'error');
+    if (statusEl) { statusEl.textContent = e.message || String(e); statusEl.style.color = 'var(--danger)'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar alterações'; }
+  }
 }
 
 function ctRegCodsEscolhidos() {
@@ -31709,6 +31954,11 @@ function inferCodContratoInput(el) {
   if (el.id === 'ct_num_contrato') return (document.getElementById('ct_cod') || {}).value || '';
   if (el.id === 'f-contrato') return (document.getElementById('f-cod') || {}).value || '';
   if (el.id === 'e-contrato') return (document.getElementById('e-cod') || {}).value || '';
+  if (el.id === 'ct-edit-num' || el.id === 'ct-reg-num') {
+    const ctx = window._ctEditCtx;
+    if (ctx && ctx.cod) return ctx.cod;
+    return (document.getElementById('ct-reg-cod') || {}).value || '';
+  }
   if (el.classList && el.classList.contains('dist-ct-numero')) {
     const prefix = el.closest('#e-dist-contratos-list') ? 'e' : 'f';
     return (document.getElementById(prefix + '-cod') || {}).value || '';
@@ -32671,7 +32921,9 @@ async function loadContratosTab(forceRefresh = false) {
 
         rows.push({
           cod: principalReg.cod || r.cod, nome: principalReg.nome || r.nome, vendedor: principalReg.vendedor || r.vendedor || '—',
+          regId: principalReg.id || r.id || null,
           contrato: numDisplay,
+          inicio: c.inicio || '',
           pdv, cods: pdvCods, nomes,
           inicioFmt, duracao, fimFmt, unidade,
           totalContratado, consumoMes, mesesDecorridos,
@@ -32812,6 +33064,7 @@ function buildContratosCumprimentoTableHtml(rows) {
         <th style="${TH2}text-align:center;min-width:200px">ALERTA</th>
         <th style="${TH2}text-align:center;min-width:72px">NF</th>
         <th style="${TH2}text-align:center;min-width:92px">Contrato</th>
+        <th style="${TH2}text-align:center;min-width:72px">AÇÕES</th>
       </tr></thead><tbody>`;
   (rows || []).forEach((r, idx) => {
     const td = `padding:8px 12px;border:1px solid #eee;font-size:11px;${idx%2===0?'background:#fff;':'background:#fafafa;'}`;
@@ -32824,10 +33077,18 @@ function buildContratosCumprimentoTableHtml(rows) {
       ? `<span style="background:#ffebee;color:#b71c1c;padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">🚫 Sem Consumo — Analisar</span>`
       : `<span style="color:#aaa;font-size:10px">—</span>`;
     const cel = contratoHtmlCodCliente(r);
+    const podeEdit = typeof podeEditarContratoRegistado === 'function'
+      ? podeEditarContratoRegistado(r.vendedor)
+      : (typeof podeEditarRegisto === 'function' && podeEditarRegisto(r.vendedor));
+    const codAttr = escHtml(String(r.cod || ''));
+    const numAttr = escHtml(String(r.contrato || ''));
+    const editBtn = podeEdit
+      ? `<button type="button" class="btn-edit" data-ct-edit-cod="${codAttr}" data-ct-edit-num="${numAttr}" onclick="abrirEditarContratoRegistado(this.dataset.ctEditCod,this.dataset.ctEditNum)" title="Corrigir nº, datas ou consumo">Editar</button>`
+      : '<span style="color:#ccc;font-size:11px;">—</span>';
     html += `<tr>
         <td class="col-code sticky-col freeze-1" style="${td}color:var(--muted)">${cel.codHtml}</td>
         <td class="col-nome sticky-col freeze-2 sticky-col-last" style="${td}font-weight:500;" title="${escHtml(cel.titleNome)}">${cel.nomeHtml}</td>
-        <td style="${td}">${r.contrato}</td>
+        <td style="${td}">${escHtml(r.contrato)}</td>
         <td style="${td}white-space:nowrap" title="${r.inicioFmt}">${r.inicioFmt}</td>
         <td style="${td}text-align:center">${r.duracao||'—'}</td>
         <td style="${td}white-space:nowrap" title="${r.fimFmt}">${r.fimFmt}</td>
@@ -32840,6 +33101,7 @@ function buildContratosCumprimentoTableHtml(rows) {
         <td style="${td}text-align:center;overflow:hidden;">${alertaHtml}</td>
         <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('nf', r.cod, r.contrato)}</td>
         <td style="${td}text-align:center;padding:6px 4px;">${contratoDocBtnHtml('ct', r.cod, r.contrato)}</td>
+        <td style="${td}text-align:center;padding:6px 4px;white-space:nowrap;">${editBtn}</td>
       </tr>`;
   });
   html += `</tbody></table></div>`;
@@ -35540,6 +35802,23 @@ function podeEditarRegisto(vendedor) {
   // Comparação insensível a maiúsculas/acentos: login guarda "Daniela Santos",
   // mas os registos têm "DANIELA SANTOS"
   return normNomeUtilizador(getUtilizadorAtual()) === normNomeUtilizador(vendedor);
+}
+
+/**
+ * Editar contrato em Registados: admin, o vendedor do contrato,
+ * ou o par Dist (Massimo ↔ Eduardo) na lista partilhada.
+ */
+function podeEditarContratoRegistado(vendedor) {
+  if (typeof isAdmin === 'function' && isAdmin()) return true;
+  if (typeof isCanalDistribuidores === 'function' && isCanalDistribuidores()) {
+    const atual = normNomeUtilizador(typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '');
+    const vend = normNomeUtilizador(vendedor);
+    const distNomes = (typeof getVendedoresNomesDoCanal === 'function'
+      ? getVendedoresNomesDoCanal('distribuidores')
+      : ['MASSIMO BOTTELLO', 'EDUARDO MADEIRA']).map(n => normNomeUtilizador(n));
+    if (atual && vend && distNomes.includes(atual) && distNomes.includes(vend)) return true;
+  }
+  return typeof podeEditarRegisto === 'function' ? podeEditarRegisto(vendedor) : false;
 }
 
 function initLogin() {
@@ -44945,12 +45224,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-28-app-nao-carrega: SW só após load + documento activo (evita InvalidStateError)
+// v2026-10-28-contratos-editar: SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-10-28-app-nao-carrega';
+  var CACHE_KEEP = 'v2026-10-28-contratos-editar';
 
   function tryRegister() {
     try {
@@ -48846,6 +49125,48 @@ if (document.readyState === 'loading') {
 </div>
 
 <!-- MODAL REGISTAR CONTRATO (Por Registar) -->
+<div id="ct-editar-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3002;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border-radius:12px;padding:24px;width:90%;max-width:520px;max-height:92vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="font-size:15px;font-weight:600;margin:0;">Editar contrato</h3>
+      <button type="button" onclick="fecharEditarContratoRegistado()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+    </div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px;" id="ct-edit-nome"></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;" id="ct-edit-info"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div>
+        <label style="font-size:11px;color:var(--muted);">Nº do contrato</label>
+        <input class="form-input" id="ct-edit-num" style="padding:6px 8px;font-size:13px;text-transform:uppercase;" placeholder="Ex: B0026/26" oninput="this.value=this.value.toUpperCase()">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);">Início (mês/ano)</label>
+        <input type="month" class="form-input" id="ct-edit-inicio" style="padding:6px 8px;font-size:13px;">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);">Duração (meses)</label>
+        <input type="number" class="form-input" id="ct-edit-duracao" min="1" style="padding:6px 8px;font-size:13px;" placeholder="Ex: 48">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);">Consumo / mês</label>
+        <input type="number" class="form-input" id="ct-edit-consumo" min="0" step="0.1" style="padding:6px 8px;font-size:13px;" placeholder="Quantidade">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);">Unidade</label>
+        <select class="form-input" id="ct-edit-unidade" style="padding:6px 8px;font-size:13px;">
+          <option value="Capsulas">Cápsulas</option>
+          <option value="Kg">Kg</option>
+        </select>
+      </div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 8px;">Corrige erros de registo (nº, datas, consumo). Multi-gama, testemunhas e anexos NF/Contrato mantêm-se; ao mudar o nº, as chaves dos anexos são actualizadas.</p>
+    <div id="ct-edit-status" style="margin-top:10px;font-size:12px;min-height:18px;"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+      <button type="button" class="btn btn-secondary" onclick="fecharEditarContratoRegistado()">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="ct-edit-guardar" onclick="guardarEditarContratoRegistado()">Guardar alterações</button>
+    </div>
+  </div>
+</div>
+
 <div id="ct-registar-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3001;align-items:center;justify-content:center;">
   <div style="background:var(--surface);border-radius:12px;padding:24px;width:90%;max-width:520px;max-height:92vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">

@@ -1,6 +1,6 @@
-// Service Worker v2026-10-28-app-nao-carrega — Timeout boot/agregado + SW register seguro
+// Service Worker v2026-10-28-contratos-editar — Editar contrato em Registados
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-28-app-nao-carrega';
+const CACHE = 'v2026-10-28-contratos-editar';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
