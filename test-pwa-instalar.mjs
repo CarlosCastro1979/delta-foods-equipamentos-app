@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const CACHE = 'v2026-10-27-contratos-dist-equip';
+const CACHE = 'v2026-10-28-app-nao-carrega';
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
@@ -16,7 +16,10 @@ assert.ok(sw.includes(CACHE), 'sw.js tem ' + CACHE);
 assert.ok(html.includes(CACHE), 'index.html tem ' + CACHE);
 assert.ok(sw.includes("addEventListener('fetch'"), 'SW tem fetch handler');
 assert.ok(!sw.includes('unregister()'), 'SW não se auto-destrói (bloqueava instalar)');
-assert.ok(html.includes("serviceWorker.register('/delta-foods-equipamentos-app/sw.js'"), 'index regista SW');
+assert.ok(html.includes("registerSwSafe"), 'index regista SW de forma segura');
+assert.ok(html.includes("var SW_URL = '/delta-foods-equipamentos-app/sw.js'"), 'SW_URL correcto');
+assert.ok(html.includes('serviceWorker.register(SW_URL'), 'index chama register(SW_URL)');
+assert.ok(html.includes("addEventListener('load', onReady"), 'SW só após load');
 assert.ok(!/serviceWorker\.getRegistrations\(\)[\s\S]*unregister\(\)/.test(html), 'index não desregista todos os SW');
 
 assert.equal(manifest.display, 'standalone');
