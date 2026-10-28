@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-28-contratos-editar Editar contrato em Registados -->
+<!-- dfb-build: v2026-10-28-voltar-menu Voltar ao menu sem logout / PIN -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -1303,6 +1303,18 @@
     position: relative; z-index: 4; pointer-events: auto; touch-action: manipulation;
   }
   .user-pill-change:hover { color: var(--text); border-color: var(--border-strong); }
+  .user-pill-voltar {
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px;
+    color: var(--text); cursor: pointer; font-size: 11px; font-family: var(--font-main); padding: 4px 10px;
+    position: relative; z-index: 4; pointer-events: auto; touch-action: manipulation; font-weight: 600;
+  }
+  .user-pill-voltar:hover { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
+  .tab-voltar-home {
+    color: var(--accent) !important; font-weight: 600 !important; flex-shrink: 0;
+    border-right: 1px solid var(--border); margin-right: 4px; padding-right: 14px !important;
+  }
+  .tab-voltar-home:hover { background: var(--accent-soft) !important; }
+  body.view-home #btn-voltar-home { display: none !important; }
   .pwa-install-header { position: relative; z-index: 1; pointer-events: auto; }
   .login-overlay {
     position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px);
@@ -2166,6 +2178,7 @@ var _unused_placeholder = 1;
     </div>
     <div id="user-bar" class="user-pill" style="display:none">
       <span class="user-pill-label"><span class="user-pill-prefix">Utilizador:</span> <strong id="user-bar-name"></strong></span>
+      <button type="button" class="user-pill-voltar" id="btn-voltar-home" data-action="voltar-home" onclick="voltarHome(); return false;" title="Menu principal — mantém a sessão (sem pedir PIN de novo)" style="display:none">← Voltar</button>
       <button type="button" class="user-pill-change" id="btn-mudar-utilizador" data-action="mudar-utilizador" onclick="logoutUtilizador(); return false;" title="Trocar de utilizador">Mudar</button>
     </div>
   </div>
@@ -2246,6 +2259,7 @@ var _unused_placeholder = 1;
 
 <nav class="main-nav" id="main-nav">
   <div class="main-nav-inner">
+    <button type="button" class="tab tab-voltar-home" id="tab-voltar-home" onclick="voltarHome()" title="Menu principal — canais, Dados, Áreas">← Menu</button>
     <button class="tab" id="tab-vendas-canal" onclick="switchTab('vendas-canal')">Vendas</button>
     <button class="tab active" id="tab-registos" onclick="switchTab('registos')">Registo Clientes</button>
     <button class="tab" id="tab-analise" onclick="switchTab('analise')">Análise Clientes</button>
@@ -4228,6 +4242,7 @@ var _unused_placeholder = 1;
     </div>
 
     <div id="dados-content" style="display:none;">
+      <button type="button" class="btn btn-secondary btn-sm" id="btn-voltar-dados" onclick="voltarHome()" style="margin-bottom:8px;">← Canais</button>
       <h2 style="font-size:18px;font-weight:600;margin-bottom:24px;">⚙ Gestão de Dados</h2>
 
       <!-- CARREGAR VENDAS -->
@@ -11675,6 +11690,16 @@ function setAppView(view) {
   }
   const nav = document.getElementById('main-nav');
   if (nav) nav.style.display = view === 'canal' ? '' : 'none';
+  atualizarBtnVoltarHome(view);
+}
+
+/** Mostra «← Voltar» fora da home — NÃO faz logout (só «Mudar»). */
+function atualizarBtnVoltarHome(view) {
+  const v = view || (document.body.className.match(/view-([\w-]+)/) || [])[1] || 'home';
+  const btn = document.getElementById('btn-voltar-home');
+  if (!btn) return;
+  const show = v !== 'home' && !!getUtilizadorAtual();
+  btn.style.display = show ? 'inline-flex' : 'none';
 }
 
 function atualizarCanalBar(label) {
@@ -21963,6 +21988,7 @@ window.abrirPrevisaoVendasHome = abrirPrevisaoVendasHome;
 window.pvDebugLocalMaps = pvDebugLocalMaps;
 window.voltarHome = voltarHome;
 window.irHomeCanais = irHomeCanais;
+window.atualizarBtnVoltarHome = atualizarBtnVoltarHome;
 window.cancelarCanalPin = cancelarCanalPin;
 
 /** Códigos SAP do canal activo (vazio = ainda sem filtro / todos). */
@@ -35872,6 +35898,7 @@ function aplicarUtilizador(nome) {
   if (bar) { bar.style.display = 'inline-flex'; document.getElementById('user-bar-name').textContent = nome; }
   const homeName = document.getElementById('home-user-name');
   if (homeName) homeName.textContent = nome || '—';
+  try { if (typeof atualizarBtnVoltarHome === 'function') atualizarBtnVoltarHome(); } catch (_) {}
   // Reaplicar selects de vendedor com escopo Horeca (só o próprio / disabled)
   if (typeof fillVendedorSelectCanal === 'function' && typeof isCanalHorecaActivo === 'function' && isCanalHorecaActivo()) {
     try {
@@ -36002,6 +36029,40 @@ try { window.mostrarLoginModal = mostrarLoginModal; } catch (_) {}
     document.addEventListener('touchend', onMudar, { capture: true, passive: false });
   } catch (_) {}
 })();
+
+/** Clique/toque «← Voltar» — volta ao menu sem logout / sem limpar PIN. */
+(function bindVoltarHomeDelegado() {
+  function alvoVoltar(el) {
+    if (!el || !el.closest) return null;
+    return el.closest('[data-action="voltar-home"], #btn-voltar-home');
+  }
+  let _voltarLock = 0;
+  function onVoltar(ev) {
+    const btn = alvoVoltar(ev && ev.target);
+    if (!btn) return;
+    // Botões com onclick próprio (Canais nas áreas) também têm id/action — ok
+    const now = Date.now();
+    if (now - _voltarLock < 400) {
+      try { ev.preventDefault(); } catch (_) {}
+      try { ev.stopPropagation(); } catch (_) {}
+      return;
+    }
+    _voltarLock = now;
+    try { ev.preventDefault(); } catch (_) {}
+    try { ev.stopPropagation(); } catch (_) {}
+    try {
+      if (typeof voltarHome === 'function') voltarHome();
+      else if (window.voltarHome) window.voltarHome();
+    } catch (err) {
+      try { console.error('Voltar menu:', err); } catch (_) {}
+    }
+  }
+  try {
+    document.addEventListener('click', onVoltar, true);
+    document.addEventListener('touchend', onVoltar, { capture: true, passive: false });
+  } catch (_) {}
+})();
+
 
 function getUtilizadorAtual() {
   try { return localStorage.getItem('dfb_utilizador') || ''; } catch (_) { return ''; }
@@ -45224,12 +45285,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-28-contratos-editar: SW só após load + documento activo (evita InvalidStateError)
+// v2026-10-28-voltar-menu: SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-10-28-contratos-editar';
+  var CACHE_KEEP = 'v2026-10-28-voltar-menu';
 
   function tryRegister() {
     try {

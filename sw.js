@@ -1,6 +1,6 @@
-// Service Worker v2026-10-28-contratos-editar — Editar contrato em Registados
+// Service Worker v2026-10-28-voltar-menu — Voltar ao menu sem logout / PIN
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-28-contratos-editar';
+const CACHE = 'v2026-10-28-voltar-menu';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

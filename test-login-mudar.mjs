@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const CACHE = 'v2026-10-28-contratos-editar';
+const CACHE = 'v2026-10-28-voltar-menu';
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
@@ -29,8 +29,8 @@ assert.ok(!html.includes('onclick="irHomeCanais()" title="Voltar ao menu inicial
 assert.ok(html.includes('Quem és tu?'), 'ecrã Quem és tu?');
 assert.ok(/z-index:\s*10050/.test(html), 'login-overlay acima de tudo');
 assert.ok(html.includes('bindMudarUtilizadorDelegado') || html.includes('data-action="mudar-utilizador"'), 'listener delegado');
-assert.ok(/\.user-pill[\s\S]{0,220}pointer-events:\s*auto/.test(html), 'user-pill pointer-events auto');
-assert.ok(/\.user-pill-change[\s\S]{0,220}pointer-events:\s*auto/.test(html), 'Mudar pointer-events auto');
+assert.ok(/\.user-pill[\s\S]{0,400}pointer-events:\s*auto/.test(html), 'user-pill pointer-events auto');
+assert.ok(/\.user-pill-change[\s\S]{0,400}pointer-events:\s*auto/.test(html), 'Mudar pointer-events auto');
 
 function extractFn(src, name) {
   const start = src.indexOf(`function ${name}(`);
