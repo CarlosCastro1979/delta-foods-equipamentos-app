@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-28-dividas-balancete dívidas do balancete na AF e no canal -->
+<!-- dfb-build: v2026-10-29-dividas-cod-cliente dívidas do balancete na AF e no canal -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -4348,7 +4348,7 @@ var _unused_placeholder = 1;
           <span style="font-size:22px;">💰</span>
           <div>
             <div style="font-weight:600;font-size:15px;">Carregar Dívidas</div>
-            <div style="font-size:12px;color:var(--muted);line-height:1.5;">Balancete Excel. Lê <strong>Saldo Total</strong> (coluna H), <strong>Saldo Vencido</strong> (coluna O) e <strong>Vencido +120 dias</strong> (coluna N). Cada carga substitui a fotografia das dívidas no Supabase — não mexe nas vendas.</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5;">Balancete Excel. Coluna <strong>E</strong> = código do cliente, coluna <strong>D</strong> = código do vendedor. Saldos: <strong>Saldo Total</strong> (H), <strong>Saldo Vencido</strong> (O) e <strong>Vencido +120 dias</strong> (N). Cada carga substitui a fotografia das dívidas no Supabase — não mexe nas vendas.</div>
           </div>
         </div>
         <input type="file" id="dados-dividas-input" accept=".xlsx,.xls" style="display:none" onchange="handleSCDividasImport(event)">
@@ -7533,10 +7533,18 @@ function normHeaderDivida(h) {
     .toUpperCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\u00a0/g, ' ')
     .replace(/[\r\n]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/** Colunas fixas do balancete Brasil: D vendedor, E cliente, H total, N +120, O vencido. */
+const BAL_COL_VENDEDOR = 3;
+const BAL_COL_CLIENTE = 4;
+const BAL_COL_TOTAL = 7;
+const BAL_COL_120 = 13;
+const BAL_COL_VENCIDO = 14;
 
 function celulaCodClienteDivida(v) {
   if (v == null || v === '') return '';
@@ -7552,73 +7560,135 @@ function celulaCodClienteDivida(v) {
   return m ? m[1] : '';
 }
 
+/** Código de vendedor (NPess), ex. 99520018 ou «99520018 - DIOGO». */
+function celulaCodVendedorDivida(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    const n = Math.round(Math.abs(v));
+    if (n >= 1000 && Math.abs(v - Math.round(v)) < 1e-6) return String(n);
+    return '';
+  }
+  const s = String(v).trim();
+  const m = s.match(/(\d{5,})/);
+  return m ? m[1].replace(/^0+/, '') : '';
+}
+
+function idxColunaSaldoTotal(headers) {
+  return headers.findIndex(h => h === 'SALDO TOTAL' || /^SALDO TOTAL\b/.test(h) || h === 'TOTAL SALDO');
+}
+
+function idxColunaVencido120(headers) {
+  return headers.findIndex(h => (/VENCIDO/.test(h) && /120/.test(h)) || /^\+\s*120/.test(h) || /120\s*DIAS/.test(h));
+}
+
+function idxColunaSaldoVencido(headers, i120) {
+  const exact = headers.findIndex((h, i) => i !== i120 && (h === 'SALDO VENCIDO' || /^SALDO VENCIDO\b/.test(h)));
+  if (exact >= 0) return exact;
+  return headers.findIndex((h, i) => i !== i120 && h === 'VENCIDO');
+}
+
+function cabecalhoBalancetePosicional(headers) {
+  if (!headers || headers.length <= BAL_COL_VENCIDO) return false;
+  const e = headers[BAL_COL_CLIENTE] || '';
+  const total = headers[BAL_COL_TOTAL] || '';
+  const v120 = headers[BAL_COL_120] || '';
+  const venc = headers[BAL_COL_VENCIDO] || '';
+  const temCliente = /CLIENTE|CODIGO|CONTA/.test(e) && !/VENDEDOR|REPRESENTANTE/.test(e);
+  const temSaldo = /SALDO|VENCIDO|120|TOTAL/.test([total, v120, venc].join(' '));
+  return temCliente && temSaldo;
+}
+
 /**
  * Lê a folha do balancete.
- * Cabeçalho (não precisa ser a 1ª linha): Saldo Total, Saldo Vencido, Vencido +120 dias.
- * Posição esperada: H, O e N — o título manda se a coluna estiver noutro sítio.
+ * Coluna E = código do cliente, coluna D = código do vendedor.
+ * Saldos pelos títulos (Saldo Total, Saldo Vencido, Vencido +120 dias);
+ * se o título não aparecer, usa H, O e N.
  * @returns {{ok:boolean, quase?:boolean, error?:string, headerRow?:number, itens?:Array}}
  */
 function parseBalanceteDividasSheet(rows) {
   const list = Array.isArray(rows) ? rows : [];
   const max = Math.min(list.length, 40);
+  let headerRow = -1;
+  let headers = [];
+  let iTotal = -1;
+  let iVenc = -1;
+  let i120 = -1;
   for (let r = 0; r < max; r++) {
-    const headers = (list[r] || []).map(normHeaderDivida);
-    const i120 = headers.findIndex(h => (/VENCIDO/.test(h) && /120/.test(h)) || /^\+\s*120/.test(h));
-    const iVenc = headers.findIndex((h, i) => i !== i120 && (h === 'SALDO VENCIDO' || /^SALDO VENCIDO\b/.test(h)));
-    const iTotal = headers.findIndex(h => h === 'SALDO TOTAL' || /^SALDO TOTAL\b/.test(h));
-    if (iTotal < 0 || iVenc < 0 || i120 < 0) continue;
-    let iCod = -1;
-    let best = 0;
-    headers.forEach((h, i) => {
-      let s = 0;
-      if (/^(CODIGO|CODIGO CLIENTE|COD CLIENTE|COD\. CLIENTE|CONTA|CONTA CLIENTE|CONTA DO CLIENTE)$/.test(h)) s = 5;
-      else if (/CODIGO/.test(h) && !/VENDEDOR|BARRAS|POSTAL/.test(h)) s = 4;
-      else if (h === 'CLIENTE' || h === 'COD' || h === 'CONTA') s = 3;
-      else if (/^CLIENTE\b/.test(h) && !/NOME/.test(h)) s = 2;
-      if (s > best) { best = s; iCod = i; }
-    });
-    if (iCod < 0) {
-      return {
-        ok: false,
-        quase: true,
-        error: 'Encontrei Saldo Total, Saldo Vencido e Vencido +120 dias, mas não a coluna do código do cliente.',
-      };
+    const h = (list[r] || []).map(normHeaderDivida);
+    const c120 = idxColunaVencido120(h);
+    const cVenc = idxColunaSaldoVencido(h, c120);
+    const cTotal = idxColunaSaldoTotal(h);
+    if (cTotal >= 0 && cVenc >= 0 && c120 >= 0) {
+      headerRow = r;
+      headers = h;
+      iTotal = cTotal;
+      iVenc = cVenc;
+      i120 = c120;
+      break;
     }
-    const iNome = headers.findIndex(h => !/VENDEDOR|REPRESENTANTE/.test(h) && (
-      h === 'NOME' || h === 'RAZAO SOCIAL' || h === 'RAZAO' || h === 'NOME 1'
-      || h === 'NOME CLIENTE' || h === 'CLIENTE NOME' || h === 'NOME DO CLIENTE'
-    ));
-    const iVend = headers.findIndex(h => /VENDEDOR|REPRESENTANTE|CONSULTOR/.test(h));
-    const acc = new Map();
-    for (let i = r + 1; i < list.length; i++) {
-      const row = list[i] || [];
-      const cod = celulaCodClienteDivida(row[iCod]);
-      if (!cod || cod === '0') continue;
-      const saldoTotal = round2Divida(parseValorDivida(row[iTotal]));
-      const saldoVencido = round2Divida(parseValorDivida(row[iVenc]));
-      const vencido120 = round2Divida(parseValorDivida(row[i120]));
-      if (!valorDividaNaoZero(saldoTotal) && !valorDividaNaoZero(saldoVencido) && !valorDividaNaoZero(vencido120)) continue;
-      const nome = iNome >= 0 ? String(row[iNome] == null ? '' : row[iNome]).trim() : '';
-      const vendedor = iVend >= 0 ? String(row[iVend] == null ? '' : row[iVend]).trim() : '';
-      const prev = acc.get(cod);
-      if (!prev) {
-        acc.set(cod, { cod, nome, vendedor, saldoTotal, saldoVencido, vencido120 });
-      } else {
-        prev.saldoTotal = round2Divida(prev.saldoTotal + saldoTotal);
-        prev.saldoVencido = round2Divida(prev.saldoVencido + saldoVencido);
-        prev.vencido120 = round2Divida(prev.vencido120 + vencido120);
-        if (!prev.nome && nome) prev.nome = nome;
-        if (!prev.vendedor && vendedor) prev.vendedor = vendedor;
-      }
+    if (headerRow < 0 && cabecalhoBalancetePosicional(h)) {
+      headerRow = r;
+      headers = h;
+      iTotal = cTotal >= 0 ? cTotal : BAL_COL_TOTAL;
+      iVenc = cVenc >= 0 ? cVenc : BAL_COL_VENCIDO;
+      i120 = c120 >= 0 ? c120 : BAL_COL_120;
     }
+  }
+  if (headerRow < 0) return { ok: false };
+  const iCod = BAL_COL_CLIENTE;
+  const iVend = BAL_COL_VENDEDOR;
+  const iNome = headers.findIndex(h => !/VENDEDOR|REPRESENTANTE/.test(h) && (
+    h === 'NOME' || h === 'RAZAO SOCIAL' || h === 'RAZAO' || h === 'NOME 1'
+    || h === 'NOME CLIENTE' || h === 'CLIENTE NOME' || h === 'NOME DO CLIENTE'
+  ));
+  const acc = new Map();
+  let linhasComCodigo = 0;
+  for (let i = headerRow + 1; i < list.length; i++) {
+    const row = list[i] || [];
+    const cod = celulaCodClienteDivida(row[iCod]);
+    if (!cod || cod === '0') continue;
+    linhasComCodigo++;
+    const saldoTotal = round2Divida(parseValorDivida(row[iTotal]));
+    const saldoVencido = round2Divida(parseValorDivida(row[iVenc]));
+    const vencido120 = round2Divida(parseValorDivida(row[i120]));
+    if (!valorDividaNaoZero(saldoTotal) && !valorDividaNaoZero(saldoVencido) && !valorDividaNaoZero(vencido120)) continue;
+    const nome = iNome >= 0 ? String(row[iNome] == null ? '' : row[iNome]).trim() : '';
+    const vendRaw = row[iVend];
+    const vendedorCod = celulaCodVendedorDivida(vendRaw);
+    const vendedorNome = vendedorCod ? '' : String(vendRaw == null ? '' : vendRaw).trim();
+    const prev = acc.get(cod);
+    if (!prev) {
+      acc.set(cod, {
+        cod,
+        nome,
+        vendedor: vendedorNome,
+        vendedorCod,
+        saldoTotal,
+        saldoVencido,
+        vencido120,
+      });
+    } else {
+      prev.saldoTotal = round2Divida(prev.saldoTotal + saldoTotal);
+      prev.saldoVencido = round2Divida(prev.saldoVencido + saldoVencido);
+      prev.vencido120 = round2Divida(prev.vencido120 + vencido120);
+      if (!prev.nome && nome) prev.nome = nome;
+      if (!prev.vendedorCod && vendedorCod) prev.vendedorCod = vendedorCod;
+      if (!prev.vendedor && vendedorNome) prev.vendedor = vendedorNome;
+    }
+  }
+  if (!linhasComCodigo && !acc.size) {
     return {
-      ok: true,
-      headerRow: r,
-      cols: { codigo: iCod, saldoTotal: iTotal, saldoVencido: iVenc, vencido120: i120 },
-      itens: [...acc.values()],
+      ok: false,
+      quase: true,
+      error: 'Não encontrei códigos de cliente na coluna E. Confirma que a coluna E é o código do cliente e a coluna D o código do vendedor.',
     };
   }
-  return { ok: false };
+  return {
+    ok: true,
+    headerRow,
+    cols: { codigo: iCod, vendedor: iVend, saldoTotal: iTotal, saldoVencido: iVenc, vencido120: i120 },
+    itens: [...acc.values()],
+  };
 }
 
 function escolherFolhaBalancete(wb) {
@@ -7641,6 +7711,22 @@ function escolherFolhaBalancete(wb) {
   return quase;
 }
 
+/** NPess do balancete (coluna D) → nome do mapa de vendedores. */
+function resolverVendedorBalancete(codOuNome) {
+  const raw = String(codOuNome == null ? '' : codOuNome).trim();
+  if (!raw) return { vendedor: '', npess: '' };
+  const digits = celulaCodVendedorDivida(raw) || (/^\d{5,}$/.test(raw.replace(/\D/g, '')) ? raw.replace(/\D/g, '').replace(/^0+/, '') : '');
+  if (digits) {
+    const n = parseInt(digits, 10);
+    let nome = '';
+    try {
+      if (typeof getVendedoresMap === 'function') nome = getVendedoresMap()[n] || '';
+    } catch (_) {}
+    return { vendedor: nome || '', npess: String(n) };
+  }
+  return { vendedor: raw, npess: '' };
+}
+
 function aplicarItensBalancete(novo, itens) {
   for (const it of itens || []) {
     const cod = normalizaCodSC(it.c != null ? it.c : it.cod);
@@ -7650,6 +7736,11 @@ function aplicarItensBalancete(novo, itens) {
     const d120 = round2Divida(parseValorDivida(it.d120 != null ? it.d120 : it.vencido120));
     if (!valorDividaNaoZero(total) && !valorDividaNaoZero(sv) && !valorDividaNaoZero(d120)) continue;
     const prev = novo[cod] || {};
+    const codVend = it.np || it.npess || it.vendedorCod || '';
+    const nomeVend = it.vd || it.vendedor || '';
+    const resolvido = resolverVendedorBalancete(codVend || nomeVend);
+    const vendedor = resolvido.vendedor || (resolvido.npess ? '' : nomeVend) || prev.vendedor || '';
+    const npess = resolvido.npess || prev.npess || '';
     novo[cod] = {
       ...prev,
       total,
@@ -7659,7 +7750,8 @@ function aplicarItensBalancete(novo, itens) {
       vencido120: d120,
       a120: d120,
       nome: it.n || it.nome || prev.nome || '',
-      vendedor: it.vd || it.vendedor || prev.vendedor || '',
+      vendedor,
+      npess,
       fonte: 'balancete',
     };
   }
@@ -7694,7 +7786,10 @@ async function publicarDividasBalancete(itens, meta) {
           d120: round2Divida(it.vencido120),
         };
         if (it.nome) o.n = String(it.nome).slice(0, 180);
-        if (it.vendedor) o.vd = String(it.vendedor).slice(0, 80);
+        const vendRes = resolverVendedorBalancete(it.vendedorCod || it.vendedor || '');
+        const nomeVend = vendRes.vendedor || (vendRes.npess ? '' : (it.vendedor || ''));
+        if (nomeVend) o.vd = String(nomeVend).slice(0, 80);
+        if (vendRes.npess || it.vendedorCod) o.np = String(vendRes.npess || it.vendedorCod);
         return o;
       }),
     },
@@ -7847,6 +7942,14 @@ async function handleSCDividasImport(event) {
     setDividasStatus(`⏳ A ler ficheiro <b>${escHtml(file.name)}</b>…`, true);
     toast('A processar dívidas…');
     const buf = await file.arrayBuffer();
+    const diagExcel = typeof diagnosticoExcelListaSap === 'function' ? diagnosticoExcelListaSap(buf) : '';
+    if (diagExcel) {
+      const msg = String(diagExcel).replace(/A lista publicada não foi alterada/g, 'As dívidas já publicadas não foram alteradas');
+      setDividasStatus('', false);
+      setDividasResult(false, '❌ ' + msg);
+      toast(msg, 'error');
+      return;
+    }
     const wb = window.XLSX.read(buf, { type: 'array' });
 
     const balPick = escolherFolhaBalancete(wb);
@@ -12269,8 +12372,17 @@ function montarListaDividasCanal() {
     const k = normalizaCodSC(cod);
     const cli = byCod.get(k) || null;
     const nome = (cli && cli.nome) || (div && div.nome) || '—';
-    const vendedor = (cli && cli.vendedor) || (div && div.vendedor) || '—';
-    const base = cli || { cod: k, nome, vendedor, npess: div && div.npess };
+    const vendedor = (div && div.fonte === 'balancete' && div.vendedor)
+      || (cli && cli.vendedor)
+      || (div && div.vendedor)
+      || '—';
+    const npess = (div && div.fonte === 'balancete' && div.npess)
+      || (cli && cli.npess)
+      || (div && div.npess)
+      || '';
+    const base = cli
+      ? { ...cli, vendedor, npess: npess || cli.npess }
+      : { cod: k, nome, vendedor, npess };
     if (canalId && typeof clientePertenceAoCanal === 'function' && !clientePertenceAoCanal(base, canalId)) {
       if (typeof vendedorPertenceAoCanalActivo !== 'function' || !vendedorPertenceAoCanalActivo(vendedor)) continue;
     }
@@ -45883,12 +45995,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-28-dividas-balancete: SW só após load + documento activo (evita InvalidStateError)
+// v2026-10-29-dividas-cod-cliente: SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-10-28-dividas-balancete';
+  var CACHE_KEEP = 'v2026-10-29-dividas-cod-cliente';
 
   function tryRegister() {
     try {

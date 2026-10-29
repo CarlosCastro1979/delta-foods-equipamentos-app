@@ -1,6 +1,6 @@
-// Service Worker v2026-10-28-dividas-balancete — dívidas do balancete (total, vencido, +120)
+// Service Worker v2026-10-29-dividas-cod-cliente — dívidas do balancete (total, vencido, +120)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-28-dividas-balancete';
+const CACHE = 'v2026-10-29-dividas-cod-cliente';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

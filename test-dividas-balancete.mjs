@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const CACHE = 'v2026-10-28-dividas-balancete';
+const CACHE = 'v2026-10-29-dividas-cod-cliente';
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
@@ -44,59 +44,92 @@ const names = [
   'valorDividaNaoZero',
   'normHeaderDivida',
   'celulaCodClienteDivida',
+  'celulaCodVendedorDivida',
+  'idxColunaSaldoTotal',
+  'idxColunaVencido120',
+  'idxColunaSaldoVencido',
+  'cabecalhoBalancetePosicional',
   'parseBalanceteDividasSheet',
   'saldoTotalDivida',
   'saldoVencidoDivida',
   'vencido120Divida',
   'getValorDivida',
 ];
-const src = names.map(n => extractFn(html, n)).join('\n');
+const consts = html.match(/const BAL_COL_VENDEDOR = 3;[\s\S]*?const BAL_COL_VENCIDO = 14;/);
+if (!consts) throw new Error('Constantes das colunas do balancete em falta');
+const src = consts[0] + '\n' + names.map(n => extractFn(html, n)).join('\n');
 const ctx = {};
 vm.createContext(ctx);
 vm.runInContext(src, ctx);
 
 const header = new Array(15).fill('');
-header[0] = 'Código';
+header[0] = 'Código'; // isco: não é o cliente
 header[1] = 'Nome';
-header[2] = 'Vendedor';
+header[3] = 'Cod.Vend';          // D
+header[4] = 'Cod.Cliente';       // E — título sem espaço, que a leitura antiga rejeitava
 header[7] = 'Saldo Total';       // H
 header[13] = 'Vencido +120 dias'; // N
 header[14] = 'Saldo Vencido';     // O
+
+function linhaBal(cod, nome, vend, total, v120, venc, isco) {
+  const row = new Array(15).fill('');
+  row[0] = isco || '';
+  row[1] = nome;
+  row[3] = vend;
+  row[4] = cod;
+  row[7] = total;
+  row[13] = v120;
+  row[14] = venc;
+  return row;
+}
 
 const parsed = ctx.parseBalanceteDividasSheet([
   ['Balancete Brasil', 'extra'],
   [],
   header,
-  ['004102', 'CAFE DO ZE', 'DIOGO OLIVEIRA', '', '', '', '', '1.234,56', '', '', '', '', '', '400,00', '800,10'],
-  ['4102', 'CAFE DO ZE', 'DIOGO OLIVEIRA', '', '', '', '', 10, '', '', '', '', '', 0, 5],
-  ['441908', 'ZERO', 'MASSIMO BOTTELLO', '', '', '', '', 0, '', '', '', '', '', 0, 0],
-  ['', 'TOTAL', '', '', '', '', '', 999, '', '', '', '', '', 1, 1],
-  ['55001', 'SÓ +120', 'HÉLCIO GRÉGIO', '', '', '', '', 0, '', '', '', '', '', '90,5', 0],
+  linhaBal('004102', 'CAFE DO ZE', 99520018, '1.234,56', '400,00', '800,10', '999001'),
+  linhaBal('4102', 'CAFE DO ZE', 99520018, 10, 0, 5, '999001'),
+  linhaBal('441908', 'ZERO', 99520003, 0, 0, 0),
+  linhaBal('', 'TOTAL', '', 999, 1, 1),
+  linhaBal('55001', 'SÓ +120', '99520002 - HELCIO', 0, '90,5', 0),
 ]);
 
 assert.equal(parsed.ok, true);
 assert.equal(parsed.headerRow, 2);
+assert.equal(parsed.cols.codigo, 4);
+assert.equal(parsed.cols.vendedor, 3);
 assert.equal(parsed.cols.saldoTotal, 7);
 assert.equal(parsed.cols.vencido120, 13);
 assert.equal(parsed.cols.saldoVencido, 14);
 assert.equal(parsed.itens.length, 2);
+assert.equal(parsed.itens.some(i => i.cod === '999001'), false, 'coluna A não é o cliente');
 const cafe = parsed.itens.find(i => i.cod === '4102');
-assert.ok(cafe, 'soma o mesmo código');
+assert.ok(cafe, 'soma o mesmo código da coluna E');
 assert.equal(cafe.saldoTotal, 1244.56);
 assert.equal(cafe.saldoVencido, 805.1);
 assert.equal(cafe.vencido120, 400);
-assert.equal(cafe.vendedor, 'DIOGO OLIVEIRA');
+assert.equal(cafe.vendedorCod, '99520018');
+assert.equal(cafe.nome, 'CAFE DO ZE');
 const so120 = parsed.itens.find(i => i.cod === '55001');
 assert.equal(so120.vencido120, 90.5);
 assert.equal(so120.saldoTotal, 0);
+assert.equal(so120.vendedorCod, '99520002');
 
-// Títulos mandam, mesmo fora das letras H/N/O.
+// Títulos dos saldos mandam, mesmo fora de H/N/O. Cliente continua na coluna E.
+const movedHeader = new Array(8).fill('');
+movedHeader[1] = 'Saldo Vencido';
+movedHeader[2] = 'Vencido +120 dias';
+movedHeader[3] = 'Cod.Vend';
+movedHeader[4] = 'Cod.Cliente';
+movedHeader[5] = 'Saldo Total';
+movedHeader[6] = 'Nome';
 const moved = ctx.parseBalanceteDividasSheet([
-  ['Cliente', 'Saldo Vencido', 'Vencido +120 dias', 'Saldo Total', 'Nome'],
-  [123456, '10,00', '3,00', '40,00', 'LOJA'],
+  movedHeader,
+  ['', '10,00', '3,00', 99520006, 123456, '40,00', 'LOJA'],
 ]);
 assert.equal(moved.ok, true);
 assert.equal(moved.itens[0].cod, '123456');
+assert.equal(moved.itens[0].vendedorCod, '99520006');
 assert.equal(moved.itens[0].saldoTotal, 40);
 assert.equal(moved.itens[0].saldoVencido, 10);
 assert.equal(moved.itens[0].vencido120, 3);

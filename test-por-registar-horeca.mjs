@@ -264,8 +264,8 @@ check('Por Registar aplica o escopo do login em cima da cloud', () => {
 });
 
 check('service worker sobe para por-registar-helcio', () => {
-  assert.ok(sw.includes('v2026-10-28-dividas-balancete'));
-  assert.ok(html.includes('v2026-10-28-dividas-balancete'));
+  assert.ok(sw.includes('v2026-10-29-dividas-cod-cliente'));
+  assert.ok(html.includes('v2026-10-29-dividas-cod-cliente'));
   assert.ok(!sw.includes('v2026-10-02-por-registar-helcio'));
   assert.ok(!html.includes('v2026-10-02-por-registar-helcio'));
 });
