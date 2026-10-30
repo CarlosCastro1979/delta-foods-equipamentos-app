@@ -1,6 +1,6 @@
-// Service Worker v2026-10-29-dividas-cod-cliente — dívidas do balancete (total, vencido, +120)
+// Service Worker v2026-10-30-validades — menu Validades (curta e menos de 8 meses)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-29-dividas-cod-cliente';
+const CACHE = 'v2026-10-30-validades';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

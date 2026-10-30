@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-10-29-dividas-cod-cliente dívidas do balancete na AF e no canal -->
+<!-- dfb-build: v2026-10-30-validades menu Validades (curta e menos de 8 meses) nos canais e na Previsão de vendas -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -1405,6 +1405,30 @@
     box-shadow: 0 2px 8px rgba(200, 16, 46, 0.25);
   }
 
+  /* VALIDADES (canal + Previsão de vendas) */
+  .vld-count {
+    display: inline-block; min-width: 18px; padding: 0 6px; margin-left: 4px; border-radius: 10px;
+    font-size: 11px; font-weight: 700; background: rgba(0, 0, 0, 0.08); text-align: center;
+  }
+  .sub-tab.active .vld-count { background: rgba(255, 255, 255, 0.25); }
+  .vld-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .vld-kpi {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; box-shadow: var(--shadow-xs);
+  }
+  .vld-kpi-l { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .vld-kpi-v { font-size: 20px; font-weight: 700; margin-top: 4px; white-space: nowrap; }
+  .vld-kpi-s { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+  .vld-pill {
+    padding: 6px 12px; font-size: 12px; border: 1px solid var(--border); border-radius: 16px;
+    background: var(--surface); color: var(--text-secondary); cursor: pointer; font-family: var(--font-main);
+  }
+  .vld-pill.active { background: #1e3a5f; border-color: #1e3a5f; color: #fff; font-weight: 600; }
+  .vld-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 10px; border: 1px solid;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+  }
+
   /* HOME — seleção de canal */
   #home-screen { display: none; }
   #home-screen.visible { display: block; }
@@ -2152,6 +2176,7 @@ var _unused_placeholder = 1;
 <script src="comissao-rc-mapa.js"></script>
 <script src="comissao-rc.js"></script>
 <script src="vendas-volume-familias.js"></script>
+<script src="validades-stock.js"></script>
 </head>
 <body class="view-home">
 
@@ -2262,6 +2287,7 @@ var _unused_placeholder = 1;
     <button type="button" class="tab tab-voltar-home" id="tab-voltar-home" onclick="voltarHome()" title="Menu principal — canais, Dados, Áreas">← Menu</button>
     <button class="tab" id="tab-dividas-canal" onclick="switchTab('dividas-canal')">Dívidas</button>
     <button class="tab" id="tab-vendas-canal" onclick="switchTab('vendas-canal')">Vendas</button>
+    <button class="tab" id="tab-validades-canal" onclick="switchTab('validades-canal')">Validades</button>
     <button class="tab active" id="tab-registos" onclick="switchTab('registos')">Registo Clientes</button>
     <button class="tab" id="tab-analise" onclick="switchTab('analise')">Análise Clientes</button>
     <button class="tab tab-hide-varejo" onclick="switchTab('at')">Pedido AT</button>
@@ -2334,7 +2360,7 @@ var _unused_placeholder = 1;
         <span class="hd-icon">📈</span>
         <span>
           <div class="hd-title">Previsão de vendas e acompanhamento</div>
-          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas, Orçamento 2027 e a consulta das NF emitidas. A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: escrevem a Previsão de fecho dos seus canais no mapa mensal, só no mês corrente. N, MYR e Publicar: direcção (Carlos, Christian, Andrea, Daniela K.). No Orçamento 2027 escrevem Previsão Out a Dez e Orçamento 2027, em valor e em volume, e Out–Dez da Sazonalidade.</div>
+          <div class="hd-desc">Mapa mensal, Accuracy de fecho, as Vendas, Orçamento 2027, a consulta das NF emitidas e as Validades do stock (curta e menos de 8 meses, também no menu de cada canal). A carga do ZIP de XML da TTI faz-se em Dados. Cada canal tem o menu Vendas no topo, com as notas só desse canal. Vendedores: escrevem a Previsão de fecho dos seus canais no mapa mensal, só no mês corrente. N, MYR e Publicar: direcção (Carlos, Christian, Andrea, Daniela K.). No Orçamento 2027 escrevem Previsão Out a Dez e Orçamento 2027, em valor e em volume, e Out–Dez da Sazonalidade.</div>
         </span>
       </button>
       <button type="button" class="home-dados-card" onclick="abrirDadosHome()">
@@ -4178,6 +4204,11 @@ var _unused_placeholder = 1;
     </div>
   </div>
 
+  <!-- VALIDADES do menu do canal (stock DFB da app Análises Stock SAP x Unilog) -->
+  <div class="panel" id="panel-validades-canal">
+    <div id="canal-validades-host"><div style="color:var(--muted);font-size:13px;">A ler o stock…</div></div>
+  </div>
+
   <!-- PREVISÃO DE VENDAS E ACOMPANHAMENTO (home) -->
   <div class="panel" id="panel-previsao-vendas">
     <div id="pv-pin-gate" style="max-width:360px;margin:40px auto;text-align:center;">
@@ -4232,6 +4263,7 @@ var _unused_placeholder = 1;
         <button type="button" class="sub-tab" id="pv-tab-perdas" onclick="pvShowView('perdas')">Maiores perdas mês</button>
         <button type="button" class="sub-tab" id="pv-tab-nfe" onclick="pvShowView('nfe')">NF emitidas</button>
         <button type="button" class="sub-tab" id="pv-tab-orcamento" onclick="pvShowView('orcamento')">Orçamento 2027</button>
+        <button type="button" class="sub-tab" id="pv-tab-validades" onclick="pvShowView('validades')">Validades</button>
       </div>
 
       <div id="pv-readonly-banner" style="display:none;padding:10px 14px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:12px;color:#9a3412;margin-bottom:12px;">
@@ -14482,6 +14514,8 @@ async function abrirPrevisaoVendasHome() {
     const tabP = document.getElementById('pv-tab-perdas');
     const tabN = document.getElementById('pv-tab-nfe');
     const tabO = document.getElementById('pv-tab-orcamento');
+    const tabVal = document.getElementById('pv-tab-validades');
+    if (tabVal) tabVal.classList.remove('active');
     if (tabM) tabM.classList.add('active');
     if (tabA) tabA.classList.remove('active');
     if (tabV) tabV.classList.remove('active');
@@ -14520,7 +14554,7 @@ function pvPct(a, b) {
 }
 
 function pvShowView(view) {
-  const next = (view === 'accuracy' || view === 'vendas' || view === 'nfe' || view === 'perdas' || view === 'orcamento') ? view : 'mapa';
+  const next = (view === 'accuracy' || view === 'vendas' || view === 'nfe' || view === 'perdas' || view === 'orcamento' || view === 'validades') ? view : 'mapa';
   if (_pvView === 'orcamento' && next !== 'orcamento') {
     if (typeof orc27Flush === 'function') orc27Flush();
     if (typeof vol27Flush === 'function') vol27Flush();
@@ -14535,6 +14569,7 @@ function pvShowView(view) {
     perdas: 'pv-tab-perdas',
     nfe: 'pv-tab-nfe',
     orcamento: 'pv-tab-orcamento',
+    validades: 'pv-tab-validades',
   };
   Object.keys(tabs).forEach(k => {
     const el = document.getElementById(tabs[k]);
@@ -14544,7 +14579,7 @@ function pvShowView(view) {
   if (roBanner && _pvView !== 'orcamento') {
     roBanner.innerHTML = '<strong>Só consulta</strong> — a previsão é editada pela direcção.';
   }
-  const semMapa = _pvView === 'vendas' || _pvView === 'nfe' || _pvView === 'perdas' || _pvView === 'orcamento';
+  const semMapa = _pvView === 'vendas' || _pvView === 'nfe' || _pvView === 'perdas' || _pvView === 'orcamento' || _pvView === 'validades';
   const mesWrap = document.getElementById('pv-mes-wrap');
   if (mesWrap) mesWrap.style.display = _pvView === 'mapa' ? '' : 'none';
   const anoWrap = document.getElementById('pv-ano-wrap');
@@ -16963,7 +16998,7 @@ async function nfeMontarVista() {
 async function pvEnsureCloudThenRender(opts) {
   pvBindAutosaveLifecycle();
   if (opts && opts.reload) pvFlushAutosave();
-  if (_pvView !== 'vendas' && _pvView !== 'nfe' && _pvView !== 'perdas') {
+  if (_pvView !== 'vendas' && _pvView !== 'nfe' && _pvView !== 'perdas' && _pvView !== 'validades') {
     try { await pvFetchCloudMaps(false); } catch (_) {}
     try { if (typeof lerVendasQuadroPersistida === 'function') await lerVendasQuadroPersistida(); } catch (_) {}
   }
@@ -16995,6 +17030,25 @@ function pvRender(opts) {
       bannerP.innerHTML = '<strong>Maiores perdas mês</strong> — Top 20 clientes por vendedor no mês escolhido (não é acumulado). Valor perdido = quanto o cliente deixou de comprar face ao mesmo mês do ano anterior. Todos os canais.';
     }
     pvMontarVistaPerdas();
+    return;
+  }
+  if (_pvView === 'validades') {
+    const modoVal = document.getElementById('pv-modo-label');
+    if (modoVal) {
+      modoVal.textContent = '· Só consulta';
+      modoVal.style.color = '#9a3412';
+    }
+    const roBannerVal = document.getElementById('pv-readonly-banner');
+    if (roBannerVal) roBannerVal.style.display = 'none';
+    const btnPubVal = document.getElementById('pv-btn-publicar');
+    if (btnPubVal) btnPubVal.style.display = 'none';
+    const excelBtnVal = document.getElementById('pv-btn-excel');
+    if (excelBtnVal) excelBtnVal.style.display = 'none';
+    const bannerVal = document.getElementById('pv-banner');
+    if (bannerVal) {
+      bannerVal.innerHTML = '<strong>Validades</strong> — stock DFB disponível (dep. 0011 / cl. 00) com validade curta (até 4 meses) e com menos de 8 meses, lido do stock SAP + Unilog que a app Análises Stock SAP x Unilog guarda no Supabase. O mesmo stock serve todos os canais. Só consulta.';
+    }
+    if (typeof vldMontarVista === 'function') vldMontarVista('pv', 'pv-canal-panels', { ativo: () => _pvView === 'validades' });
     return;
   }
   if (_pvView === 'orcamento') {
@@ -22740,6 +22794,11 @@ function switchTab(tab) {
   if (tab === 'prospeccao') initProsTab();
   if (tab === 'visitas') initVisitasTab();
   if (tab === 'vendas-canal') initVendasMenuCanal();
+  if (tab === 'validades-canal' && typeof vldMontarVista === 'function') {
+    vldMontarVista('canal', 'canal-validades-host', {
+      ativo: () => !!document.getElementById('panel-validades-canal')?.classList.contains('active'),
+    });
+  }
   if (tab === 'dividas-canal') {
     try { renderCanalDividas(); } catch (eDiv) { console.warn('renderCanalDividas', eDiv); }
   }
@@ -45995,12 +46054,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-10-29-dividas-cod-cliente: SW só após load + documento activo (evita InvalidStateError)
+// v2026-10-30-validades: SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-10-29-dividas-cod-cliente';
+  var CACHE_KEEP = 'v2026-10-30-validades';
 
   function tryRegister() {
     try {
