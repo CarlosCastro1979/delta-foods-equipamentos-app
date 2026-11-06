@@ -1,6 +1,6 @@
-// Service Worker v2026-11-06-comissao-rc-jocinei — desconto Jocinei Out/2026
+// Service Worker v2026-11-06-comissao-rc-abatimento — Jocinei Out/2026 no abatimento
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-06-comissao-rc-jocinei';
+const CACHE = 'v2026-11-06-comissao-rc-abatimento';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

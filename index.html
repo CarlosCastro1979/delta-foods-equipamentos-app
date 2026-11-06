@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-06-comissao-rc-jocinei desconto Jocinei Out/2026 -->
+<!-- dfb-build: v2026-11-06-comissao-rc-abatimento desconto Jocinei Out/2026 -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2174,7 +2174,7 @@ var _unused_placeholder = 1;
 <script src="pdf-lib.min.js"></script>
 <script src="nfe-emitidas.js"></script>
 <script src="comissao-rc-mapa.js"></script>
-<script src="comissao-rc.js?v=2026-11-06-jocinei"></script>
+<script src="comissao-rc.js?v=2026-11-06-abatimento"></script>
 <script src="vendas-volume-familias.js"></script>
 <script src="validades-stock.js"></script>
 </head>
@@ -46054,12 +46054,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-06-comissao-rc-jocinei: SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-06-comissao-rc-abatimento: SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-06-comissao-rc-jocinei';
+  var CACHE_KEEP = 'v2026-11-06-comissao-rc-abatimento';
 
   function tryRegister() {
     try {

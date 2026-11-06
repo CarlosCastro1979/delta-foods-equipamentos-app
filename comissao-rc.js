@@ -16,8 +16,9 @@
   var COMISSAO_RC_SUPA_ID = 'comissao_rc';
   /**
    * Comissão já paga sobre venda que o cliente não liquidou.
-   * Entra no mês indicado (valor negativo), a pagar fica 0 e o saldo
-   * abate-se nos meses seguintes até zerar. Se o cliente pagar, retira-se daqui.
+   * O valor (negativo) entra no abatimento desse mês. A comissão das vendas
+   * mantém-se. A pagar fica 0 e a diferença fica no saldo a transportar,
+   * que se abate nos meses seguintes até zerar. Se o cliente pagar, retira-se daqui.
    */
   var COMISSAO_RC_AJUSTES = [
     {
@@ -433,17 +434,6 @@ function comissaoDeFaturacao(faturacao) {
     };
   }
 
-  function comissaoComAjusteRc(nome, ym, comissao) {
-    var base = Number(comissao);
-    if (!Number.isFinite(base)) base = 0;
-    var aj = ajusteComissaoRc(nome, ym);
-    return {
-      comissao: Math.round((base + aj.valor) * 100) / 100,
-      ajuste: aj.valor,
-      ajusteMotivo: aj.motivo,
-    };
-  }
-
   function centsDeReais(n) {
     var v = Number(n);
     if (!Number.isFinite(v)) v = 0;
@@ -481,6 +471,34 @@ function comissaoDeFaturacao(faturacao) {
     };
   }
 
+  /**
+   * A comissão fica a dos 4% das vendas. O ajuste negativo soma-se ao abatimento:
+   * primeiro consome o a pagar e o que sobra aumenta a dívida do saldo.
+   */
+  function passoComAjusteRc(nome, ym, comissaoVendas, saldoAnterior) {
+    var passo = aplicarCarryComissao(comissaoVendas, saldoAnterior);
+    var aj = ajusteComissaoRc(nome, ym);
+    var deduzir = aj.valor < 0 ? centsDeReais(-aj.valor) : 0;
+    var abat = centsDeReais(passo.abatimento) + deduzir;
+    var pagar = centsDeReais(passo.aPagar);
+    var saldo = centsDeReais(passo.saldo);
+    if (deduzir) {
+      if (pagar >= deduzir) pagar -= deduzir;
+      else {
+        saldo -= deduzir - pagar;
+        pagar = 0;
+      }
+    }
+    return {
+      comissao: passo.comissao,
+      abatimento: abat / 100,
+      aPagar: pagar / 100,
+      saldo: saldo / 100,
+      ajuste: aj.valor,
+      ajusteMotivo: aj.motivo,
+    };
+  }
+
   function mesesYmOrdenados(store) {
     var meses = (store && store.meses) || {};
     return Object.keys(meses).filter(function (ym) { return /^\d{4}-\d{2}$/.test(ym); }).sort();
@@ -501,8 +519,7 @@ function comissaoDeFaturacao(faturacao) {
         var linha = calc.linhas[j];
         var bucket = porNome[linha.nome];
         if (!bucket) bucket = porNome[linha.nome] = { saldo: 0, meses: {} };
-        var aj = comissaoComAjusteRc(linha.nome, ym, linha.comissao);
-        var passo = aplicarCarryComissao(aj.comissao, bucket.saldo);
+        var passo = passoComAjusteRc(linha.nome, ym, linha.comissao, bucket.saldo);
         bucket.saldo = passo.saldo;
         bucket.meses[ym] = {
           nome: linha.nome,
@@ -510,8 +527,8 @@ function comissaoDeFaturacao(faturacao) {
           nClientes: linha.nClientes,
           faturacao: linha.faturacao,
           comissao: passo.comissao,
-          ajuste: aj.ajuste,
-          ajusteMotivo: aj.ajusteMotivo,
+          ajuste: passo.ajuste,
+          ajusteMotivo: passo.ajusteMotivo,
           abatimento: passo.abatimento,
           aPagar: passo.aPagar,
           saldo: passo.saldo,
@@ -549,16 +566,15 @@ function comissaoDeFaturacao(faturacao) {
       var bucket = serie.porNome[linha.nome];
       var estado = bucket && bucket.meses[ym];
       if (!estado) {
-        var ajMes = comissaoComAjusteRc(linha.nome, ym, linha.comissao);
-        var passo = aplicarCarryComissao(ajMes.comissao, saldoAntesDeYm(bucket, ym));
+        var passo = passoComAjusteRc(linha.nome, ym, linha.comissao, saldoAntesDeYm(bucket, ym));
         estado = {
           nome: linha.nome,
           ym: ym,
           nClientes: linha.nClientes,
           faturacao: linha.faturacao,
           comissao: passo.comissao,
-          ajuste: ajMes.ajuste,
-          ajusteMotivo: ajMes.ajusteMotivo,
+          ajuste: passo.ajuste,
+          ajusteMotivo: passo.ajusteMotivo,
           abatimento: passo.abatimento,
           aPagar: passo.aPagar,
           saldo: passo.saldo,
@@ -619,9 +635,19 @@ function comissaoDeFaturacao(faturacao) {
       for (var m = 1; m <= 12; m++) {
         var ym = anoN + '-' + String(m).padStart(2, '0');
         var existente = bucket.meses[ym];
-        var com = existente ? existente.comissao : 0;
-        var passo = aplicarCarryComissao(com, saldo);
-        saldo = passo.saldo;
+        var passo;
+        if (existente) {
+          passo = {
+            comissao: existente.comissao,
+            abatimento: existente.abatimento,
+            aPagar: existente.aPagar,
+            saldo: existente.saldo,
+          };
+          saldo = existente.saldo;
+        } else {
+          passo = aplicarCarryComissao(0, saldo);
+          saldo = passo.saldo;
+        }
         lista.push({
           mes: m,
           ym: ym,
@@ -848,20 +874,19 @@ function comissaoDeFaturacao(faturacao) {
       encodeURIComponent(nome) + '\')">' + n + '</button>';
   }
 
-  function crTdComissaoMes(row) {
-    if (row && row.ajuste) {
-      var title = 'Inclui ' + crRs(Math.abs(row.ajuste)) + ' a descontar';
-      if (row.ajusteMotivo) title += '. ' + row.ajusteMotivo;
-      title += '. O saldo abate-se nos meses seguintes até zerar.';
-      var cls = row.comissao < 0 ? ' vq-var-neg' : '';
-      return '<td class="vq-num' + cls + '" title="' + crEsc(title) + '">' + crEsc(crRs(row.comissao)) + '</td>';
-    }
-    return crTdValor(row && row.comissao);
-  }
-
   function crTdValor(n) {
     var cls = n < 0 ? ' vq-var-neg' : '';
     return '<td class="vq-num' + cls + '">' + crEsc(crRs(n)) + '</td>';
+  }
+
+  function crTdAbatimento(row) {
+    if (row && row.ajuste) {
+      var title = crRs(Math.abs(row.ajuste)) + ' a descontar';
+      if (row.ajusteMotivo) title += '. ' + row.ajusteMotivo;
+      title += '. A comissão do mês mantém-se. O que o abatimento não cobre fica no saldo a transportar.';
+      return '<td class="vq-num" title="' + crEsc(title) + '">' + crEsc(crRs(row.abatimento)) + '</td>';
+    }
+    return crTdValor(row && row.abatimento);
   }
 
   /** Saldo negativo é dívida que ainda vai ser abatida. O sinal fica explícito. */
@@ -935,8 +960,8 @@ function comissaoDeFaturacao(faturacao) {
         '<td>' + crBotaoNome(row.nome, row.nClientes, on) + '</td>' +
         '<td class="vq-num">' + crBotaoContagem(row.nClientes, row.nome) + '</td>' +
         crTdValor(row.faturacao) +
-        crTdComissaoMes(row) +
-        crTdValor(row.abatimento) +
+        crTdValor(row.comissao) +
+        crTdAbatimento(row) +
         crTdValor(row.aPagar) +
         crTdSaldo(row.saldo) +
         '</tr>';

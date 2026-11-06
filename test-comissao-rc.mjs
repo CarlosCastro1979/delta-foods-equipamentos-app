@@ -382,10 +382,14 @@ check('Jocinei Out/2026: 8283,23 a descontar e o saldo abate nos meses seguintes
   const out = estadoMensalComissaoRc(mapa, store, '2026-10').linhas.find(r => r.nome === 'Jocinei Neves');
   assert.equal(comissaoDeFaturacao(22168.18), 886.73);
   assert.equal(out.ajuste, -8283.23);
-  assert.equal(out.comissao, -7396.5);
-  assert.equal(out.abatimento, 0);
+  assert.equal(out.comissao, 886.73);
+  assert.equal(out.abatimento, 8283.23);
   assert.equal(out.aPagar, 0);
   assert.equal(out.saldo, -7396.5);
+  const outTotal = estadoMensalComissaoRc(mapa, store, '2026-10').total;
+  assert.equal(outTotal.comissao, 926.73);
+  assert.equal(outTotal.abatimento, 8283.23);
+  assert.equal(outTotal.aPagar, 40);
 
   const emanuel = estadoMensalComissaoRc(mapa, store, '2026-10').linhas.find(r => r.nome === 'EMANUEL VALLE');
   assert.equal(emanuel.comissao, 40);
@@ -397,6 +401,15 @@ check('Jocinei Out/2026: 8283,23 a descontar e o saldo abate nos meses seguintes
   assert.equal(nov.abatimento, 4000);
   assert.equal(nov.aPagar, 0);
   assert.equal(nov.saldo, -3396.5);
+
+  const anual26 = resumoAnualComissaoRc(mapa, store, 2026);
+  const outAnual = anual26.meses['2026-10'].passos['Jocinei Neves'];
+  assert.equal(outAnual.comissao, 886.73);
+  assert.equal(outAnual.abatimento, 8283.23);
+  assert.equal(outAnual.aPagar, 0);
+  assert.equal(outAnual.saldo, -7396.5);
+  assert.equal(anual26.meses['2026-11'].passos['Jocinei Neves'].abatimento, 4000);
+  assert.equal(anual26.meses['2026-11'].aPagar['Jocinei Neves'], 0);
 
   const anual = resumoAnualComissaoRc(mapa, store, 2027);
   const jan = anual.meses['2027-01'].passos['Jocinei Neves'];
@@ -562,8 +575,8 @@ check('submenus mensal e anual e o carregador de RC mantêm-se', () => {
   assert.ok(js.includes('ccExact: true'));
   assert.ok(js.includes('estadoMensalComissaoRc(_crMapa, store, periodo.ym)'));
   assert.ok(js.includes("emailBtn.style.display = _crVista === 'anual' ? 'none' : ''"));
-  assert.ok(sw.includes('v2026-11-06-comissao-rc-jocinei'));
-  assert.ok(html.includes('v2026-11-06-comissao-rc-jocinei'));
+  assert.ok(sw.includes('v2026-11-06-comissao-rc-abatimento'));
+  assert.ok(html.includes('v2026-11-06-comissao-rc-abatimento'));
 });
 
 check('email da comissão mensal: destinatários, saudação, quadro e detalhe 749002', () => {
@@ -725,8 +738,8 @@ check('o ecrã Dados tem o carregador por baixo da lista de clientes', () => {
   assert.ok(fn.includes("toast('Guardado')"));
   assert.ok(!fn.includes('publicarListaClientesSupabase'));
   assert.ok(!fn.includes('vendas_quadro'));
-  assert.ok(sw.includes('v2026-11-06-comissao-rc-jocinei'));
-  assert.ok(html.includes('v2026-11-06-comissao-rc-jocinei'));
+  assert.ok(sw.includes('v2026-11-06-comissao-rc-abatimento'));
+  assert.ok(html.includes('v2026-11-06-comissao-rc-abatimento'));
 });
 
 function folhaExcelFalsa() {
