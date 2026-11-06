@@ -11,7 +11,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-11-06-comissao-rc-abatimento';
+const CACHE = 'v2026-11-06-comissao-rc-email';
 
 function extractFn(src, name) {
   const re = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`);

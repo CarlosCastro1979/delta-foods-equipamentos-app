@@ -1321,21 +1321,21 @@ function comissaoDeFaturacao(faturacao) {
     var th = td + 'background:#c8102e;color:#ffffff;font-weight:700;';
     var head = cols.map(function (col) {
       var align = col.tipo === 'text' ? 'left' : 'right';
-      return '<th style="' + th + 'text-align:' + align + ';">' + escEmailRc(col.label) + '</th>';
+      return '<th style="' + th + 'text-align:' + align + ';">' + escEmailRc(col.label) + '</th>\n';
     }).join('');
     function tr(vals, extra) {
       var cells = cols.map(function (col, i) {
         var align = col.tipo === 'text' ? 'left' : 'right';
-        return '<td style="' + td + extra + 'text-align:' + align + ';white-space:nowrap;">' + fmtCelulaHtml(col, vals[i]) + '</td>';
+        return '<td style="' + td + extra + 'text-align:' + align + ';white-space:nowrap;">' + fmtCelulaHtml(col, vals[i]) + '</td>\n';
       }).join('');
-      return '<tr>' + cells + '</tr>';
+      return '<tr>\n' + cells + '</tr>\n';
     }
     var body = linhasVals.map(function (vals, idx) {
       return tr(vals, idx % 2 ? 'background:#f9fafb;' : 'background:#ffffff;');
     }).join('');
     var foot = tr(totalVals, 'background:#f3f4f6;font-weight:700;');
-    return '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8102e;margin:12px 0;">' +
-      '<thead><tr>' + head + '</tr></thead><tbody>' + body + foot + '</tbody></table>';
+    return '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8102e;margin:12px 0;">\n' +
+      '<thead>\n<tr>\n' + head + '</tr>\n</thead>\n<tbody>\n' + body + foot + '</tbody>\n</table>\n';
   }
 
   function tabelaTextoComissaoRc(cols, linhasVals, totalVals) {

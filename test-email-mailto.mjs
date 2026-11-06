@@ -426,6 +426,7 @@ for (const name of [
   'outlookInnerHtml',
   'outlookTxtJuntarSaudacao',
   'outlookWrapHtmlCorpo',
+  'outlookFoldMimeLines',
 ]) {
   vm.runInContext(extractFn(html, name), context);
 }
@@ -463,10 +464,32 @@ check('outlookAbrirRascunho envolve o HTML; EML continua text/html UTF-8', () =>
   assert.ok(start >= 0 && end > start);
   const fn = html.slice(start, end);
   assert.ok(fn.includes('outlookWrapHtmlCorpo'));
+  assert.ok(fn.includes('outlookFoldMimeLines'));
   assert.ok(fn.includes('X-Unsent: 1'));
   assert.ok(fn.includes('Content-Type: text/html; charset=UTF-8'));
   assert.ok(!fn.includes('Content-Type: text/plain'),
     'sem text/plain curto que o Outlook use para meter a assinatura no meio');
+});
+
+check('outlookFoldMimeLines parte linhas longas sem perder o quadro', () => {
+  const longa = '<table>' + '<td style="color:#111;">JOCINEI NEVES R$ 886,73</td>'.repeat(80) + '</table>';
+  assert.ok(longa.length > 998);
+  const folded = context.outlookFoldMimeLines(longa);
+  for (const line of folded.split('\r\n')) {
+    assert.ok(line.length <= 900, String(line.length));
+  }
+  assert.ok(folded.includes('JOCINEI NEVES'));
+  assert.ok(folded.includes('R$ 886,73'));
+  const src =
+    `<p>Bom dia,</p><p>segue o quadro.</p>` +
+    `<table><tr><td>${'X'.repeat(2000)}</td></tr></table>`;
+  const wrapped = context.outlookWrapHtmlCorpo(src);
+  const emlHtml = context.outlookFoldMimeLines(wrapped);
+  for (const line of emlHtml.split('\r\n')) {
+    assert.ok(line.length <= 900, String(line.length));
+  }
+  assert.ok(emlHtml.includes('segue o quadro.'));
+  assert.ok(emlHtml.includes('X'.repeat(50)));
 });
 
 check('quadro HTML continua legível em texto depois do wrapper', () => {

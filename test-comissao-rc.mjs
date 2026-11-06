@@ -575,8 +575,8 @@ check('submenus mensal e anual e o carregador de RC mantêm-se', () => {
   assert.ok(js.includes('ccExact: true'));
   assert.ok(js.includes('estadoMensalComissaoRc(_crMapa, store, periodo.ym)'));
   assert.ok(js.includes("emailBtn.style.display = _crVista === 'anual' ? 'none' : ''"));
-  assert.ok(sw.includes('v2026-11-06-comissao-rc-abatimento'));
-  assert.ok(html.includes('v2026-11-06-comissao-rc-abatimento'));
+  assert.ok(sw.includes('v2026-11-06-comissao-rc-email'));
+  assert.ok(html.includes('v2026-11-06-comissao-rc-email'));
 });
 
 check('email da comissão mensal: destinatários, saudação, quadro e detalhe 749002', () => {
@@ -625,6 +625,27 @@ check('email da comissão mensal: destinatários, saudação, quadro e detalhe 7
   assert.ok(manha.html.includes('Andrea Albuquerque'));
   assert.ok(manha.texto.trim().endsWith('Andrea Albuquerque'));
   assert.equal(manha.subject, 'Comissões RC — Setembro 2026');
+  for (const line of manha.html.split('\n')) {
+    assert.ok(line.length <= 998, 'linha do email com ' + line.length + ' caracteres');
+  }
+  const outModelo = estadoMensalComissaoRc(mapa, {
+    meses: {
+      '2026-10': { clientes: { '9\t1': { cod: '9', valor: 22168.18, nome: 'Positivo' } } },
+    },
+  }, '2026-10');
+  const emailOut = montarEmailComissaoRc({
+    modelo: outModelo, mes: 10, ano: 2026, remetente: 'Carlos Castro',
+    agora: new Date('2026-11-06T16:00:00Z'),
+  });
+  const linhaJoc = emailOut.folhas[0].rows.find(r => r[0] === 'JOCINEI NEVES');
+  assert.equal(linhaJoc[3], 886.73);
+  assert.equal(linhaJoc[4], 8283.23);
+  assert.equal(linhaJoc[5], 0);
+  assert.equal(linhaJoc[6], -7396.5);
+  assert.ok(emailOut.html.includes('8.283,23') || emailOut.html.includes('8283,23'));
+  for (const line of emailOut.html.split('\n')) {
+    assert.ok(line.length <= 998, 'linha Out/2026 com ' + line.length);
+  }
   assert.equal(manha.filename, 'Comissao_RC_2026-09.xlsx');
   for (const col of ['RC', 'Clientes', 'Faturação', 'Comissão do mês', 'Abatimento', 'A pagar', 'Saldo a transportar']) {
     assert.ok(manha.html.includes(col), col);
@@ -738,8 +759,8 @@ check('o ecrã Dados tem o carregador por baixo da lista de clientes', () => {
   assert.ok(fn.includes("toast('Guardado')"));
   assert.ok(!fn.includes('publicarListaClientesSupabase'));
   assert.ok(!fn.includes('vendas_quadro'));
-  assert.ok(sw.includes('v2026-11-06-comissao-rc-abatimento'));
-  assert.ok(html.includes('v2026-11-06-comissao-rc-abatimento'));
+  assert.ok(sw.includes('v2026-11-06-comissao-rc-email'));
+  assert.ok(html.includes('v2026-11-06-comissao-rc-email'));
 });
 
 function folhaExcelFalsa() {

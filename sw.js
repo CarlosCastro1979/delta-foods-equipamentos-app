@@ -1,6 +1,6 @@
-// Service Worker v2026-11-06-comissao-rc-abatimento — Jocinei Out/2026 no abatimento
+// Service Worker v2026-11-06-comissao-rc-email — rascunho Outlook da comissão de RC
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-06-comissao-rc-abatimento';
+const CACHE = 'v2026-11-06-comissao-rc-email';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

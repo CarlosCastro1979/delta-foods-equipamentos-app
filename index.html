@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-06-comissao-rc-abatimento desconto Jocinei Out/2026 -->
+<!-- dfb-build: v2026-11-06-comissao-rc-email desconto Jocinei Out/2026 -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2174,7 +2174,7 @@ var _unused_placeholder = 1;
 <script src="pdf-lib.min.js"></script>
 <script src="nfe-emitidas.js"></script>
 <script src="comissao-rc-mapa.js"></script>
-<script src="comissao-rc.js?v=2026-11-06-abatimento"></script>
+<script src="comissao-rc.js?v=2026-11-06-email"></script>
 <script src="vendas-volume-familias.js"></script>
 <script src="validades-stock.js"></script>
 </head>
@@ -36302,6 +36302,43 @@ async function outlookAbrirEmailTexto({
 }
 
 /**
+ * RFC 5322: o .eml não pode ter uma linha com mais de 998 caracteres.
+ * O quadro da comissão de RC ia numa linha de ~12 mil e o Outlook
+ * recusava o rascunho («não abre» / acção não suportada).
+ * Parte depois de cada tag; o HTML ignora essa quebra.
+ */
+function outlookFoldMimeLines(text, maxLen) {
+  const limit = maxLen || 900;
+  const lines = String(text || '').split(/\r?\n/);
+  const out = [];
+  for (const line of lines) {
+    if (line.length <= limit) {
+      out.push(line);
+      continue;
+    }
+    let cur = '';
+    const parts = line.split(/(?<=>)/);
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (!part) continue;
+      if (part.length > limit) {
+        if (cur) { out.push(cur); cur = ''; }
+        for (let j = 0; j < part.length; j += limit) out.push(part.slice(j, j + limit));
+        continue;
+      }
+      if (cur && (cur.length + part.length) > limit) {
+        out.push(cur);
+        cur = part;
+      } else {
+        cur += part;
+      }
+    }
+    if (cur) out.push(cur);
+  }
+  return out.join('\r\n');
+}
+
+/**
  * Abre rascunho no Outlook com corpo HTML e anexos.
  * PC Windows (browser ou PWA): Outlook clássico via serve.ps1 / .eml.
  * Tablet/telemóvel: app Outlook + Excel para anexar (nunca .eml).
@@ -36342,6 +36379,9 @@ async function outlookAbrirRascunho({
   // Um único contentor (tabela) + <div> em vez de <p> mete a assinatura no fim.
   if (typeof outlookWrapHtmlCorpo === 'function') {
     html = outlookWrapHtmlCorpo(html);
+  }
+  if (typeof outlookFoldMimeLines === 'function') {
+    html = outlookFoldMimeLines(html);
   }
   const hasAttachments = (attachments || []).some(a => a && a.blob);
   const isWindowsPc = typeof outlookIsWindowsPc === 'function' && outlookIsWindowsPc();
@@ -46054,12 +46094,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-06-comissao-rc-abatimento: SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-06-comissao-rc-email: SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-06-comissao-rc-abatimento';
+  var CACHE_KEEP = 'v2026-11-06-comissao-rc-email';
 
   function tryRegister() {
     try {
