@@ -14,6 +14,19 @@
 
   var COMISSAO_RC_TAXA = 0.04;
   var COMISSAO_RC_SUPA_ID = 'comissao_rc';
+  /**
+   * Comissão já paga sobre venda que o cliente não liquidou.
+   * Entra no mês indicado (valor negativo), a pagar fica 0 e o saldo
+   * abate-se nos meses seguintes até zerar. Se o cliente pagar, retira-se daqui.
+   */
+  var COMISSAO_RC_AJUSTES = [
+    {
+      nome: 'JOCINEI NEVES',
+      ym: '2026-10',
+      valor: -8283.23,
+      motivo: 'Comissão recebida sobre venda que o cliente não pagou',
+    },
+  ];
   /** NPess do vendedor Diogo Oliveira. Qualquer um destes, ou um nome com «Diogo», fica de fora. */
   var COMISSAO_RC_NPESS_DIOGO = {
     99520004: 1,
@@ -397,6 +410,40 @@ function comissaoDeFaturacao(faturacao) {
     };
   }
 
+  function nomesRcIguais(a, b) {
+    return normNomeRc(a).toUpperCase() === normNomeRc(b).toUpperCase();
+  }
+
+  /** Soma dos ajustes daquele RC naquele mês (0 se não houver). */
+  function ajusteComissaoRc(nome, ym) {
+    var total = 0;
+    var motivo = '';
+    for (var i = 0; i < COMISSAO_RC_AJUSTES.length; i++) {
+      var a = COMISSAO_RC_AJUSTES[i];
+      if (!a || String(a.ym) !== String(ym)) continue;
+      if (!nomesRcIguais(a.nome, nome)) continue;
+      var v = Number(a.valor);
+      if (!Number.isFinite(v) || v === 0) continue;
+      total += v;
+      if (a.motivo) motivo = motivo ? (motivo + ' · ' + a.motivo) : a.motivo;
+    }
+    return {
+      valor: Math.round(total * 100) / 100,
+      motivo: motivo,
+    };
+  }
+
+  function comissaoComAjusteRc(nome, ym, comissao) {
+    var base = Number(comissao);
+    if (!Number.isFinite(base)) base = 0;
+    var aj = ajusteComissaoRc(nome, ym);
+    return {
+      comissao: Math.round((base + aj.valor) * 100) / 100,
+      ajuste: aj.valor,
+      ajusteMotivo: aj.motivo,
+    };
+  }
+
   function centsDeReais(n) {
     var v = Number(n);
     if (!Number.isFinite(v)) v = 0;
@@ -454,7 +501,8 @@ function comissaoDeFaturacao(faturacao) {
         var linha = calc.linhas[j];
         var bucket = porNome[linha.nome];
         if (!bucket) bucket = porNome[linha.nome] = { saldo: 0, meses: {} };
-        var passo = aplicarCarryComissao(linha.comissao, bucket.saldo);
+        var aj = comissaoComAjusteRc(linha.nome, ym, linha.comissao);
+        var passo = aplicarCarryComissao(aj.comissao, bucket.saldo);
         bucket.saldo = passo.saldo;
         bucket.meses[ym] = {
           nome: linha.nome,
@@ -462,6 +510,8 @@ function comissaoDeFaturacao(faturacao) {
           nClientes: linha.nClientes,
           faturacao: linha.faturacao,
           comissao: passo.comissao,
+          ajuste: aj.ajuste,
+          ajusteMotivo: aj.ajusteMotivo,
           abatimento: passo.abatimento,
           aPagar: passo.aPagar,
           saldo: passo.saldo,
@@ -499,13 +549,16 @@ function comissaoDeFaturacao(faturacao) {
       var bucket = serie.porNome[linha.nome];
       var estado = bucket && bucket.meses[ym];
       if (!estado) {
-        var passo = aplicarCarryComissao(linha.comissao, saldoAntesDeYm(bucket, ym));
+        var ajMes = comissaoComAjusteRc(linha.nome, ym, linha.comissao);
+        var passo = aplicarCarryComissao(ajMes.comissao, saldoAntesDeYm(bucket, ym));
         estado = {
           nome: linha.nome,
           ym: ym,
           nClientes: linha.nClientes,
           faturacao: linha.faturacao,
           comissao: passo.comissao,
+          ajuste: ajMes.ajuste,
+          ajusteMotivo: ajMes.ajusteMotivo,
           abatimento: passo.abatimento,
           aPagar: passo.aPagar,
           saldo: passo.saldo,
@@ -795,6 +848,17 @@ function comissaoDeFaturacao(faturacao) {
       encodeURIComponent(nome) + '\')">' + n + '</button>';
   }
 
+  function crTdComissaoMes(row) {
+    if (row && row.ajuste) {
+      var title = 'Inclui ' + crRs(Math.abs(row.ajuste)) + ' a descontar';
+      if (row.ajusteMotivo) title += '. ' + row.ajusteMotivo;
+      title += '. O saldo abate-se nos meses seguintes até zerar.';
+      var cls = row.comissao < 0 ? ' vq-var-neg' : '';
+      return '<td class="vq-num' + cls + '" title="' + crEsc(title) + '">' + crEsc(crRs(row.comissao)) + '</td>';
+    }
+    return crTdValor(row && row.comissao);
+  }
+
   function crTdValor(n) {
     var cls = n < 0 ? ' vq-var-neg' : '';
     return '<td class="vq-num' + cls + '">' + crEsc(crRs(n)) + '</td>';
@@ -871,7 +935,7 @@ function comissaoDeFaturacao(faturacao) {
         '<td>' + crBotaoNome(row.nome, row.nClientes, on) + '</td>' +
         '<td class="vq-num">' + crBotaoContagem(row.nClientes, row.nome) + '</td>' +
         crTdValor(row.faturacao) +
-        crTdValor(row.comissao) +
+        crTdComissaoMes(row) +
         crTdValor(row.abatimento) +
         crTdValor(row.aPagar) +
         crTdSaldo(row.saldo) +
@@ -1691,6 +1755,8 @@ function comissaoDeFaturacao(faturacao) {
     COMISSAO_RC_LS_KEY: COMISSAO_RC_LS_KEY,
     faturCodNoMes: faturCodNoMes,
     comissaoDeFaturacao: comissaoDeFaturacao,
+    COMISSAO_RC_AJUSTES: COMISSAO_RC_AJUSTES,
+    ajusteComissaoRc: ajusteComissaoRc,
     calcularComissaoRc: calcularComissaoRc,
     aplicarCarryComissao: aplicarCarryComissao,
     estadoMensalComissaoRc: estadoMensalComissaoRc,

@@ -1,6 +1,6 @@
-// Service Worker v2026-10-30-validades — menu Validades (curta e menos de 8 meses)
+// Service Worker v2026-11-06-comissao-rc-jocinei — desconto Jocinei Out/2026
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-10-30-validades';
+const CACHE = 'v2026-11-06-comissao-rc-jocinei';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

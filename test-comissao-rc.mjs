@@ -357,6 +357,54 @@ check('mês sem comissão não abate a dívida', () => {
   assert.equal(b.saldo, -10);
 });
 
+check('Jocinei Out/2026: 8283,23 a descontar e o saldo abate nos meses seguintes', () => {
+  const mapa = mapaDeLinhasComissaoRc([
+    { pessoa: 'Jocinei Neves', cod: '9', nome: 'Cliente J' },
+    { pessoa: 'EMANUEL VALLE', cod: '8', nome: 'Cliente E' },
+  ]);
+  const store = {
+    meses: {
+      '2026-09': mesFatur('9', 1000),
+      '2026-10': {
+        clientes: {
+          '9\t1': { cod: '9', valor: 22168.18, nome: 'A' },
+          '8\t1': { cod: '8', valor: 1000, nome: 'B' },
+        },
+      },
+      '2026-11': mesFatur('9', 100000),
+    },
+  };
+  const set = estadoMensalComissaoRc(mapa, store, '2026-09').linhas.find(r => r.nome === 'Jocinei Neves');
+  assert.equal(set.comissao, 40);
+  assert.equal(set.aPagar, 40);
+  assert.equal(set.saldo, 0);
+
+  const out = estadoMensalComissaoRc(mapa, store, '2026-10').linhas.find(r => r.nome === 'Jocinei Neves');
+  assert.equal(comissaoDeFaturacao(22168.18), 886.73);
+  assert.equal(out.ajuste, -8283.23);
+  assert.equal(out.comissao, -7396.5);
+  assert.equal(out.abatimento, 0);
+  assert.equal(out.aPagar, 0);
+  assert.equal(out.saldo, -7396.5);
+
+  const emanuel = estadoMensalComissaoRc(mapa, store, '2026-10').linhas.find(r => r.nome === 'EMANUEL VALLE');
+  assert.equal(emanuel.comissao, 40);
+  assert.equal(emanuel.aPagar, 40);
+  assert.equal(emanuel.saldo, 0);
+
+  const nov = estadoMensalComissaoRc(mapa, store, '2026-11').linhas.find(r => r.nome === 'Jocinei Neves');
+  assert.equal(nov.comissao, 4000);
+  assert.equal(nov.abatimento, 4000);
+  assert.equal(nov.aPagar, 0);
+  assert.equal(nov.saldo, -3396.5);
+
+  const anual = resumoAnualComissaoRc(mapa, store, 2027);
+  const jan = anual.meses['2027-01'].passos['Jocinei Neves'];
+  assert.equal(jan.aPagar, 0);
+  assert.equal(jan.saldo, -3396.5);
+  assert.ok(anual.total.saldosDezembro.some(s => s.nome === 'Jocinei Neves' && s.saldo === -3396.5));
+});
+
 check('dívida do ano anterior abate em Janeiro', () => {
   const mapa = mapaDeLinhasComissaoRc([
     { pessoa: 'RICARDO MIRANDA', cod: '5', nome: 'Devolução' },
@@ -514,8 +562,8 @@ check('submenus mensal e anual e o carregador de RC mantêm-se', () => {
   assert.ok(js.includes('ccExact: true'));
   assert.ok(js.includes('estadoMensalComissaoRc(_crMapa, store, periodo.ym)'));
   assert.ok(js.includes("emailBtn.style.display = _crVista === 'anual' ? 'none' : ''"));
-  assert.ok(sw.includes('v2026-10-30-validades'));
-  assert.ok(html.includes('v2026-10-30-validades'));
+  assert.ok(sw.includes('v2026-11-06-comissao-rc-jocinei'));
+  assert.ok(html.includes('v2026-11-06-comissao-rc-jocinei'));
 });
 
 check('email da comissão mensal: destinatários, saudação, quadro e detalhe 749002', () => {
@@ -677,8 +725,8 @@ check('o ecrã Dados tem o carregador por baixo da lista de clientes', () => {
   assert.ok(fn.includes("toast('Guardado')"));
   assert.ok(!fn.includes('publicarListaClientesSupabase'));
   assert.ok(!fn.includes('vendas_quadro'));
-  assert.ok(sw.includes('v2026-10-30-validades'));
-  assert.ok(html.includes('v2026-10-30-validades'));
+  assert.ok(sw.includes('v2026-11-06-comissao-rc-jocinei'));
+  assert.ok(html.includes('v2026-11-06-comissao-rc-jocinei'));
 });
 
 function folhaExcelFalsa() {
