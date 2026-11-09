@@ -526,7 +526,7 @@ check('números do resumo filtram o detalhe; zero não é clicável', () => {
     'menusCanalVendasQuadro', 'canalMenuVendasActivo', 'htmlMenusCanalVendas',
     'volumeEfetivoCelula', 'somarVolumeQuadroNosMeses', 'metricasVolumeLinhaQuadro',
     'vendedoresCanalQuadro', 'htmlLinhaMetricasPnL', 'htmlResumoVolumeQuadro', 'htmlVistaCanalVendas',
-    'renderVendasQuadro', 'onClickVendasQuadro', 'limparFiltroVendasQuadro',
+    'htmlDetalheVendedorQuadro', 'renderVendasQuadro', 'onClickVendasQuadro', 'limparFiltroVendasQuadro',
   ]) {
     vm.runInContext(extractFn(html, name), ctx);
   }
@@ -985,10 +985,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-06-comissao-rc-email'));
+  assert.ok(sw.includes('v2026-11-09-vendas-subtotal-vendedor'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-11-06-comissao-rc-email'));
+  assert.ok(html.includes('v2026-11-09-vendas-subtotal-vendedor'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 
@@ -1248,11 +1248,98 @@ check('Set/2026: Objetivo da Delta fica a seguir a N e os Acum.* só depois das 
   assert.deepEqual(cabecalhosVq(det[0]), ['Vendedor'].concat(ORDEM_VALOR));
   const marcioDet = linhasVq(det[0]).find(r => r.cells[0] && r.cells[0].text.includes('MARCIO GORGA'));
   assert.ok(marcioDet, 'detalhe lista o vendedor');
-  assert.equal(marcioDet.cells[3].text, '—');
-  assert.ok(!marcioDet.cells[3].html.includes('<button'), 'sem objetivo não é clicável');
-  assert.equal(marcioDet.cells[4].text, '—');
-  assert.ok(!marcioDet.cells[4].html.includes('<button'));
+  const objLojas = ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-09');
+  assert.equal(marcioDet.cells[3].text, ctx.formatNumeroQuadroPnL(objLojas, true), 'Lojas online é só do Marcio');
+  assert.ok(marcioDet.cells[3].html.includes('<button'), 'objetivo do canal só dele é clicável');
+  assert.equal(marcioDet.cells[4].text, ctx.formatPctQuadroPnL(ctx.variacaoObjetivoPct(2000000, true, objLojas)));
   assert.ok(out.includes('Restauração'), 'o quadro geral mantém os outros canais');
+});
+
+check('detalhe junta os códigos do mesmo vendedor e só mostra o objetivo que existe', () => {
+  function cel(empresa, canal, vendedor, valor) {
+    return { empresa, canal, vendedor, valor, linhas: 1, linhasComValor: 1 };
+  }
+  const q = ctx.quadroVendasVazio();
+  q.meses['2026-11'] = { celulas: {
+    a: cel('Delta Foods Brasil', 'Distribuidores de retalho', 'DIOGO OLIVEIRA', 100),
+    b: cel('Delta Foods Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA', 40),
+    c: cel('Q Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA', 10),
+    d: cel('Delta Foods Brasil', 'Distribuidores regionais', 'MASSIMO BOTTELLO', 50),
+    e: cel('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA', 20),
+    f: cel('Delta Foods Brasil', 'Restauração', 'HÉLCIO GRÉGIO', 30),
+    g: cel('Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA', 80),
+  } };
+  const mesEl = ctx.document.getElementById('vq-mes');
+  const anoEl = ctx.document.getElementById('vq-ano');
+  mesEl.value = '11';
+  anoEl.value = '2026';
+  mesEl.dataset.ready = '1';
+  ctx.window._vqFiltro = null;
+  ctx.window._vendasQuadro = q;
+  ctx.renderVendasQuadro(q);
+  const out = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
+  const det = tabelasVq(out.split('Detalhe por vendedor')[1] || '');
+  const rows = linhasVq(det[0]);
+  const diogoSub = rows.find(r => r.cells[0] && r.cells[0].text.includes('DIOGO OLIVEIRA') && r.cells[0].text.includes('subtotal'));
+  assert.ok(diogoSub, 'Diogo tem subtotal dos três códigos');
+  assert.ok(diogoSub.attrs.includes('vq-emp'));
+  assert.equal(diogoSub.cells[2].text, ctx.formatNumeroQuadroPnL(150, true));
+  const objDiogo = ctx.objetivoCanalMes('Delta Foods Brasil', 'Distribuidores de retalho', '2026-11')
+    + ctx.objetivoCanalMes('Delta Foods Brasil', 'Retalho moderno', '2026-11')
+    + ctx.objetivoCanalMes('Q Brasil', 'Retalho moderno', '2026-11');
+  assert.equal(diogoSub.cells[3].text, ctx.formatNumeroQuadroPnL(objDiogo, true));
+  assert.ok(diogoSub.cells[2].html.includes('data-vq-vendedor="DIOGO OLIVEIRA"'));
+  assert.ok(diogoSub.cells[2].html.includes('data-vq-empresa=""'));
+  const retalho = rows.find(r => r.cells[0] && r.cells[0].text.includes('Distribuidores de retalho') && !r.cells[0].text.includes('DIOGO'));
+  assert.ok(retalho, 'o código fica acima do subtotal, sem repetir o nome');
+  assert.ok(rows.indexOf(retalho) < rows.indexOf(diogoSub), 'o subtotal fecha o grupo');
+  assert.equal(retalho.cells[2].text, ctx.formatNumeroQuadroPnL(100, true));
+  const iDiogo = rows.findIndex(r => r.cells[0] && r.cells[0].text.includes('DIOGO'));
+  const iEdu = rows.findIndex(r => r.cells[0] && r.cells[0].text.includes('EDUARDO'));
+  const iMax = rows.findIndex(r => r.cells[0] && r.cells[0].text.includes('MASSIMO'));
+  assert.ok(iDiogo >= 0 && iDiogo < iEdu && iEdu < iMax, 'os códigos do mesmo vendedor ficam juntos');
+  const max = rows[iMax];
+  const edu = rows[iEdu];
+  assert.equal(max.cells[3].text, '—', 'Dist. regionais não tem parte do Massimo');
+  assert.equal(edu.cells[3].text, '—', 'Dist. regionais não tem parte do Eduardo');
+  assert.ok(!max.cells[3].html.includes('<button'));
+  assert.ok(!edu.cells[0].text.includes('subtotal'));
+  const hel = rows.find(r => r.cells[0] && r.cells[0].text.includes('HÉLCIO'));
+  const objHel = ctx.objetivoVendedorHorecaMenu('Delta Foods Brasil', 'Restauração', 'HÉLCIO GRÉGIO', '2026-11');
+  assert.ok(objHel > 0, 'a Restauração tem parte por vendedor');
+  assert.equal(hel.cells[3].text, ctx.formatNumeroQuadroPnL(objHel, true));
+  const mar = rows.find(r => r.cells[0] && r.cells[0].text.includes('MARCIO'));
+  assert.equal(mar.cells[3].text, ctx.formatNumeroQuadroPnL(ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-11'), true));
+  assert.ok(out.includes('subtotal soma-os'));
+
+  ctx.onClickVendasQuadro({
+    target: {
+      closest(sel) {
+        if (sel === '[data-vq-canal-menu]') return null;
+        if (sel === '[data-vq-filtro]') {
+          return {
+            getAttribute(name) {
+              if (name === 'data-vq-empresa') return '';
+              if (name === 'data-vq-canal') return '';
+              if (name === 'data-vq-vendedor') return 'DIOGO OLIVEIRA';
+              return '';
+            },
+          };
+        }
+        return null;
+      },
+    },
+  });
+  const filtrado = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
+  assert.ok(filtrado.includes('Filtro:'), 'banner do subtotal');
+  assert.ok(filtrado.includes('Limpar'));
+  assert.ok(filtrado.includes('DIOGO OLIVEIRA'));
+  assert.ok(!filtrado.includes('MASSIMO'), 'o subtotal filtra só esse vendedor');
+  assert.ok(!filtrado.includes('HÉLCIO'));
+  ctx.limparFiltroVendasQuadro();
+  const limpo = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
+  assert.ok(limpo.includes('MASSIMO BOTTELLO'), 'Limpar repõe os outros vendedores');
+  assert.ok(!limpo.includes('Filtro:'));
 });
 
 check('a frase usa o dia máximo real do agregado em Set/2026, não uma data fixa', () => {
@@ -1639,7 +1726,7 @@ check('resumo anual: 12 meses + Total, só N, empresa = soma dos canais, 9952009
     'somarQuadroNosMeses', 'canaisFixosQuadroEmpresa', 'ordenarNomesQuadroPnL',
     'metricasLinhaQuadro', 'linhasResumoQuadroPnL',
     'formatNumeroQuadroPnL', 'htmlBotaoFiltroQuadro', 'htmlCelulaNumeroPnL',
-    'formatValorQuadroRs', 'preencherSelectsQuadroVendas', 'renderVendasQuadro',
+    'formatValorQuadroRs', 'preencherSelectsQuadroVendas', 'htmlDetalheVendedorQuadro', 'renderVendasQuadro',
     'mesesAnoQuadro', 'fecharLinhaAnual', 'somarLinhasAnual', 'linhasResumoAnualQuadro',
     'htmlCabecalhoResumoAnual', 'htmlCelulaResumoAnual', 'htmlLinhaResumoAnual',
     'vistaVendasQuadroActiva', 'marcarSubTabVendas', 'showVendasQuadroSub',

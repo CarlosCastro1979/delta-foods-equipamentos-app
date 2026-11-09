@@ -1,6 +1,6 @@
-// Service Worker v2026-11-06-comissao-rc-email — rascunho Outlook da comissão de RC
+// Service Worker v2026-11-09-vendas-subtotal-vendedor — detalhe de vendas compilado por vendedor
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-06-comissao-rc-email';
+const CACHE = 'v2026-11-09-vendas-subtotal-vendedor';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

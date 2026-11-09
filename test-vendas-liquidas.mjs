@@ -444,7 +444,7 @@ check('o ecrã avisa quando o agregado ainda tem canais antigos', () => {
     'menusCanalVendasQuadro', 'canalMenuVendasActivo', 'htmlMenusCanalVendas',
     'volumeEfetivoCelula', 'somarVolumeQuadroNosMeses', 'metricasVolumeLinhaQuadro',
     'vendedoresCanalQuadro', 'htmlLinhaMetricasPnL', 'htmlResumoVolumeQuadro', 'htmlVistaCanalVendas',
-    'renderVendasQuadro',
+    'htmlDetalheVendedorQuadro', 'renderVendasQuadro',
   ]) {
     vm.runInContext(extractFn(html, name), ctx);
   }
@@ -475,12 +475,12 @@ check('o ecrã diz vendas líquidas e o service worker subiu', () => {
   assert.ok(act.includes('decidirActualizarQuadroVendas'));
   assert.ok(act.indexOf('decidirActualizarQuadroVendas') < act.indexOf('somarQuadrosVendas'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-06-comissao-rc-email'));
+  assert.ok(sw.includes('v2026-11-09-vendas-subtotal-vendedor'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-vendas-emissor'));
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
-  assert.ok(html.includes('v2026-11-06-comissao-rc-email'));
+  assert.ok(html.includes('v2026-11-09-vendas-subtotal-vendedor'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));

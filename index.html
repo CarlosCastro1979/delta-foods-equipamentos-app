@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-06-comissao-rc-email desconto Jocinei Out/2026 -->
+<!-- dfb-build: v2026-11-09-vendas-subtotal-vendedor detalhe por vendedor com subtotal -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -27738,7 +27738,14 @@ function vendasQuadroPassaFiltro(cell, filtro) {
   if (!filtro || !cell) return true;
   if (filtro.empresa && cell.empresa !== filtro.empresa) return false;
   if (filtro.canal && cell.canal !== filtro.canal) return false;
-  if (filtro.vendedor && cell.vendedor !== filtro.vendedor) return false;
+  if (filtro.vendedor) {
+    const norm = (typeof normNomeVendaMenu === 'function')
+      ? normNomeVendaMenu
+      : function (s) {
+        return String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+      };
+    if (norm(cell.vendedor) !== norm(filtro.vendedor)) return false;
+  }
   return true;
 }
 
@@ -30974,6 +30981,148 @@ function htmlLinhaResumoPnL(row, filtro, escFn, periodo) {
   return htmlLinhaValorObjetivoPnL(nome, trCls, m, f, on, objMes, objAc);
 }
 
+/**
+ * Detalhe compilado por vendedor: os códigos (empresa × canal) do mesmo nome
+ * ficam juntos e, se houver mais do que um, a última linha do grupo é o subtotal.
+ * Objetivo só com número já gravado — canal de um só dono, a parte da
+ * Restauração, a parte Horeca do Institucional, ou o Balcão do Marcio.
+ * Dist. regionais (Massimo e Eduardo) não tem parte por pessoa: fica —.
+ * O acumulado do objetivo só aparece se todos os meses de Janeiro até ao
+ * mês escolhido tiverem número. Um mês em falta não se soma como se fosse o ano.
+ */
+function htmlDetalheVendedorQuadro(detalhe, quadro, periodo, filtro, esc) {
+  const e = typeof esc === 'function' ? esc : (s) => String(s == null ? '' : s);
+  const p = periodo || {};
+  function chave(nome) {
+    if (typeof normNomeVendaMenu === 'function') return normNomeVendaMenu(nome);
+    return String(nome || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  }
+  const DONO = {
+    'Delta Foods Brasil\tLojas online': 'MARCIO GORGA',
+    'Delta Foods Brasil\tSite próprio': 'MARCIO GORGA',
+    'Delta Foods Brasil\tDistribuidores de retalho': 'DIOGO OLIVEIRA',
+    'Delta Foods Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
+    'Q Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
+    'Q Brasil\tDistribuidores de retalho': 'DIOGO OLIVEIRA',
+    'Q Brasil\tRestauração': 'MARCIO GORGA',
+  };
+  function objetivoBalcao(ym) {
+    const parts = String(ym || '').split('-');
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (!y || !m) return null;
+    if (typeof linhasMapaInstMes !== 'function' || typeof particaoInstPreservadaMenu !== 'function') return null;
+    const objInst = (typeof objetivoCanalMes === 'function') ? objetivoCanalMes('Delta Foods Brasil', 'Institucional', ym) : null;
+    const linhas = linhasMapaInstMes(y, m);
+    let balcao = null;
+    let horeca = null;
+    for (let i = 0; i < linhas.length; i++) {
+      if (!linhas[i]) continue;
+      if (linhas[i].id === 'dfb_inst_balcao') balcao = linhas[i].budget;
+      if (linhas[i].id === 'dfb_inst_horeca') horeca = linhas[i].budget;
+    }
+    const sa = (balcao == null || balcao === '') ? null : +balcao;
+    const sb = (horeca == null || horeca === '') ? null : +horeca;
+    if (!particaoInstPreservadaMenu(sa, sb, objInst)) return null;
+    return sa;
+  }
+  function objetivoMes(empresa, canal, vendedor, ym) {
+    if (empresa === 'Delta Foods Brasil' && canal === 'Restauração') {
+      return (typeof objetivoVendedorHorecaMenu === 'function')
+        ? objetivoVendedorHorecaMenu(empresa, canal, vendedor, ym)
+        : null;
+    }
+    if (empresa === 'Delta Foods Brasil' && canal === 'Institucional') {
+      if (chave(vendedor) === chave('MARCIO GORGA')) return objetivoBalcao(ym);
+      return (typeof objetivoVendedorHorecaMenu === 'function')
+        ? objetivoVendedorHorecaMenu(empresa, canal, vendedor, ym)
+        : null;
+    }
+    const dono = DONO[String(empresa || '') + '\t' + String(canal || '')];
+    if (!dono || chave(vendedor) !== chave(dono)) return null;
+    return (typeof objetivoCanalMes === 'function') ? objetivoCanalMes(empresa, canal, ym) : null;
+  }
+  function objetivoAcum(empresa, canal, vendedor) {
+    const y = parseInt(p.ano, 10);
+    const m = parseInt(p.mes, 10);
+    if (!y || !m) return null;
+    let soma = 0;
+    for (let i = 1; i <= m; i++) {
+      const v = objetivoMes(empresa, canal, vendedor, y + '-' + String(i).padStart(2, '0'));
+      if (v == null || !Number.isFinite(+v)) return null;
+      soma += +v;
+    }
+    return soma;
+  }
+  function somarObj(vals) {
+    let s = 0;
+    for (let i = 0; i < vals.length; i++) {
+      if (vals[i] == null || !Number.isFinite(+vals[i])) return null;
+      s += +vals[i];
+    }
+    return vals.length ? s : null;
+  }
+  const grupos = [];
+  const porNome = {};
+  const lista = Array.isArray(detalhe) ? detalhe : [];
+  for (let i = 0; i < lista.length; i++) {
+    const c = lista[i];
+    if (!c) continue;
+    const k = chave(c.vendedor) || 'POR CLASSIFICAR';
+    if (!porNome[k]) {
+      porNome[k] = { nome: c.vendedor || 'Por classificar', linhas: [] };
+      grupos.push(porNome[k]);
+    }
+    porNome[k].linhas.push(c);
+  }
+  grupos.sort((a, b) => {
+    const pa = chave(a.nome) === 'POR CLASSIFICAR';
+    const pb = chave(b.nome) === 'POR CLASSIFICAR';
+    if (pa !== pb) return pa ? 1 : -1;
+    return String(a.nome || '').localeCompare(String(b.nome || ''), 'pt');
+  });
+  const html = [];
+  for (let g = 0; g < grupos.length; g++) {
+    const grupo = grupos[g];
+    const linhas = [];
+    for (let i = 0; i < grupo.linhas.length; i++) {
+      const c = grupo.linhas[i];
+      const fdet = { empresa: c.empresa, canal: c.canal, vendedor: c.vendedor };
+      const met = metricasLinhaQuadro(quadro, p, fdet);
+      const obj = objetivoMes(c.empresa, c.canal, c.vendedor, p.ym);
+      const objAc = objetivoAcum(c.empresa, c.canal, c.vendedor);
+      const on = filtroQuadroActivoIgual(filtro, c.empresa, c.canal, c.vendedor);
+      const label = grupo.linhas.length > 1
+        ? `<span class="vq-indent">${e(c.empresa)} · ${e(c.canal)}</span>`
+        : `${e(grupo.nome)}<span class="vq-muted" style="font-weight:400;"> · ${e(c.empresa)} · ${e(c.canal)}</span>`;
+      linhas.push({
+        html: htmlLinhaValorObjetivoPnL(label, 'vq-can', met, fdet, on, obj, objAc),
+        met: met,
+        obj: obj,
+        objAc: objAc,
+      });
+    }
+    for (let i = 0; i < linhas.length; i++) html.push(linhas[i].html);
+    if (linhas.length > 1) {
+      let met = (typeof metricaVaziaQuadro === 'function') ? metricaVaziaQuadro() : {
+        n: 0, nTem: false, n1: 0, n1Tem: false, ac: 0, acTem: false, ac1: 0, ac1Tem: false, varN: null, varAc: null,
+      };
+      const objs = [];
+      const objsAc = [];
+      for (let i = 0; i < linhas.length; i++) {
+        met = somarMetricasQuadro(met, linhas[i].met);
+        objs.push(linhas[i].obj);
+        objsAc.push(linhas[i].objAc);
+      }
+      const fsub = { empresa: '', canal: '', vendedor: grupo.nome };
+      const onSub = filtroQuadroActivoIgual(filtro, '', '', grupo.nome);
+      const label = `${e(grupo.nome)}<span class="vq-muted" style="font-weight:400;"> · subtotal</span>`;
+      html.push(htmlLinhaValorObjetivoPnL(label, 'vq-emp', met, fsub, onSub, somarObj(objs), somarObj(objsAc)));
+    }
+  }
+  return html.join('');
+}
+
 function renderVendasQuadro(quadroOpt) {
   const el = document.getElementById('pv-vendas-quadro');
   if (!el) return;
@@ -31068,13 +31217,7 @@ function renderVendasQuadro(quadroOpt) {
     </div>`;
   }
 
-  let detRows = detalhe.map(c => {
-    const on = filtroQuadroActivoIgual(filtro, c.empresa, c.canal, c.vendedor);
-    const fdet = { empresa: c.empresa, canal: c.canal, vendedor: c.vendedor };
-    const met = metricasLinhaQuadro(quadro, pacote.periodo, fdet);
-    const label = `${esc(c.vendedor)}<span class="vq-muted" style="font-weight:400;"> · ${esc(c.empresa)} · ${esc(c.canal)}</span>`;
-    return htmlLinhaValorObjetivoPnL(label, 'vq-can', met, fdet, on, null, null);
-  }).join('');
+  let detRows = htmlDetalheVendedorQuadro(detalhe, quadro, pacote.periodo, filtro, esc);
   if (!detRows) {
     detRows = `<tr><td colspan="11" class="vq-muted" style="padding:16px;">Sem vendedores neste mês${filtro ? ' com este filtro' : ''}.</td></tr>`;
   }
@@ -31112,7 +31255,7 @@ function renderVendasQuadro(quadroOpt) {
         <div class="vq-linhas">Janeiro até ${esc(abrevMes)}/${ano}</div>
       </div>
     </div>
-    <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget do mês, a seguir a N. Var. obj. % = (N − Objetivo) / Objetivo. Acum. objetivo = soma de Janeiro até este mês, Março inclusive. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo.</div>
+    <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget do mês, a seguir a N. Var. obj. % = (N − Objetivo) / Objetivo. Acum. objetivo = soma de Janeiro até este mês, Março inclusive. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo. O detalhe junta os códigos do mesmo vendedor; o subtotal soma-os. Sem objetivo por pessoa, a célula fica —.</div>
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Resumo <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica num número para filtrar o detalhe)</span></div>
     <div class="vq-scroll vq-scroll-main">
       <table class="vq-table">
@@ -46094,12 +46237,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-06-comissao-rc-email: SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-09-vendas-subtotal-vendedor: detalhe por vendedor com subtotal. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-06-comissao-rc-email';
+  var CACHE_KEEP = 'v2026-11-09-vendas-subtotal-vendedor';
 
   function tryRegister() {
     try {
