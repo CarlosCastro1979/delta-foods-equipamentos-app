@@ -1,6 +1,6 @@
-// Service Worker v2026-11-09-vendas-subtotal-vendedor — detalhe de vendas compilado por vendedor
+// Service Worker v2026-11-12-at-cliente-fora-sap — Pedido AT inclui registo fora da lista SAP
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-09-vendas-subtotal-vendedor';
+const CACHE = 'v2026-11-12-at-cliente-fora-sap';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

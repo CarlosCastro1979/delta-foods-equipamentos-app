@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-09-vendas-subtotal-vendedor detalhe por vendedor com subtotal -->
+<!-- dfb-build: v2026-11-12-at-cliente-fora-sap Pedido AT inclui registo fora da lista SAP -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -24318,6 +24318,57 @@ async function exportClientesContenciosoExcel() {
 // ─── PEDIDO AT ──────────────────────────────────────
 const AT_EXCLUIR_EQUIP = ['EQUIPAMENTO PROPRIO'];
 const AT_DOMESTICO = 'MAQ DOMESTICA DELTA Q';
+
+/** Equipamento elegível no Pedido AT para o tipo escolhido (comercial / doméstico). */
+function atEquipElegivelTipo(tipo, tipoEquip) {
+  const t = String(tipo || '').toUpperCase();
+  if (!t) return false;
+  if (tipoEquip === 'domestico') return t.includes(AT_DOMESTICO);
+  return !t.includes(AT_DOMESTICO) && !AT_EXCLUIR_EQUIP.some(ex => t.includes(ex));
+}
+
+/** Código do cliente sem zeros à esquerda — para cruzar lista SAP e registos. */
+function atNormCodCliente(cod) {
+  const s = String(cod == null ? '' : cod).trim();
+  if (!s) return '';
+  const n = s.replace(/^0+/, '');
+  return n || '0';
+}
+
+/**
+ * Junta à lista do Pedido AT os clientes do vendedor que já têm máquina no
+ * registo, mesmo que o código ainda não esteja na última lista SAP.
+ * Sem isto, um registo novo (ex.: Nata 7 / 458816) fica invisível no Chamado.
+ */
+function atFundirClientesRegistoNaLista(listaSap, registos, vendedor, tipoEquip) {
+  const out = Array.isArray(listaSap) ? listaSap.slice() : [];
+  const seen = new Set(out.map(c => atNormCodCliente(c && c.cod)));
+  const vendKey = (typeof normNomeUtilizador === 'function')
+    ? normNomeUtilizador(vendedor)
+    : String(vendedor || '').toUpperCase().trim();
+  (registos || []).forEach(r => {
+    if (!r) return;
+    const vendReg = (typeof normNomeUtilizador === 'function')
+      ? normNomeUtilizador(r.vendedor)
+      : String(r.vendedor || '').toUpperCase().trim();
+    if (!vendKey || vendReg !== vendKey) return;
+    const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
+    if (!equips.some(e => atEquipElegivelTipo(e && e.tipo, tipoEquip))) return;
+    const key = atNormCodCliente(r.cod);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push({
+      cod: String(r.cod || '').trim(),
+      nome: r.nome || '',
+      cep: r.cep || '',
+      vendedor: r.vendedor || vendedor,
+    });
+  });
+  out.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt')
+    || String(a.cod || '').localeCompare(String(b.cod || ''), 'pt'));
+  return out;
+}
+
 /**
  * Equipamentos profissionais (Distribuidores) — códigos SAP oficiais.
  * `key` opcional: chave interna de qty quando o código SAP falta ou se repete (nova vs usada).
@@ -25290,28 +25341,29 @@ async function atOnTipoEquipChange() {
   const vendKey = normNomeUtilizador(vendedor);
   const clientesVendedor = lista.filter(c => normNomeUtilizador(c.vendedor) === vendKey);
 
-  // Filtrar clientes que têm equipamentos do tipo seleccionado
+  // Registos com máquina do tipo escolhido (cache completo ou fetch parcial — sem gravar no cache)
+  let registosAt = [];
   let codsComEquip = new Set();
   try {
     let data = getRegistosCache();
     if (!data) {
-      // Paginar; NÃO gravar select parcial no cache de registos
-      data = await fetchRegistosPaginado('cod,equipamentos', 'cod.asc');
+      data = await fetchRegistosPaginado('cod,nome,cep,vendedor,equipamentos', 'cod.asc');
     }
-    (data||[]).forEach(r => {
+    registosAt = Array.isArray(data) ? data : [];
+    registosAt.forEach(r => {
       const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
-      const temTipo = equips.some(e => {
-        const t = (e.tipo||'').toUpperCase();
-        if (atTipoEquip === 'domestico') return t.includes(AT_DOMESTICO);
-        return !t.includes(AT_DOMESTICO) && !AT_EXCLUIR_EQUIP.some(ex => t.includes(ex));
-      });
-      if (temTipo) codsComEquip.add(String(r.cod).trim());
+      if (equips.some(e => atEquipElegivelTipo(e && e.tipo, atTipoEquip))) {
+        const key = atNormCodCliente(r.cod);
+        if (key) codsComEquip.add(key);
+      }
     });
   } catch(e) { console.warn(e); }
 
-  atListaAtiva = clientesVendedor.filter(c => codsComEquip.has(String(c.cod).trim()));
-  const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
-  if (!atListaAtiva.length) atListaAtiva = clientesVendedor;
+  // Preferir quem tem máquina; se ninguém da lista SAP tiver, mostra a lista do vendedor
+  let base = clientesVendedor.filter(c => codsComEquip.has(atNormCodCliente(c.cod)));
+  if (!base.length) base = clientesVendedor;
+  // Inclui registos do vendedor com máquina mesmo fora da última lista SAP
+  atListaAtiva = atFundirClientesRegistoNaLista(base, registosAt, vendedor, atTipoEquip);
 
   // Preencher e desbloquear lista de clientes
   if (cliEl) {
@@ -25375,11 +25427,7 @@ async function atPreencherCliente() {
       const equips = Array.isArray(r.equipamentos) ? r.equipamentos : [];
       equips.forEach(e => {
         if (!e.tipo) return;
-        const tipoUp = e.tipo.toUpperCase().trim();
-        // Filter by selected type
-        const isDomestico = tipoUp.includes(AT_DOMESTICO);
-        if (atTipoEquip === 'domestico' && !isDomestico) return;
-        if (atTipoEquip === 'comercial' && (isDomestico || AT_EXCLUIR_EQUIP.some(ex => tipoUp.includes(ex)))) return;
+        if (!atEquipElegivelTipo(e.tipo, atTipoEquip)) return;
         const label = e.tag ? `${e.tipo} — Tag #${e.tag}` : e.tipo;
         const val = JSON.stringify({tipo: e.tipo, tag: e.tag||''});
         if (!equipList.find(x => x.val === val)) equipList.push({label, val, tipo: e.tipo, tag: e.tag||''});
@@ -46237,12 +46285,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-09-vendas-subtotal-vendedor: detalhe por vendedor com subtotal. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-12-at-cliente-fora-sap: Pedido AT inclui registo fora da lista SAP. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-09-vendas-subtotal-vendedor';
+  var CACHE_KEEP = 'v2026-11-12-at-cliente-fora-sap';
 
   function tryRegister() {
     try {
