@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-12-at-cliente-fora-sap Pedido AT inclui registo fora da lista SAP -->
+<!-- dfb-build: v2026-11-12-at-instalacao-http400 fix Pedido de Instalação HTTP 400 -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -11514,17 +11514,83 @@ function addInstEquipRow(tipo='') {
   list.appendChild(row);
 }
 
+/**
+ * Resolve cliente para Instalação: lista SAP activa, senão registo já gravado
+ * (ex.: Nata 7 / 458816 fora da última carga SAP).
+ */
+async function instResolverCliente(cod) {
+  const raw = String(cod || '').trim();
+  if (!raw) return null;
+  const norm = (typeof atNormCodCliente === 'function')
+    ? atNormCodCliente
+    : (v) => { const s = String(v || '').trim().replace(/^0+/, ''); return s || '0'; };
+  const want = norm(raw);
+  const lista = (typeof getListaClientesActiva === 'function') ? getListaClientesActiva() : [];
+  const naLista = (lista || []).find(c => norm(c.cod) === want || String(c.cod || '').trim() === raw);
+  if (naLista) {
+    return { cod: String(naLista.cod || raw).trim(), nome: naLista.nome || '', vendedor: naLista.vendedor || '', cep: naLista.cep || '', origem: 'lista' };
+  }
+  let regs = (typeof getRegistosCache === 'function') ? getRegistosCache() : null;
+  if (!regs || !regs.length) {
+    try {
+      if (typeof findRegistoByCod === 'function') {
+        const r = await findRegistoByCod(raw);
+        if (r) regs = [r];
+      }
+    } catch (_) {}
+  }
+  const noReg = (regs || []).find(r => norm(r.cod) === want || String(r.cod || '').trim() === raw);
+  if (!noReg) return null;
+  return {
+    cod: String(noReg.cod || raw).trim(),
+    nome: noReg.nome || '',
+    vendedor: noReg.vendedor || '',
+    cep: noReg.cep || '',
+    origem: 'registo',
+  };
+}
+
+/** Payload do Pedido de Instalação alinhado ao schema real de chamados_at. */
+function montarPayloadInstalacaoAt(opts) {
+  const o = opts || {};
+  const equips = Array.isArray(o.equipamentos) ? o.equipamentos : [];
+  const dataDesejadaIso = String(o.dataDesejada || '').trim();
+  let dataDesejadaFmt = dataDesejadaIso;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dataDesejadaIso)) {
+    try { dataDesejadaFmt = new Date(dataDesejadaIso + 'T12:00:00').toLocaleDateString('pt-BR'); }
+    catch (_) { dataDesejadaFmt = dataDesejadaIso; }
+  }
+  const obs = String(o.obs || '').trim();
+  const partesDesc = [];
+  if (dataDesejadaFmt) partesDesc.push('Data desejada: ' + dataDesejadaFmt);
+  if (obs) partesDesc.push(obs);
+  const agora = (o.agora && typeof o.agora.getTime === 'function') ? o.agora : new Date();
+  return {
+    data: agora.toLocaleDateString('pt-BR'),
+    hora: agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+    vendedor: String(o.vendedor || '').trim(),
+    cliente_cod: String(o.cod || '').trim(),
+    cliente_nome: String(o.nome || o.cod || '').trim(),
+    equip_tipo: equips.map(e => e && e.tipo).filter(Boolean).join(', '),
+    equip_tag: equips.map(e => e && e.tag).filter(Boolean).join(', '),
+    avaria: 'Instalação',
+    descricao: partesDesc.join('\n'),
+    urgencia: String(o.urgencia || 'Normal'),
+    tipo_equip: 'instalacao',
+    modelo_dom: '',
+    estado: 'aberto',
+  };
+}
+
 async function instBuscarCliente() {
   const cod = document.getElementById('inst-cod').value.trim();
   const infoEl = document.getElementById('inst-cliente-info');
   const statusEl = document.getElementById('inst-cod-status');
   if (cod.length < 3) { infoEl.style.display = 'none'; statusEl.textContent = ''; return; }
 
-  const lista = getListaClientesActiva();
-  const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
-  const cliente = lista.find(c => normCod(c.cod) === normCod(cod) || c.cod === cod);
+  const cliente = await instResolverCliente(cod);
   if (cliente) {
-    infoEl.innerHTML = `<strong>${cliente.nome}</strong> · ${cliente.vendedor} · CEP ${cliente.cep||'—'}`;
+    infoEl.innerHTML = `<strong>${cliente.nome || cliente.cod}</strong> · ${cliente.vendedor || '—'} · CEP ${cliente.cep || '—'}`;
     infoEl.style.display = 'block';
     statusEl.innerHTML = '<span style="color:#16a34a">✓</span>';
   } else {
@@ -11554,24 +11620,20 @@ async function enviarPedidoInstalacao() {
   });
   if (!equipamentos.length) { toast('Adiciona pelo menos um equipamento.', 'error'); return; }
 
-  const lista = getListaClientesActiva();
-  const normCod = v => String(v||'').trim().replace(/^0+/,'') || '0';
-  const cliente = lista.find(c => normCod(c.cod) === normCod(cod) || c.cod === cod);
-
-  const chamado = {
-    id: crypto.randomUUID(),
+  const cliente = await instResolverCliente(cod);
+  const vendedor = (cliente && cliente.vendedor)
+    || (typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '')
+    || '';
+  const nomeCliente = (cliente && cliente.nome) || cod;
+  const chamado = montarPayloadInstalacaoAt({
     cod,
-    nome_cliente: cliente?.nome || cod,
-    vendedor: cliente?.vendedor || '',
-    tipo_equip: 'instalacao',
+    nome: nomeCliente,
+    vendedor,
     equipamentos,
-    avaria: 'Instalação',
-    descricao: obs || '',
+    dataDesejada: data,
+    obs,
     urgencia,
-    data_instalacao: data,
-    data: new Date().toISOString().slice(0,10),
-    estado: 'aberto'
-  };
+  });
 
   try {
     const res = await fetch('https://qnscwppgljobelplgbkp.supabase.co/rest/v1/chamados_at', {
@@ -11579,7 +11641,36 @@ async function enviarPedidoInstalacao() {
       headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
       body: JSON.stringify(chamado)
     });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!res.ok) {
+      let detalhe = '';
+      try {
+        const err = await res.json();
+        detalhe = (err && (err.message || err.hint || err.code)) ? String(err.message || err.hint || err.code) : '';
+      } catch (_) {
+        try { detalhe = (await res.text()).slice(0, 180); } catch (__) {}
+      }
+      throw new Error(detalhe ? ('HTTP ' + res.status + ' — ' + detalhe) : ('HTTP ' + res.status));
+    }
+
+    try {
+      const chamados = typeof getATChamados === 'function' ? getATChamados() : [];
+      chamados.push({
+        id: typeof genId === 'function' ? genId() : String(Date.now()),
+        data: chamado.data,
+        hora: chamado.hora,
+        vendedor: chamado.vendedor,
+        clienteCod: chamado.cliente_cod,
+        clienteNome: chamado.cliente_nome,
+        equipTipo: chamado.equip_tipo,
+        equipTag: chamado.equip_tag,
+        avaria: chamado.avaria,
+        descricao: chamado.descricao,
+        urgencia: chamado.urgencia,
+        tipoEquip: 'instalacao',
+        estado: 'aberto',
+      });
+      if (typeof saveATChamados === 'function') saveATChamados(chamados);
+    } catch (_) {}
 
     // Email completo (mesmo fluxo Outlook / .eml — sem truncar mailto)
     const dataFmt = new Date(data + 'T12:00:00').toLocaleDateString('pt-BR');
@@ -11587,8 +11678,8 @@ async function enviarPedidoInstalacao() {
     const corpoInst =
 `Pedido de instalação:
 
-  Cliente: ${cliente?.nome || cod} (${cod})
-  Vendedor: ${cliente?.vendedor || '—'}
+  Cliente: ${nomeCliente} (${cod})
+  Vendedor: ${vendedor || '—'}
   Equipamentos: ${equipsStr}
   Data desejada: ${dataFmt}
   Urgência: ${urgencia}${obs ? '\n  Observações: ' + obs : ''}
@@ -11597,7 +11688,7 @@ Enviado via Delta Foods App`;
     await outlookAbrirEmailTexto({
       to: 'daniela.kucinski@deltafoodsbrasil.com.br',
       cc: typeof ccString === 'function' ? ccString([]) : [],
-      subject: `Pedido de Instalação — ${cliente?.nome || cod}`,
+      subject: `Pedido de Instalação — ${nomeCliente}`,
       body: corpoInst,
       draftName: `Pedido_Instalacao_${cod || 'cliente'}.eml`,
       toastMsg: '✅ Pedido de instalação registado — Outlook aberto.',
@@ -46285,12 +46376,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-12-at-cliente-fora-sap: Pedido AT inclui registo fora da lista SAP. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-12-at-instalacao-http400: fix Pedido de Instalação HTTP 400. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-12-at-cliente-fora-sap';
+  var CACHE_KEEP = 'v2026-11-12-at-instalacao-http400';
 
   function tryRegister() {
     try {

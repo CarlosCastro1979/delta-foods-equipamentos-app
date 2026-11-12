@@ -1,6 +1,6 @@
-// Service Worker v2026-11-12-at-cliente-fora-sap — Pedido AT inclui registo fora da lista SAP
+// Service Worker v2026-11-12-at-instalacao-http400 — fix Pedido de Instalação HTTP 400
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-12-at-cliente-fora-sap';
+const CACHE = 'v2026-11-12-at-instalacao-http400';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
