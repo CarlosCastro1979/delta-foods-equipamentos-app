@@ -194,19 +194,28 @@ function Start-EmlDraft([string]$emlPath) {
         $outlook = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
         $before = Get-OutlookInspectorCount $outlook
     } catch { }
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
+
+    # Path curto em %TEMP% (ASCII): evita aspas/acentos no argv do Outlook.
+    $safePath = $emlPath
+    try {
+        $safePath = Join-Path $env:TEMP ('DeltaDraft_{0}.eml' -f [guid]::NewGuid().ToString('N').Substring(0, 8))
+        Copy-Item -LiteralPath $emlPath -Destination $safePath -Force
+    } catch {
+        $safePath = $emlPath
+    }
+
     $classic = Get-ClassicOutlookExe
     if ($classic) {
-        $psi.FileName = $classic
-        # /eml é obrigatório em vários Outlook clássicos: sem isto o path
-        # é lido como switch e aparece «O argumento de linha de comando não é válido».
-        $psi.Arguments = "/eml `"$emlPath`""
-        $psi.UseShellExecute = $false
+        # /eml é obrigatório: sem isto o path é lido como switch
+        # («O argumento de linha de comando não é válido»).
+        # ArgumentList evita aspas mal escapadas no ProcessStartInfo.Arguments.
+        Start-Process -FilePath $classic -ArgumentList @('/eml', $safePath) -WindowStyle Normal | Out-Null
     } else {
-        $psi.FileName = $emlPath
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $safePath
         $psi.UseShellExecute = $true
+        [void][System.Diagnostics.Process]::Start($psi)
     }
-    [void][System.Diagnostics.Process]::Start($psi)
     return @{ Before = $before; Outlook = $outlook }
 }
 

@@ -709,8 +709,43 @@ check('Distribuidores: cadastro só para a Daniela, sem Carlos nem Filipe', () =
 check('serve.ps1 abre .eml com /eml (evita argumento de linha de comando inválido)', () => {
   const ps1 = fs.readFileSync(path.join(root, 'serve.ps1'), 'utf8');
   assert.ok(ps1.includes('/eml'));
-  assert.ok(ps1.includes('/eml `"$emlPath`"') || ps1.includes('/eml \\"$emlPath\\"') || /\/eml\s+`?"\$emlPath`?"/.test(ps1));
+  assert.ok(
+    ps1.includes("ArgumentList @('/eml'") ||
+    ps1.includes('/eml `"$emlPath`"') ||
+    ps1.includes('/eml \\"$emlPath\\"') ||
+    /\/eml\s+`?"\$emlPath`?"/.test(ps1) ||
+    /ArgumentList\s+@\(\s*'\/eml'/.test(ps1),
+    'tem de passar /eml ao outlook.exe'
+  );
+  assert.ok(ps1.includes('DeltaDraft_') || ps1.includes('$env:TEMP'), 'path curto em TEMP');
   assert.ok(!/Arguments\s*=\s*"`"\$emlPath`""/.test(ps1), 'não pode passar só o path sem /eml');
+});
+
+check('SW não intercepta localhost nem API Outlook (Private Network Access)', () => {
+  const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  assert.ok(sw.includes("host === 'localhost'"));
+  assert.ok(sw.includes("host === '127.0.0.1'"));
+  assert.ok(sw.includes('/api/open-outlook-draft'));
+  assert.ok(sw.includes('url.origin !== self.location.origin'));
+  // O early-return tem de existir ANTES do respondWith genérico
+  const bypassIdx = sw.indexOf("host === 'localhost'");
+  const respondIdx = sw.lastIndexOf('e.respondWith(fetch(req))');
+  assert.ok(bypassIdx >= 0 && respondIdx > bypassIdx, 'bypass localhost antes do fetch genérico');
+});
+
+check('PC Windows sem ponte: não abre blob .eml (evita argumento inválido no Outlook)', () => {
+  const start = html.indexOf('async function outlookAbrirRascunho');
+  const end = html.indexOf('\nfunction isAdmin()', start);
+  const fn = html.slice(start, end);
+  assert.ok(fn.includes('Ponte Outlook offline') || fn.includes('Iniciar-Delta-Foods.bat'));
+  assert.ok(fn.includes('outlookDownloadEml(eml, fileName)'));
+  // No ramo PC sem API, não deve chamar outlookOpenEmlClient (window.open blob)
+  const pcOffline = fn.indexOf('isWindowsPc && !isMobile');
+  const openEml = fn.indexOf('outlookOpenEmlClient', pcOffline >= 0 ? pcOffline : 0);
+  const downloadOnlyBranch = fn.indexOf('Ponte Outlook offline');
+  assert.ok(downloadOnlyBranch > 0, 'tem aviso da ponte offline');
+  // outlookOpenEmlClient só depois do ramo PC offline (fallback não-Windows)
+  assert.ok(openEml > downloadOnlyBranch, 'OpenEmlClient só após o ramo PC offline');
 });
 
 if (process.exitCode) {

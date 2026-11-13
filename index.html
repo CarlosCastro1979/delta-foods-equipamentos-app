@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-13-dist-cadastro-email Dist cadastro só Daniela + Outlook /eml -->
+<!-- dfb-build: v2026-11-13-outlook-sw-localhost SW não bloqueia API Outlook localhost -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -36751,7 +36751,25 @@ async function outlookAbrirRascunho({
   }
   try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
-  // PC sem ponte: tentar .eml (melhor com Outlook clássico como default)
+  // PC Windows sem serve.ps1: NÃO abrir blob:.eml no browser.
+  // window.open(blob) / handler default muitas vezes lança o Outlook com um
+  // argumento inválido («O argumento de linha de comando não é válido»).
+  // Descarrega o .eml e pede para arrancar Iniciar-Delta-Foods.bat.
+  if (isWindowsPc && !isMobile) {
+    for (const att of (attachments || [])) {
+      if (att?.blob) {
+        try { triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx'); } catch (_) {}
+      }
+    }
+    outlookDownloadEml(eml, fileName);
+    toast(
+      '📧 Ponte Outlook offline. Corre Iniciar-Delta-Foods.bat (deixa a janela aberta) e volta a exportar. O .eml já foi descarregado.',
+      'warn'
+    );
+    return false;
+  }
+
+  // PC sem ponte (não-Windows) / fallback: tentar .eml
   const openedEml = await outlookOpenEmlClient(eml, fileName);
   if (openedEml === 'opened') {
     toast(toastMsg || '📧 Outlook a abrir com email e anexos.');
@@ -46409,12 +46427,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-13-dist-cadastro-email: Dist cadastro só Daniela + Outlook /eml. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-13-outlook-sw-localhost: SW não bloqueia API Outlook localhost. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-13-dist-cadastro-email';
+  var CACHE_KEEP = 'v2026-11-13-outlook-sw-localhost';
 
   function tryRegister() {
     try {
