@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-12-at-instalacao-http400 fix Pedido de Instalação HTTP 400 -->
+<!-- dfb-build: v2026-11-13-dist-cadastro-email Dist cadastro só Daniela + Outlook /eml -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -41065,7 +41065,21 @@ function prosPropostaEBomNegocio(veredito) {
  * cliente não café OU proposta = BOM NEGÓCIO. Café + não bom negócio
  * continua Para Carlos, «para aprovação». Filipe só entra via ccString.
  */
-function prosCadastroEmailPolitica({ isCafe, isBomNegocio, forcarPedidoAprovacao } = {}) {
+/**
+ * Destinatários do email de cadastro.
+ * Distribuidores: só Daniela (sem Carlos, sem Filipe, sem Diogo).
+ * Restantes: Carlos pede aprovação; Daniela recebe o já aprovado.
+ */
+function prosCadastroEmailPolitica({ isCafe, isBomNegocio, forcarPedidoAprovacao, soDaniela } = {}) {
+  if (soDaniela) {
+    return {
+      pedirAprovacao: false,
+      conformeAprovado: true,
+      to: EMAIL_CADASTRO_DANIELA,
+      cc: [],
+      soDaniela: true,
+    };
+  }
   const pedirAprovacao = !!forcarPedidoAprovacao
     || (isCafe === true && !isBomNegocio);
   return {
@@ -41073,7 +41087,14 @@ function prosCadastroEmailPolitica({ isCafe, isBomNegocio, forcarPedidoAprovacao
     conformeAprovado: !pedirAprovacao,
     to: pedirAprovacao ? EMAIL_CADASTRO_CARLOS : EMAIL_CADASTRO_DANIELA,
     cc: pedirAprovacao ? [EMAIL_CADASTRO_DANIELA] : [EMAIL_CADASTRO_CARLOS],
+    soDaniela: false,
   };
+}
+
+/** Cadastros Dist: Para = Daniela, sem CC. */
+function prosCadastroSoDaniela(opts) {
+  if (opts && opts.soDaniela != null) return !!opts.soDaniela;
+  return (typeof isCanalDistribuidores === 'function' && isCanalDistribuidores());
 }
 
 function prosCadastroAnexosTxt(isCafe) {
@@ -41110,21 +41131,24 @@ function prosCadastroMontarEmail(dados, opts = {}) {
   const propTexto = opts.propTexto || '';
   const motivo = (dados && dados.motivo) || 'Abertura de Cliente';
   const isAltCnpj = /altera[cç][aã]o\s+de\s+cnpj/i.test(motivo);
+  const soDaniela = !!prosCadastroSoDaniela(opts);
   const temTo = opts.to != null && String(opts.to).trim() !== '';
   const politica = temTo
     ? {
         to: opts.to,
-        cc: opts.cc != null ? opts.cc : [EMAIL_CADASTRO_CARLOS],
-        pedirAprovacao: !isAltCnpj,
-        conformeAprovado: false,
+        cc: opts.cc != null ? opts.cc : (soDaniela ? [] : [EMAIL_CADASTRO_CARLOS]),
+        pedirAprovacao: soDaniela ? false : !isAltCnpj,
+        conformeAprovado: soDaniela ? true : false,
+        soDaniela,
       }
     : prosCadastroEmailPolitica({
         isCafe,
         isBomNegocio,
-        forcarPedidoAprovacao: opts.forcarPedidoAprovacao,
+        forcarPedidoAprovacao: soDaniela ? false : opts.forcarPedidoAprovacao,
+        soDaniela,
       });
   const conformeAprovado = isAltCnpj ? false : !!politica.conformeAprovado;
-  const pedirAprovacao = isAltCnpj ? true : !!politica.pedirAprovacao;
+  const pedirAprovacao = isAltCnpj ? !soDaniela : !!politica.pedirAprovacao;
   const saudacao = prosCadastroSaudacaoHora(opts.agora);
   const remetente = typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '';
   const remetenteEmail = typeof getEmailUtilizador === 'function' ? getEmailUtilizador(remetente) : '';
@@ -41160,7 +41184,7 @@ ${fechoTxt}Cumprimentos,
 ${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`;
   return {
     to: politica.to,
-    cc: politica.cc,
+    cc: Array.isArray(politica.cc) ? politica.cc : [],
     subject: `${motivo} - ${(dados && dados.nome) || 'Cliente'}`,
     html,
     bodyTxt,
@@ -41170,20 +41194,26 @@ ${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`;
     conformeAprovado,
     pedirAprovacao,
     isAltCnpj,
+    soDaniela,
+    ccExact: soDaniela,
   };
 }
 
 // Abre Outlook com HTML + Excel(s) já anexados (mesmo padrão do MC00).
 async function prosAbrirEmailCadastro(dados, opts = {}) {
   const mail = prosCadastroMontarEmail(dados, opts);
+  const ccExact = !!(opts.ccExact || mail.ccExact);
   return outlookAbrirRascunho({
     to: mail.to,
-    cc: ccString(mail.cc),
+    cc: mail.cc,
+    ccExact,
     subject: mail.subject,
     html: mail.html,
     attachments: opts.attachments || [],
     draftName: 'Cadastro_rascunho_Outlook.eml',
-    toastMsg: '📧 Outlook aberto com cadastro em anexo.',
+    toastMsg: mail.soDaniela
+      ? '📧 Outlook aberto — cadastro só para a Daniela.'
+      : '📧 Outlook aberto com cadastro em anexo.',
     mailtoFallback: {
       body: mail.bodyTxt,
       toastMsg: mail.isAltCnpj
@@ -42765,11 +42795,14 @@ async function alteracaoCadastralExportar() {
     // Excel só em anexo no Outlook — sem download/Save As separado (igual ao MC00)
     const cadastro = await prosGerarCadastroXlsx(dados, { skipDownload: true });
     if (st) st.innerHTML = '<span style="color:#16a34a">Cadastro guardado — a abrir Outlook com Excel em anexo...</span>';
+    const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
     const ok = await prosAbrirEmailCadastro(dados, {
       isCafe: false,
       propTexto: '',
       attachments: cadastro?.blob ? [{ blob: cadastro.blob, filename: cadastro.filename }] : [],
-      forcarPedidoAprovacao: true,
+      // Dist: só Daniela. Horeca/outros: continua a pedir aprovação ao Carlos.
+      forcarPedidoAprovacao: !isDist,
+      soDaniela: isDist,
     });
     if (ok !== false && st) {
       st.innerHTML = '<span style="color:#16a34a">Cadastro guardado · Outlook aberto com Excel em anexo.</span>';
@@ -46376,12 +46409,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-12-at-instalacao-http400: fix Pedido de Instalação HTTP 400. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-13-dist-cadastro-email: Dist cadastro só Daniela + Outlook /eml. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-12-at-instalacao-http400';
+  var CACHE_KEEP = 'v2026-11-13-dist-cadastro-email';
 
   function tryRegister() {
     try {

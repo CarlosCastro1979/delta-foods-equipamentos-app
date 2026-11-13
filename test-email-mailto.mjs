@@ -402,9 +402,15 @@ check('mapa EMAIL + rascunho Outlook aplicam CC Diogo no retalho', () => {
   assert.ok(fn.includes('ccString('));
   assert.ok(fn.includes('{ to, remetente'));
   assert.ok(html.includes('async function prosAbrirEmailCadastro'));
-  const cad = html.slice(html.indexOf('async function prosAbrirEmailCadastro'));
-  assert.ok(cad.includes('ccString(mail.cc'));
+  const cad = html.slice(
+    html.indexOf('async function prosAbrirEmailCadastro'),
+    html.indexOf('let _modoAlteracaoCnpj'),
+  );
+  // Dist (soDaniela) passa ccExact; retalho/Horeca continua a usar ccString no Outlook.
   assert.ok(cad.includes('outlookAbrirRascunho'));
+  assert.ok(cad.includes('cc: mail.cc'));
+  assert.ok(cad.includes('ccExact') || cad.includes('ccString(mail.cc'));
+  assert.ok(html.includes('ccString('));
 });
 
 check('mc00SaudacaoHora nunca inclui Carlos', () => {
@@ -516,6 +522,7 @@ context.EMAIL_CADASTRO_CARLOS = 'carlos.castro@deltafoodsbrasil.com.br';
 context.EMAIL_CADASTRO_DANIELA = 'daniela.kucinski@deltafoodsbrasil.com.br';
 context.getUtilizadorAtual = () => 'Carlos Castro';
 context.getEmailUtilizador = () => 'carlos.castro@deltafoodsbrasil.com.br';
+context.isCanalDistribuidores = () => false;
 for (const name of [
   'outlookEmailEsc',
   'prosCadastroResumoRows',
@@ -523,6 +530,7 @@ for (const name of [
   'prosCadastroResumoEmailText',
   'prosPropostaEBomNegocio',
   'prosCadastroEmailPolitica',
+  'prosCadastroSoDaniela',
   'prosCadastroAnexosTxt',
   'prosCadastroEmailIntro',
   'prosCadastroSaudacaoHora',
@@ -657,8 +665,52 @@ check('cadastro: constantes Daniela/Carlos e saudação sem nome', () => {
   const fn = html.slice(start, end);
   assert.ok(fn.includes('${outlookEmailEsc(saudacao)},<br><br>${intro}'));
   assert.ok(!fn.includes('${outlookEmailEsc(saudacao)},</p>'));
-  assert.ok(!fn.includes('Carlos,'));
-  assert.ok(!fn.includes('Daniela,'));
+  // Saudação sem nome próprio (evitar falso positivo em soDaniela / EMAIL_…_DANIELA).
+  assert.ok(!/['"`]Carlos,/.test(fn));
+  assert.ok(!/['"`]Daniela,/.test(fn));
+  assert.ok(!fn.includes('${saudacao}, Carlos'));
+  assert.ok(!fn.includes('${saudacao}, Daniela'));
+});
+
+check('Distribuidores: cadastro só para a Daniela, sem Carlos nem Filipe', () => {
+  context.isCanalDistribuidores = () => true;
+  const pol = context.prosCadastroEmailPolitica({
+    isCafe: false, isBomNegocio: false, forcarPedidoAprovacao: true, soDaniela: true,
+  });
+  assert.equal(pol.to, 'daniela.kucinski@deltafoodsbrasil.com.br');
+  assert.deepEqual(pol.cc, []);
+  assert.equal(pol.pedirAprovacao, false);
+  assert.equal(pol.conformeAprovado, true);
+  const mail = context.prosCadastroMontarEmail({
+    ...cadastroDados,
+    nome: 'ERMAR DISTRIBUIDORA LTDA',
+    canal: 'DISTRIBUIDORES',
+  }, {
+    isCafe: false,
+    forcarPedidoAprovacao: true,
+    soDaniela: true,
+    agora: agoraTarde,
+  });
+  assert.equal(mail.to, 'daniela.kucinski@deltafoodsbrasil.com.br');
+  assert.deepEqual(mail.cc, []);
+  assert.equal(mail.ccExact, true);
+  assert.ok(/conforme aprovado/i.test(mail.introTxt));
+  assert.ok(!/para aprovação/i.test(mail.introTxt));
+  assert.ok(!/Aguardo aprovação/i.test(mail.bodyTxt));
+  assert.ok(!mail.cc.includes('carlos.castro@deltafoodsbrasil.com.br'));
+  assert.ok(html.includes('soDaniela: isDist'));
+  assert.ok(html.includes("ccExact"));
+  const abrir = html.slice(html.indexOf('async function prosAbrirEmailCadastro'), html.indexOf('let _modoAlteracaoCnpj'));
+  assert.ok(abrir.includes('ccExact'));
+  assert.ok(abrir.includes('mail.cc'));
+  context.isCanalDistribuidores = () => false;
+});
+
+check('serve.ps1 abre .eml com /eml (evita argumento de linha de comando inválido)', () => {
+  const ps1 = fs.readFileSync(path.join(root, 'serve.ps1'), 'utf8');
+  assert.ok(ps1.includes('/eml'));
+  assert.ok(ps1.includes('/eml `"$emlPath`"') || ps1.includes('/eml \\"$emlPath\\"') || /\/eml\s+`?"\$emlPath`?"/.test(ps1));
+  assert.ok(!/Arguments\s*=\s*"`"\$emlPath`""/.test(ps1), 'não pode passar só o path sem /eml');
 });
 
 if (process.exitCode) {

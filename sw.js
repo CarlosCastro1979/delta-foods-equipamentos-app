@@ -1,6 +1,6 @@
-// Service Worker v2026-11-12-at-instalacao-http400 — fix Pedido de Instalação HTTP 400
+// Service Worker v2026-11-13-dist-cadastro-email — Dist cadastro só Daniela + Outlook /eml
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-12-at-instalacao-http400';
+const CACHE = 'v2026-11-13-dist-cadastro-email';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

@@ -198,7 +198,9 @@ function Start-EmlDraft([string]$emlPath) {
     $classic = Get-ClassicOutlookExe
     if ($classic) {
         $psi.FileName = $classic
-        $psi.Arguments = "`"$emlPath`""
+        # /eml é obrigatório em vários Outlook clássicos: sem isto o path
+        # é lido como switch e aparece «O argumento de linha de comando não é válido».
+        $psi.Arguments = "/eml `"$emlPath`""
         $psi.UseShellExecute = $false
     } else {
         $psi.FileName = $emlPath

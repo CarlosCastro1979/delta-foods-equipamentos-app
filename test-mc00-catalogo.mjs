@@ -110,8 +110,8 @@ check('o catálogo lê margens e vendas DFB, não só sap_data', () => {
 });
 
 check('service worker com versão nova', () => {
-  assert.ok(sw.includes('v2026-11-12-at-instalacao-http400'));
-  assert.ok(html.includes('v2026-11-12-at-instalacao-http400'));
+  assert.ok(sw.includes('v2026-11-13-dist-cadastro-email'));
+  assert.ok(html.includes('v2026-11-13-dist-cadastro-email'));
   assert.ok(!sw.includes('v2026-10-02-por-registar-helcio'));
   assert.ok(!html.includes('v2026-10-02-por-registar-helcio'));
 });

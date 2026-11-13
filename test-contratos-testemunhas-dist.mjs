@@ -13,7 +13,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-11-12-at-instalacao-http400';
+const CACHE = 'v2026-11-13-dist-cadastro-email';
 const MASSIMO_CPF = '017.941.856-40';
 const EDUARDO_CPF = '225.668.708-29';
 
