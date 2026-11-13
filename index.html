@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-13-outlook-sw-localhost SW não bloqueia API Outlook localhost -->
+<!-- dfb-build: v2026-11-13-exceljs-local ExcelJS local (sem CDN Cloudflare) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -40870,13 +40870,46 @@ function prosEnsureSimuladorTemplate() {
 async function prosEnsureExcelJS() {
   if (window.ExcelJS) return;
   if (!prosExcelJsLoadPromise) {
-    prosExcelJsLoadPromise = new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
-      s.onload = res;
-      s.onerror = () => rej(new Error('Não foi possível carregar ExcelJS (CDN).'));
-      document.head.appendChild(s);
-    });
+    // Local primeiro: redes corporativas / firewall muitas vezes bloqueiam cdnjs
+    // («Não foi possível carregar ExcelJS (CDN)» / ERR_CONNECTION_TIMED_OUT).
+    prosExcelJsLoadPromise = (async () => {
+      const local = [];
+      try { local.push(new URL('exceljs.min.js', location.href).href); } catch (_) {}
+      local.push(
+        'exceljs.min.js',
+        './exceljs.min.js',
+        '/delta-foods-equipamentos-app/exceljs.min.js',
+      );
+      const remote = [
+        'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',
+        'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js',
+        'https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js',
+      ];
+      const seen = new Set();
+      const srcs = [...local, ...remote].filter(src => {
+        if (!src || seen.has(src)) return false;
+        seen.add(src);
+        return true;
+      });
+      let lastErr = null;
+      for (const src of srcs) {
+        try {
+          await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.async = true;
+            s.onload = () => res();
+            s.onerror = () => rej(new Error('Falha a carregar ' + src));
+            document.head.appendChild(s);
+          });
+          if (window.ExcelJS) return;
+          lastErr = new Error('ExcelJS não definido após ' + src);
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      throw lastErr || new Error('Não foi possível carregar ExcelJS (local nem CDN).');
+    })();
   }
   await prosExcelJsLoadPromise;
 }
@@ -46427,12 +46460,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-13-outlook-sw-localhost: SW não bloqueia API Outlook localhost. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-13-exceljs-local: ExcelJS local (sem CDN Cloudflare). SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-13-outlook-sw-localhost';
+  var CACHE_KEEP = 'v2026-11-13-exceljs-local';
 
   function tryRegister() {
     try {

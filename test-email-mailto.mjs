@@ -748,6 +748,23 @@ check('PC Windows sem ponte: não abre blob .eml (evita argumento inválido no O
   assert.ok(openEml > downloadOnlyBranch, 'OpenEmlClient só após o ramo PC offline');
 });
 
+check('ExcelJS: ficheiro local + loader tenta local antes do CDN', () => {
+  const localPath = path.join(root, 'exceljs.min.js');
+  assert.ok(fs.existsSync(localPath), 'exceljs.min.js no repositório');
+  assert.ok(fs.statSync(localPath).size > 100000, 'exceljs.min.js não está vazio');
+  const start = html.indexOf('async function prosEnsureExcelJS');
+  const end = html.indexOf('\nasync function propGerarSimulador', start);
+  const fn = html.slice(start, end);
+  assert.ok(fn.includes('exceljs.min.js'));
+  assert.ok(fn.includes('/delta-foods-equipamentos-app/exceljs.min.js'));
+  const localIdx = fn.indexOf("'exceljs.min.js'");
+  const cdnIdx = fn.indexOf('cdnjs.cloudflare.com');
+  assert.ok(localIdx >= 0 && cdnIdx > localIdx, 'local antes do CDN Cloudflare');
+  assert.ok(fn.includes('cdn.jsdelivr.net') || fn.includes('unpkg.com'), 'CDN fallback alternativo');
+  const ps1 = fs.readFileSync(path.join(root, 'serve.ps1'), 'utf8');
+  assert.ok(ps1.includes("'exceljs.min.js'"), 'serve.ps1 sincroniza exceljs.min.js');
+});
+
 if (process.exitCode) {
   console.error('\nFalhou pelo menos um teste.');
   process.exit(process.exitCode);

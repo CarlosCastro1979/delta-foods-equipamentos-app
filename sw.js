@@ -1,6 +1,6 @@
-// Service Worker v2026-11-13-outlook-sw-localhost — SW não bloqueia API Outlook localhost
+// Service Worker v2026-11-13-exceljs-local — ExcelJS local (sem CDN Cloudflare)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-13-outlook-sw-localhost';
+const CACHE = 'v2026-11-13-exceljs-local';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
