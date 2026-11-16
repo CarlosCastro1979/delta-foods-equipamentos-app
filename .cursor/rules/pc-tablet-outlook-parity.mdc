@@ -17,8 +17,10 @@ Horeca, Ecommerce, Varejo e Dist usam o **mesmo** `outlookAbrirRascunho` / ponte
 
 1. `skipDownload: true` no Excel até o Outlook abrir.
 2. Ponte `com-v3+` OK → anexo no Outlook, **zero** ficheiros em Transferências.
-3. Sem ponte → **só** o `.eml` (já com Excel) — **nunca** Excel + `.eml` + `.bat` juntos.
-4. Não há fluxo «especial Ecommerce» ou «especial Dist» para abrir email (só mudam Para/CC).
+3. Sem ponte + **com anexos** → **só** o `.eml` (já com Excel). **Nunca** `mailto` nesse caso (abre Outlook sem anexo e confunde).
+4. Sem ponte + sem anexos → mailto OK.
+5. **Nunca** Excel + `.eml` + `.bat` juntos em Transferências.
+6. Não há fluxo «especial Ecommerce» ou «especial Dist» para abrir email (só mudam Para/CC).
 
 ## Destinatários (NÃO regredir)
 

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-outlook-todos-canais Mesmo Outlook em todos os canais (com-v3+) -->
+<!-- dfb-build: v2026-11-16-outlook-anexo-eml Sem mailto quando há anexo (PC) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -36561,8 +36561,10 @@ function outlookWarnPonteDesatualizada() {
  * «argumento de linha de comando não é válido» mesmo que depois rejeitemos a resposta.
  */
 async function outlookProbeBridgeVersion(ep) {
+  // 2.5s: cold-start / PNA no 1.º OPTIONS por vezes >700ms e a app
+  // caía no mailto sem anexo + .eml em Transferências.
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const t = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, 700) : null;
+  const t = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, 2500) : null;
   try {
     let r = await fetch(ep, { method: 'OPTIONS', signal: ctrl ? ctrl.signal : undefined });
     if ((r.status === 204 || r.ok) && outlookBridgeVersionOk(r)) return true;
@@ -36836,26 +36838,31 @@ async function outlookAbrirRascunho({
   }
   try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
-  // PC sem ponte com-v3+: mailto NÃO leva anexos.
-  // Um só ficheiro: .eml já leva o Excel — NÃO descarregar Excel+.eml (todos os canais).
+  // PC sem ponte com-v3+.
+  // COM anexos: NUNCA mailto — abre Outlook sem ficheiro e o .eml ia para
+  // Transferências (parece que «não anexou»). Só o .eml (já leva o Excel).
+  // SEM anexos: mailto OK.
   if (isWindowsPc && !isMobile && to) {
-    let emlOk = false;
-    try {
-      outlookDownloadEml(eml, fileName);
-      emlOk = true;
-    } catch (_) {}
-    try { await new Promise(r => setTimeout(r, 350)); } catch (_) {}
+    if (hasAttachments) {
+      let emlOk = false;
+      try {
+        outlookDownloadEml(eml, fileName);
+        emlOk = true;
+      } catch (_) {}
+      toast(
+        emlOk
+          ? '📧 Ponte offline — abre o .eml nas Transferências (já tem o Excel anexado). Corre Atualizar-Ponte-Outlook.bat uma vez para anexar automático.'
+          : '📧 Ponte offline. Corre Atualizar-Ponte-Outlook.bat uma vez.',
+        'warn'
+      );
+      return emlOk ? 'eml' : false;
+    }
     const result = await outlookOpenMailtoPlusExcel({
       to, ccVal, subject, html, attachments: [], mailtoFallback, ccExact,
     });
     const opened = !!(result && result.opened);
-    toast(
-      emlOk
-        ? '📧 Ponte offline — abre o .eml (já leva o Excel) ou corre Atualizar-Ponte-Outlook.bat uma vez.'
-        : '📧 Ponte offline. Corre Atualizar-Ponte-Outlook.bat para anexar automaticamente.',
-      emlOk ? 'warn' : 'error'
-    );
-    return opened || emlOk;
+    toast(opened ? (toastMsg || '📧 Outlook aberto.') : '📧 Não foi possível abrir o Outlook.', opened ? undefined : 'error');
+    return opened;
   }
 
   // PC sem ponte (não-Windows) / fallback: tentar .eml
@@ -46576,12 +46583,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-outlook-todos-canais: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-outlook-anexo-eml: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-outlook-todos-canais';
+  var CACHE_KEEP = 'v2026-11-16-outlook-anexo-eml';
 
   function tryRegister() {
     try {

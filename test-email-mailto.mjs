@@ -780,23 +780,24 @@ check('SW não intercepta localhost nem API Outlook (Private Network Access)', (
   assert.ok(bypassIdx >= 0 && respondIdx > bypassIdx, 'bypass localhost antes do fetch genérico');
 });
 
-check('PC Windows sem ponte: só .eml + mailto (não Excel+.eml)', () => {
+check('PC Windows sem ponte + anexos: só .eml (nunca mailto sem anexo)', () => {
   const start = html.indexOf('async function outlookAbrirRascunho');
   const end = html.indexOf('\nfunction isAdmin()', start);
   const fn = html.slice(start, end);
-  assert.ok(fn.includes('outlookOpenMailtoPlusExcel'));
   assert.ok(fn.includes('outlookDownloadEml'));
-  assert.ok(fn.includes('abre o .eml') || fn.includes('já leva o Excel'));
-  // Não varrer portas com POST
+  assert.ok(fn.includes('NUNCA mailto') || fn.includes('já tem o Excel anexado'));
   assert.ok(!/for \(const ep of outlookDraftApiUrls\(\)\)/.test(fn));
   const pcBlock = fn.indexOf('PC sem ponte');
   assert.ok(pcBlock >= 0);
-  const untilEmlClient = fn.indexOf('outlookOpenEmlClient', pcBlock);
-  const pcFb = fn.slice(pcBlock, untilEmlClient > pcBlock ? untilEmlClient : pcBlock + 1200);
-  assert.ok(!/triggerBlobDownload\(att\.blob/.test(pcFb), 'sem download Excel paralelo ao .eml');
-  const pcMailto = fn.indexOf('outlookOpenMailtoPlusExcel');
-  const openEml = fn.indexOf('outlookOpenEmlClient');
-  assert.ok(pcMailto >= 0 && openEml > pcMailto, 'OpenEmlClient só após mailto no PC');
+  const attIf = fn.indexOf('if (hasAttachments)', pcBlock);
+  assert.ok(attIf > pcBlock, 'ramo if (hasAttachments) no PC');
+  const retEml = fn.indexOf("return emlOk ? 'eml'", attIf);
+  assert.ok(retEml > attIf, 'return eml sem mailto');
+  const attSlice = fn.slice(attIf, retEml + 40);
+  assert.ok(attSlice.includes('outlookDownloadEml'));
+  assert.ok(!attSlice.includes('outlookOpenMailtoPlusExcel'), 'com anexos não abre mailto');
+  const probe = html.slice(html.indexOf('async function outlookProbeBridgeVersion'), html.indexOf('async function outlookPostDraft'));
+  assert.ok(probe.includes('2500'), 'probe timeout 2500ms');
 });
 
 

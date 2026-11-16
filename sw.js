@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-outlook-todos-canais — Display não-modal; sem downloads se diálogo aberto
+// Service Worker v2026-11-16-outlook-anexo-eml — Display não-modal; sem downloads se diálogo aberto
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-outlook-todos-canais';
+const CACHE = 'v2026-11-16-outlook-anexo-eml';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
