@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-ponte-arranque — Ponte Outlook no arranque do Windows
+// Service Worker v2026-11-16-sem-downloads-extras — Sem downloads extras quando a ponte anexa
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-ponte-arranque';
+const CACHE = 'v2026-11-16-sem-downloads-extras';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

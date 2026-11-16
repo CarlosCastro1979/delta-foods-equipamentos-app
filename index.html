@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-ponte-arranque Ponte Outlook no arranque do Windows (sem janela) -->
+<!-- dfb-build: v2026-11-16-sem-downloads-extras Sem downloads extras quando a ponte anexa -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -36528,25 +36528,14 @@ function outlookBridgeVersionOk(res) {
 }
 
 function outlookWarnPonteDesatualizada() {
+  // Só toast — NÃO descarregar o .bat (enchia Transferências a cada export).
   if (_outlookBridgeWarned) return;
   _outlookBridgeWarned = true;
   try {
     toast(
-      'Ponte Outlook offline — Excel/.eml nas Transferências. Anexar automático: corre Atualizar-Ponte-Outlook.bat UMA VEZ (fica no arranque do Windows, sem janela).',
+      'Ponte Outlook offline/desatualizada. Se o anexo falhar, corre Atualizar-Ponte-Outlook.bat uma vez.',
       'warn'
     );
-  } catch (_) {}
-  try {
-    const a = document.createElement('a');
-    a.href = (typeof location !== 'undefined' && location.pathname && location.pathname.indexOf('delta-foods-equipamentos-app') >= 0)
-      ? '/delta-foods-equipamentos-app/Atualizar-Ponte-Outlook.bat'
-      : 'Atualizar-Ponte-Outlook.bat';
-    a.download = 'Atualizar-Ponte-Outlook.bat';
-    a.rel = 'noopener';
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
   } catch (_) {}
 }
 
@@ -42939,13 +42928,14 @@ async function alteracaoCadastralExportar() {
       forcarPedidoAprovacao: !isDist,
       soDaniela: isDist,
     });
-    if (cadastro?.blob && typeof triggerBlobDownload === 'function') {
+    // Com ponte OK o Excel já vai anexado — NÃO descarregar para Transferências.
+    if (ok === false && cadastro?.blob && typeof triggerBlobDownload === 'function') {
       try { triggerBlobDownload(cadastro.blob, cadastro.filename); } catch (_) {}
     }
     if (ok !== false && st) {
       st.innerHTML = '<span style="color:#16a34a">Cadastro guardado · Outlook aberto com Excel em anexo.</span>';
     } else if (st) {
-      st.innerHTML = '<span style="color:#b45309">Excel descarregado. Se o Outlook não abriu, reinicia Iniciar-Delta-Foods.bat (Outlook clássico) e tenta de novo.</span>';
+      st.innerHTML = '<span style="color:#b45309">Excel descarregado (ponte offline). Anexa manualmente ou corre Atualizar-Ponte-Outlook.bat.</span>';
     }
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
@@ -43054,8 +43044,9 @@ async function prosGanhoExportar() {
     if (st) st.innerHTML = '<span style="color:#16a34a">A abrir Outlook com documentos em anexo...</span>';
 
     const ok = await prosAbrirEmailCadastro(dados, { isCafe, isBomNegocio, propTexto, attachments });
-    // Descarrega DEPOIS (preserva Private Network Access no POST localhost).
-    if (typeof triggerBlobDownload === 'function') {
+    // Ponte OK → anexo no Outlook, zero ficheiros em Transferências.
+    // Só descarrega se a abertura falhou por completo.
+    if (ok === false && typeof triggerBlobDownload === 'function') {
       for (const att of attachments) {
         if (att?.blob) {
           try { triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx'); } catch (_) {}
@@ -43065,7 +43056,7 @@ async function prosGanhoExportar() {
     if (ok !== false && st) {
       st.innerHTML = '<span style="color:#16a34a">Outlook aberto com documentos em anexo.</span>';
     } else if (st) {
-      st.innerHTML = '<span style="color:#b45309">Documentos descarregados. Se o Outlook não abriu, reinicia Iniciar-Delta-Foods.bat (Outlook clássico) e tenta de novo.</span>';
+      st.innerHTML = '<span style="color:#b45309">Documentos descarregados (ponte offline). Anexa manualmente ou corre Atualizar-Ponte-Outlook.bat.</span>';
     }
 
   } catch(e) {
@@ -46567,12 +46558,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-ponte-arranque: Ponte no arranque Windows. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-sem-downloads-extras: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-ponte-arranque';
+  var CACHE_KEEP = 'v2026-11-16-sem-downloads-extras';
 
   function tryRegister() {
     try {

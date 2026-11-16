@@ -765,21 +765,16 @@ check('PC Windows sem ponte: Excel + .eml + mailto (anexo via Transferências)',
 });
 
 
-check('Cadastro Dist/Ganho: Outlook antes do download (igual Horeca/MC00)', () => {
+check('Cadastro Dist/Ganho: sem downloads extras quando Outlook OK', () => {
   const ganho = html.slice(html.indexOf('async function prosGanhoExportar'), html.indexOf('async function gerarCadastroXlsxLocal'));
   const alt = html.slice(html.indexOf('async function alteracaoCadastralExportar'), html.indexOf('async function prosGanhoExportar'));
-  // Gerar com skipDownload:true → abrir Outlook → só depois triggerBlobDownload
   assert.ok(ganho.includes('skipDownload: true'), 'prosGanhoExportar não descarrega antes do Outlook');
   assert.ok(alt.includes('skipDownload: true'), 'alteracaoCadastralExportar não descarrega antes do Outlook');
-  assert.ok(ganho.includes('triggerBlobDownload'), 'descarrega Excel depois');
-  assert.ok(alt.includes('triggerBlobDownload'), 'descarrega Excel depois');
-  const ganhoOutlook = ganho.indexOf('prosAbrirEmailCadastro');
-  const ganhoDl = ganho.indexOf('triggerBlobDownload', ganhoOutlook);
-  assert.ok(ganhoOutlook >= 0 && ganhoDl > ganhoOutlook, 'download depois do Outlook no Ganho');
-  const altOutlook = alt.indexOf('prosAbrirEmailCadastro');
-  const altDl = alt.indexOf('triggerBlobDownload', altOutlook);
-  assert.ok(altOutlook >= 0 && altDl > altOutlook, 'download depois do Outlook na alteração');
-  assert.ok(alt.includes('Iniciar-Delta-Foods.bat') || ganho.includes('Iniciar-Delta-Foods.bat'));
+  // Só descarrega se ok === false (ponte falhou)
+  assert.ok(ganho.includes('ok === false'), 'Ganho só descarrega se Outlook falhar');
+  assert.ok(alt.includes('ok === false'), 'Alteração só descarrega se Outlook falhar');
+  const warn = html.slice(html.indexOf('function outlookWarnPonteDesatualizada'), html.indexOf('async function outlookProbeBridgeVersion'));
+  assert.ok(!warn.includes('a.download'), 'warn da ponte NÃO descarrega o .bat');
 });
 
 check('ExcelJS: ficheiro local + loader tenta local antes do CDN', () => {
