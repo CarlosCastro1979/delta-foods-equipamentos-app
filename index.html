@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-outlook-antes-excel Cadastro: Outlook antes do download Excel -->
+<!-- dfb-build: v2026-11-16-outlook-com-v2 Ponte COM sem /eml + Atualizar-Ponte-Outlook.bat -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -36514,6 +36514,30 @@ function outlookDraftApiUrls() {
   return urls;
 }
 
+/** Ponte serve.ps1 com COM CreateItem (sem /eml). Pontes antigas são rejeitadas. */
+const OUTLOOK_BRIDGE_VERSION = 'com-v2';
+let _outlookBridgeWarned = false;
+
+function outlookBridgeVersionOk(res) {
+  if (!res || !res.headers) return false;
+  try {
+    return String(res.headers.get('X-Delta-Outlook-Bridge') || '') === OUTLOOK_BRIDGE_VERSION;
+  } catch (_) {
+    return false;
+  }
+}
+
+function outlookWarnPonteDesatualizada() {
+  if (_outlookBridgeWarned) return;
+  _outlookBridgeWarned = true;
+  try {
+    toast(
+      'Ponte Outlook desatualizada nesta pasta. Corre Atualizar-Ponte-Outlook.bat (mata o serve.ps1 antigo que causa «argumento inválido»).',
+      'error'
+    );
+  } catch (_) {}
+}
+
 /** POST à API Outlook — timeout escala com o tamanho (MC00+Excel precisa de vários s). */
 async function outlookPostDraft(ep, eml, timeoutMs) {
   const size = (typeof eml === 'string') ? eml.length : (eml?.byteLength || eml?.size || 0);
@@ -36528,8 +36552,12 @@ async function outlookPostDraft(ep, eml, timeoutMs) {
       body: eml,
       signal: ctrl ? ctrl.signal : undefined,
     });
-    if (r.status === 204 || r.ok) return ep;
-    return null;
+    if (!(r.status === 204 || r.ok)) return null;
+    if (!outlookBridgeVersionOk(r)) {
+      outlookWarnPonteDesatualizada();
+      return null;
+    }
+    return ep;
   } catch (_) {
     return null;
   } finally {
@@ -36545,9 +36573,17 @@ async function outlookFindLiveApi() {
     const t = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, 700) : null;
     try {
       let r = await fetch(ep, { method: 'OPTIONS', signal: ctrl ? ctrl.signal : undefined });
-      if (r.status === 204 || r.ok) return ep;
+      if ((r.status === 204 || r.ok) && outlookBridgeVersionOk(r)) return ep;
+      if ((r.status === 204 || r.ok) && !outlookBridgeVersionOk(r)) {
+        outlookWarnPonteDesatualizada();
+        return null;
+      }
       r = await fetch(ep, { method: 'GET', signal: ctrl ? ctrl.signal : undefined });
-      if (r.status === 204 || r.ok) return ep;
+      if ((r.status === 204 || r.ok) && outlookBridgeVersionOk(r)) return ep;
+      if ((r.status === 204 || r.ok) && !outlookBridgeVersionOk(r)) {
+        outlookWarnPonteDesatualizada();
+        return null;
+      }
     } catch (_) {}
     finally { if (t) clearTimeout(t); }
     return null;
@@ -46505,12 +46541,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-outlook-antes-excel: Cadastro Outlook antes do download Excel. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-outlook-com-v2: Ponte COM sem /eml. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-outlook-antes-excel';
+  var CACHE_KEEP = 'v2026-11-16-outlook-com-v2';
 
   function tryRegister() {
     try {

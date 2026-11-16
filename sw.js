@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-outlook-antes-excel — Cadastro: Outlook antes do download Excel
+// Service Worker v2026-11-16-outlook-com-v2 — Ponte COM sem /eml + Atualizar-Ponte-Outlook.bat
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-outlook-antes-excel';
+const CACHE = 'v2026-11-16-outlook-com-v2';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

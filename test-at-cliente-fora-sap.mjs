@@ -77,8 +77,8 @@ for (const name of ['atEquipElegivelTipo', 'atNormCodCliente', 'atFundirClientes
 }
 
 check('cache do Pedido AT inclui o fix fora da lista SAP', () => {
-  assert.ok(sw.includes('v2026-11-16-outlook-antes-excel'));
-  assert.ok(html.includes('v2026-11-16-outlook-antes-excel'));
+  assert.ok(sw.includes('v2026-11-16-outlook-com-v2'));
+  assert.ok(html.includes('v2026-11-16-outlook-com-v2'));
   assert.ok(html.includes('atFundirClientesRegistoNaLista'));
   assert.ok(html.includes("fetchRegistosPaginado('cod,nome,cep,vendedor,equipamentos'"));
 });

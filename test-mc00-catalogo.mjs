@@ -110,8 +110,8 @@ check('o catálogo lê margens e vendas DFB, não só sap_data', () => {
 });
 
 check('service worker com versão nova', () => {
-  assert.ok(sw.includes('v2026-11-16-outlook-antes-excel'));
-  assert.ok(html.includes('v2026-11-16-outlook-antes-excel'));
+  assert.ok(sw.includes('v2026-11-16-outlook-com-v2'));
+  assert.ok(html.includes('v2026-11-16-outlook-com-v2'));
   assert.ok(!sw.includes('v2026-10-02-por-registar-helcio'));
   assert.ok(!html.includes('v2026-10-02-por-registar-helcio'));
 });

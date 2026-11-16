@@ -304,8 +304,9 @@ function Open-EmlViaCom([string]$emlPath, $outlook = $null) {
 }
 
 function Start-EmlDraft([string]$emlPath) {
-    # Preferência: COM CreateItem (sem linha de comando).
-    # Fallback: outlook.exe clássico com /eml. Nunca olk.exe / Outlook novo.
+    # SÓ COM CreateItem — nunca lançar outlook.exe com switches de linha de comando.
+    # Lançar o exe com switch inválido NÃO falha no PowerShell: o Outlook abre o
+    # diálogo «argumento de linha de comando não é válido» e o browser já recebeu 204.
     $before = 0
     $outlook = $null
     try {
@@ -321,32 +322,14 @@ function Start-EmlDraft([string]$emlPath) {
         $safePath = $emlPath
     }
 
-    # 1) COM — funciona com Outlook clássico já aberto (rápido) ou a arrancar.
-    try {
-        $com = Open-EmlViaCom $safePath $outlook
-        return @{
-            Before = $before
-            Outlook = $com.Outlook
-            Method = 'com'
-            TempAtts = $com.TempAtts
-            Deferred = $false
-        }
-    } catch {
-        Write-Info "  WARN COM CreateItem: $($_.Exception.Message)" 'Yellow'
+    $com = Open-EmlViaCom $safePath $outlook
+    return @{
+        Before = $before
+        Outlook = $com.Outlook
+        Method = 'com'
+        TempAtts = $com.TempAtts
+        Deferred = $false
     }
-
-    # 2) Fallback /eml só no OUTLOOK.EXE clássico (Office16), nunca App Paths novo.
-    $classic = Get-ClassicOutlookExe
-    if ($classic) {
-        try {
-            Start-Process -FilePath $classic -ArgumentList @('/eml', $safePath) -WindowStyle Normal | Out-Null
-            return @{ Before = $before; Outlook = $outlook; Method = 'eml'; Deferred = $false }
-        } catch {
-            Write-Info "  WARN /eml: $($_.Exception.Message)" 'Yellow'
-        }
-    }
-
-    throw "Nao foi possivel abrir o rascunho no Outlook classico (COM nem /eml)."
 }
 
 function Complete-EmlDraftFocus($state) {
@@ -405,7 +388,10 @@ function Set-CorsHeaders($res) {
     $res.Headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS, GET'
     $res.Headers['Access-Control-Allow-Headers'] = 'Content-Type, Access-Control-Request-Private-Network'
     $res.Headers['Access-Control-Allow-Private-Network'] = 'true'
+    $res.Headers['Access-Control-Expose-Headers'] = 'X-Delta-Outlook-Bridge'
     $res.Headers['Access-Control-Max-Age'] = '86400'
+    # Versão da ponte: o browser recusa pontes antigas (ainda com /eml).
+    $res.Headers['X-Delta-Outlook-Bridge'] = 'com-v2'
 }
 
 $listener = $null

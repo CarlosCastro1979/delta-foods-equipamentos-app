@@ -16,9 +16,8 @@ echo.
 echo  IMPORTANTE:
 echo   1. Usa o Outlook CLASSICO (nao o Outlook novo / olk).
 echo   2. Deixa ESTA janela aberta enquanto exportas emails.
-echo   3. Se instalaste a ponte automatica, faz git pull nesta pasta
-echo      e reinicia o PC ou volta a correr este .bat — o serve.ps1
-echo      tem de ser o da versao nova.
+echo   3. Se aparecer «argumento de linha de comando nao e valido»,
+echo      corre Atualizar-Ponte-Outlook.bat nesta pasta (mata o serve.ps1 antigo).
 echo   Site online: https://carloscastro1979.github.io/delta-foods-equipamentos-app/
 echo   Local:       http://localhost:8088/delta-foods-equipamentos-app/
 echo.

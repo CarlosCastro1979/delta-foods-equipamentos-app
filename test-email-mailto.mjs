@@ -706,21 +706,29 @@ check('Distribuidores: cadastro só para a Daniela, sem Carlos nem Filipe', () =
   context.isCanalDistribuidores = () => false;
 });
 
-check('serve.ps1 abre rascunho via COM CreateItem (sem depender só de /eml)', () => {
+check('serve.ps1 abre rascunho SÓ via COM (nunca /eml — evita argumento inválido)', () => {
   const ps1 = fs.readFileSync(path.join(root, 'serve.ps1'), 'utf8');
   assert.ok(ps1.includes('function Open-EmlViaCom'));
   assert.ok(ps1.includes('function Parse-DeltaEml'));
   assert.ok(ps1.includes('CreateItem(0)'));
   assert.ok(ps1.includes('HTMLBody'));
-  assert.ok(ps1.includes('Test-ClassicOutlookExePath'));
-  assert.ok(ps1.includes('olk.exe') || ps1.includes('OutlookForWindows'), 'rejeita Outlook novo');
-  // Office16 antes de App Paths (App Paths pode apontar para olk)
-  const office16 = ps1.indexOf('Office16\\OUTLOOK.EXE');
-  const appPaths = ps1.indexOf('App Paths\\OUTLOOK.EXE');
-  assert.ok(office16 >= 0 && appPaths > office16, 'Office16 clássico antes de App Paths');
-  // /eml só como fallback
-  assert.ok(ps1.includes("ArgumentList @('/eml'") || /ArgumentList\s+@\(\s*'\/eml'/.test(ps1));
+  assert.ok(ps1.includes("X-Delta-Outlook-Bridge") || ps1.includes("'X-Delta-Outlook-Bridge'"));
+  assert.ok(ps1.includes('com-v2'));
+  // Start-EmlDraft não pode lançar /eml (Start-Process "sucesso" + diálogo Outlook)
+  const startFn = ps1.slice(ps1.indexOf('function Start-EmlDraft'), ps1.indexOf('function Complete-EmlDraftFocus'));
+  assert.ok(startFn.includes('Open-EmlViaCom'));
+  assert.ok(!startFn.includes('/eml'), 'Start-EmlDraft sem /eml');
+  assert.ok(!startFn.includes('Start-Process'), 'Start-EmlDraft sem Start-Process outlook.exe');
   assert.ok(ps1.includes('Deferred'), 'cold-start COM depois do HTTP 204');
+  assert.ok(fs.existsSync(path.join(root, 'Atualizar-Ponte-Outlook.bat')), 'bat para actualizar a ponte');
+});
+
+check('browser exige ponte com-v2 (rejeita serve.ps1 antigo)', () => {
+  assert.ok(html.includes("OUTLOOK_BRIDGE_VERSION = 'com-v2'"));
+  assert.ok(html.includes('outlookBridgeVersionOk'));
+  assert.ok(html.includes('Atualizar-Ponte-Outlook.bat'));
+  const post = html.slice(html.indexOf('async function outlookPostDraft'), html.indexOf('async function outlookFindLiveApi'));
+  assert.ok(post.includes('outlookBridgeVersionOk'));
 });
 
 check('SW não intercepta localhost nem API Outlook (Private Network Access)', () => {
