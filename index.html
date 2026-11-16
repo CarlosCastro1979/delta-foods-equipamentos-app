@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-fix-ponte-bat Atualizar-Ponte-Outlook.bat autonomo (LocalAppData) -->
+<!-- dfb-build: v2026-11-16-ponte-arranque Ponte Outlook no arranque do Windows (sem janela) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -36532,7 +36532,7 @@ function outlookWarnPonteDesatualizada() {
   _outlookBridgeWarned = true;
   try {
     toast(
-      'Ponte Outlook offline — Excel/.eml nas Transferências. Para anexar automático: corre Atualizar-Ponte-Outlook.bat (pode estar em Transferências) e deixa a janela aberta.',
+      'Ponte Outlook offline — Excel/.eml nas Transferências. Anexar automático: corre Atualizar-Ponte-Outlook.bat UMA VEZ (fica no arranque do Windows, sem janela).',
       'warn'
     );
   } catch (_) {}
@@ -46567,12 +46567,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-fix-ponte-bat: Atualizar-Ponte autonomo. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-ponte-arranque: Ponte no arranque Windows. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-fix-ponte-bat';
+  var CACHE_KEEP = 'v2026-11-16-ponte-arranque';
 
   function tryRegister() {
     try {

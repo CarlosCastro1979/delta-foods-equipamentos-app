@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const CACHE = 'v2026-11-16-fix-ponte-bat';
+const CACHE = 'v2026-11-16-ponte-arranque';
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 

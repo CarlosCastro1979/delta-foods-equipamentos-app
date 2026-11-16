@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-fix-ponte-bat — Atualizar-Ponte-Outlook.bat autonomo
+// Service Worker v2026-11-16-ponte-arranque — Ponte Outlook no arranque do Windows
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-fix-ponte-bat';
+const CACHE = 'v2026-11-16-ponte-arranque';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
