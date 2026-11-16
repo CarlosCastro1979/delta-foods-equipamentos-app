@@ -64,8 +64,8 @@ const COLUNAS = new Set([
 ]);
 
 check('cache do Pedido de Instalação', () => {
-  assert.ok(sw.includes('v2026-11-16-at-instalacao-info-br'));
-  assert.ok(html.includes('v2026-11-16-at-instalacao-info-br'));
+  assert.ok(sw.includes('v2026-11-16-fix-css-comentario'));
+  assert.ok(html.includes('v2026-11-16-fix-css-comentario'));
   assert.ok(html.includes('montarPayloadInstalacaoAt'));
   assert.ok(html.includes('instResolverCliente'));
   assert.ok(!/data_instalacao\s*:/.test(extractFn(html, 'enviarPedidoInstalacao')));

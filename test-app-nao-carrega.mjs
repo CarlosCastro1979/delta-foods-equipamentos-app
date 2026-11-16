@@ -8,12 +8,21 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const CACHE = 'v2026-11-16-at-instalacao-info-br';
+const CACHE = 'v2026-11-16-fix-css-comentario';
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
 assert.ok(html.includes(CACHE), 'index cache bump');
 assert.ok(sw.includes(CACHE), 'sw cache bump');
+// Comentário dfb-build sem --> engolia o <style> e a app ficava sem CSS.
+{
+  const c0 = html.indexOf('<!--');
+  const c1 = html.indexOf('-->', c0);
+  const styleAt = html.indexOf('<style>');
+  assert.ok(c0 >= 0 && c1 > c0, 'comentário HTML aberto e fechado');
+  assert.ok(styleAt > c1, '<style> tem de ficar FORA do comentário dfb-build');
+  assert.ok(/<!--\s*dfb-build:[^>]*-->/.test(html.slice(0, 300)), 'dfb-build fecha na 1.ª linha');
+}
 assert.ok(html.includes('function withTimeout('), 'withTimeout helper');
 assert.ok(html.includes('function fetchWithTimeout('), 'fetchWithTimeout helper');
 assert.ok(html.includes('let _idbBroken = false'), 'IDB broken flag');

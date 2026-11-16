@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const CACHE = 'v2026-11-16-at-instalacao-info-br';
+const CACHE = 'v2026-11-16-fix-css-comentario';
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 

@@ -628,8 +628,8 @@ check('o filtro do vendedor grava no localStorage', () => {
   assert.equal(saved.porCanal.horeca, '');
   assert.equal(saved.geral, 'Filipe Neves');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-16-at-instalacao-info-br'));
-  assert.ok(html.includes('v2026-11-16-at-instalacao-info-br'));
+  assert.ok(sw.includes('v2026-11-16-fix-css-comentario'));
+  assert.ok(html.includes('v2026-11-16-fix-css-comentario'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);
