@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-xlsx-local — SheetJS/XLSX local (lista Prospecção ↓ Excel)
+// Service Worker v2026-11-16-outlook-antes-excel — Cadastro: Outlook antes do download Excel
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-xlsx-local';
+const CACHE = 'v2026-11-16-outlook-antes-excel';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

@@ -751,11 +751,20 @@ check('PC Windows sem ponte: não abre blob .eml (evita argumento inválido no O
 });
 
 
-check('Cadastro Dist/Ganho: Excel descarrega sempre (mesmo se Outlook falhar)', () => {
+check('Cadastro Dist/Ganho: Outlook antes do download (igual Horeca/MC00)', () => {
   const ganho = html.slice(html.indexOf('async function prosGanhoExportar'), html.indexOf('async function gerarCadastroXlsxLocal'));
   const alt = html.slice(html.indexOf('async function alteracaoCadastralExportar'), html.indexOf('async function prosGanhoExportar'));
-  assert.ok(ganho.includes('skipDownload: false'), 'prosGanhoExportar descarrega Excel');
-  assert.ok(alt.includes('skipDownload: false'), 'alteracaoCadastralExportar descarrega Excel');
+  // Gerar com skipDownload:true → abrir Outlook → só depois triggerBlobDownload
+  assert.ok(ganho.includes('skipDownload: true'), 'prosGanhoExportar não descarrega antes do Outlook');
+  assert.ok(alt.includes('skipDownload: true'), 'alteracaoCadastralExportar não descarrega antes do Outlook');
+  assert.ok(ganho.includes('triggerBlobDownload'), 'descarrega Excel depois');
+  assert.ok(alt.includes('triggerBlobDownload'), 'descarrega Excel depois');
+  const ganhoOutlook = ganho.indexOf('prosAbrirEmailCadastro');
+  const ganhoDl = ganho.indexOf('triggerBlobDownload', ganhoOutlook);
+  assert.ok(ganhoOutlook >= 0 && ganhoDl > ganhoOutlook, 'download depois do Outlook no Ganho');
+  const altOutlook = alt.indexOf('prosAbrirEmailCadastro');
+  const altDl = alt.indexOf('triggerBlobDownload', altOutlook);
+  assert.ok(altOutlook >= 0 && altDl > altOutlook, 'download depois do Outlook na alteração');
   assert.ok(alt.includes('Iniciar-Delta-Foods.bat') || ganho.includes('Iniciar-Delta-Foods.bat'));
 });
 
