@@ -264,8 +264,8 @@ check('Por Registar aplica o escopo do login em cima da cloud', () => {
 });
 
 check('service worker sobe para por-registar-helcio', () => {
-  assert.ok(sw.includes('v2026-11-16-outlook-dialogo'));
-  assert.ok(html.includes('v2026-11-16-outlook-dialogo'));
+  assert.ok(sw.includes('v2026-11-16-at-instalacao-info-br'));
+  assert.ok(html.includes('v2026-11-16-at-instalacao-info-br'));
   assert.ok(!sw.includes('v2026-10-02-por-registar-helcio'));
   assert.ok(!html.includes('v2026-10-02-por-registar-helcio'));
 });

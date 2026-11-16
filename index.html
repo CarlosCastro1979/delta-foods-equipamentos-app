@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-outlook-dialogo Display não-modal; sem downloads se diálogo Outlook -->
+<!-- dfb-build: v2026-11-16-at-instalacao-info-br Pedido Instalação Para info.br (AT)
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -11698,7 +11698,7 @@ async function enviarPedidoInstalacao() {
       if (typeof saveATChamados === 'function') saveATChamados(chamados);
     } catch (_) {}
 
-    // Email completo (mesmo fluxo Outlook / .eml — sem truncar mailto)
+    // Email completo — mesmos destinatários do Chamado AT (não Daniela/cadastro).
     const dataFmt = new Date(data + 'T12:00:00').toLocaleDateString('pt-BR');
     const equipsStr = equipamentos.map(e => e.tipo).join(', ');
     const corpoInst =
@@ -11711,13 +11711,21 @@ async function enviarPedidoInstalacao() {
   Urgência: ${urgencia}${obs ? '\n  Observações: ' + obs : ''}
 
 Enviado via Delta Foods App`;
+    const vendEmailInst = (typeof getEmailUtilizador === 'function')
+      ? getEmailUtilizador(vendedor)
+      : '';
+    const ccInst = [
+      'carlos.castro@deltafoodsbrasil.com.br',
+      'ricardo.vicentesilva@deltafoodsbrasil.com.br',
+    ];
+    if (vendEmailInst) ccInst.push(vendEmailInst);
     await outlookAbrirEmailTexto({
-      to: 'daniela.kucinski@deltafoodsbrasil.com.br',
-      cc: typeof ccString === 'function' ? ccString([]) : [],
+      to: 'info.br@gruponabeiro.com',
+      cc: typeof ccString === 'function' ? ccString(ccInst) : ccInst,
       subject: `Pedido de Instalação — ${nomeCliente}`,
       body: corpoInst,
       draftName: `Pedido_Instalacao_${cod || 'cliente'}.eml`,
-      toastMsg: '✅ Pedido de instalação registado — Outlook aberto.',
+      toastMsg: '✅ Pedido de instalação registado — Outlook aberto (Para: info.br).',
     });
     document.getElementById('inst-cod').value = '';
     document.getElementById('inst-data').value = '';
@@ -46572,12 +46580,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-outlook-dialogo: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-at-instalacao-info-br: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-outlook-dialogo';
+  var CACHE_KEEP = 'v2026-11-16-at-instalacao-info-br';
 
   function tryRegister() {
     try {

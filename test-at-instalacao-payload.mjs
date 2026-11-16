@@ -64,11 +64,22 @@ const COLUNAS = new Set([
 ]);
 
 check('cache do Pedido de Instalação', () => {
-  assert.ok(sw.includes('v2026-11-16-outlook-dialogo'));
-  assert.ok(html.includes('v2026-11-16-outlook-dialogo'));
+  assert.ok(sw.includes('v2026-11-16-at-instalacao-info-br'));
+  assert.ok(html.includes('v2026-11-16-at-instalacao-info-br'));
   assert.ok(html.includes('montarPayloadInstalacaoAt'));
   assert.ok(html.includes('instResolverCliente'));
   assert.ok(!/data_instalacao\s*:/.test(extractFn(html, 'enviarPedidoInstalacao')));
+});
+
+check('Pedido de Instalação vai para info.br (AT), não Daniela/cadastro', () => {
+  const fn = extractFn(html, 'enviarPedidoInstalacao');
+  assert.ok(fn.includes("to: 'info.br@gruponabeiro.com'"), 'Para = info.br (equipa AT)');
+  assert.ok(fn.includes('ricardo.vicentesilva@deltafoodsbrasil.com.br'), 'CC Ricardo');
+  assert.ok(fn.includes('carlos.castro@deltafoodsbrasil.com.br'), 'CC Carlos');
+  assert.ok(!fn.includes("to: 'daniela.kucinski@deltafoodsbrasil.com.br'"), 'não Para Daniela');
+  // Chamado AT continua info.br
+  const at = extractFn(html, 'enviarPedidoAT');
+  assert.ok(at.includes("to: 'info.br@gruponabeiro.com'"), 'Chamado AT também Para info.br');
 });
 
 check('payload Nata 7 só usa colunas reais de chamados_at', () => {

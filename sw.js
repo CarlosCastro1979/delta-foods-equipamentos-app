@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-outlook-dialogo — Display não-modal; sem downloads se diálogo aberto
+// Service Worker v2026-11-16-at-instalacao-info-br — Display não-modal; sem downloads se diálogo aberto
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-outlook-dialogo';
+const CACHE = 'v2026-11-16-at-instalacao-info-br';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
