@@ -706,19 +706,21 @@ check('Distribuidores: cadastro só para a Daniela, sem Carlos nem Filipe', () =
   context.isCanalDistribuidores = () => false;
 });
 
-check('serve.ps1 abre .eml com /eml (evita argumento de linha de comando inválido)', () => {
+check('serve.ps1 abre rascunho via COM CreateItem (sem depender só de /eml)', () => {
   const ps1 = fs.readFileSync(path.join(root, 'serve.ps1'), 'utf8');
-  assert.ok(ps1.includes('/eml'));
-  assert.ok(
-    ps1.includes("ArgumentList @('/eml'") ||
-    ps1.includes('/eml `"$emlPath`"') ||
-    ps1.includes('/eml \\"$emlPath\\"') ||
-    /\/eml\s+`?"\$emlPath`?"/.test(ps1) ||
-    /ArgumentList\s+@\(\s*'\/eml'/.test(ps1),
-    'tem de passar /eml ao outlook.exe'
-  );
-  assert.ok(ps1.includes('DeltaDraft_') || ps1.includes('$env:TEMP'), 'path curto em TEMP');
-  assert.ok(!/Arguments\s*=\s*"`"\$emlPath`""/.test(ps1), 'não pode passar só o path sem /eml');
+  assert.ok(ps1.includes('function Open-EmlViaCom'));
+  assert.ok(ps1.includes('function Parse-DeltaEml'));
+  assert.ok(ps1.includes('CreateItem(0)'));
+  assert.ok(ps1.includes('HTMLBody'));
+  assert.ok(ps1.includes('Test-ClassicOutlookExePath'));
+  assert.ok(ps1.includes('olk.exe') || ps1.includes('OutlookForWindows'), 'rejeita Outlook novo');
+  // Office16 antes de App Paths (App Paths pode apontar para olk)
+  const office16 = ps1.indexOf('Office16\\OUTLOOK.EXE');
+  const appPaths = ps1.indexOf('App Paths\\OUTLOOK.EXE');
+  assert.ok(office16 >= 0 && appPaths > office16, 'Office16 clássico antes de App Paths');
+  // /eml só como fallback
+  assert.ok(ps1.includes("ArgumentList @('/eml'") || /ArgumentList\s+@\(\s*'\/eml'/.test(ps1));
+  assert.ok(ps1.includes('Deferred'), 'cold-start COM depois do HTTP 204');
 });
 
 check('SW não intercepta localhost nem API Outlook (Private Network Access)', () => {
@@ -746,6 +748,15 @@ check('PC Windows sem ponte: não abre blob .eml (evita argumento inválido no O
   assert.ok(downloadOnlyBranch > 0, 'tem aviso da ponte offline');
   // outlookOpenEmlClient só depois do ramo PC offline (fallback não-Windows)
   assert.ok(openEml > downloadOnlyBranch, 'OpenEmlClient só após o ramo PC offline');
+});
+
+
+check('Cadastro Dist/Ganho: Excel descarrega sempre (mesmo se Outlook falhar)', () => {
+  const ganho = html.slice(html.indexOf('async function prosGanhoExportar'), html.indexOf('async function gerarCadastroXlsxLocal'));
+  const alt = html.slice(html.indexOf('async function alteracaoCadastralExportar'), html.indexOf('async function prosGanhoExportar'));
+  assert.ok(ganho.includes('skipDownload: false'), 'prosGanhoExportar descarrega Excel');
+  assert.ok(alt.includes('skipDownload: false'), 'alteracaoCadastralExportar descarrega Excel');
+  assert.ok(alt.includes('Iniciar-Delta-Foods.bat') || ganho.includes('Iniciar-Delta-Foods.bat'));
 });
 
 check('ExcelJS: ficheiro local + loader tenta local antes do CDN', () => {

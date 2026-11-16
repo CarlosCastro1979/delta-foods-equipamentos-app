@@ -157,14 +157,17 @@ function Activate-OutlookForeground {
     return $false
 }
 
+function Test-ClassicOutlookExePath([string]$p) {
+    if (-not $p) { return $false }
+    if ($p -match '(?i)(olk\.exe|WindowsApps|OutlookForWindows|Microsoft\.OutlookForWindows)') { return $false }
+    return (Test-Path -LiteralPath $p)
+}
+
 function Get-ClassicOutlookExe {
-    # Nunca olk.exe (Outlook novo) — o default do Windows pode ser o novo e recusa .eml.
-    $fromAppPaths = $null
-    try {
-        $fromAppPaths = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\OUTLOOK.EXE' -ErrorAction Stop).'(default)'
-    } catch { }
+    # Preferir Office16\OUTLOOK.EXE clássico.
+    # App Paths / outlook.exe no PATH muitas vezes aponta para o Outlook novo
+    # (olk) que rejeita /eml com «O argumento de linha de comando não é válido».
     $candidates = @(
-        $fromAppPaths,
         "$env:ProgramFiles\Microsoft Office\root\Office16\OUTLOOK.EXE",
         "${env:ProgramFiles(x86)}\Microsoft Office\root\Office16\OUTLOOK.EXE",
         "$env:ProgramFiles\Microsoft Office\Office16\OUTLOOK.EXE",
@@ -172,22 +175,137 @@ function Get-ClassicOutlookExe {
         "$env:ProgramFiles\Microsoft Office\root\Office15\OUTLOOK.EXE",
         "${env:ProgramFiles(x86)}\Microsoft Office\root\Office15\OUTLOOK.EXE"
     )
+    try {
+        $fromAppPaths = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\OUTLOOK.EXE' -ErrorAction Stop).'(default)'
+        if ($fromAppPaths) { $candidates += $fromAppPaths }
+    } catch { }
     foreach ($p in $candidates) {
-        if ($p -and (Test-Path -LiteralPath $p)) { return $p }
+        if (Test-ClassicOutlookExePath $p) { return $p }
     }
     $cmd = Get-Command outlook.exe -ErrorAction SilentlyContinue
-    if ($cmd -and $cmd.Source -and (Test-Path -LiteralPath $cmd.Source) -and ($cmd.Source -notmatch '(?i)olk')) {
-        return $cmd.Source
-    }
+    if ($cmd -and (Test-ClassicOutlookExePath $cmd.Source)) { return $cmd.Source }
     return $null
 }
 
+function Decode-OutlookSubject([string]$raw) {
+    if (-not $raw) { return '' }
+    $s = $raw.Trim()
+    # =?UTF-8?B?...?=  /  =?UTF-8?Q?...?=
+    if ($s -match '^=\?([^?]+)\?([BbQq])\?([^?]+)\?=') {
+        $charset = $Matches[1]
+        $enc = $Matches[2].ToUpperInvariant()
+        $payload = $Matches[3]
+        try {
+            if ($enc -eq 'B') {
+                $bytes = [Convert]::FromBase64String($payload)
+                return [Text.Encoding]::GetEncoding($charset).GetString($bytes)
+            }
+            # Q-encoding simplificado
+            $sb = New-Object Text.StringBuilder
+            for ($i = 0; $i -lt $payload.Length; $i++) {
+                $ch = $payload[$i]
+                if ($ch -eq '_') { [void]$sb.Append(' ') }
+                elseif ($ch -eq '=' -and ($i + 2) -lt $payload.Length) {
+                    $hex = $payload.Substring($i + 1, 2)
+                    [void]$sb.Append([char][Convert]::ToInt32($hex, 16))
+                    $i += 2
+                } else { [void]$sb.Append($ch) }
+            }
+            $bytes = [Text.Encoding]::GetEncoding('ISO-8859-1').GetBytes($sb.ToString())
+            return [Text.Encoding]::GetEncoding($charset).GetString($bytes)
+        } catch { return $s }
+    }
+    return $s
+}
+
+function Parse-DeltaEml([string]$emlPath) {
+    # Formato gerado por outlookAbrirRascunho (multipart/mixed + HTML + anexos base64).
+    $bytes = [IO.File]::ReadAllBytes($emlPath)
+    $text = [Text.Encoding]::UTF8.GetString($bytes)
+    $norm = $text -replace "`r`n", "`n" -replace "`r", "`n"
+    $headerEnd = $norm.IndexOf("`n`n")
+    if ($headerEnd -lt 0) { throw "EML sem cabeçalhos" }
+    $headerBlock = $norm.Substring(0, $headerEnd)
+    $bodyAll = $norm.Substring($headerEnd + 2)
+
+    $to = ''; $cc = ''; $subject = ''; $boundary = ''
+    foreach ($line in ($headerBlock -split "`n")) {
+        if ($line -match '^(?i)To:\s*(.*)$') { $to = $Matches[1].Trim() }
+        elseif ($line -match '^(?i)Cc:\s*(.*)$') { $cc = $Matches[1].Trim() }
+        elseif ($line -match '^(?i)Subject:\s*(.*)$') { $subject = Decode-OutlookSubject $Matches[1] }
+        elseif ($line -match '(?i)boundary="([^"]+)"') { $boundary = $Matches[1] }
+    }
+    if (-not $boundary) { throw "EML sem boundary" }
+
+    $sep = "--$boundary"
+    $parts = $bodyAll -split [regex]::Escape($sep)
+    $html = ''
+    $attachments = New-Object System.Collections.Generic.List[object]
+    foreach ($part in $parts) {
+        $p = $part.Trim("`n", "`r", ' ')
+        if (-not $p -or $p -eq '--') { continue }
+        $pEnd = $p.IndexOf("`n`n")
+        if ($pEnd -lt 0) { continue }
+        $pHead = $p.Substring(0, $pEnd)
+        $pBody = $p.Substring($pEnd + 2).TrimEnd("`n", "`r", ' ')
+        if ($pBody.EndsWith('--')) { $pBody = $pBody.Substring(0, $pBody.Length - 2).TrimEnd() }
+
+        if ($pHead -match '(?i)Content-Type:\s*text/html') {
+            $html = $pBody
+            continue
+        }
+        if ($pHead -match '(?i)Content-Disposition:\s*attachment' -or $pHead -match '(?i)name="([^"]+)"') {
+            $fname = 'anexo.bin'
+            if ($pHead -match '(?i)filename="([^"]+)"') { $fname = $Matches[1] }
+            elseif ($pHead -match '(?i)name="([^"]+)"') { $fname = $Matches[1] }
+            $b64 = ($pBody -replace '\s', '')
+            try {
+                $attBytes = [Convert]::FromBase64String($b64)
+                $attachments.Add([pscustomobject]@{ Name = $fname; Bytes = $attBytes }) | Out-Null
+            } catch {
+                Write-Info "  WARN anexo base64: $fname" 'Yellow'
+            }
+        }
+    }
+    return [pscustomobject]@{
+        To = $to; Cc = $cc; Subject = $subject; Html = $html; Attachments = $attachments
+    }
+}
+
+function Open-EmlViaCom([string]$emlPath, $outlook = $null) {
+    # Abre rascunho com CreateItem — sem argv /eml (evita «argumento inválido»
+    # no Outlook novo / App Paths errado).
+    $parsed = Parse-DeltaEml $emlPath
+    $created = $false
+    if (-not $outlook) {
+        try { $outlook = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application') } catch { }
+    }
+    if (-not $outlook) {
+        $outlook = New-Object -ComObject Outlook.Application
+        $created = $true
+    }
+    $mail = $outlook.CreateItem(0) # olMailItem
+    if ($parsed.To) { $mail.To = $parsed.To }
+    if ($parsed.Cc) { $mail.CC = $parsed.Cc }
+    if ($parsed.Subject) { $mail.Subject = $parsed.Subject }
+    if ($parsed.Html) { $mail.HTMLBody = $parsed.Html }
+
+    $tmpAtts = @()
+    foreach ($att in $parsed.Attachments) {
+        $safeName = ($att.Name -replace '[\\/:*?"<>|]', '_')
+        if (-not $safeName) { $safeName = 'anexo.bin' }
+        $tmp = Join-Path $env:TEMP ('DeltaAtt_{0}_{1}' -f [guid]::NewGuid().ToString('N').Substring(0, 8), $safeName)
+        [IO.File]::WriteAllBytes($tmp, $att.Bytes)
+        $tmpAtts += $tmp
+        [void]$mail.Attachments.Add($tmp)
+    }
+    $mail.Display($true)
+    return @{ Outlook = $outlook; Created = $created; TempAtts = $tmpAtts; Mail = $mail }
+}
+
 function Start-EmlDraft([string]$emlPath) {
-    # IMPORTANTE: NÃO fazer New-Object Outlook.Application aqui.
-    # Cold-start do Outlook via COM pode demorar >2–10s e o browser aborta o POST
-    # (timeout) → cai no mailto e fica ecrã cinzento.
-    # Abrir com outlook.exe (clássico) — ShellExecute no .eml usa o default do SO
-    # (Outlook novo → «Esta ação ainda não é suportada»).
+    # Preferência: COM CreateItem (sem linha de comando).
+    # Fallback: outlook.exe clássico com /eml. Nunca olk.exe / Outlook novo.
     $before = 0
     $outlook = $null
     try {
@@ -195,7 +313,6 @@ function Start-EmlDraft([string]$emlPath) {
         $before = Get-OutlookInspectorCount $outlook
     } catch { }
 
-    # Path curto em %TEMP% (ASCII): evita aspas/acentos no argv do Outlook.
     $safePath = $emlPath
     try {
         $safePath = Join-Path $env:TEMP ('DeltaDraft_{0}.eml' -f [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -204,19 +321,32 @@ function Start-EmlDraft([string]$emlPath) {
         $safePath = $emlPath
     }
 
+    # 1) COM — funciona com Outlook clássico já aberto (rápido) ou a arrancar.
+    try {
+        $com = Open-EmlViaCom $safePath $outlook
+        return @{
+            Before = $before
+            Outlook = $com.Outlook
+            Method = 'com'
+            TempAtts = $com.TempAtts
+            Deferred = $false
+        }
+    } catch {
+        Write-Info "  WARN COM CreateItem: $($_.Exception.Message)" 'Yellow'
+    }
+
+    # 2) Fallback /eml só no OUTLOOK.EXE clássico (Office16), nunca App Paths novo.
     $classic = Get-ClassicOutlookExe
     if ($classic) {
-        # /eml é obrigatório: sem isto o path é lido como switch
-        # («O argumento de linha de comando não é válido»).
-        # ArgumentList evita aspas mal escapadas no ProcessStartInfo.Arguments.
-        Start-Process -FilePath $classic -ArgumentList @('/eml', $safePath) -WindowStyle Normal | Out-Null
-    } else {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $safePath
-        $psi.UseShellExecute = $true
-        [void][System.Diagnostics.Process]::Start($psi)
+        try {
+            Start-Process -FilePath $classic -ArgumentList @('/eml', $safePath) -WindowStyle Normal | Out-Null
+            return @{ Before = $before; Outlook = $outlook; Method = 'eml'; Deferred = $false }
+        } catch {
+            Write-Info "  WARN /eml: $($_.Exception.Message)" 'Yellow'
+        }
     }
-    return @{ Before = $before; Outlook = $outlook }
+
+    throw "Nao foi possivel abrir o rascunho no Outlook classico (COM nem /eml)."
 }
 
 function Complete-EmlDraftFocus($state) {
@@ -342,9 +472,21 @@ while ($listener.IsListening) {
                     [IO.File]::WriteAllBytes($tmp, $emlBytes)
                     $openEmlPath = $tmp
                     $openEmlKb = [math]::Round($emlBytes.Length / 1KB)
-                    # ShellExecute ANTES do 204 — preserva melhor a cadeia de foco do clique
-                    try { $openEmlState = Start-EmlDraft $openEmlPath } catch {
-                        Write-Info "  WARN Start-EmlDraft: $($_.Exception.Message)" 'Yellow'
+                    # Se o Outlook clássico já corre: abrir já (foco do clique).
+                    # Se não: responder 204 já e abrir COM depois — cold-start COM
+                    # demora e o browser abortava o POST (timeout → fallback mau).
+                    $outlookRunning = $false
+                    try {
+                        $null = [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application')
+                        $outlookRunning = $true
+                    } catch { }
+                    if ($outlookRunning) {
+                        try { $openEmlState = Start-EmlDraft $openEmlPath } catch {
+                            Write-Info "  WARN Start-EmlDraft: $($_.Exception.Message)" 'Yellow'
+                            $openEmlState = @{ Deferred = $true; Path = $openEmlPath }
+                        }
+                    } else {
+                        $openEmlState = @{ Deferred = $true; Path = $openEmlPath; Before = 0 }
                     }
                     $res.StatusCode = 204
                     $res.ContentLength64 = 0
@@ -380,11 +522,16 @@ while ($listener.IsListening) {
 
     try { $res.Close() } catch { }
 
-    # Trazer Outlook à frente depois do 204 (retries sem bloquear o browser)
+    # Abrir / focar Outlook depois do 204 (não bloqueia o browser)
     if ($openEmlPath) {
         try {
+            if ($openEmlState -and $openEmlState.Deferred) {
+                $pathOpen = if ($openEmlState.Path) { $openEmlState.Path } else { $openEmlPath }
+                $openEmlState = Start-EmlDraft $pathOpen
+            }
             Complete-EmlDraftFocus $openEmlState
-            Write-Info "  204  POST -> Outlook ($openEmlKb KB)" 'Gray'
+            $method = if ($openEmlState -and $openEmlState.Method) { $openEmlState.Method } else { '?' }
+            Write-Info "  204  POST -> Outlook ($openEmlKb KB, $method)" 'Gray'
         } catch {
             Write-Info "  WARN eml gravado mas Outlook nao abriu: $($_.Exception.Message)" 'Yellow'
         }

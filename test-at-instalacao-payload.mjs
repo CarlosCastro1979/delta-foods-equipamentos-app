@@ -64,8 +64,8 @@ const COLUNAS = new Set([
 ]);
 
 check('cache do Pedido de Instalação', () => {
-  assert.ok(sw.includes('v2026-11-13-exceljs-local'));
-  assert.ok(html.includes('v2026-11-13-exceljs-local'));
+  assert.ok(sw.includes('v2026-11-16-outlook-com'));
+  assert.ok(html.includes('v2026-11-16-outlook-com'));
   assert.ok(html.includes('montarPayloadInstalacaoAt'));
   assert.ok(html.includes('instResolverCliente'));
   assert.ok(!/data_instalacao\s*:/.test(extractFn(html, 'enviarPedidoInstalacao')));

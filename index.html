@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-13-exceljs-local ExcelJS local (sem CDN Cloudflare) -->
+<!-- dfb-build: v2026-11-16-outlook-com Outlook COM CreateItem + Excel sempre descarregado -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -42843,8 +42843,8 @@ async function alteracaoCadastralExportar() {
   if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar ficha e abrir Outlook...</span>';
   const dados = prosCollectCadastroDados();
   try {
-    // Excel só em anexo no Outlook — sem download/Save As separado (igual ao MC00)
-    const cadastro = await prosGerarCadastroXlsx(dados, { skipDownload: true });
+    // Gera Excel e descarrega sempre (mesmo se o Outlook falhar a abrir).
+    const cadastro = await prosGerarCadastroXlsx(dados, { skipDownload: false });
     if (st) st.innerHTML = '<span style="color:#16a34a">Cadastro guardado — a abrir Outlook com Excel em anexo...</span>';
     const isDist = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
     const ok = await prosAbrirEmailCadastro(dados, {
@@ -42857,6 +42857,8 @@ async function alteracaoCadastralExportar() {
     });
     if (ok !== false && st) {
       st.innerHTML = '<span style="color:#16a34a">Cadastro guardado · Outlook aberto com Excel em anexo.</span>';
+    } else if (st) {
+      st.innerHTML = '<span style="color:#b45309">Excel descarregado. Se o Outlook não abriu, reinicia Iniciar-Delta-Foods.bat (Outlook clássico) e tenta de novo.</span>';
     }
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${e.message}</span>`;
@@ -42929,7 +42931,8 @@ async function prosGanhoExportar() {
   const dados = prosCollectCadastroDados();
 
   try {
-    const cadastro = await prosGerarCadastroXlsx(dados, { skipDownload: true });
+    // Descarrega sempre o Excel — o utilizador fica com a ficha mesmo se o Outlook falhar.
+    const cadastro = await prosGerarCadastroXlsx(dados, { skipDownload: false });
 
     let propTexto = '';
     const attachments = [];
@@ -42938,7 +42941,7 @@ async function prosGanhoExportar() {
     if (isCafe) {
       try {
         await prosSleep(450);
-        const proposta = await propGerarSimulador(dados.nome, { skipDownload: true });
+        const proposta = await propGerarSimulador(dados.nome, { skipDownload: false });
         if (proposta?.blob) attachments.push({ blob: proposta.blob, filename: proposta.filename });
       } catch (e) {
         const msgProp = 'Erro na proposta de negócio: ' + e.message;
@@ -42964,6 +42967,8 @@ async function prosGanhoExportar() {
     const ok = await prosAbrirEmailCadastro(dados, { isCafe, isBomNegocio, propTexto, attachments });
     if (ok !== false && st) {
       st.innerHTML = '<span style="color:#16a34a">Outlook aberto com documentos em anexo.</span>';
+    } else if (st) {
+      st.innerHTML = '<span style="color:#b45309">Documentos descarregados. Se o Outlook não abriu, reinicia Iniciar-Delta-Foods.bat (Outlook clássico) e tenta de novo.</span>';
     }
 
   } catch(e) {
@@ -46460,12 +46465,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-13-exceljs-local: ExcelJS local (sem CDN Cloudflare). SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-outlook-com: Outlook COM CreateItem + Excel sempre descarregado. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-13-exceljs-local';
+  var CACHE_KEEP = 'v2026-11-16-outlook-com';
 
   function tryRegister() {
     try {

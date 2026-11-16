@@ -1,6 +1,6 @@
-// Service Worker v2026-11-13-exceljs-local — ExcelJS local (sem CDN Cloudflare)
+// Service Worker v2026-11-16-outlook-com — Outlook COM CreateItem + Excel sempre descarregado
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-13-exceljs-local';
+const CACHE = 'v2026-11-16-outlook-com';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
