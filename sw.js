@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-outlook-com-v2 — Ponte COM sem /eml + Atualizar-Ponte-Outlook.bat
+// Service Worker v2026-11-16-outlook-no-old-bridge — Nunca POST a ponte antiga; mailto se offline
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-outlook-com-v2';
+const CACHE = 'v2026-11-16-outlook-no-old-bridge';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

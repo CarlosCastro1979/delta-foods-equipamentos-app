@@ -723,12 +723,18 @@ check('serve.ps1 abre rascunho SÓ via COM (nunca /eml — evita argumento invá
   assert.ok(fs.existsSync(path.join(root, 'Atualizar-Ponte-Outlook.bat')), 'bat para actualizar a ponte');
 });
 
-check('browser exige ponte com-v2 (rejeita serve.ps1 antigo)', () => {
+check('browser exige ponte com-v2 e NUNCA faz POST a pontes antigas', () => {
   assert.ok(html.includes("OUTLOOK_BRIDGE_VERSION = 'com-v2'"));
   assert.ok(html.includes('outlookBridgeVersionOk'));
+  assert.ok(html.includes('outlookProbeBridgeVersion'));
   assert.ok(html.includes('Atualizar-Ponte-Outlook.bat'));
   const post = html.slice(html.indexOf('async function outlookPostDraft'), html.indexOf('async function outlookFindLiveApi'));
-  assert.ok(post.includes('outlookBridgeVersionOk'));
+  assert.ok(post.includes('outlookProbeBridgeVersion'));
+  // Sem varrer portas com POST (era o que disparava /eml na ponte antiga)
+  const abrir = html.slice(html.indexOf('async function outlookAbrirRascunho'), html.indexOf('\nfunction isAdmin()'));
+  assert.ok(abrir.includes('outlookFindLiveApi'));
+  assert.ok(!/for \(const ep of outlookDraftApiUrls\(\)\)/.test(abrir), 'não faz POST a todas as portas');
+  assert.ok(abrir.includes('outlookOpenMailtoPlusExcel'), 'PC sem ponte → mailto + Excel');
 });
 
 check('SW não intercepta localhost nem API Outlook (Private Network Access)', () => {
@@ -743,19 +749,18 @@ check('SW não intercepta localhost nem API Outlook (Private Network Access)', (
   assert.ok(bypassIdx >= 0 && respondIdx > bypassIdx, 'bypass localhost antes do fetch genérico');
 });
 
-check('PC Windows sem ponte: não abre blob .eml (evita argumento inválido no Outlook)', () => {
+check('PC Windows sem ponte: mailto + Excel (sem POST antigo, sem blob .eml)', () => {
   const start = html.indexOf('async function outlookAbrirRascunho');
   const end = html.indexOf('\nfunction isAdmin()', start);
   const fn = html.slice(start, end);
-  assert.ok(fn.includes('Ponte Outlook offline') || fn.includes('Iniciar-Delta-Foods.bat'));
-  assert.ok(fn.includes('outlookDownloadEml(eml, fileName)'));
-  // No ramo PC sem API, não deve chamar outlookOpenEmlClient (window.open blob)
-  const pcOffline = fn.indexOf('isWindowsPc && !isMobile');
-  const openEml = fn.indexOf('outlookOpenEmlClient', pcOffline >= 0 ? pcOffline : 0);
-  const downloadOnlyBranch = fn.indexOf('Ponte Outlook offline');
-  assert.ok(downloadOnlyBranch > 0, 'tem aviso da ponte offline');
-  // outlookOpenEmlClient só depois do ramo PC offline (fallback não-Windows)
-  assert.ok(openEml > downloadOnlyBranch, 'OpenEmlClient só após o ramo PC offline');
+  assert.ok(fn.includes('outlookOpenMailtoPlusExcel'));
+  assert.ok(fn.includes('ponte local offline') || fn.includes('Excel descarregado'));
+  // Não varrer portas com POST
+  assert.ok(!/for \(const ep of outlookDraftApiUrls\(\)\)/.test(fn));
+  // outlookOpenEmlClient só no fallback não-Windows (depois do ramo PC)
+  const pcMailto = fn.indexOf('outlookOpenMailtoPlusExcel');
+  const openEml = fn.indexOf('outlookOpenEmlClient');
+  assert.ok(pcMailto >= 0 && openEml > pcMailto, 'OpenEmlClient só após mailto no PC');
 });
 
 

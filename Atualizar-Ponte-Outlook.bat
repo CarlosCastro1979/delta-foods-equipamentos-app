@@ -16,17 +16,20 @@ for %%P in (8088 8080 8090 5505) do (
   )
 )
 
-if exist "%~dp0.git" (
-  echo  A fazer git pull...
-  git -C "%~dp0" pull --ff-only
-  if errorlevel 1 (
-    echo  git pull falhou — confirma que esta pasta e o repositorio Delta Foods.
+echo  A descarregar serve.ps1 novo do GitHub...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "try { Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/CarlosCastro1979/delta-foods-equipamentos-app/main/serve.ps1' -OutFile '%~dp0serve.ps1'; exit 0 } catch { exit 1 }"
+if errorlevel 1 (
+  if exist "%~dp0.git" (
+    echo  Download falhou — a tentar git pull...
+    git -C "%~dp0" pull --ff-only
+  ) else (
+    echo  Falhou a descarregar serve.ps1. Verifica a internet.
     pause
     exit /b 1
   )
-) else (
-  echo  AVISO: pasta sem .git — copia o serve.ps1 novo manualmente se for preciso.
 )
+
 
 echo.
 echo  A reiniciar Iniciar-Delta-Foods.bat...
