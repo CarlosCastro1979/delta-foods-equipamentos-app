@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-outlook-cc-recipients CC via Recipients.Add (sem Verificar nomes) -->
+<!-- dfb-build: v2026-11-16-outlook-todos-canais Mesmo Outlook em todos os canais (com-v3+) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -36522,14 +36522,22 @@ function outlookDraftApiUrls() {
   return urls;
 }
 
-/** Ponte serve.ps1 com COM CreateItem + Display não-modal. Pontes antigas rejeitadas. */
+/**
+ * Ponte serve.ps1: COM CreateItem + Display não-modal.
+ * Aceitar com-v3+ em TODOS os canais (Horeca/Ecommerce/Varejo/Dist) —
+ * exigir só com-v4 fazia a ponte instalada falhar e descarregar Excel+.eml.
+ * Preferida/nova instalação: com-v4 (Recipients.Add).
+ */
 const OUTLOOK_BRIDGE_VERSION = 'com-v4';
+const OUTLOOK_BRIDGE_MIN_MAJOR = 3;
 let _outlookBridgeWarned = false;
 
 function outlookBridgeVersionOk(res) {
   if (!res || !res.headers) return false;
   try {
-    return String(res.headers.get('X-Delta-Outlook-Bridge') || '') === OUTLOOK_BRIDGE_VERSION;
+    const v = String(res.headers.get('X-Delta-Outlook-Bridge') || '').trim();
+    const m = /^com-v(\d+)$/i.exec(v);
+    return !!(m && Number(m[1]) >= OUTLOOK_BRIDGE_MIN_MAJOR);
   } catch (_) {
     return false;
   }
@@ -36828,34 +36836,26 @@ async function outlookAbrirRascunho({
   }
   try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
-  // PC sem ponte com-v4: mailto NÃO leva anexos.
-  // 1) Descarrega Excel(+outros) JÁ
-  // 2) Descarrega .eml completo (já com anexos) — abrir em Transferências = anexo directo
-  // 3) Abre mailto para o texto (Daniela, etc.)
+  // PC sem ponte com-v3+: mailto NÃO leva anexos.
+  // Um só ficheiro: .eml já leva o Excel — NÃO descarregar Excel+.eml (todos os canais).
   if (isWindowsPc && !isMobile && to) {
-    let excelOk = false;
-    for (const att of (attachments || [])) {
-      if (att?.blob) {
-        try {
-          triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx');
-          excelOk = true;
-        } catch (_) {}
-      }
-    }
-    try { outlookDownloadEml(eml, fileName); } catch (_) {}
-    // Pausa curta: o Chrome por vezes engole o 2.º download se o mailto abrir já.
+    let emlOk = false;
+    try {
+      outlookDownloadEml(eml, fileName);
+      emlOk = true;
+    } catch (_) {}
     try { await new Promise(r => setTimeout(r, 350)); } catch (_) {}
     const result = await outlookOpenMailtoPlusExcel({
       to, ccVal, subject, html, attachments: [], mailtoFallback, ccExact,
     });
     const opened = !!(result && result.opened);
     toast(
-      excelOk
-        ? '📧 Outlook aberto. Anexa o Excel das Transferências (o mailto não leva anexo). Ou abre o .eml — esse já vai com o Excel.'
-        : '📧 Outlook aberto. Descarrega falhou — volta a exportar ou corre Atualizar-Ponte-Outlook.bat para anexar automaticamente.',
-      excelOk ? 'warn' : 'error'
+      emlOk
+        ? '📧 Ponte offline — abre o .eml (já leva o Excel) ou corre Atualizar-Ponte-Outlook.bat uma vez.'
+        : '📧 Ponte offline. Corre Atualizar-Ponte-Outlook.bat para anexar automaticamente.',
+      emlOk ? 'warn' : 'error'
     );
-    return opened || excelOk;
+    return opened || emlOk;
   }
 
   // PC sem ponte (não-Windows) / fallback: tentar .eml
@@ -36880,12 +36880,8 @@ async function outlookAbrirRascunho({
     }
   }
 
-  for (const att of (attachments || [])) {
-    if (att?.blob) {
-      try { triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx'); } catch (_) {}
-    }
-  }
-  outlookDownloadEml(eml, fileName);
+  // Último recurso (todos os canais): só .eml — já leva anexos; sem Excel paralelo.
+  try { outlookDownloadEml(eml, fileName); } catch (_) {}
   toast(
     '📧 Ficheiro .eml descarregado — abre-o no Outlook clássico (já vai com anexo).',
     'warn'
@@ -46580,12 +46576,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-outlook-cc-recipients: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-outlook-todos-canais: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-outlook-cc-recipients';
+  var CACHE_KEEP = 'v2026-11-16-outlook-todos-canais';
 
   function tryRegister() {
     try {

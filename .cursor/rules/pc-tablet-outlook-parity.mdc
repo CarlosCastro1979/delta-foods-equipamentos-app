@@ -11,6 +11,15 @@ A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos,
 
 **Sem seletor de preferências.** Detectar PC vs tablet automaticamente. Não mostrar dropdown «Emails» nem gravar `delta_email_open_mode`.
 
+## Comportamento único em TODOS os canais
+
+Horeca, Ecommerce, Varejo e Dist usam o **mesmo** `outlookAbrirRascunho` / ponte:
+
+1. `skipDownload: true` no Excel até o Outlook abrir.
+2. Ponte `com-v3+` OK → anexo no Outlook, **zero** ficheiros em Transferências.
+3. Sem ponte → **só** o `.eml` (já com Excel) — **nunca** Excel + `.eml` + `.bat` juntos.
+4. Não há fluxo «especial Ecommerce» ou «especial Dist» para abrir email (só mudam Para/CC).
+
 ## Destinatários (NÃO regredir)
 
 | Fluxo | Para | CC |
@@ -18,7 +27,7 @@ A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos,
 | **Pedido AT / Chamado Técnico** | `info.br@gruponabeiro.com` | Carlos + Ricardo (+ vendedor); Filipe só via `ccString` no Horeca |
 | **Pedido de Instalação** | `info.br@gruponabeiro.com` (igual AT — **nunca** Daniela) | Carlos + Ricardo (+ vendedor) |
 | **Cadastro Dist** | Daniela só (`soDaniela`) | sem Carlos/Filipe |
-| **Cadastro Horeca** | política BOM NEGÓCIO / aprovação | `ccString` |
+| **Cadastro Horeca / Ecommerce / Varejo** | política BOM NEGÓCIO / aprovação | `ccString` |
 
 ## Separadores de endereços (regra crítica — já partiu várias vezes)
 
@@ -35,10 +44,11 @@ Funções: `ccString()` → `; ` · `ccMailtoParam()` → `,` · `Add-OutlookRec
 1. **COM `CreateItem`** — nunca `outlook.exe /eml` (diálogo «argumento inválido»).
 2. **`Display($false)`** — modal (`$true`) bloqueia o HTTP 204 e deixa «caixa de diálogo aberta».
 3. **Destinatários via `Recipients.Add`** (To=1, CC=2) + `ResolveAll` — nunca atribuir lista a `.To`/`.CC`.
-4. Header `X-Delta-Outlook-Bridge` actual (`com-v4`+); browser rejeita pontes antigas.
+4. Header `X-Delta-Outlook-Bridge`: browser aceita **`com-v3` ou superior** (não exigir só a última — isso enchía Transferências em todos os canais). Novas instalações/`bat` → `com-v4`.
 5. Auto-update da ponte em `%LOCALAPPDATA%\DeltaFoodsOutlookBridge` a partir do `main`.
-6. Ponte OK → **zero downloads** (Excel/`.eml`/`.bat`) em Transferências; downloads só se a ponte falhar de verdade.
-7. HTTP **503** se Outlook tiver diálogo aberto — toast sem downloads.
+6. Ponte OK → **zero downloads** (Excel/`.eml`/`.bat`) em Transferências.
+7. Sem ponte → no máximo **um** `.eml` (com anexo); nunca Excel+`.eml`+`.bat`.
+8. HTTP **503** se Outlook tiver diálogo aberto — toast sem downloads.
 
 ## Ambientes
 

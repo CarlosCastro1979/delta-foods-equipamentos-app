@@ -744,11 +744,14 @@ check('serve.ps1 abre rascunho SÓ via COM (nunca /eml — evita argumento invá
   assert.ok(bat.includes('com-v4'), 'bat verifica com-v4');
 });
 
-check('browser exige ponte com-v4 e NUNCA faz POST a pontes antigas', () => {
+check('browser aceita ponte com-v3+ e NUNCA faz POST a pontes antigas', () => {
   assert.ok(html.includes("OUTLOOK_BRIDGE_VERSION = 'com-v4'"));
+  assert.ok(html.includes('OUTLOOK_BRIDGE_MIN_MAJOR = 3') || html.includes('OUTLOOK_BRIDGE_MIN_MAJOR=3'));
   assert.ok(html.includes('outlookBridgeVersionOk'));
   assert.ok(html.includes('outlookProbeBridgeVersion'));
   assert.ok(html.includes('Atualizar-Ponte-Outlook.bat'));
+  const ver = html.slice(html.indexOf('function outlookBridgeVersionOk'), html.indexOf('function outlookWarnPonteDesatualizada'));
+  assert.ok(ver.includes('com-v') && ver.includes('MIN_MAJOR'), 'aceita com-v3+ (todos os canais)');
   const post = html.slice(html.indexOf('async function outlookPostDraft'), html.indexOf('async function outlookFindLiveApi'));
   assert.ok(post.includes('outlookProbeBridgeVersion'));
   assert.ok(post.includes("return 'dialog'"), '503 → dialog sem downloads');
@@ -756,8 +759,13 @@ check('browser exige ponte com-v4 e NUNCA faz POST a pontes antigas', () => {
   const abrir = html.slice(html.indexOf('async function outlookAbrirRascunho'), html.indexOf('\nfunction isAdmin()'));
   assert.ok(abrir.includes('outlookFindLiveApi'));
   assert.ok(!/for \(const ep of outlookDraftApiUrls\(\)\)/.test(abrir), 'não faz POST a todas as portas');
-  assert.ok(abrir.includes('outlookOpenMailtoPlusExcel'), 'PC sem ponte → mailto + Excel');
+  assert.ok(abrir.includes('outlookOpenMailtoPlusExcel'), 'PC sem ponte → mailto');
   assert.ok(abrir.includes("openedEp === 'dialog'"), 'dialog → toast sem download');
+  // Fallback PC: só .eml (não Excel+.eml)
+  const pcFb = abrir.indexOf('PC sem ponte');
+  const pcSlice = pcFb >= 0 ? abrir.slice(pcFb, pcFb + 900) : abrir;
+  assert.ok(pcSlice.includes('outlookDownloadEml'), 'fallback descarrega .eml');
+  assert.ok(!/triggerBlobDownload\(att\.blob/.test(pcSlice), 'fallback NÃO descarrega Excel à parte');
 });
 
 check('SW não intercepta localhost nem API Outlook (Private Network Access)', () => {
@@ -772,16 +780,20 @@ check('SW não intercepta localhost nem API Outlook (Private Network Access)', (
   assert.ok(bypassIdx >= 0 && respondIdx > bypassIdx, 'bypass localhost antes do fetch genérico');
 });
 
-check('PC Windows sem ponte: Excel + .eml + mailto (anexo via Transferências)', () => {
+check('PC Windows sem ponte: só .eml + mailto (não Excel+.eml)', () => {
   const start = html.indexOf('async function outlookAbrirRascunho');
   const end = html.indexOf('\nfunction isAdmin()', start);
   const fn = html.slice(start, end);
   assert.ok(fn.includes('outlookOpenMailtoPlusExcel'));
   assert.ok(fn.includes('outlookDownloadEml'));
-  assert.ok(fn.includes('triggerBlobDownload'));
-  assert.ok(fn.includes('mailto não leva anexo') || fn.includes('já com o Excel'));
+  assert.ok(fn.includes('abre o .eml') || fn.includes('já leva o Excel'));
   // Não varrer portas com POST
   assert.ok(!/for \(const ep of outlookDraftApiUrls\(\)\)/.test(fn));
+  const pcBlock = fn.indexOf('PC sem ponte');
+  assert.ok(pcBlock >= 0);
+  const untilEmlClient = fn.indexOf('outlookOpenEmlClient', pcBlock);
+  const pcFb = fn.slice(pcBlock, untilEmlClient > pcBlock ? untilEmlClient : pcBlock + 1200);
+  assert.ok(!/triggerBlobDownload\(att\.blob/.test(pcFb), 'sem download Excel paralelo ao .eml');
   const pcMailto = fn.indexOf('outlookOpenMailtoPlusExcel');
   const openEml = fn.indexOf('outlookOpenEmlClient');
   assert.ok(pcMailto >= 0 && openEml > pcMailto, 'OpenEmlClient só após mailto no PC');
