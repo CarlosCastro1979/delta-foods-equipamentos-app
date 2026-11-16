@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-sem-downloads-extras — Sem downloads extras quando a ponte anexa
+// Service Worker v2026-11-16-outlook-dialogo — Display não-modal; sem downloads se diálogo aberto
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-sem-downloads-extras';
+const CACHE = 'v2026-11-16-outlook-dialogo';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

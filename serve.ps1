@@ -4,6 +4,34 @@ $silent = ($env:DELTA_OUTLOOK_SILENT -eq '1')
 $appDir = Join-Path $root 'delta-foods-equipamentos-app'
 $syncFiles = @('index.html', 'manifest.json', 'sw.js', 'simulador-template.js', 'exceljs.min.js', 'xlsx.full.min.js', 'pdf-lib.min.js', 'mc00-template.xlsx', 'quebra-template.xlsx', 'icon-192.png', 'icon-512.png')
 
+# Ponte instalada (LocalAppData): actualiza serve.ps1 a partir do main e reinicia.
+# Assim o Display($false)/com-v3 chega sem voltar a correr o .bat.
+if (
+    $silent -and
+    $env:DELTA_OUTLOOK_NO_UPDATE -ne '1' -and
+    $env:DELTA_OUTLOOK_UPDATING -ne '1' -and
+    $root -like '*\DeltaFoodsOutlookBridge'
+) {
+    try {
+        $selfPath = $MyInvocation.MyCommand.Path
+        $updUrl = 'https://raw.githubusercontent.com/CarlosCastro1979/delta-foods-equipamentos-app/main/serve.ps1'
+        $updTmp = Join-Path $env:TEMP ('DeltaServeUpd_{0}.ps1' -f [guid]::NewGuid().ToString('N').Substring(0, 8))
+        Invoke-WebRequest -UseBasicParsing -Uri $updUrl -OutFile $updTmp -TimeoutSec 20
+        $newTxt = [IO.File]::ReadAllText($updTmp)
+        $curTxt = [IO.File]::ReadAllText($selfPath)
+        if ($newTxt -match "X-Delta-Outlook-Bridge.*=.*'com-v3'" -and $newTxt -ne $curTxt) {
+            Copy-Item -LiteralPath $updTmp -Destination $selfPath -Force
+            Remove-Item -LiteralPath $updTmp -Force -ErrorAction SilentlyContinue
+            $env:DELTA_OUTLOOK_UPDATING = '1'
+            Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
+                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $selfPath
+            )
+            exit 0
+        }
+        Remove-Item -LiteralPath $updTmp -Force -ErrorAction SilentlyContinue
+    } catch { }
+}
+
 function Write-Info([string]$msg, [string]$color = 'Gray') {
     if ($silent) { return }
     if ($color -eq 'Gray') { Write-Host $msg -ForegroundColor DarkGray }
@@ -275,6 +303,8 @@ function Parse-DeltaEml([string]$emlPath) {
 function Open-EmlViaCom([string]$emlPath, $outlook = $null) {
     # Abre rascunho com CreateItem — sem argv /eml (evita «argumento inválido»
     # no Outlook novo / App Paths errado).
+    # Display($false): modal ($true) bloqueava o HTTP 204 (timeout → downloads no
+    # browser) e deixava o Outlook com «Há uma caixa de diálogo aberta».
     $parsed = Parse-DeltaEml $emlPath
     $created = $false
     if (-not $outlook) {
@@ -284,23 +314,41 @@ function Open-EmlViaCom([string]$emlPath, $outlook = $null) {
         $outlook = New-Object -ComObject Outlook.Application
         $created = $true
     }
-    $mail = $outlook.CreateItem(0) # olMailItem
-    if ($parsed.To) { $mail.To = $parsed.To }
-    if ($parsed.Cc) { $mail.CC = $parsed.Cc }
-    if ($parsed.Subject) { $mail.Subject = $parsed.Subject }
-    if ($parsed.Html) { $mail.HTMLBody = $parsed.Html }
 
-    $tmpAtts = @()
-    foreach ($att in $parsed.Attachments) {
-        $safeName = ($att.Name -replace '[\\/:*?"<>|]', '_')
-        if (-not $safeName) { $safeName = 'anexo.bin' }
-        $tmp = Join-Path $env:TEMP ('DeltaAtt_{0}_{1}' -f [guid]::NewGuid().ToString('N').Substring(0, 8), $safeName)
-        [IO.File]::WriteAllBytes($tmp, $att.Bytes)
-        $tmpAtts += $tmp
-        [void]$mail.Attachments.Add($tmp)
+    $lastErr = $null
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $mail = $null
+        $tmpAtts = @()
+        try {
+            $mail = $outlook.CreateItem(0) # olMailItem
+            if ($parsed.To) { $mail.To = $parsed.To }
+            if ($parsed.Cc) { $mail.CC = $parsed.Cc }
+            if ($parsed.Subject) { $mail.Subject = $parsed.Subject }
+            if ($parsed.Html) { $mail.HTMLBody = $parsed.Html }
+
+            foreach ($att in $parsed.Attachments) {
+                $safeName = ($att.Name -replace '[\\/:*?"<>|]', '_')
+                if (-not $safeName) { $safeName = 'anexo.bin' }
+                $tmp = Join-Path $env:TEMP ('DeltaAtt_{0}_{1}' -f [guid]::NewGuid().ToString('N').Substring(0, 8), $safeName)
+                [IO.File]::WriteAllBytes($tmp, $att.Bytes)
+                $tmpAtts += $tmp
+                [void]$mail.Attachments.Add($tmp)
+            }
+            $mail.Display($false)
+            return @{ Outlook = $outlook; Created = $created; TempAtts = $tmpAtts; Mail = $mail }
+        } catch {
+            $lastErr = $_
+            $msg = [string]$_.Exception.Message
+            foreach ($t in $tmpAtts) { try { Remove-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue } catch { } }
+            if ($msg -match '(?i)di[aá]logo|dialog|caixa' -or $attempt -lt 3) {
+                Write-Info "  WARN Outlook COM (tentativa $attempt): $msg" 'Yellow'
+                Start-Sleep -Milliseconds (500 * $attempt)
+                continue
+            }
+            throw
+        }
     }
-    $mail.Display($true)
-    return @{ Outlook = $outlook; Created = $created; TempAtts = $tmpAtts; Mail = $mail }
+    throw $lastErr
 }
 
 function Start-EmlDraft([string]$emlPath) {
@@ -390,8 +438,8 @@ function Set-CorsHeaders($res) {
     $res.Headers['Access-Control-Allow-Private-Network'] = 'true'
     $res.Headers['Access-Control-Expose-Headers'] = 'X-Delta-Outlook-Bridge'
     $res.Headers['Access-Control-Max-Age'] = '86400'
-    # Versão da ponte: o browser recusa pontes antigas (ainda com /eml).
-    $res.Headers['X-Delta-Outlook-Bridge'] = 'com-v2'
+    # Versão da ponte: o browser recusa pontes antigas (Display modal / /eml).
+    $res.Headers['X-Delta-Outlook-Bridge'] = 'com-v3'
 }
 
 $listener = $null
@@ -467,15 +515,27 @@ while ($listener.IsListening) {
                         $outlookRunning = $true
                     } catch { }
                     if ($outlookRunning) {
-                        try { $openEmlState = Start-EmlDraft $openEmlPath } catch {
-                            Write-Info "  WARN Start-EmlDraft: $($_.Exception.Message)" 'Yellow'
-                            $openEmlState = @{ Deferred = $true; Path = $openEmlPath }
+                        try {
+                            $openEmlState = Start-EmlDraft $openEmlPath
+                            $res.StatusCode = 204
+                            $res.ContentLength64 = 0
+                        } catch {
+                            # Caixa de diálogo aberta no Outlook: NÃO mentir 204
+                            # (o browser timeout/falha → Excel+.eml em Transferências).
+                            Write-Info "  503  POST $path (Outlook: $($_.Exception.Message))" 'Yellow'
+                            $res.StatusCode = 503
+                            $err = [Text.Encoding]::UTF8.GetBytes('Outlook dialog open')
+                            $res.ContentLength64 = $err.Length
+                            $res.OutputStream.Write($err, 0, $err.Length)
+                            try { Remove-Item -LiteralPath $openEmlPath -Force -ErrorAction SilentlyContinue } catch { }
+                            $openEmlPath = $null
+                            $openEmlState = $null
                         }
                     } else {
                         $openEmlState = @{ Deferred = $true; Path = $openEmlPath; Before = 0 }
+                        $res.StatusCode = 204
+                        $res.ContentLength64 = 0
                     }
-                    $res.StatusCode = 204
-                    $res.ContentLength64 = 0
                 }
             } else {
                 $res.StatusCode = 405

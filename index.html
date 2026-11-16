@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-sem-downloads-extras Sem downloads extras quando a ponte anexa -->
+<!-- dfb-build: v2026-11-16-outlook-dialogo Display não-modal; sem downloads se diálogo Outlook -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -36514,8 +36514,8 @@ function outlookDraftApiUrls() {
   return urls;
 }
 
-/** Ponte serve.ps1 com COM CreateItem (sem /eml). Pontes antigas são rejeitadas. */
-const OUTLOOK_BRIDGE_VERSION = 'com-v2';
+/** Ponte serve.ps1 com COM CreateItem + Display não-modal. Pontes antigas rejeitadas. */
+const OUTLOOK_BRIDGE_VERSION = 'com-v3';
 let _outlookBridgeWarned = false;
 
 function outlookBridgeVersionOk(res) {
@@ -36540,7 +36540,7 @@ function outlookWarnPonteDesatualizada() {
 }
 
 /**
- * Confirma com-v2 com OPTIONS/GET — NUNCA fazer POST a pontes antigas.
+ * Confirma com-v3 com OPTIONS/GET — NUNCA fazer POST a pontes antigas.
  * Um POST ao serve.ps1 antigo dispara outlook.exe /eml e o diálogo
  * «argumento de linha de comando não é válido» mesmo que depois rejeitemos a resposta.
  */
@@ -36565,7 +36565,9 @@ async function outlookProbeBridgeVersion(ep) {
   return false;
 }
 
-/** POST à API Outlook — só depois de OPTIONS com-v2. */
+/** POST à API Outlook — só depois de OPTIONS com-v3.
+ *  Devolve: endpoint (ok) | 'dialog' (Outlook com caixa aberta) | null (falhou).
+ */
 async function outlookPostDraft(ep, eml, timeoutMs) {
   if (!(await outlookProbeBridgeVersion(ep))) return null;
   const size = (typeof eml === 'string') ? eml.length : (eml?.byteLength || eml?.size || 0);
@@ -36580,6 +36582,7 @@ async function outlookPostDraft(ep, eml, timeoutMs) {
       body: eml,
       signal: ctrl ? ctrl.signal : undefined,
     });
+    if (r.status === 503) return 'dialog';
     if (!(r.status === 204 || r.ok)) return null;
     if (!outlookBridgeVersionOk(r)) {
       outlookWarnPonteDesatualizada();
@@ -36593,7 +36596,7 @@ async function outlookPostDraft(ep, eml, timeoutMs) {
   }
 }
 
-/** Descobre qual porta do serve.ps1 está viva E é com-v2 (sem POST). */
+/** Descobre qual porta do serve.ps1 está viva E é com-v3 (sem POST). */
 async function outlookFindLiveApi() {
   const urls = outlookDraftApiUrls();
   const probeOne = async (ep) => ((await outlookProbeBridgeVersion(ep)) ? ep : null);
@@ -36797,21 +36800,27 @@ async function outlookAbrirRascunho({
   const eml = parts.join('\r\n');
   const fileName = draftName || 'Delta_rascunho_Outlook.eml';
 
-  // PC Windows: SÓ POST à ponte com-v2 já validada por OPTIONS.
+  // PC Windows: SÓ POST à ponte com-v3 já validada por OPTIONS.
   // Nunca varrer portas com POST — pontes antigas abrem o diálogo «argumento inválido».
   let openedEp = null;
   if (isWindowsPc && !isMobile) {
     const live = await outlookFindLiveApi();
     if (live) openedEp = await outlookPostDraft(live, eml);
   }
-  if (openedEp) {
+  if (openedEp && openedEp !== 'dialog') {
     try { sessionStorage.setItem(OUTLOOK_API_CACHE_KEY, openedEp); } catch (_) {}
     toast(toastMsg || '📧 Outlook aberto com email e anexos.');
     return true;
   }
+  // Outlook com caixa de diálogo aberta: NÃO descarregar Excel/.eml.
+  if (openedEp === 'dialog') {
+    try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
+    toast('Fecha a caixa de diálogo do Outlook e volta a exportar (sem downloads).', 'warn');
+    return 'dialog';
+  }
   try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
-  // PC sem ponte com-v2: mailto NÃO leva anexos.
+  // PC sem ponte com-v3: mailto NÃO leva anexos.
   // 1) Descarrega Excel(+outros) JÁ
   // 2) Descarrega .eml completo (já com anexos) — abrir em Transferências = anexo directo
   // 3) Abre mailto para o texto (Daniela, etc.)
@@ -42929,11 +42938,14 @@ async function alteracaoCadastralExportar() {
       soDaniela: isDist,
     });
     // Com ponte OK o Excel já vai anexado — NÃO descarregar para Transferências.
+    // ok === 'dialog' → Outlook com caixa aberta: também sem download.
     if (ok === false && cadastro?.blob && typeof triggerBlobDownload === 'function') {
       try { triggerBlobDownload(cadastro.blob, cadastro.filename); } catch (_) {}
     }
-    if (ok !== false && st) {
+    if (ok === true && st) {
       st.innerHTML = '<span style="color:#16a34a">Cadastro guardado · Outlook aberto com Excel em anexo.</span>';
+    } else if (ok === 'dialog' && st) {
+      st.innerHTML = '<span style="color:#b45309">Fecha a caixa de diálogo do Outlook e volta a exportar.</span>';
     } else if (st) {
       st.innerHTML = '<span style="color:#b45309">Excel descarregado (ponte offline). Anexa manualmente ou corre Atualizar-Ponte-Outlook.bat.</span>';
     }
@@ -43045,7 +43057,7 @@ async function prosGanhoExportar() {
 
     const ok = await prosAbrirEmailCadastro(dados, { isCafe, isBomNegocio, propTexto, attachments });
     // Ponte OK → anexo no Outlook, zero ficheiros em Transferências.
-    // Só descarrega se a abertura falhou por completo.
+    // Só descarrega se a abertura falhou por completo (não se for diálogo aberto).
     if (ok === false && typeof triggerBlobDownload === 'function') {
       for (const att of attachments) {
         if (att?.blob) {
@@ -43053,8 +43065,10 @@ async function prosGanhoExportar() {
         }
       }
     }
-    if (ok !== false && st) {
+    if (ok === true && st) {
       st.innerHTML = '<span style="color:#16a34a">Outlook aberto com documentos em anexo.</span>';
+    } else if (ok === 'dialog' && st) {
+      st.innerHTML = '<span style="color:#b45309">Fecha a caixa de diálogo do Outlook e volta a exportar.</span>';
     } else if (st) {
       st.innerHTML = '<span style="color:#b45309">Documentos descarregados (ponte offline). Anexa manualmente ou corre Atualizar-Ponte-Outlook.bat.</span>';
     }
@@ -46558,12 +46572,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-sem-downloads-extras: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-outlook-dialogo: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-sem-downloads-extras';
+  var CACHE_KEEP = 'v2026-11-16-outlook-dialogo';
 
   function tryRegister() {
     try {

@@ -45,7 +45,7 @@ wscript //B "%VBS%"
 timeout /t 4 /nobreak >nul
 
 echo  A verificar se a ponte responde...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ok=$false; foreach($p in 8088,8080,8090,5505){ try { $r=Invoke-WebRequest -UseBasicParsing -Method OPTIONS -Uri ('http://127.0.0.1:'+$p+'/api/open-outlook-draft') -TimeoutSec 2; if($r.Headers['X-Delta-Outlook-Bridge'] -eq 'com-v2'){ Write-Host ('  OK porta '+$p); $ok=$true; break } } catch {} }; if(-not $ok){ Write-Host '  AVISO: ainda nao respondeu - espera 5s e exporta outra vez.'; exit 2 }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ok=$false; foreach($p in 8088,8080,8090,5505){ try { $r=Invoke-WebRequest -UseBasicParsing -Method OPTIONS -Uri ('http://127.0.0.1:'+$p+'/api/open-outlook-draft') -TimeoutSec 2; if($r.Headers['X-Delta-Outlook-Bridge'] -eq 'com-v3'){ Write-Host ('  OK porta '+$p); $ok=$true; break } } catch {} }; if(-not $ok){ Write-Host '  AVISO: ainda nao respondeu - espera 5s e exporta outra vez.'; exit 2 }"
 
 echo.
 echo  Pronto. A ponte corre ESCONDIDA (nao precisas de janela aberta).

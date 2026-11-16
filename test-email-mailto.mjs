@@ -713,7 +713,10 @@ check('serve.ps1 abre rascunho SÓ via COM (nunca /eml — evita argumento invá
   assert.ok(ps1.includes('CreateItem(0)'));
   assert.ok(ps1.includes('HTMLBody'));
   assert.ok(ps1.includes("X-Delta-Outlook-Bridge") || ps1.includes("'X-Delta-Outlook-Bridge'"));
-  assert.ok(ps1.includes('com-v2'));
+  assert.ok(ps1.includes('com-v3'));
+  assert.ok(ps1.includes('Display($false)'), 'Display não-modal (evita caixa de diálogo aberta)');
+  assert.ok(!/Display\(\$true\)/.test(ps1), 'sem Display modal');
+  assert.ok(ps1.includes('503'), '503 se Outlook tiver diálogo aberto');
   // Start-EmlDraft não pode lançar /eml (Start-Process "sucesso" + diálogo Outlook)
   const startFn = ps1.slice(ps1.indexOf('function Start-EmlDraft'), ps1.indexOf('function Complete-EmlDraftFocus'));
   assert.ok(startFn.includes('Open-EmlViaCom'));
@@ -721,20 +724,24 @@ check('serve.ps1 abre rascunho SÓ via COM (nunca /eml — evita argumento invá
   assert.ok(!startFn.includes('Start-Process'), 'Start-EmlDraft sem Start-Process outlook.exe');
   assert.ok(ps1.includes('Deferred'), 'cold-start COM depois do HTTP 204');
   assert.ok(fs.existsSync(path.join(root, 'Atualizar-Ponte-Outlook.bat')), 'bat para actualizar a ponte');
+  const bat = fs.readFileSync(path.join(root, 'Atualizar-Ponte-Outlook.bat'), 'utf8');
+  assert.ok(bat.includes('com-v3'), 'bat verifica com-v3');
 });
 
-check('browser exige ponte com-v2 e NUNCA faz POST a pontes antigas', () => {
-  assert.ok(html.includes("OUTLOOK_BRIDGE_VERSION = 'com-v2'"));
+check('browser exige ponte com-v3 e NUNCA faz POST a pontes antigas', () => {
+  assert.ok(html.includes("OUTLOOK_BRIDGE_VERSION = 'com-v3'"));
   assert.ok(html.includes('outlookBridgeVersionOk'));
   assert.ok(html.includes('outlookProbeBridgeVersion'));
   assert.ok(html.includes('Atualizar-Ponte-Outlook.bat'));
   const post = html.slice(html.indexOf('async function outlookPostDraft'), html.indexOf('async function outlookFindLiveApi'));
   assert.ok(post.includes('outlookProbeBridgeVersion'));
+  assert.ok(post.includes("return 'dialog'"), '503 → dialog sem downloads');
   // Sem varrer portas com POST (era o que disparava /eml na ponte antiga)
   const abrir = html.slice(html.indexOf('async function outlookAbrirRascunho'), html.indexOf('\nfunction isAdmin()'));
   assert.ok(abrir.includes('outlookFindLiveApi'));
   assert.ok(!/for \(const ep of outlookDraftApiUrls\(\)\)/.test(abrir), 'não faz POST a todas as portas');
   assert.ok(abrir.includes('outlookOpenMailtoPlusExcel'), 'PC sem ponte → mailto + Excel');
+  assert.ok(abrir.includes("openedEp === 'dialog'"), 'dialog → toast sem download');
 });
 
 check('SW não intercepta localhost nem API Outlook (Private Network Access)', () => {
@@ -773,6 +780,8 @@ check('Cadastro Dist/Ganho: sem downloads extras quando Outlook OK', () => {
   // Só descarrega se ok === false (ponte falhou)
   assert.ok(ganho.includes('ok === false'), 'Ganho só descarrega se Outlook falhar');
   assert.ok(alt.includes('ok === false'), 'Alteração só descarrega se Outlook falhar');
+  assert.ok(ganho.includes("ok === 'dialog'"), 'Ganho: diálogo Outlook sem download');
+  assert.ok(alt.includes("ok === 'dialog'"), 'Alteração: diálogo Outlook sem download');
   const warn = html.slice(html.indexOf('function outlookWarnPonteDesatualizada'), html.indexOf('async function outlookProbeBridgeVersion'));
   assert.ok(!warn.includes('a.download'), 'warn da ponte NÃO descarrega o .bat');
 });
