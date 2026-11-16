@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-outlook-no-old-bridge Nunca POST a ponte antiga; mailto se offline -->
+<!-- dfb-build: v2026-11-16-cadastro-anexo-excel Sem ponte: Excel+.eml+mailto (anexo em Transferências) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -36532,9 +36532,21 @@ function outlookWarnPonteDesatualizada() {
   _outlookBridgeWarned = true;
   try {
     toast(
-      'Ponte Outlook desatualizada nesta pasta. Corre Atualizar-Ponte-Outlook.bat (mata o serve.ps1 antigo que causa «argumento inválido»).',
-      'error'
+      'Ponte Outlook offline/desatualizada — o Excel descarrega para anexares. Para anexar automático: Atualizar-Ponte-Outlook.bat',
+      'warn'
     );
+  } catch (_) {}
+  try {
+    const a = document.createElement('a');
+    a.href = (typeof location !== 'undefined' && location.pathname && location.pathname.indexOf('delta-foods-equipamentos-app') >= 0)
+      ? '/delta-foods-equipamentos-app/Atualizar-Ponte-Outlook.bat'
+      : 'Atualizar-Ponte-Outlook.bat';
+    a.download = 'Atualizar-Ponte-Outlook.bat';
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   } catch (_) {}
 }
 
@@ -36810,25 +36822,34 @@ async function outlookAbrirRascunho({
   }
   try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
-  // PC sem ponte com-v2: mailto + Excel (NÃO .eml, NÃO POST à ponte antiga).
+  // PC sem ponte com-v2: mailto NÃO leva anexos.
+  // 1) Descarrega Excel(+outros) JÁ
+  // 2) Descarrega .eml completo (já com anexos) — abrir em Transferências = anexo directo
+  // 3) Abre mailto para o texto (Daniela, etc.)
   if (isWindowsPc && !isMobile && to) {
-    const result = await outlookOpenMailtoPlusExcel({
-      to, ccVal, subject, html, attachments, mailtoFallback, ccExact,
-    });
-    if (result && (result.opened || result.excelStatus)) {
-      mailtoToast();
-      return true;
-    }
+    let excelOk = false;
     for (const att of (attachments || [])) {
       if (att?.blob) {
-        try { triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx'); } catch (_) {}
+        try {
+          triggerBlobDownload(att.blob, att.filename || 'anexo.xlsx');
+          excelOk = true;
+        } catch (_) {}
       }
     }
+    try { outlookDownloadEml(eml, fileName); } catch (_) {}
+    // Pausa curta: o Chrome por vezes engole o 2.º download se o mailto abrir já.
+    try { await new Promise(r => setTimeout(r, 350)); } catch (_) {}
+    const result = await outlookOpenMailtoPlusExcel({
+      to, ccVal, subject, html, attachments: [], mailtoFallback, ccExact,
+    });
+    const opened = !!(result && result.opened);
     toast(
-      '📧 Excel descarregado. Abre o Outlook e anexa o ficheiro (ponte local offline ou desatualizada).',
-      'warn'
+      excelOk
+        ? '📧 Outlook aberto. Anexa o Excel das Transferências (o mailto não leva anexo). Ou abre o .eml — esse já vai com o Excel.'
+        : '📧 Outlook aberto. Descarrega falhou — volta a exportar ou corre Atualizar-Ponte-Outlook.bat para anexar automaticamente.',
+      excelOk ? 'warn' : 'error'
     );
-    return true;
+    return opened || excelOk;
   }
 
   // PC sem ponte (não-Windows) / fallback: tentar .eml
@@ -46546,12 +46567,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-outlook-no-old-bridge: Nunca POST a ponte antiga. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-cadastro-anexo-excel: Sem ponte Excel+.eml. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-outlook-no-old-bridge';
+  var CACHE_KEEP = 'v2026-11-16-cadastro-anexo-excel';
 
   function tryRegister() {
     try {

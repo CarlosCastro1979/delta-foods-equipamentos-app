@@ -749,15 +749,16 @@ check('SW não intercepta localhost nem API Outlook (Private Network Access)', (
   assert.ok(bypassIdx >= 0 && respondIdx > bypassIdx, 'bypass localhost antes do fetch genérico');
 });
 
-check('PC Windows sem ponte: mailto + Excel (sem POST antigo, sem blob .eml)', () => {
+check('PC Windows sem ponte: Excel + .eml + mailto (anexo via Transferências)', () => {
   const start = html.indexOf('async function outlookAbrirRascunho');
   const end = html.indexOf('\nfunction isAdmin()', start);
   const fn = html.slice(start, end);
   assert.ok(fn.includes('outlookOpenMailtoPlusExcel'));
-  assert.ok(fn.includes('ponte local offline') || fn.includes('Excel descarregado'));
+  assert.ok(fn.includes('outlookDownloadEml'));
+  assert.ok(fn.includes('triggerBlobDownload'));
+  assert.ok(fn.includes('mailto não leva anexo') || fn.includes('já com o Excel'));
   // Não varrer portas com POST
   assert.ok(!/for \(const ep of outlookDraftApiUrls\(\)\)/.test(fn));
-  // outlookOpenEmlClient só no fallback não-Windows (depois do ramo PC)
   const pcMailto = fn.indexOf('outlookOpenMailtoPlusExcel');
   const openEml = fn.indexOf('outlookOpenEmlClient');
   assert.ok(pcMailto >= 0 && openEml > pcMailto, 'OpenEmlClient só após mailto no PC');

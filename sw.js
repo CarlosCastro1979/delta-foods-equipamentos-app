@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-outlook-no-old-bridge — Nunca POST a ponte antiga; mailto se offline
+// Service Worker v2026-11-16-cadastro-anexo-excel — Sem ponte: Excel+.eml+mailto
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-outlook-no-old-bridge';
+const CACHE = 'v2026-11-16-cadastro-anexo-excel';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
