@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-fix-css-comentario — Display não-modal; sem downloads se diálogo aberto
+// Service Worker v2026-11-16-outlook-cc-recipients — Display não-modal; sem downloads se diálogo aberto
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-fix-css-comentario';
+const CACHE = 'v2026-11-16-outlook-cc-recipients';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

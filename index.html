@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-fix-css-comentario CSS restaurado (comentário HTML fechado) -->
+<!-- dfb-build: v2026-11-16-outlook-cc-recipients CC via Recipients.Add (sem Verificar nomes) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -36523,7 +36523,7 @@ function outlookDraftApiUrls() {
 }
 
 /** Ponte serve.ps1 com COM CreateItem + Display não-modal. Pontes antigas rejeitadas. */
-const OUTLOOK_BRIDGE_VERSION = 'com-v3';
+const OUTLOOK_BRIDGE_VERSION = 'com-v4';
 let _outlookBridgeWarned = false;
 
 function outlookBridgeVersionOk(res) {
@@ -36548,7 +36548,7 @@ function outlookWarnPonteDesatualizada() {
 }
 
 /**
- * Confirma com-v3 com OPTIONS/GET — NUNCA fazer POST a pontes antigas.
+ * Confirma com-v4 com OPTIONS/GET — NUNCA fazer POST a pontes antigas.
  * Um POST ao serve.ps1 antigo dispara outlook.exe /eml e o diálogo
  * «argumento de linha de comando não é válido» mesmo que depois rejeitemos a resposta.
  */
@@ -36573,7 +36573,7 @@ async function outlookProbeBridgeVersion(ep) {
   return false;
 }
 
-/** POST à API Outlook — só depois de OPTIONS com-v3.
+/** POST à API Outlook — só depois de OPTIONS com-v4.
  *  Devolve: endpoint (ok) | 'dialog' (Outlook com caixa aberta) | null (falhou).
  */
 async function outlookPostDraft(ep, eml, timeoutMs) {
@@ -36604,7 +36604,7 @@ async function outlookPostDraft(ep, eml, timeoutMs) {
   }
 }
 
-/** Descobre qual porta do serve.ps1 está viva E é com-v3 (sem POST). */
+/** Descobre qual porta do serve.ps1 está viva E é com-v4 (sem POST). */
 async function outlookFindLiveApi() {
   const urls = outlookDraftApiUrls();
   const probeOne = async (ep) => ((await outlookProbeBridgeVersion(ep)) ? ep : null);
@@ -36808,7 +36808,7 @@ async function outlookAbrirRascunho({
   const eml = parts.join('\r\n');
   const fileName = draftName || 'Delta_rascunho_Outlook.eml';
 
-  // PC Windows: SÓ POST à ponte com-v3 já validada por OPTIONS.
+  // PC Windows: SÓ POST à ponte com-v4 já validada por OPTIONS.
   // Nunca varrer portas com POST — pontes antigas abrem o diálogo «argumento inválido».
   let openedEp = null;
   if (isWindowsPc && !isMobile) {
@@ -36828,7 +36828,7 @@ async function outlookAbrirRascunho({
   }
   try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
 
-  // PC sem ponte com-v3: mailto NÃO leva anexos.
+  // PC sem ponte com-v4: mailto NÃO leva anexos.
   // 1) Descarrega Excel(+outros) JÁ
   // 2) Descarrega .eml completo (já com anexos) — abrir em Transferências = anexo directo
   // 3) Abre mailto para o texto (Daniela, etc.)
@@ -46580,12 +46580,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-fix-css-comentario: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-outlook-cc-recipients: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-fix-css-comentario';
+  var CACHE_KEEP = 'v2026-11-16-outlook-cc-recipients';
 
   function tryRegister() {
     try {

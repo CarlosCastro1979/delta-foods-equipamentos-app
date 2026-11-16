@@ -11,77 +11,91 @@ A app corre **sempre** em dois ambientes. Qualquer alteração a emails, anexos,
 
 **Sem seletor de preferências.** Detectar PC vs tablet automaticamente. Não mostrar dropdown «Emails» nem gravar `delta_email_open_mode`.
 
+## Destinatários (NÃO regredir)
+
+| Fluxo | Para | CC |
+|---|---|---|
+| **Pedido AT / Chamado Técnico** | `info.br@gruponabeiro.com` | Carlos + Ricardo (+ vendedor); Filipe só via `ccString` no Horeca |
+| **Pedido de Instalação** | `info.br@gruponabeiro.com` (igual AT — **nunca** Daniela) | Carlos + Ricardo (+ vendedor) |
+| **Cadastro Dist** | Daniela só (`soDaniela`) | sem Carlos/Filipe |
+| **Cadastro Horeca** | política BOM NEGÓCIO / aprovação | `ccString` |
+
+## Separadores de endereços (regra crítica — já partiu várias vezes)
+
+| Canal | Separador | Porquê |
+|---|---|---|
+| **`.eml` / cabeçalhos To/Cc** | **ponto-e-vírgula** (`; `) | Outlook clássico PT-BR |
+| **`mailto:` / `cc=`** | **vírgulas** | Gmail trata `;` como um endereço só («Verificar endereço») |
+| **`serve.ps1` COM** | **`Recipients.Add` um a um** | **Nunca** `$mail.CC = "a,b"` nem `$mail.CC = "a; b"` — o Outlook PT-BR mostra vírgulas e o «Verificar nomes» falha pedindo `;` |
+
+Funções: `ccString()` → `; ` · `ccMailtoParam()` → `,` · `Add-OutlookRecipientList` em `serve.ps1`.
+
+## Ponte local (`serve.ps1`) — invariantes
+
+1. **COM `CreateItem`** — nunca `outlook.exe /eml` (diálogo «argumento inválido»).
+2. **`Display($false)`** — modal (`$true`) bloqueia o HTTP 204 e deixa «caixa de diálogo aberta».
+3. **Destinatários via `Recipients.Add`** (To=1, CC=2) + `ResolveAll` — nunca atribuir lista a `.To`/`.CC`.
+4. Header `X-Delta-Outlook-Bridge` actual (`com-v4`+); browser rejeita pontes antigas.
+5. Auto-update da ponte em `%LOCALAPPDATA%\DeltaFoodsOutlookBridge` a partir do `main`.
+6. Ponte OK → **zero downloads** (Excel/`.eml`/`.bat`) em Transferências; downloads só se a ponte falhar de verdade.
+7. HTTP **503** se Outlook tiver diálogo aberto — toast sem downloads.
+
 ## Ambientes
 
 | Ambiente | Como usam | Bridge local |
 |---|---|---|
-| **PC Windows** | Browser ou atalho; Outlook **clássico** | `serve.ps1` / `Iniciar-Delta-Foods.bat` / abertura automática |
+| **PC Windows** | Browser ou atalho; Outlook **clássico** | `serve.ps1` / Startup VBS |
 | **Tablet Android (Galaxy)** | App instalada (**PWA** standalone), **não** o Chrome | Não há `serve.ps1` nem localhost |
 
 ## Fluxos obrigatórios (não misturar)
 
 ### PC Windows (browser **ou** PWA instalada — `display-mode: standalone` no Windows **não** é tablet)
-1. Sempre Outlook **clássico**: `POST /api/open-outlook-draft` (`serve.ps1`) lança `outlook.exe` com o `.eml` (HTML + anexos). **Não** usar o default do SO no `.eml` — o Outlook novo responde «Esta ação ainda não é suportada».
-2. Sem ponte: tentar abrir `.eml`; último recurso mailto + Excel.
+1. Sempre Outlook **clássico**: `POST /api/open-outlook-draft` (`serve.ps1`) com COM CreateItem (HTML + anexos).
+2. Sem ponte: mailto + Excel (e/ou `.eml`); **não** descarregar o `.bat` automaticamente.
 3. `outlookShouldForceOutlookApp()` e `outlookIsTabletOrPwa()` **devem devolver false no Windows**, mesmo em PWA standalone e mesmo com `maxTouchPoints` (Surface = PC).
 
-### Tablet / PWA Android (fluxo correcto — NÃO alterar sem validar nos dois)
+### Tablet / PWA Android
 1. **Nunca** depender de `serve.ps1` / `127.0.0.1`.
-2. **Nunca** partilhar / descarregar `.eml` como fluxo principal — o utilizador anexa o **Excel (.xlsx)** no email.
-3. Abrir email **só na app Outlook**:
-   - `ms-outlook://emails/new?…` + Intent `package=com.microsoft.office.outlook`
-   - Preferir `location.assign` / `location.href` (mais fiável que `<a>.click()` na PWA)
-   - **Nunca** `mailto:` genérico no tablet se o Outlook estiver disponível → mostra «Abrir com» **Chrome / Gmail** e o Outlook muitas vezes **nem aparece** (mesmo instalado e como padrão)
-   - **Nunca** esvaziar o corpo para «Pedido Delta Foods» — chamados AT levam tabelas/texto completo (`OUTLOOK_ANDROID_URI_MAX`, não o limite PC de 1800)
-   - **MC00 / cadastro:** o `mailtoFallback.body` tem de incluir os **quadros resumo** (produtos/negócios), não só «anexa o Excel»
-4. **Descarregar o Excel** para o utilizador anexar no Outlook.
+2. **Nunca** partilhar / descarregar `.eml` como fluxo principal — anexa o **Excel (.xlsx)**.
+3. Abrir email **só na app Outlook** (`ms-outlook://` / Intent); mailto Gmail-safe como payload.
+4. **Nunca** esvaziar o corpo para «Pedido Delta Foods».
 5. Toast: *Anexa o Excel descarregado ao email.*
 
-### Mailto tem de funcionar no Gmail (obrigatório)
-O tablet da Daniela abre por vezes o **Gmail** (UA «site para computador» / handler default). O payload do `mailto:` tem de ser válido **em qualquer cliente**:
-
-1. **CC/To no mailto: vírgulas**, nunca `;`. O Gmail trata `a@x; b@y` como um endereço só e mostra «Verificar endereço de email» (tudo a vermelho).
-2. O **.eml do PC** continua com `;` no cabeçalho `Cc:` (Outlook PT-BR).
-3. **Nunca** substituir o corpo por «Pedido Delta Foods. Cumprimentos.» — isso era o chamado AT em branco.
-4. Qualquer dispositivo que **não** seja PC Windows real usa o fluxo tablet (mailto completo). Não tentar `serve.ps1` no GitHub Pages.
+### Mailto Gmail-safe
+1. **CC/To no mailto: vírgulas**, nunca `;`.
+2. O **.eml do PC** continua com `;` no cabeçalho `Cc:`.
+3. Qualquer dispositivo que **não** seja PC Windows real usa o fluxo tablet.
 
 ## Deteção (não simplificar)
 
-- **PC:** Windows **real** — `userAgentData.platform === 'windows'`, ou UA Windows **depois** de excluir Android/iOS. Inclui PWA standalone e Surface.
-- **NÃO é PC Windows** mesmo que o UA diga `Windows NT 10.0`:
-  - `userAgentData.platform` = `Android` / `Linux` / iOS
-  - `navigator.platform` = `Linux …` (Galaxy Tab teclado / «site para computador»)
-  - UA com `Android`, `SamsungBrowser`, `SM-T`/`SM-X`
-- **Tablet/phone:** `Android`/`iPhone`/`iPad` no UA; iPadOS = Macintosh + touch; Galaxy Tab teclado = Linux + touch.
-- **Nunca** tratar `maxTouchPoints` sozinho como tablet (portáteis Surface).
-- **Nunca** forçar `ms-outlook://` / Intent Android num PC Windows.
+- **PC:** Windows **real** — `userAgentData.platform === 'windows'`, ou UA Windows **depois** de excluir Android/iOS.
+- **NÃO é PC** mesmo com UA `Windows NT 10.0` se platform = Android/Linux ou UA Samsung/Galaxy.
+- **Nunca** tratar `maxTouchPoints` sozinho como tablet (Surface).
 
-## Funções de referência (`index.html`)
+## Funções de referência (`index.html` / `serve.ps1`)
 
-- `outlookIsWindowsPc()` — Windows **real** = PC; UA falso de tablet ≠ PC
-- `outlookShouldForceOutlookApp()` — porta de entrada no **tablet**; no Windows devolve sempre false
-- `ccMailtoParam()` / `mailtoToPath()` — vírgulas no mailto (Gmail-safe)
-- `openMailtoSafely()` — força Outlook na PWA Android; mailto Gmail-safe como payload
-- `outlookOpenMailtoPlusExcel()` / `outlookDeliverExcelAttachments()`
-- `outlookAbrirRascunho()` — PC clássico vs tablet app, sem preferências
-- Constante: `OUTLOOK_ANDROID_PACKAGE = 'com.microsoft.office.outlook'`
+- `outlookIsWindowsPc()` / `outlookShouldForceOutlookApp()`
+- `ccString()` / `ccMailtoParam()` / `mailtoToPath()`
+- `outlookAbrirRascunho()` / `outlookAbrirEmailTexto()`
+- `Add-OutlookRecipientList` / `Open-EmlViaCom` / `Display($false)`
+- `OUTLOOK_BRIDGE_VERSION` (tem de bater com o header da ponte)
 
-## Regras ao alterar código
+## Ao alterar código (checklist anti-regressão)
 
-1. Testar mentalmente **PC + tablet** em cada mudança de email (com e sem anexo).
-2. Passar sempre `mailtoFallback` (corpo **completo** + toast) quando há anexos.
-3. Não “corrigir” o tablet com Web Share de `.eml`.
-4. Não assumir `window.open(blob)` na PWA standalone.
-5. PC: `serve.ps1` lança **outlook.exe clássico**, não o handler default do `.eml`.
-6. Mensagens: tablet → anexa Excel; PC clássico → `Instalar-Abertura-Automatica-Outlook.bat` / `serve.ps1`.
-7. Regressão tablet = diálogo «Abrir com» Chrome/Gmail **ou** endereços a vermelho **ou** corpo «Pedido Delta Foods».
-8. Não reintroduzir o painel «Como abrir emails?» / dropdown de preferências.
-9. Não reintroduzir o stub «Pedido Delta Foods» nem `;` no `cc=` do mailto.
+1. Testar mentalmente **PC + tablet** em cada mudança de email.
+2. **Não** voltar a pôr Daniela no Para do Pedido de Instalação / Chamado AT.
+3. **Não** atribuir lista a `$mail.CC` / `$mail.To` na ponte.
+4. **Não** usar `;` no `cc=` do mailto nem `,` no cabeçalho `.eml` Cc.
+5. **Não** `Display($true)` nem `/eml`.
+6. **Não** descarregar Excel/`.eml`/`.bat` quando a ponte anexa com sucesso.
+7. Comentário `<!-- dfb-build: … -->` **sempre fechado na mesma linha** — senão o CSS desaparece.
+8. Bump `OUTLOOK_BRIDGE_VERSION` + bat + auto-update quando a ponte mudar comportamento.
+9. Não reintroduzir painel «Como abrir emails?» nem stub «Pedido Delta Foods».
 
 ## Critério de aceite
 
-- **PC:** Outlook clássico abre com HTML + anexos (via ponte). Sem pergunta ao utilizador.
-- **Tablet PWA:** Outlook abre **directamente** (sem Chrome/Gmail) + Excel descarregado para anexar.
-- **Tablet se o Gmail abrir:** To/CC válidos (vírgulas) + corpo completo do chamado AT (não stub).
-- **MC00 no tablet:** o mailto leva o **quadro resumo** (Cód.SAP, Produto, P.Tabela, Desc.1, P.Final) — os mesmos negócios do Excel. No PC o quadro vai em HTML no Outlook clássico.
-- Mesmo botão / mesmo pedido (MC00, AT, cadastro, contratos, etc.) nos dois.
+- **PC:** Outlook clássico abre com HTML + anexos; CC sem diálogo «Verificar nomes» por vírgulas.
+- **Tablet PWA:** Outlook directo + Excel para anexar; mailto Gmail-safe se o Gmail abrir.
+- **AT Instalação / Chamado:** Para `info.br@gruponabeiro.com`.
+- **Cadastro Dist:** Para Daniela só.
+- Mesmo botão / mesmo pedido nos dois ambientes.

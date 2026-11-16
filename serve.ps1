@@ -5,7 +5,7 @@ $appDir = Join-Path $root 'delta-foods-equipamentos-app'
 $syncFiles = @('index.html', 'manifest.json', 'sw.js', 'simulador-template.js', 'exceljs.min.js', 'xlsx.full.min.js', 'pdf-lib.min.js', 'mc00-template.xlsx', 'quebra-template.xlsx', 'icon-192.png', 'icon-512.png')
 
 # Ponte instalada (LocalAppData): actualiza serve.ps1 a partir do main e reinicia.
-# Assim o Display($false)/com-v3 chega sem voltar a correr o .bat.
+# Assim o Display($false)/com-v4 chega sem voltar a correr o .bat.
 if (
     $silent -and
     $env:DELTA_OUTLOOK_NO_UPDATE -ne '1' -and
@@ -19,7 +19,7 @@ if (
         Invoke-WebRequest -UseBasicParsing -Uri $updUrl -OutFile $updTmp -TimeoutSec 20
         $newTxt = [IO.File]::ReadAllText($updTmp)
         $curTxt = [IO.File]::ReadAllText($selfPath)
-        if ($newTxt -match "X-Delta-Outlook-Bridge.*=.*'com-v3'" -and $newTxt -ne $curTxt) {
+        if ($newTxt -match "X-Delta-Outlook-Bridge.*=.*'com-v4'" -and $newTxt -ne $curTxt) {
             Copy-Item -LiteralPath $updTmp -Destination $selfPath -Force
             Remove-Item -LiteralPath $updTmp -Force -ErrorAction SilentlyContinue
             $env:DELTA_OUTLOOK_UPDATING = '1'
@@ -300,6 +300,18 @@ function Parse-DeltaEml([string]$emlPath) {
     }
 }
 
+function Add-OutlookRecipientList($mail, [string]$addrList, [int]$type) {
+    # Nunca atribuir $mail.To / $mail.CC com lista (vírgula ou ;).
+    # No Outlook PT-BR, a propriedade .CC com vários endereços cai em vírgulas
+    # e o «Verificar nomes» pede ponto-e-vírgula. Recipients.Add evita isso.
+    foreach ($raw in ($addrList -split '[,;]')) {
+        $addr = ([string]$raw).Trim()
+        if (-not $addr) { continue }
+        $r = $mail.Recipients.Add($addr)
+        $r.Type = $type # 1=olTo, 2=olCC, 3=olBCC
+    }
+}
+
 function Open-EmlViaCom([string]$emlPath, $outlook = $null) {
     # Abre rascunho com CreateItem — sem argv /eml (evita «argumento inválido»
     # no Outlook novo / App Paths errado).
@@ -321,10 +333,11 @@ function Open-EmlViaCom([string]$emlPath, $outlook = $null) {
         $tmpAtts = @()
         try {
             $mail = $outlook.CreateItem(0) # olMailItem
-            if ($parsed.To) { $mail.To = $parsed.To }
-            if ($parsed.Cc) { $mail.CC = $parsed.Cc }
+            if ($parsed.To) { Add-OutlookRecipientList $mail $parsed.To 1 }
+            if ($parsed.Cc) { Add-OutlookRecipientList $mail $parsed.Cc 2 }
             if ($parsed.Subject) { $mail.Subject = $parsed.Subject }
             if ($parsed.Html) { $mail.HTMLBody = $parsed.Html }
+            try { [void]$mail.Recipients.ResolveAll() } catch { }
 
             foreach ($att in $parsed.Attachments) {
                 $safeName = ($att.Name -replace '[\\/:*?"<>|]', '_')
@@ -439,7 +452,7 @@ function Set-CorsHeaders($res) {
     $res.Headers['Access-Control-Expose-Headers'] = 'X-Delta-Outlook-Bridge'
     $res.Headers['Access-Control-Max-Age'] = '86400'
     # Versão da ponte: o browser recusa pontes antigas (Display modal / /eml).
-    $res.Headers['X-Delta-Outlook-Bridge'] = 'com-v3'
+    $res.Headers['X-Delta-Outlook-Bridge'] = 'com-v4'
 }
 
 $listener = $null

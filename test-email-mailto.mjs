@@ -152,6 +152,17 @@ check('cc .eml (ccString) continua com ; para Outlook desktop', () => {
   assert.ok(s.includes('carlos.castro@deltafoodsbrasil.com.br'));
 });
 
+check('outlookAbrirRascunho: cabeçalho Cc do .eml usa ; (nunca vírgula entre emails)', () => {
+  const start = html.indexOf('async function outlookAbrirRascunho');
+  const end = html.indexOf('\nfunction isAdmin()', start);
+  const fn = html.slice(start, end);
+  // Normalização final para ; antes de montar o EML
+  assert.ok(fn.includes(".join('; ')"), 'normaliza CC com ; ');
+  assert.ok(fn.includes('`Cc: ${ccVal}`') || fn.includes('Cc: ${ccVal}'), 'cabeçalho Cc no EML');
+  // mailto continua com vírgulas noutro sítio
+  assert.ok(html.includes("emails.join(',')"), 'mailto mantém vírgulas');
+});
+
 check('Horeca: Filipe em CC, Diogo não é forçado (Carlos a enviar)', () => {
   horeca = true;
   varejo = false;
@@ -713,10 +724,15 @@ check('serve.ps1 abre rascunho SÓ via COM (nunca /eml — evita argumento invá
   assert.ok(ps1.includes('CreateItem(0)'));
   assert.ok(ps1.includes('HTMLBody'));
   assert.ok(ps1.includes("X-Delta-Outlook-Bridge") || ps1.includes("'X-Delta-Outlook-Bridge'"));
-  assert.ok(ps1.includes('com-v3'));
+  assert.ok(ps1.includes('com-v4'));
   assert.ok(ps1.includes('Display($false)'), 'Display não-modal (evita caixa de diálogo aberta)');
   assert.ok(!/Display\(\$true\)/.test(ps1), 'sem Display modal');
   assert.ok(ps1.includes('503'), '503 se Outlook tiver diálogo aberto');
+  // CC/To: Recipients.Add — NUNCA $mail.CC = lista (vírgulas → Verificar nomes)
+  assert.ok(ps1.includes('function Add-OutlookRecipientList'), 'Add-OutlookRecipientList');
+  assert.ok(ps1.includes('Recipients.Add'), 'Recipients.Add por endereço');
+  assert.ok(!/\$mail\.CC\s*=/.test(ps1), 'não atribui lista a $mail.CC');
+  assert.ok(!/\$mail\.To\s*=/.test(ps1), 'não atribui lista a $mail.To');
   // Start-EmlDraft não pode lançar /eml (Start-Process "sucesso" + diálogo Outlook)
   const startFn = ps1.slice(ps1.indexOf('function Start-EmlDraft'), ps1.indexOf('function Complete-EmlDraftFocus'));
   assert.ok(startFn.includes('Open-EmlViaCom'));
@@ -725,11 +741,11 @@ check('serve.ps1 abre rascunho SÓ via COM (nunca /eml — evita argumento invá
   assert.ok(ps1.includes('Deferred'), 'cold-start COM depois do HTTP 204');
   assert.ok(fs.existsSync(path.join(root, 'Atualizar-Ponte-Outlook.bat')), 'bat para actualizar a ponte');
   const bat = fs.readFileSync(path.join(root, 'Atualizar-Ponte-Outlook.bat'), 'utf8');
-  assert.ok(bat.includes('com-v3'), 'bat verifica com-v3');
+  assert.ok(bat.includes('com-v4'), 'bat verifica com-v4');
 });
 
-check('browser exige ponte com-v3 e NUNCA faz POST a pontes antigas', () => {
-  assert.ok(html.includes("OUTLOOK_BRIDGE_VERSION = 'com-v3'"));
+check('browser exige ponte com-v4 e NUNCA faz POST a pontes antigas', () => {
+  assert.ok(html.includes("OUTLOOK_BRIDGE_VERSION = 'com-v4'"));
   assert.ok(html.includes('outlookBridgeVersionOk'));
   assert.ok(html.includes('outlookProbeBridgeVersion'));
   assert.ok(html.includes('Atualizar-Ponte-Outlook.bat'));
