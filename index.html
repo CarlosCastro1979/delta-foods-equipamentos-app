@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-outlook-com Outlook COM CreateItem + Excel sempre descarregado -->
+<!-- dfb-build: v2026-11-16-xlsx-local SheetJS/XLSX local (lista Prospecção ↓ Excel) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -6558,15 +6558,51 @@ async function loadData(forceRefresh = false) {
 }
 
 const XLSX_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+let _xlsxLoadPromise = null;
 async function ensureXLSX() {
   if (window.XLSX) return;
-  await new Promise((res, rej) => {
-    const s = document.createElement('script');
-    s.src = XLSX_CDN;
-    s.onload = res;
-    s.onerror = rej;
-    document.head.appendChild(s);
-  });
+  if (!_xlsxLoadPromise) {
+    // Local primeiro: cdnjs.cloudflare.com dá ERR_CONNECTION_TIMED_OUT em várias redes.
+    _xlsxLoadPromise = (async () => {
+      const local = [];
+      try { local.push(new URL('xlsx.full.min.js', location.href).href); } catch (_) {}
+      local.push(
+        'xlsx.full.min.js',
+        './xlsx.full.min.js',
+        '/delta-foods-equipamentos-app/xlsx.full.min.js',
+      );
+      const remote = [
+        XLSX_CDN,
+        'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+        'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js',
+      ];
+      const seen = new Set();
+      const srcs = [...local, ...remote].filter(src => {
+        if (!src || seen.has(src)) return false;
+        seen.add(src);
+        return true;
+      });
+      let lastErr = null;
+      for (const src of srcs) {
+        try {
+          await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.async = true;
+            s.onload = () => res();
+            s.onerror = () => rej(new Error('Falha a carregar ' + src));
+            document.head.appendChild(s);
+          });
+          if (window.XLSX) return;
+          lastErr = new Error('XLSX não definido após ' + src);
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      throw lastErr || new Error('Não foi possível carregar o leitor Excel (XLSX).');
+    })();
+  }
+  await _xlsxLoadPromise;
 }
 function writeXlsxDownload(rows, sheetName, filename, colWidths) {
   const ws = window.XLSX.utils.aoa_to_sheet(rows);
@@ -7025,12 +7061,7 @@ async function handleSCFileImport(event) {
 
   if (!window.XLSX) {
     toast('A carregar leitor Excel...');
-    await new Promise((res,rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
-    });
+    await ensureXLSX();
   }
 
   toast(`A processar ${files.length} ficheiro(s)...`);
@@ -10641,12 +10672,7 @@ async function carregarListaSAP(event) {
   try {
 
   if (!window.XLSX) {
-    await new Promise((res,rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      s.onload = res; s.onerror = () => rej(new Error('Não foi possível carregar o leitor de Excel'));
-      document.head.appendChild(s);
-    });
+    await ensureXLSX();
   }
 
   const buf = await file.arrayBuffer();
@@ -32075,12 +32101,7 @@ async function processVendasFile(event) {
 
   try {
     if (!window.XLSX) {
-      await new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-        s.onload = res; s.onerror = rej;
-        document.head.appendChild(s);
-      });
+      await ensureXLSX();
     }
 
     // 1) Só o mês corrente e o mês anterior. Dentro desses meses, só os DIAS do ficheiro
@@ -43065,33 +43086,38 @@ async function prosEliminar(id) {
 }
 
 async function exportProsExcel() {
-  await ensureXLSX();
-  const canalId = prosCanalActivoId();
-  const canalNome = prosCanalActivoNome();
-  let src = prosData || [];
-  if (typeof filterByUtilizadorActivo === 'function') {
-    src = filterByUtilizadorActivo(src, p => p && p.vendedor);
+  try {
+    await ensureXLSX();
+    const canalId = prosCanalActivoId();
+    const canalNome = prosCanalActivoNome();
+    let src = prosData || [];
+    if (typeof filterByUtilizadorActivo === 'function') {
+      src = filterByUtilizadorActivo(src, p => p && p.vendedor);
+    }
+    const rows = src.map(p => ({
+      'Canal':          canalNome,
+      'Nome':           p.nome,
+      'Vendedor':       p.vendedor,
+      'Segmento':       p.segmento,
+      'Região':         p.regiao,
+      'Estado':         (PROS_ESTADOS[p.estado]||{}).label || p.estado,
+      'CNPJ':           p.cnpj,
+      'Celular':        p.celular,
+      'Email':          p.email,
+      'Marca Atual':    p.marca_atual,
+      'Preço Atual':    p.preco_atual,
+      'Caps/mês':       p.potencial_caps,
+      'Kg/mês':         p.potencial_kg,
+      'Próxima Ação':   p.proxima_acao,
+      'Data Ação':      p.data_proxima_acao,
+      'Criado em':      p.criado_em ? new Date(p.criado_em).toLocaleDateString('pt-BR') : '',
+      'Atualizado em':  p.atualizado_em ? new Date(p.atualizado_em).toLocaleDateString('pt-BR') : '',
+    }));
+    writeXlsxJsonDownload(rows, `Prospeção ${canalNome}`, `prospeccao_${canalId}.xlsx`);
+    toast('Excel da lista de prospeção descarregado.');
+  } catch (e) {
+    toast('Erro ao exportar Excel: ' + (e && e.message ? e.message : e), 'error');
   }
-  const rows = src.map(p => ({
-    'Canal':          canalNome,
-    'Nome':           p.nome,
-    'Vendedor':       p.vendedor,
-    'Segmento':       p.segmento,
-    'Região':         p.regiao,
-    'Estado':         (PROS_ESTADOS[p.estado]||{}).label || p.estado,
-    'CNPJ':           p.cnpj,
-    'Celular':        p.celular,
-    'Email':          p.email,
-    'Marca Atual':    p.marca_atual,
-    'Preço Atual':    p.preco_atual,
-    'Caps/mês':       p.potencial_caps,
-    'Kg/mês':         p.potencial_kg,
-    'Próxima Ação':   p.proxima_acao,
-    'Data Ação':      p.data_proxima_acao,
-    'Criado em':      p.criado_em ? new Date(p.criado_em).toLocaleDateString('pt-BR') : '',
-    'Atualizado em':  p.atualizado_em ? new Date(p.atualizado_em).toLocaleDateString('pt-BR') : '',
-  }));
-  writeXlsxJsonDownload(rows, `Prospeção ${canalNome}`, `prospeccao_${canalId}.xlsx`);
 }
 
 function escHtml(str) {
@@ -46465,12 +46491,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-outlook-com: Outlook COM CreateItem + Excel sempre descarregado. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-xlsx-local: SheetJS/XLSX local (lista Prospecção ↓ Excel). SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-outlook-com';
+  var CACHE_KEEP = 'v2026-11-16-xlsx-local';
 
   function tryRegister() {
     try {

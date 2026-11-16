@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-outlook-com — Outlook COM CreateItem + Excel sempre descarregado
+// Service Worker v2026-11-16-xlsx-local — SheetJS/XLSX local (lista Prospecção ↓ Excel)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-outlook-com';
+const CACHE = 'v2026-11-16-xlsx-local';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

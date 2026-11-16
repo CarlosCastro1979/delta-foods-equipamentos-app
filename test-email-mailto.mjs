@@ -776,6 +776,30 @@ check('ExcelJS: ficheiro local + loader tenta local antes do CDN', () => {
   assert.ok(ps1.includes("'exceljs.min.js'"), 'serve.ps1 sincroniza exceljs.min.js');
 });
 
+check('XLSX/SheetJS: ficheiro local + ensureXLSX antes do CDN (↓ Excel Prospecção)', () => {
+  const localPath = path.join(root, 'xlsx.full.min.js');
+  assert.ok(fs.existsSync(localPath), 'xlsx.full.min.js no repositório');
+  assert.ok(fs.statSync(localPath).size > 100000, 'xlsx.full.min.js não está vazio');
+  const start = html.indexOf('async function ensureXLSX');
+  const end = html.indexOf('\nfunction writeXlsxDownload', start);
+  const fn = html.slice(start, end);
+  assert.ok(fn.includes('xlsx.full.min.js'));
+  assert.ok(fn.includes('/delta-foods-equipamentos-app/xlsx.full.min.js'));
+  const localIdx = fn.indexOf("'xlsx.full.min.js'");
+  const remoteIdx = Math.min(
+    ...['XLSX_CDN', 'cdn.jsdelivr.net', 'unpkg.com']
+      .map(s => { const i = fn.indexOf(s); return i < 0 ? Infinity : i; }),
+  );
+  assert.ok(localIdx >= 0 && remoteIdx > localIdx, 'local antes dos CDN remotos');
+  // Sem loaders inline que bypassem ensureXLSX
+  const inlineLoads = (html.match(/s\.src\s*=\s*'https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/xlsx/g) || []).length;
+  assert.equal(inlineLoads, 0, 'não há s.src directo ao CDN xlsx');
+  const ps1 = fs.readFileSync(path.join(root, 'serve.ps1'), 'utf8');
+  assert.ok(ps1.includes("'xlsx.full.min.js'"), 'serve.ps1 sincroniza xlsx.full.min.js');
+  const pros = html.slice(html.indexOf('async function exportProsExcel'), html.indexOf('\nfunction escHtml'));
+  assert.ok(pros.includes('catch'), 'exportProsExcel mostra erro se falhar');
+});
+
 if (process.exitCode) {
   console.error('\nFalhou pelo menos um teste.');
   process.exit(process.exitCode);
