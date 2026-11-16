@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-cadastro-anexo-excel Sem ponte: Excel+.eml+mailto (anexo em Transferências) -->
+<!-- dfb-build: v2026-11-16-fix-ponte-bat Atualizar-Ponte-Outlook.bat autonomo (LocalAppData) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -36532,7 +36532,7 @@ function outlookWarnPonteDesatualizada() {
   _outlookBridgeWarned = true;
   try {
     toast(
-      'Ponte Outlook offline/desatualizada — o Excel descarrega para anexares. Para anexar automático: Atualizar-Ponte-Outlook.bat',
+      'Ponte Outlook offline — Excel/.eml nas Transferências. Para anexar automático: corre Atualizar-Ponte-Outlook.bat (pode estar em Transferências) e deixa a janela aberta.',
       'warn'
     );
   } catch (_) {}
@@ -46567,12 +46567,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-cadastro-anexo-excel: Sem ponte Excel+.eml. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-16-fix-ponte-bat: Atualizar-Ponte autonomo. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-cadastro-anexo-excel';
+  var CACHE_KEEP = 'v2026-11-16-fix-ponte-bat';
 
   function tryRegister() {
     try {

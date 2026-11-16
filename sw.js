@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-cadastro-anexo-excel — Sem ponte: Excel+.eml+mailto
+// Service Worker v2026-11-16-fix-ponte-bat — Atualizar-Ponte-Outlook.bat autonomo
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-cadastro-anexo-excel';
+const CACHE = 'v2026-11-16-fix-ponte-bat';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
