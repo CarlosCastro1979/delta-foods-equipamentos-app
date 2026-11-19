@@ -1,6 +1,6 @@
-// Service Worker v2026-11-19-vendas-meses-filtros — vários meses, canal e vendedor
+// Service Worker v2026-11-19-vendas-eduardo-filipe — Eduardo=Madeira; Filipe+equipa; sem detalhe
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-19-vendas-meses-filtros';
+const CACHE = 'v2026-11-19-vendas-eduardo-filipe';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

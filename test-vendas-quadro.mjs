@@ -486,7 +486,7 @@ check('Nº pessoal do Excel ganha à lista: 99520020 é Delta / Distribuidores r
   assert.equal(pelaLista, null, 'a lista de clientes não substitui o NPess do Excel');
 });
 
-check('números do resumo filtram o detalhe; zero não é clicável', () => {
+check('números do resumo filtram o quadro; zero não é clicável', () => {
   const els = {};
   function makeEl() {
     return {
@@ -527,6 +527,10 @@ check('números do resumo filtram o detalhe; zero não é clicável', () => {
     'volumeEfetivoCelula', 'somarVolumeQuadroNosMeses', 'metricasVolumeLinhaQuadro',
     'vendedoresCanalQuadro', 'htmlLinhaMetricasPnL', 'htmlResumoVolumeQuadro', 'htmlVistaCanalVendas',
     'htmlDetalheVendedorQuadro', 'renderVendasQuadro', 'onClickVendasQuadro', 'limparFiltroVendasQuadro',
+    'chaveCanalEscolha', 'listaCanaisEscolha', 'listaVendedoresEscolha', 'canalEstaNaEscolha',
+    'vendedorEstaNaEscolha', 'filtroMetricaEscolha', 'escolhaTemRestricao', 'escolhaVistaQuadro',
+    'expandirVendedoresEscolha', 'equipaVendedorVendas', 'normNomeVendaMenu', 'ymsNdoPeriodo', 'ymsN1doPeriodo',
+    'objetivoCanalNosMeses', 'somarObjectivosConhecidos', 'objetivoPessoasNosMeses',
   ]) {
     vm.runInContext(extractFn(html, name), ctx);
   }
@@ -581,17 +585,19 @@ check('números do resumo filtram o detalhe; zero não é clicável', () => {
   const filtrado = els['pv-vendas-quadro'].innerHTML;
   assert.ok(filtrado.includes('Filtro:'), 'banner do filtro');
   assert.ok(filtrado.includes('Limpar'), 'botão Limpar');
-  assert.ok(filtrado.includes('FILIPE NEVES'));
-  assert.ok(!filtrado.includes('DIOGO OLIVEIRA'), 'detalhe fica só no filtro');
+  assert.ok(filtrado.includes('Horeca'), 'o resumo fica no canal clicado');
+  assert.ok(!filtrado.includes('Varejo e Distr. Varejo'), 'os outros canais saem do resumo');
+  assert.ok(!filtrado.includes('Detalhe por vendedor'), 'já não há detalhe por vendedor');
   ctx.limparFiltroVendasQuadro();
   const limpo = els['pv-vendas-quadro'].innerHTML;
   assert.ok(!limpo.includes('Filtro:'), 'Limpar tira o banner');
-  assert.ok(limpo.includes('DIOGO OLIVEIRA'));
+  assert.ok(limpo.includes('Varejo e Distr. Varejo'), 'Limpar repõe os canais');
   assert.ok(!limpo.includes('id="vq-canais"'), 'o quadro geral não é um selector de canais');
   assert.ok(limpo.includes('Objetivo'), 'coluna de objectivo');
   assert.ok(!limpo.includes('Volumes'), 'sem bloco de volumes');
   assert.ok(!limpo.includes('>Linhas<'), 'sem coluna Linhas');
   assert.ok(!limpo.includes('QtFaturada'));
+  assert.ok(!limpo.includes('Detalhe por vendedor'));
 });
 
 function extractConstObject(src, name) {
@@ -992,10 +998,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-19-vendas-meses-filtros'));
+  assert.ok(sw.includes('v2026-11-19-vendas-eduardo-filipe'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-11-19-vendas-meses-filtros'));
+  assert.ok(html.includes('v2026-11-19-vendas-eduardo-filipe'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 
@@ -1227,8 +1233,9 @@ check('Set/2026: Objetivo da Delta fica a seguir a N e os Acum.* só depois das 
   assert.ok(!out.includes('Volumes'), 'sem bloco de volumes');
   assert.ok(!out.includes('>Linhas<'), 'sem coluna Linhas');
 
-  const tabs = tabelasVq(out.split('Detalhe por vendedor')[0]);
+  const tabs = tabelasVq(out);
   assert.ok(tabs.length >= 1, 'quadro geral tem a tabela de valor');
+  assert.ok(!out.includes('Detalhe por vendedor'), 'já não há detalhe por vendedor');
   const heads = cabecalhosVq(tabs[0]);
   assert.deepEqual(heads, ['Empresa'].concat(ORDEM_VALOR));
   assert.equal(heads.indexOf('Objetivo'), heads.indexOf('N') + 1);
@@ -1250,32 +1257,58 @@ check('Set/2026: Objetivo da Delta fica a seguir a N e os Acum.* só depois das 
   assert.equal(lojas.cells[3].text, ctx.formatNumeroQuadroPnL(1256087, true));
   assert.equal(lojas.cells[4].text, '59%');
   assert.ok(lojas.cells[4].attrs.includes('vq-var-pos'));
-
-  const det = tabelasVq(out.split('Detalhe por vendedor')[1] || '');
-  assert.deepEqual(cabecalhosVq(det[0]), ['Vendedor'].concat(ORDEM_VALOR));
-  const marcioDet = linhasVq(det[0]).find(r => r.cells[0] && r.cells[0].text.includes('MARCIO GORGA'));
-  assert.ok(marcioDet, 'detalhe lista o vendedor');
-  const objLojas = ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-09');
-  assert.equal(marcioDet.cells[3].text, ctx.formatNumeroQuadroPnL(objLojas, true), 'Lojas online é só do Marcio');
-  assert.ok(marcioDet.cells[3].html.includes('<button'), 'objetivo do canal só dele é clicável');
-  assert.equal(marcioDet.cells[4].text, ctx.formatPctQuadroPnL(ctx.variacaoObjetivoPct(2000000, true, objLojas)));
   assert.ok(out.includes('Restauração'), 'o quadro geral mantém os outros canais');
 });
 
-check('detalhe junta os códigos do mesmo vendedor e só mostra o objetivo que existe', () => {
+check('filtro de vendedor no resumo; Eduardo Moreira = Madeira; Filipe soma a equipa', () => {
+  for (const name of [
+    'normNomeVendaMenu', 'equipaVendedorVendas', 'expandirVendedoresEscolha',
+    'listaCanaisEscolha', 'listaVendedoresEscolha', 'canalEstaNaEscolha',
+    'vendedorEstaNaEscolha', 'filtroMetricaEscolha', 'escolhaTemRestricao',
+    'nomeVendedorQuadroMarcio', 'quadroVendasClone', 'somarValorQuadro',
+    'quadroComMarcioIdentificado', 'ymsNdoPeriodo', 'ymsN1doPeriodo',
+    'periodoComparacaoQuadro', 'metricasLinhaQuadro', 'chaveCanalEscolha',
+    'opcoesCanalQuadroGeral', 'canaisFixosQuadroEmpresa', 'renderVendasQuadro',
+    'onClickVendasQuadro', 'limparFiltroVendasQuadro', 'linhasResumoQuadroPnL',
+    'htmlLinhaResumoPnL', 'escolhaVistaQuadro', 'lerChecksPainel',
+    'objetivoCanalNosMeses', 'somarObjectivosConhecidos',
+  ]) {
+    vm.runInContext(extractFn(html, name), ctx);
+  }
+  assert.equal(ctx.normNomeVendaMenu('Eduardo Moreira'), 'EDUARDO MADEIRA');
+  assert.equal(ctx.nomeVendedorQuadroMarcio('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MOREIRA'), 'EDUARDO MADEIRA');
+  assert.deepEqual(ctx.equipaVendedorVendas('FILIPE NEVES').map(ctx.normNomeVendaMenu).sort(), [
+    'DANIELA SANTOS', 'FILIPE NEVES', 'HELCIO GREGIO', 'PAULO FONTES',
+  ].sort());
+
   function cel(empresa, canal, vendedor, valor) {
     return { empresa, canal, vendedor, valor, linhas: 1, linhasComValor: 1 };
   }
-  const q = ctx.quadroVendasVazio();
-  q.meses['2026-11'] = { celulas: {
-    a: cel('Delta Foods Brasil', 'Distribuidores de retalho', 'DIOGO OLIVEIRA', 100),
-    b: cel('Delta Foods Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA', 40),
-    c: cel('Q Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA', 10),
-    d: cel('Delta Foods Brasil', 'Distribuidores regionais', 'MASSIMO BOTTELLO', 50),
-    e: cel('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA', 20),
-    f: cel('Delta Foods Brasil', 'Restauração', 'HÉLCIO GRÉGIO', 30),
-    g: cel('Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA', 80),
+  const bruto = ctx.quadroVendasVazio();
+  bruto.meses['2026-11'] = { celulas: {
+    a: cel('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MOREIRA', 20),
+    b: cel('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA', 5),
+    c: cel('Delta Foods Brasil', 'Distribuidores regionais', 'MASSIMO BOTTELLO', 50),
+    d: cel('Delta Foods Brasil', 'Restauração', 'FILIPE NEVES', 10),
+    e: cel('Delta Foods Brasil', 'Restauração', 'DANIELA SANTOS', 40),
+    f: cel('Delta Foods Brasil', 'Restauração', 'PAULO FONTES', 30),
+    g: cel('Delta Foods Brasil', 'Restauração', 'HÉLCIO GRÉGIO', 20),
+    h: cel('Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA', 80),
   } };
+  const q = ctx.quadroComMarcioIdentificado(bruto);
+  const edu = q.meses['2026-11'].celulas['Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA'];
+  assert.ok(edu, 'Moreira funde-se em Madeira');
+  assert.equal(edu.valor, 25);
+  assert.equal(q.meses['2026-11'].celulas['Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MOREIRA'], undefined);
+
+  const periodo = ctx.periodoComparacaoQuadro(11, 2026);
+  const filipe = ctx.metricasLinhaQuadro(q, periodo, ctx.filtroMetricaEscolha(null, { vendedores: ['FILIPE NEVES'] }));
+  assert.equal(filipe.n, 10 + 40 + 30 + 20, 'Filipe no filtro soma a equipa Horeca');
+  const soDaniela = ctx.metricasLinhaQuadro(q, periodo, ctx.filtroMetricaEscolha(null, { vendedores: ['DANIELA SANTOS'] }));
+  assert.equal(soDaniela.n, 40, 'Daniela sozinha não puxa a equipa');
+  const madeira = ctx.metricasLinhaQuadro(q, periodo, ctx.filtroMetricaEscolha(null, { vendedores: ['EDUARDO MOREIRA'] }));
+  assert.equal(madeira.n, 25, 'filtro Moreira encontra Madeira');
+
   const mesEl = ctx.document.getElementById('vq-mes');
   const anoEl = ctx.document.getElementById('vq-ano');
   mesEl.value = '11';
@@ -1285,39 +1318,9 @@ check('detalhe junta os códigos do mesmo vendedor e só mostra o objetivo que e
   ctx.window._vendasQuadro = q;
   ctx.renderVendasQuadro(q);
   const out = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
-  const det = tabelasVq(out.split('Detalhe por vendedor')[1] || '');
-  const rows = linhasVq(det[0]);
-  const diogoSub = rows.find(r => r.cells[0] && r.cells[0].text.includes('DIOGO OLIVEIRA') && r.cells[0].text.includes('subtotal'));
-  assert.ok(diogoSub, 'Diogo tem subtotal dos três códigos');
-  assert.ok(diogoSub.attrs.includes('vq-emp'));
-  assert.equal(diogoSub.cells[2].text, ctx.formatNumeroQuadroPnL(150, true));
-  const objDiogo = ctx.objetivoCanalMes('Delta Foods Brasil', 'Distribuidores de retalho', '2026-11')
-    + ctx.objetivoCanalMes('Delta Foods Brasil', 'Retalho moderno', '2026-11')
-    + ctx.objetivoCanalMes('Q Brasil', 'Retalho moderno', '2026-11');
-  assert.equal(diogoSub.cells[3].text, ctx.formatNumeroQuadroPnL(objDiogo, true));
-  assert.ok(diogoSub.cells[2].html.includes('data-vq-vendedor="DIOGO OLIVEIRA"'));
-  assert.ok(diogoSub.cells[2].html.includes('data-vq-empresa=""'));
-  const retalho = rows.find(r => r.cells[0] && r.cells[0].text.includes('Distribuidores de retalho') && !r.cells[0].text.includes('DIOGO'));
-  assert.ok(retalho, 'o código fica acima do subtotal, sem repetir o nome');
-  assert.ok(rows.indexOf(retalho) < rows.indexOf(diogoSub), 'o subtotal fecha o grupo');
-  assert.equal(retalho.cells[2].text, ctx.formatNumeroQuadroPnL(100, true));
-  const iDiogo = rows.findIndex(r => r.cells[0] && r.cells[0].text.includes('DIOGO'));
-  const iEdu = rows.findIndex(r => r.cells[0] && r.cells[0].text.includes('EDUARDO'));
-  const iMax = rows.findIndex(r => r.cells[0] && r.cells[0].text.includes('MASSIMO'));
-  assert.ok(iDiogo >= 0 && iDiogo < iEdu && iEdu < iMax, 'os códigos do mesmo vendedor ficam juntos');
-  const max = rows[iMax];
-  const edu = rows[iEdu];
-  assert.equal(max.cells[3].text, '—', 'Dist. regionais não tem parte do Massimo');
-  assert.equal(edu.cells[3].text, '—', 'Dist. regionais não tem parte do Eduardo');
-  assert.ok(!max.cells[3].html.includes('<button'));
-  assert.ok(!edu.cells[0].text.includes('subtotal'));
-  const hel = rows.find(r => r.cells[0] && r.cells[0].text.includes('HÉLCIO'));
-  const objHel = ctx.objetivoVendedorHorecaMenu('Delta Foods Brasil', 'Restauração', 'HÉLCIO GRÉGIO', '2026-11');
-  assert.ok(objHel > 0, 'a Restauração tem parte por vendedor');
-  assert.equal(hel.cells[3].text, ctx.formatNumeroQuadroPnL(objHel, true));
-  const mar = rows.find(r => r.cells[0] && r.cells[0].text.includes('MARCIO'));
-  assert.equal(mar.cells[3].text, ctx.formatNumeroQuadroPnL(ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-11'), true));
-  assert.ok(out.includes('subtotal soma-os'));
+  assert.ok(!out.includes('Detalhe por vendedor'));
+  assert.ok(!out.includes('EDUARDO MOREIRA'), 'o resumo já não mostra Moreira');
+  assert.ok(out.includes('Distribuidores regionais'));
 
   ctx.onClickVendasQuadro({
     target: {
@@ -1326,9 +1329,9 @@ check('detalhe junta os códigos do mesmo vendedor e só mostra o objetivo que e
         if (sel === '[data-vq-filtro]') {
           return {
             getAttribute(name) {
-              if (name === 'data-vq-empresa') return '';
-              if (name === 'data-vq-canal') return '';
-              if (name === 'data-vq-vendedor') return 'DIOGO OLIVEIRA';
+              if (name === 'data-vq-empresa') return 'Delta Foods Brasil';
+              if (name === 'data-vq-canal') return 'Restauração';
+              if (name === 'data-vq-vendedor') return '';
               return '';
             },
           };
@@ -1338,15 +1341,10 @@ check('detalhe junta os códigos do mesmo vendedor e só mostra o objetivo que e
     },
   });
   const filtrado = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
-  assert.ok(filtrado.includes('Filtro:'), 'banner do subtotal');
-  assert.ok(filtrado.includes('Limpar'));
-  assert.ok(filtrado.includes('DIOGO OLIVEIRA'));
-  assert.ok(!filtrado.includes('MASSIMO'), 'o subtotal filtra só esse vendedor');
-  assert.ok(!filtrado.includes('HÉLCIO'));
+  assert.ok(filtrado.includes('Filtro:'));
+  assert.ok(filtrado.includes('Restauração'));
+  assert.ok(!filtrado.includes('Lojas online'), 'o clique no canal filtra o resumo');
   ctx.limparFiltroVendasQuadro();
-  const limpo = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
-  assert.ok(limpo.includes('MASSIMO BOTTELLO'), 'Limpar repõe os outros vendedores');
-  assert.ok(!limpo.includes('Filtro:'));
 });
 
 check('a frase usa o dia máximo real do agregado em Set/2026, não uma data fixa', () => {
