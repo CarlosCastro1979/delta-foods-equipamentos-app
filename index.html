@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-18-nfe-carga-rapida ZIP grava só notas novas, sem reenviar PDF -->
+<!-- dfb-build: v2026-11-19-vendas-meses-filtros vários meses somados, filtro de canal e de vendedor -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -1584,6 +1584,26 @@
     color: #1e3a8a; background: #dbeafe; border: 1px solid #93c5fd;
     border-radius: 999px; padding: 2px 8px;
   }
+  .vq-multi { position: relative; display: inline-block; vertical-align: middle; }
+  .vq-multi-btn {
+    margin-left: 4px; padding: 6px 10px; font-size: 13px; font-weight: 600;
+    background: #fff; border: 1px solid var(--border-strong); border-radius: 6px;
+    color: var(--text); cursor: pointer; max-width: 240px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .vq-multi-btn:hover { border-color: #94a3b8; }
+  .vq-multi-panel {
+    position: absolute; z-index: 40; top: calc(100% + 4px); left: 0;
+    min-width: 220px; max-width: min(320px, 86vw); max-height: 280px; overflow: auto;
+    background: #fff; border: 1px solid var(--border-strong); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12); padding: 6px;
+  }
+  .vq-multi-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+    font-size: 13px; color: var(--text); cursor: pointer; border-radius: 6px; font-weight: 500;
+  }
+  .vq-multi-item:hover { background: #f1f5f9; }
+  .vq-multi-item input { margin: 0; flex: 0 0 auto; }
   .vq-scroll { overflow: auto; -webkit-overflow-scrolling: touch; max-width: 100%; max-height: min(70vh, calc(100vh - 220px)); border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
   .vq-scroll-main { max-height: min(68vh, 640px); }
   .vq-scroll-det { max-height: min(48vh, 420px); }
@@ -3778,18 +3798,21 @@ var _unused_placeholder = 1;
       <button type="button" class="sub-tab" id="cvm-sub-perdas" onclick="cvmShowSub('perdas')">Maiores perdas mês</button>
     </div>
     <div id="cvm-periodo" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
-      <label style="font-size:12px;color:var(--muted);">Mês
-        <select id="cvm-mes" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="cvmPeriodoMudou()"></select>
+      <label style="font-size:12px;color:var(--muted);">Meses
+        <select id="cvm-mes" class="form-input" style="display:none;" onchange="cvmPeriodoMudou()"></select>
+        <span id="cvm-meses-host"></span>
       </label>
       <label style="font-size:12px;color:var(--muted);">Ano
-        <select id="cvm-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="cvmPeriodoMudou()"></select>
+        <select id="cvm-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="cvmAnoMudou()"></select>
       </label>
+      <span id="cvm-periodo-txt" style="font-size:13px;font-weight:600;"></span>
     </div>
     <div id="cvm-pane-quadro">
     <div style="margin-bottom:12px;">
       <div id="canal-vendas-titulo" style="font-size:16px;font-weight:700;">Vendas</div>
       <div id="canal-vendas-ate" style="font-size:14px;font-weight:700;color:#1e40af;margin-top:4px;"></div>
       <div style="font-size:12px;color:var(--muted);margin-top:2px;">Vendas líquidas só dos canais deste menu. O vendedor fica na mesma tabela.</div>
+      <div id="cvm-filtros" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;"></div>
     </div>
     <div id="canal-vendas-quadro"><div style="color:var(--muted);font-size:13px;">A ler o agregado guardado…</div></div>
     </div>
@@ -28010,13 +28033,29 @@ function vendasQuadroPassaFiltro(cell, filtro) {
   if (!filtro || !cell) return true;
   if (filtro.empresa && cell.empresa !== filtro.empresa) return false;
   if (filtro.canal && cell.canal !== filtro.canal) return false;
-  if (filtro.vendedor) {
-    const norm = (typeof normNomeVendaMenu === 'function')
-      ? normNomeVendaMenu
-      : function (s) {
-        return String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
-      };
-    if (norm(cell.vendedor) !== norm(filtro.vendedor)) return false;
+  const norm = (typeof normNomeVendaMenu === 'function')
+    ? normNomeVendaMenu
+    : function (s) {
+      return String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+    };
+  if (filtro.vendedor && norm(cell.vendedor) !== norm(filtro.vendedor)) return false;
+  if (Array.isArray(filtro.canais) && filtro.canais.length) {
+    const key = (typeof chaveCanalEscolha === 'function')
+      ? chaveCanalEscolha(cell.empresa, cell.canal)
+      : (String(cell.empresa || '') + '|' + String(cell.canal || ''));
+    let okCanal = false;
+    for (let i = 0; i < filtro.canais.length; i++) {
+      if (filtro.canais[i] === key) { okCanal = true; break; }
+    }
+    if (!okCanal) return false;
+  }
+  if (Array.isArray(filtro.vendedores) && filtro.vendedores.length) {
+    const nome = norm(cell.vendedor);
+    let okVend = false;
+    for (let i = 0; i < filtro.vendedores.length; i++) {
+      if (norm(filtro.vendedores[i]) === nome) { okVend = true; break; }
+    }
+    if (!okVend) return false;
   }
   return true;
 }
@@ -28310,6 +28349,311 @@ async function substituirValorHistoricoNoQuadro(linhas, hoje, mesesFechados) {
   return saved;
 }
 
+const VENDAS_MAPA_ESCOLHA_LS = 'delta_vendas_mapa_escolha';
+let _vqPeriodoMem = null;
+let _vqEscolhaTimer = null;
+
+function normalizarListaMeses(meses, fallback) {
+  const src = Array.isArray(meses) ? meses : [];
+  const seen = {};
+  const out = [];
+  for (let i = 0; i < src.length; i++) {
+    const n = parseInt(src[i], 10);
+    if (n >= 1 && n <= 12 && !seen[n]) {
+      seen[n] = 1;
+      out.push(n);
+    }
+  }
+  out.sort((a, b) => a - b);
+  if (!out.length) {
+    const fb = parseInt(fallback, 10);
+    if (fb >= 1 && fb <= 12) out.push(fb);
+  }
+  return out;
+}
+
+function rotuloMesesQuadro(meses) {
+  const abrev = (typeof VENDAS_MES_ABREV !== 'undefined') ? VENDAS_MES_ABREV : [];
+  const lista = normalizarListaMeses(meses, 0);
+  if (!lista.length) return '';
+  return lista.map(m => abrev[m - 1] || String(m)).join('+');
+}
+
+function fraseMesesQuadro(meses) {
+  const abrev = (typeof VENDAS_MES_ABREV !== 'undefined') ? VENDAS_MES_ABREV : [];
+  const lista = normalizarListaMeses(meses, 0);
+  const nomes = lista.map(m => abrev[m - 1] || String(m));
+  if (nomes.length <= 1) return nomes[0] || '';
+  if (nomes.length === 2) return nomes[0] + ' e ' + nomes[1];
+  return nomes.slice(0, -1).join(', ') + ' e ' + nomes[nomes.length - 1];
+}
+
+function chaveCanalEscolha(empresa, canal) {
+  return String(empresa || '') + '|' + String(canal || '');
+}
+
+function lerMapaEscolhaGuardada() {
+  try {
+    if (typeof localStorage === 'undefined' || !localStorage) return null;
+    const raw = localStorage.getItem(VENDAS_MAPA_ESCOLHA_LS);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    return o && typeof o === 'object' ? o : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function lerChecksPainel(boxId, attr) {
+  const box = document.getElementById(boxId);
+  if (!box || typeof box.querySelectorAll !== 'function') return null;
+  const inputs = box.querySelectorAll('input[' + attr + ']');
+  if (!inputs || !inputs.length) return null;
+  const on = [];
+  for (let i = 0; i < inputs.length; i++) {
+    if (inputs[i].checked) on.push(inputs[i].value);
+  }
+  return on;
+}
+
+function marcarChecksPainel(boxId, attr, valores) {
+  const box = document.getElementById(boxId);
+  if (!box || typeof box.querySelectorAll !== 'function') return;
+  const inputs = box.querySelectorAll('input[' + attr + ']');
+  const set = {};
+  const lista = Array.isArray(valores) ? valores : [];
+  for (let i = 0; i < lista.length; i++) set[String(lista[i])] = 1;
+  for (let i = 0; i < inputs.length; i++) inputs[i].checked = !!set[String(inputs[i].value)];
+}
+
+function rotulosChecks(boxId) {
+  const box = document.getElementById(boxId);
+  if (!box || typeof box.querySelectorAll !== 'function') return null;
+  const inputs = box.querySelectorAll('input[type="checkbox"]');
+  if (!inputs || !inputs.length) return null;
+  const on = [];
+  for (let i = 0; i < inputs.length; i++) {
+    if (!inputs[i].checked) continue;
+    on.push(inputs[i].getAttribute('data-label') || inputs[i].value);
+  }
+  return on;
+}
+
+function textoBotaoEscolha(tipo, rotulos, meses) {
+  if (tipo === 'meses') {
+    const lista = normalizarListaMeses(meses, 0);
+    if (!lista.length) return 'Meses';
+    const r = rotuloMesesQuadro(lista);
+    const hoje = new Date().getMonth() + 1;
+    if (lista.length === 1 && lista[0] === hoje) return r + ' · actual';
+    return r;
+  }
+  const n = rotulos ? rotulos.length : 0;
+  if (!n) return tipo === 'canais' ? 'Todos os canais' : 'Todos os vendedores';
+  if (n === 1) return rotulos[0];
+  return n + (tipo === 'canais' ? ' canais' : ' vendedores');
+}
+
+function actualizarRotuloPainel(boxId, tipo) {
+  const box = document.getElementById(boxId);
+  if (!box || typeof box.querySelector !== 'function') return;
+  const btn = box.querySelector('.vq-multi-btn');
+  if (!btn) return;
+  if (tipo === 'meses') {
+    const meses = lerChecksPainel(boxId, 'data-vq-mes') || [];
+    btn.textContent = textoBotaoEscolha('meses', null, meses);
+    return;
+  }
+  btn.textContent = textoBotaoEscolha(tipo, rotulosChecks(boxId) || [], null);
+}
+
+function vqTogglePainel(id, ev) {
+  if (ev) {
+    if (ev.stopPropagation) ev.stopPropagation();
+    if (ev.preventDefault) ev.preventDefault();
+  }
+  const box = document.getElementById(id);
+  if (!box || typeof box.querySelector !== 'function') return;
+  const panel = box.querySelector('.vq-multi-panel');
+  if (!panel) return;
+  const abrir = !!panel.hidden;
+  if (document.querySelectorAll) {
+    const abertos = document.querySelectorAll('.vq-multi-panel');
+    for (let i = 0; i < abertos.length; i++) abertos[i].hidden = true;
+  }
+  panel.hidden = !abrir;
+}
+
+function vqGarantirFechaPaineis() {
+  if (typeof window !== 'undefined' && window._vqFechaPaineis) return;
+  if (!document || typeof document.addEventListener !== 'function') return;
+  if (typeof window !== 'undefined') window._vqFechaPaineis = 1;
+  document.addEventListener('click', function () {
+    if (!document.querySelectorAll) return;
+    const abertos = document.querySelectorAll('.vq-multi-panel');
+    for (let i = 0; i < abertos.length; i++) abertos[i].hidden = true;
+  });
+}
+
+function htmlPainelEscolha(boxId, tipo, itens, onchangeFn) {
+  const esc = (typeof escHtml === 'function') ? escHtml : function (s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  };
+  const attr = tipo === 'meses' ? 'data-vq-mes' : (tipo === 'canais' ? 'data-vq-canal' : 'data-vq-vend');
+  let painel = '';
+  const marcados = [];
+  for (let i = 0; i < itens.length; i++) {
+    const it = itens[i];
+    if (it.checked) marcados.push(it.label || it.value);
+    painel += '<label class="vq-multi-item"><input type="checkbox" ' + attr + '="' + esc(it.value) + '" data-label="' + esc(it.label || it.value) + '" value="' + esc(it.value) + '"' + (it.checked ? ' checked' : '') + ' onchange="' + onchangeFn + '()"> ' + esc(it.label || it.value) + '</label>';
+  }
+  const meses = tipo === 'meses' ? itens.filter(it => it.checked).map(it => it.value) : null;
+  const texto = textoBotaoEscolha(tipo, marcados, meses);
+  return '<div class="vq-multi" id="' + boxId + '" onclick="event.stopPropagation()">'
+    + '<button type="button" class="vq-multi-btn" onclick="vqTogglePainel(\'' + boxId + '\', event)">' + esc(texto) + '</button>'
+    + '<div class="vq-multi-panel" hidden>' + painel + '</div></div>';
+}
+
+function agendarGravarMapaEscolha() {
+  if (_vqEscolhaTimer) clearTimeout(_vqEscolhaTimer);
+  _vqEscolhaTimer = setTimeout(gravarMapaEscolhaAgora, 1000);
+}
+
+function gravarMapaEscolhaAgora() {
+  try {
+    if (typeof localStorage === 'undefined' || !localStorage) return;
+    const prev = lerMapaEscolhaGuardada() || {};
+    const out = {
+      vq: prev.vq && typeof prev.vq === 'object' ? prev.vq : {},
+      cvm: prev.cvm && typeof prev.cvm === 'object' ? prev.cvm : { porCanal: {} },
+    };
+    if (!out.cvm.porCanal) out.cvm.porCanal = {};
+    if (document.getElementById('vq-meses-box')) {
+      const meses = lerChecksPainel('vq-meses-box', 'data-vq-mes');
+      const anoEl = document.getElementById('vq-ano');
+      out.vq = {
+        ano: anoEl && anoEl.value ? parseInt(anoEl.value, 10) : (out.vq.ano || new Date().getFullYear()),
+        meses: meses && meses.length ? meses.map(n => parseInt(n, 10)) : (out.vq.meses || []),
+        canais: lerChecksPainel('vq-canais-box', 'data-vq-canal') || [],
+        vendedores: lerChecksPainel('vq-vends-box', 'data-vq-vend') || [],
+      };
+    }
+    if (document.getElementById('cvm-meses-box')) {
+      const meses = lerChecksPainel('cvm-meses-box', 'data-vq-mes');
+      const anoEl = document.getElementById('cvm-ano');
+      if (meses && meses.length) out.cvm.meses = meses.map(n => parseInt(n, 10));
+      if (anoEl && anoEl.value) out.cvm.ano = parseInt(anoEl.value, 10);
+      const canalId = (typeof resolveCanalActivoId === 'function') ? (resolveCanalActivoId() || '') : '';
+      if (canalId && document.getElementById('cvm-canais-box')) {
+        out.cvm.porCanal[canalId] = {
+          canais: lerChecksPainel('cvm-canais-box', 'data-vq-canal') || [],
+          vendedores: lerChecksPainel('cvm-vends-box', 'data-vq-vend') || [],
+        };
+      }
+    }
+    localStorage.setItem(VENDAS_MAPA_ESCOLHA_LS, JSON.stringify(out));
+  } catch (_) {}
+}
+
+function listaCanaisEscolha(escolha) {
+  if (!escolha || !Array.isArray(escolha.canais)) return [];
+  const out = [];
+  for (let i = 0; i < escolha.canais.length; i++) if (escolha.canais[i]) out.push(String(escolha.canais[i]));
+  return out;
+}
+function listaVendedoresEscolha(escolha) {
+  if (!escolha || !Array.isArray(escolha.vendedores)) return [];
+  const out = [];
+  for (let i = 0; i < escolha.vendedores.length; i++) if (escolha.vendedores[i]) out.push(String(escolha.vendedores[i]));
+  return out;
+}
+function canalEstaNaEscolha(escolha, empresa, canal) {
+  const lista = listaCanaisEscolha(escolha);
+  if (!lista.length) return true;
+  const key = chaveCanalEscolha(empresa, canal);
+  for (let i = 0; i < lista.length; i++) if (lista[i] === key) return true;
+  return false;
+}
+function vendedorEstaNaEscolha(escolha, nome) {
+  const lista = listaVendedoresEscolha(escolha);
+  if (!lista.length) return true;
+  const norm = (typeof normNomeVendaMenu === 'function') ? normNomeVendaMenu : function (s) { return String(s || ''); };
+  const n = norm(nome);
+  for (let i = 0; i < lista.length; i++) if (norm(lista[i]) === n) return true;
+  return false;
+}
+function filtroMetricaEscolha(base, escolha) {
+  const f = {};
+  if (base) {
+    if (base.empresa) f.empresa = base.empresa;
+    if (base.canal) f.canal = base.canal;
+    if (base.vendedor) f.vendedor = base.vendedor;
+  }
+  const cans = listaCanaisEscolha(escolha);
+  const vens = listaVendedoresEscolha(escolha);
+  if (cans.length) f.canais = cans;
+  if (vens.length) f.vendedores = vens;
+  return f;
+}
+function escolhaTemRestricao(escolha) {
+  return !!(listaCanaisEscolha(escolha).length || listaVendedoresEscolha(escolha).length);
+}
+
+function opcoesCanalQuadroGeral() {
+  const out = [];
+  const emps = ['Delta Foods Brasil', 'Q Brasil'];
+  for (let e = 0; e < emps.length; e++) {
+    const emp = emps[e];
+    const curto = emp === 'Delta Foods Brasil' ? 'Delta' : 'Q Brasil';
+    const cans = (typeof canaisFixosQuadroEmpresa === 'function') ? canaisFixosQuadroEmpresa(emp) : [];
+    for (let i = 0; i < cans.length; i++) {
+      out.push({ value: chaveCanalEscolha(emp, cans[i]), label: cans[i] + ' · ' + curto });
+    }
+  }
+  return out;
+}
+
+function opcoesVendedorQuadro(quadro) {
+  const nomes = {};
+  const meses = (quadro && quadro.meses) || {};
+  const chaves = Object.keys(meses);
+  for (let i = 0; i < chaves.length; i++) {
+    const celulas = (meses[chaves[i]] && meses[chaves[i]].celulas) || {};
+    const vals = Object.values(celulas);
+    for (let j = 0; j < vals.length; j++) {
+      const c = vals[j];
+      if (c && c.vendedor && c.vendedor !== 'Por classificar') nomes[c.vendedor] = 1;
+    }
+  }
+  const lista = (typeof ordenarNomesQuadroPnL === 'function')
+    ? ordenarNomesQuadroPnL(Object.keys(nomes))
+    : Object.keys(nomes).sort();
+  return lista.map(n => ({ value: n, label: n }));
+}
+
+function pintarPainelEscolha(hostId, boxId, tipo, itens, onchangeFn) {
+  const host = document.getElementById(hostId);
+  if (!host || typeof host.querySelector !== 'function') return;
+  const sig = itens.map(it => it.value).join('\n');
+  if (host.dataset && host.dataset.ready === '1' && host.dataset.sig === sig) {
+    actualizarRotuloPainel(boxId, tipo);
+    return;
+  }
+  const attr = tipo === 'meses' ? 'data-vq-mes' : (tipo === 'canais' ? 'data-vq-canal' : 'data-vq-vend');
+  const ja = lerChecksPainel(boxId, attr);
+  if (ja) {
+    const set = {};
+    for (let i = 0; i < ja.length; i++) set[String(ja[i])] = 1;
+    for (let i = 0; i < itens.length; i++) itens[i].checked = !!set[String(itens[i].value)];
+  }
+  host.innerHTML = htmlPainelEscolha(boxId, tipo, itens, onchangeFn);
+  if (host.dataset) {
+    host.dataset.ready = '1';
+    host.dataset.sig = sig;
+  }
+  vqGarantirFechaPaineis();
+}
+
 function preencherSelectsQuadroVendas() {
   const selM = document.getElementById('vq-mes');
   const selA = document.getElementById('vq-ano');
@@ -28330,24 +28674,130 @@ function preencherSelectsQuadroVendas() {
   if (!selM.dataset.ready) {
     const now = new Date();
     const mem = (typeof _vqPeriodoMem !== 'undefined' && _vqPeriodoMem) ? _vqPeriodoMem : null;
-    selM.value = String((mem && mem.mes) || (now.getMonth() + 1));
-    selA.value = String((mem && mem.ano) || now.getFullYear());
+    const guardada = (typeof lerMapaEscolhaGuardada === 'function') ? lerMapaEscolhaGuardada() : null;
+    const g = guardada && guardada.vq ? guardada.vq : null;
+    const mesesG = g && Array.isArray(g.meses) && typeof normalizarListaMeses === 'function' ? normalizarListaMeses(g.meses, 0) : [];
+    selM.value = String((mesesG.length ? mesesG[mesesG.length - 1] : 0) || (mem && mem.mes) || (now.getMonth() + 1));
+    selA.value = String((g && g.ano) || (mem && mem.ano) || now.getFullYear());
     selM.dataset.ready = '1';
+    if (typeof window !== 'undefined') {
+      window._vqMesesIniciais = mesesG.length ? mesesG : [parseInt(selM.value, 10)];
+      window._vqEscolhaInicial = g || null;
+    }
   }
 }
-
-let _vqPeriodoMem = null;
 
 function periodoQuadroSelecionado() {
   preencherSelectsQuadroVendas();
   const selM = document.getElementById('vq-mes');
   const selA = document.getElementById('vq-ano');
   const now = new Date();
-  const mes = parseInt(selM && selM.value, 10) || (now.getMonth() + 1);
+  const mesSelect = parseInt(selM && selM.value, 10) || (now.getMonth() + 1);
   const ano = parseInt(selA && selA.value, 10) || now.getFullYear();
+  const marcados = (typeof lerChecksPainel === 'function') ? lerChecksPainel('vq-meses-box', 'data-vq-mes') : null;
+  const meses = (marcados && marcados.length && typeof normalizarListaMeses === 'function')
+    ? normalizarListaMeses(marcados, mesSelect)
+    : [mesSelect];
+  const mes = meses[meses.length - 1];
+  if (selM && String(selM.value) !== String(mes)) selM.value = String(mes);
+  _vqPeriodoMem = { mes: mes, ano: ano, meses: meses };
   const ym = `${ano}-${String(mes).padStart(2, '0')}`;
-  _vqPeriodoMem = { mes: mes, ano: ano };
-  return { mes, ano, ym };
+  return { mes, ano, ym, meses };
+}
+
+function mesesIniciaisQuadro() {
+  if (typeof window !== 'undefined' && window._vqMesesIniciais && window._vqMesesIniciais.length) {
+    return normalizarListaMeses(window._vqMesesIniciais, 0);
+  }
+  const sel = document.getElementById('vq-mes');
+  return normalizarListaMeses(null, sel && sel.value);
+}
+
+function garantirPaineisVendasQuadro(quadro) {
+  const sel = document.getElementById('vq-mes');
+  if (!sel || !document.getElementById('vq-meses-host')) return;
+  const abrev = (typeof VENDAS_MES_ABREV !== 'undefined') ? VENDAS_MES_ABREV : [];
+  const marcados = lerChecksPainel('vq-meses-box', 'data-vq-mes');
+  const base = (marcados && marcados.length) ? marcados : mesesIniciaisQuadro();
+  const set = {};
+  for (let i = 0; i < base.length; i++) set[String(base[i])] = 1;
+  const itensMes = [];
+  for (let m = 1; m <= 12; m++) {
+    const marca = m === (new Date().getMonth() + 1) ? ' · actual' : '';
+    itensMes.push({ value: String(m), label: (abrev[m - 1] || String(m)) + marca, checked: !!set[String(m)] });
+  }
+  pintarPainelEscolha('vq-meses-host', 'vq-meses-box', 'meses', itensMes, 'vqMesesQuadroMudaram');
+
+  const g = (typeof window !== 'undefined' && window._vqEscolhaInicial) ? window._vqEscolhaInicial : null;
+  const cansMarcados = lerChecksPainel('vq-canais-box', 'data-vq-canal') || (g && Array.isArray(g.canais) ? g.canais : []);
+  const setC = {};
+  for (let i = 0; i < cansMarcados.length; i++) setC[String(cansMarcados[i])] = 1;
+  const itensC = opcoesCanalQuadroGeral().map(it => ({ value: it.value, label: it.label, checked: !!setC[it.value] }));
+  pintarPainelEscolha('vq-canais-host', 'vq-canais-box', 'canais', itensC, 'vqCanaisQuadroMudaram');
+
+  const vendsMarcados = lerChecksPainel('vq-vends-box', 'data-vq-vend') || (g && Array.isArray(g.vendedores) ? g.vendedores : []);
+  const setV = {};
+  for (let i = 0; i < vendsMarcados.length; i++) setV[String(vendsMarcados[i])] = 1;
+  const itensV = opcoesVendedorQuadro(quadro).map(it => ({ value: it.value, label: it.label, checked: !!setV[it.value] }));
+  if (!itensV.length) itensV.push({ value: '', label: 'Sem vendedores neste quadro', checked: false });
+  pintarPainelEscolha('vq-vends-host', 'vq-vends-box', 'vendedores', itensV, 'vqVendsQuadroMudaram');
+}
+
+function escolhaVistaQuadro() {
+  const canais = lerChecksPainel('vq-canais-box', 'data-vq-canal');
+  const vendedores = lerChecksPainel('vq-vends-box', 'data-vq-vend');
+  return {
+    canais: canais || [],
+    vendedores: (vendedores || []).filter(Boolean),
+  };
+}
+
+function vqMesesQuadroMudaram() {
+  const meses = lerChecksPainel('vq-meses-box', 'data-vq-mes');
+  if (meses && !meses.length) {
+    const sel = document.getElementById('vq-mes');
+    const m = (sel && sel.value) || String(new Date().getMonth() + 1);
+    marcarChecksPainel('vq-meses-box', 'data-vq-mes', [m]);
+  }
+  const finais = lerChecksPainel('vq-meses-box', 'data-vq-mes') || [];
+  const sel = document.getElementById('vq-mes');
+  if (sel && finais.length) {
+    let max = 0;
+    for (let i = 0; i < finais.length; i++) max = Math.max(max, parseInt(finais[i], 10) || 0);
+    if (max) sel.value = String(max);
+  }
+  actualizarRotuloPainel('vq-meses-box', 'meses');
+  agendarGravarMapaEscolha();
+  renderVendasQuadro();
+}
+function vqCanaisQuadroMudaram() {
+  actualizarRotuloPainel('vq-canais-box', 'canais');
+  agendarGravarMapaEscolha();
+  renderVendasQuadro();
+}
+function vqVendsQuadroMudaram() {
+  actualizarRotuloPainel('vq-vends-box', 'vendedores');
+  agendarGravarMapaEscolha();
+  renderVendasQuadro();
+}
+function vqAnoQuadroMudou() {
+  agendarGravarMapaEscolha();
+  renderVendasQuadro();
+}
+function limparEscolhaVendasQuadro() {
+  marcarChecksPainel('vq-canais-box', 'data-vq-canal', []);
+  marcarChecksPainel('vq-vends-box', 'data-vq-vend', []);
+  actualizarRotuloPainel('vq-canais-box', 'canais');
+  actualizarRotuloPainel('vq-vends-box', 'vendedores');
+  agendarGravarMapaEscolha();
+  renderVendasQuadro();
+}
+
+function aplicarMesesNoPainel(boxId, meses) {
+  const lista = normalizarListaMeses(meses, 0);
+  if (!lista.length) return;
+  marcarChecksPainel(boxId, 'data-vq-mes', lista.map(String));
+  actualizarRotuloPainel(boxId, 'meses');
 }
 
 function htmlValorQuadroClicavel(valor, linhas, filtro, activo) {
@@ -28384,18 +28834,43 @@ function listaYmAcumuladoQuadro(ano, mes) {
   return out;
 }
 
-function periodoComparacaoQuadro(mes, ano) {
+function periodoComparacaoQuadro(mes, ano, mesesOpt) {
   const m = parseInt(mes, 10);
   const y = parseInt(ano, 10);
   const mm = String(m).padStart(2, '0');
+  const meses = (typeof normalizarListaMeses === 'function')
+    ? normalizarListaMeses(mesesOpt, m)
+    : [m];
+  const ymsSel = [];
+  const ymsSelN1 = [];
+  for (let i = 0; i < meses.length; i++) {
+    const p = String(meses[i]).padStart(2, '0');
+    ymsSel.push(y + '-' + p);
+    ymsSelN1.push((y - 1) + '-' + p);
+  }
   return {
     mes: m,
     ano: y,
+    meses: meses,
     ym: y + '-' + mm,
     ymN1: ymQuadroAnoAnterior(y, m),
+    ymsSel: ymsSel.length ? ymsSel : [y + '-' + mm],
+    ymsSelN1: ymsSelN1.length ? ymsSelN1 : [ymQuadroAnoAnterior(y, m)],
     ymsN: listaYmAcumuladoQuadro(y, m),
     ymsN1: listaYmAcumuladoQuadro(y - 1, m),
   };
+}
+
+/** Meses cujo N (e N-1) entram na soma. Sem lista, fica o mês único de sempre. */
+function ymsNdoPeriodo(periodo) {
+  const p = periodo || {};
+  if (p.ymsSel && p.ymsSel.length) return p.ymsSel;
+  return p.ym ? [p.ym] : [];
+}
+function ymsN1doPeriodo(periodo) {
+  const p = periodo || {};
+  if (p.ymsSelN1 && p.ymsSelN1.length) return p.ymsSelN1;
+  return p.ymN1 ? [p.ymN1] : [];
 }
 
 /**
@@ -28446,8 +28921,10 @@ function canaisFixosQuadroEmpresa(empresa) {
 
 function metricasLinhaQuadro(quadro, periodo, filtro) {
   const p = periodo || {};
-  const n = somarQuadroNosMeses(quadro, p.ym ? [p.ym] : [], filtro);
-  const n1 = somarQuadroNosMeses(quadro, p.ymN1 ? [p.ymN1] : [], filtro);
+  const ymsN = (typeof ymsNdoPeriodo === 'function') ? ymsNdoPeriodo(p) : ((p.ymsSel && p.ymsSel.length) ? p.ymsSel : (p.ym ? [p.ym] : []));
+  const ymsN1 = (typeof ymsN1doPeriodo === 'function') ? ymsN1doPeriodo(p) : ((p.ymsSelN1 && p.ymsSelN1.length) ? p.ymsSelN1 : (p.ymN1 ? [p.ymN1] : []));
+  const n = somarQuadroNosMeses(quadro, ymsN, filtro);
+  const n1 = somarQuadroNosMeses(quadro, ymsN1, filtro);
   const ac = somarQuadroNosMeses(quadro, p.ymsN, filtro);
   const ac1 = somarQuadroNosMeses(quadro, p.ymsN1, filtro);
   return {
@@ -28479,8 +28956,13 @@ function ordenarNomesQuadroPnL(lista) {
  * Hierarquia fixa do Power BI (Delta, canais, Q Brasil, canais, Total).
  * Canal do Power BI sem mês continua na lista, com métricas vazias — não rebenta.
  */
-function linhasResumoQuadroPnL(quadro, mes, ano) {
-  const periodo = periodoComparacaoQuadro(mes, ano);
+function linhasResumoQuadroPnL(quadro, mes, ano, escolha) {
+  const mesesEsc = escolha && Array.isArray(escolha.meses) ? escolha.meses : null;
+  const mesesNorm = (mesesEsc && typeof normalizarListaMeses === 'function') ? normalizarListaMeses(mesesEsc, mes) : null;
+  const mesRef = mesesNorm && mesesNorm.length ? mesesNorm[mesesNorm.length - 1] : mes;
+  const periodo = periodoComparacaoQuadro(mesRef, ano, mesesNorm || undefined);
+  const restrito = (typeof escolhaTemRestricao === 'function') && escolhaTemRestricao(escolha);
+  const soVendedor = restrito && !(typeof listaCanaisEscolha === 'function' && listaCanaisEscolha(escolha).length);
   const yms = (periodo.ymsN || []).concat(periodo.ymsN1 || []);
   const meses = (quadro && quadro.meses) || {};
   const presentesPorEmp = new Map();
@@ -28517,20 +28999,51 @@ function linhasResumoQuadroPnL(quadro, mes, ano) {
     for (const can of presentes) {
       if (fixos.indexOf(can) < 0) extraCan.push(can);
     }
-    const canais = fixos.concat(ordenarNomesQuadroPnL(extraCan));
-    const metEmp = metricasLinhaQuadro(quadro, periodo, { empresa: emp });
+    const canaisTodos = fixos.concat(ordenarNomesQuadroPnL(extraCan));
+    const canais = [];
+    for (let c0 = 0; c0 < canaisTodos.length; c0++) {
+      if (typeof canalEstaNaEscolha === 'function' && !canalEstaNaEscolha(escolha, emp, canaisTodos[c0])) continue;
+      canais.push(canaisTodos[c0]);
+    }
+    if (restrito && typeof listaCanaisEscolha === 'function' && listaCanaisEscolha(escolha).length && !canais.length) continue;
+    const metEmp = metricasLinhaQuadro(quadro, periodo, (typeof filtroMetricaEscolha === 'function') ? filtroMetricaEscolha({ empresa: emp }, escolha) : { empresa: emp });
     const empTem = metEmp.nTem || metEmp.n1Tem || metEmp.acTem || metEmp.ac1Tem;
     if (fixas.indexOf(emp) < 0 && !empTem) continue;
-    linhas.push({ tipo: 'empresa', empresa: emp, canal: '', met: metEmp });
+    if (soVendedor && !empTem) continue;
+    const filhos = [];
     for (let c = 0; c < canais.length; c++) {
       const can = canais[c];
-      const met = metricasLinhaQuadro(quadro, periodo, { empresa: emp, canal: can });
+      const met = metricasLinhaQuadro(quadro, periodo, (typeof filtroMetricaEscolha === 'function') ? filtroMetricaEscolha({ empresa: emp, canal: can }, escolha) : { empresa: emp, canal: can });
       const tem = met.nTem || met.n1Tem || met.acTem || met.ac1Tem;
       if (fixos.indexOf(can) < 0 && !tem) continue;
-      linhas.push({ tipo: 'canal', empresa: emp, canal: can, met: met });
+      if (soVendedor && !tem) continue;
+      const row = { tipo: 'canal', empresa: emp, canal: can, met: met };
+      if (restrito && typeof listaVendedoresEscolha === 'function' && listaVendedoresEscolha(escolha).length && typeof objetivoPessoasNosMeses === 'function') {
+        row.objMes = objetivoPessoasNosMeses(emp, can, listaVendedoresEscolha(escolha), periodo.ymsSel);
+      }
+      filhos.push(row);
     }
+    const empRow = { tipo: 'empresa', empresa: emp, canal: '', met: metEmp };
+    if (restrito) {
+      const objs = filhos.map(r => (Object.prototype.hasOwnProperty.call(r, 'objMes') ? r.objMes : (typeof objetivoCanalNosMeses === 'function' ? objetivoCanalNosMeses(emp, r.canal, periodo.ymsSel) : null)));
+      empRow.objMes = (typeof somarObjectivosConhecidos === 'function') ? somarObjectivosConhecidos(objs) : null;
+      if (typeof listaVendedoresEscolha === 'function' && listaVendedoresEscolha(escolha).length) {
+        empRow.objAc = null;
+      }
+    }
+    if (empTem || filhos.length) linhas.push(empRow);
+    for (let c = 0; c < filhos.length; c++) linhas.push(filhos[c]);
   }
-  linhas.push({ tipo: 'total', empresa: 'Total', canal: '', met: metricasLinhaQuadro(quadro, periodo, null) });
+  const totalRow = { tipo: 'total', empresa: 'Total', canal: '', met: metricasLinhaQuadro(quadro, periodo, (typeof filtroMetricaEscolha === 'function') ? filtroMetricaEscolha(null, escolha) : null) };
+  if (restrito) {
+    const objs = [];
+    for (let i = 0; i < linhas.length; i++) {
+      if (linhas[i].tipo !== 'canal') continue;
+      objs.push(Object.prototype.hasOwnProperty.call(linhas[i], 'objMes') ? linhas[i].objMes : (typeof objetivoCanalNosMeses === 'function' ? objetivoCanalNosMeses(linhas[i].empresa, linhas[i].canal, periodo.ymsSel) : null));
+    }
+    totalRow.objMes = (typeof somarObjectivosConhecidos === 'function') ? somarObjectivosConhecidos(objs) : null;
+  }
+  linhas.push(totalRow);
   return { periodo, linhas };
 }
 
@@ -28858,6 +29371,94 @@ function objetivoCanalMes(empresa, canal, ym) {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Soma dos budgets dos meses pedidos. Mês sem número não entra e não vira zero. */
+function objetivoCanalNosMeses(empresa, canal, yms) {
+  const lista = Array.isArray(yms) ? yms : [];
+  let soma = 0;
+  let tem = false;
+  for (let i = 0; i < lista.length; i++) {
+    const v = objetivoCanalMes(empresa, canal, lista[i]);
+    if (v == null) continue;
+    soma += v;
+    tem = true;
+  }
+  return tem ? soma : null;
+}
+
+/**
+ * Budget da pessoa nesse mês, quando o canal tem dono ou parte (Horeca / Balcão).
+ * Sem parte gravada → null. Não inventa o budget do canal inteiro.
+ */
+function objetivoPessoaMesQuadro(empresa, canal, vendedor, ym) {
+  function chave(nome) {
+    if (typeof normNomeVendaMenu === 'function') return normNomeVendaMenu(nome);
+    return String(nome || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  }
+  if (empresa === 'Delta Foods Brasil' && canal === 'Restauração') {
+    return (typeof objetivoVendedorHorecaMenu === 'function')
+      ? objetivoVendedorHorecaMenu(empresa, canal, vendedor, ym)
+      : null;
+  }
+  if (empresa === 'Delta Foods Brasil' && canal === 'Institucional') {
+    if (chave(vendedor) === chave('MARCIO GORGA')) {
+      const parts = String(ym || '').split('-');
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      if (!y || !m || typeof linhasMapaInstMes !== 'function' || typeof particaoInstPreservadaMenu !== 'function') return null;
+      const objInst = objetivoCanalMes('Delta Foods Brasil', 'Institucional', ym);
+      const linhas = linhasMapaInstMes(y, m);
+      let balcao = null;
+      let horeca = null;
+      for (let i = 0; i < linhas.length; i++) {
+        if (!linhas[i]) continue;
+        if (linhas[i].id === 'dfb_inst_balcao') balcao = linhas[i].budget;
+        if (linhas[i].id === 'dfb_inst_horeca') horeca = linhas[i].budget;
+      }
+      const sa = (balcao == null || balcao === '') ? null : +balcao;
+      const sb = (horeca == null || horeca === '') ? null : +horeca;
+      if (!particaoInstPreservadaMenu(sa, sb, objInst)) return null;
+      return sa;
+    }
+    return (typeof objetivoVendedorHorecaMenu === 'function')
+      ? objetivoVendedorHorecaMenu(empresa, canal, vendedor, ym)
+      : null;
+  }
+  const DONO = {
+    'Delta Foods Brasil\tLojas online': 'MARCIO GORGA',
+    'Delta Foods Brasil\tSite próprio': 'MARCIO GORGA',
+    'Delta Foods Brasil\tDistribuidores de retalho': 'DIOGO OLIVEIRA',
+    'Delta Foods Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
+    'Q Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
+    'Q Brasil\tDistribuidores de retalho': 'DIOGO OLIVEIRA',
+    'Q Brasil\tRestauração': 'MARCIO GORGA',
+  };
+  const dono = DONO[String(empresa || '') + '\t' + String(canal || '')];
+  if (!dono || chave(vendedor) !== chave(dono)) return null;
+  return objetivoCanalMes(empresa, canal, ym);
+}
+
+function somarObjectivosConhecidos(vals) {
+  let s = 0;
+  let tem = false;
+  const lista = Array.isArray(vals) ? vals : [];
+  for (let i = 0; i < lista.length; i++) {
+    if (lista[i] == null || !Number.isFinite(+lista[i])) continue;
+    s += +lista[i];
+    tem = true;
+  }
+  return tem ? s : null;
+}
+
+function objetivoPessoasNosMeses(empresa, canal, vendedores, yms) {
+  const pessoas = Array.isArray(vendedores) ? vendedores : [];
+  const meses = Array.isArray(yms) ? yms : [];
+  const partes = [];
+  for (let i = 0; i < pessoas.length; i++) {
+    for (let j = 0; j < meses.length; j++) partes.push(objetivoPessoaMesQuadro(empresa, canal, pessoas[i], meses[j]));
+  }
+  return somarObjectivosConhecidos(partes);
+}
+
 /** Soma dos objectivos de Janeiro até ao mês, Março inclusive. Mês sem número não entra e não vira zero. */
 function objetivoAcumuladoQuadro(empresa, canal, ano, mes) {
   const y = parseInt(ano, 10);
@@ -29075,8 +29676,8 @@ function somarVolumeQuadroNosMeses(quadro, yms, filtro) {
 
 function metricasVolumeLinhaQuadro(quadro, periodo, filtro) {
   const p = periodo || {};
-  const n = somarVolumeQuadroNosMeses(quadro, p.ym ? [p.ym] : [], filtro);
-  const n1 = somarVolumeQuadroNosMeses(quadro, p.ymN1 ? [p.ymN1] : [], filtro);
+  const n = somarVolumeQuadroNosMeses(quadro, (typeof ymsNdoPeriodo === 'function') ? ymsNdoPeriodo(p) : (p.ym ? [p.ym] : []), filtro);
+  const n1 = somarVolumeQuadroNosMeses(quadro, (typeof ymsN1doPeriodo === 'function') ? ymsN1doPeriodo(p) : (p.ymN1 ? [p.ymN1] : []), filtro);
   const ac = somarVolumeQuadroNosMeses(quadro, p.ymsN, filtro);
   const ac1 = somarVolumeQuadroNosMeses(quadro, p.ymsN1, filtro);
   return {
@@ -29398,8 +29999,10 @@ function somarQuadroMenuCanal(quadro, yms, empresa, canal, nomeMap, codsAceites)
 
 function metricasMenuCanal(quadro, periodo, empresa, canal, nomeMap, codsAceites) {
   const p = periodo || {};
-  const n = somarQuadroMenuCanal(quadro, p.ym ? [p.ym] : [], empresa, canal, nomeMap, codsAceites);
-  const n1 = somarQuadroMenuCanal(quadro, p.ymN1 ? [p.ymN1] : [], empresa, canal, nomeMap, codsAceites);
+  const ymsN = (typeof ymsNdoPeriodo === 'function') ? ymsNdoPeriodo(p) : (p.ym ? [p.ym] : []);
+  const ymsN1 = (typeof ymsN1doPeriodo === 'function') ? ymsN1doPeriodo(p) : (p.ymN1 ? [p.ymN1] : []);
+  const n = somarQuadroMenuCanal(quadro, ymsN, empresa, canal, nomeMap, codsAceites);
+  const n1 = somarQuadroMenuCanal(quadro, ymsN1, empresa, canal, nomeMap, codsAceites);
   const ac = somarQuadroMenuCanal(quadro, p.ymsN, empresa, canal, nomeMap, codsAceites);
   const ac1 = somarQuadroMenuCanal(quadro, p.ymsN1, empresa, canal, nomeMap, codsAceites);
   return {
@@ -29698,16 +30301,37 @@ function vendedoresMenuHoreca(quadro, periodo, empresa, canal, nomeMap) {
 }
 
 /** Uma tabela: linha do canal e, por baixo, cada vendedor. Só os canais deste menu. */
-function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn) {
+function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn, opcoes) {
   const esc = typeof escFn === 'function' ? escFn : (s) => String(s == null ? '' : s);
   const grupos = canaisVendaDoMenuApp(canalId);
   if (!canalId || !grupos.length) {
     return `<p class="vq-muted" style="padding:16px;">Este menu não tem canais de venda associados.</p>`;
   }
-  const periodo = periodoComparacaoQuadro(mes, ano);
-  const abrevMes = (typeof VENDAS_MES_ABREV !== 'undefined' ? VENDAS_MES_ABREV[mes - 1] : '') || periodo.ym;
-  const nomeMes = abrevMes + '/' + ano;
-  const nomeN1 = abrevMes + '/' + (ano - 1);
+  const op = opcoes || {};
+  const mesesOp = (typeof normalizarListaMeses === 'function') ? normalizarListaMeses(op.meses, mes) : [parseInt(mes, 10)];
+  const mesRef = mesesOp.length ? mesesOp[mesesOp.length - 1] : parseInt(mes, 10);
+  const periodo = periodoComparacaoQuadro(mesRef, ano, mesesOp);
+  const abrevMes = (typeof VENDAS_MES_ABREV !== 'undefined' ? VENDAS_MES_ABREV[mesRef - 1] : '') || periodo.ym;
+  const rotulo = (typeof rotuloMesesQuadro === 'function') ? rotuloMesesQuadro(mesesOp) : abrevMes;
+  const nomeMes = rotulo + '/' + ano;
+  const nomeN1 = rotulo + '/' + (ano - 1);
+  const variosMeses = mesesOp.length > 1;
+  const fraseN = variosMeses && typeof fraseMesesQuadro === 'function' ? ('soma de ' + fraseMesesQuadro(mesesOp) + '/' + ano) : nomeMes;
+  const fraseN1 = variosMeses && typeof fraseMesesQuadro === 'function' ? ('soma de ' + fraseMesesQuadro(mesesOp) + '/' + (ano - 1)) : nomeN1;
+  const vendsSel = (typeof listaVendedoresEscolha === 'function') ? listaVendedoresEscolha(op) : [];
+  const canaisSel = (typeof listaCanaisEscolha === 'function') ? listaCanaisEscolha(op) : [];
+  function somarObjYm(fn) {
+    const yms = (periodo.ymsSel && periodo.ymsSel.length) ? periodo.ymsSel : [periodo.ym];
+    let s = 0;
+    let tem = false;
+    for (let i = 0; i < yms.length; i++) {
+      const v = fn(yms[i]);
+      if (v == null || !Number.isFinite(+v)) continue;
+      s += v;
+      tem = true;
+    }
+    return tem ? s : null;
+  }
   const porEmp = {};
   const ordemEmp = [];
   for (let i = 0; i < grupos.length; i++) {
@@ -29737,13 +30361,49 @@ function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn) {
     let empObjOk = true;
     let empObjAcOk = true;
     let blocos = '';
+    let incluidos = 0;
     for (let c = 0; c < canais.length; c++) {
       const g = canais[c];
-      const nomeMap = g.inteiro ? null : nomesVendedorMenuNoCanal(canalId, g.empresa, g.canal);
-      const codsCanal = ehHoreca ? codsDoCanalHoreca(g.canal) : null;
+      if (canaisSel.length && typeof canalEstaNaEscolha === 'function' && !canalEstaNaEscolha(op, g.empresa, g.canal)) continue;
+      let nomeMap = g.inteiro ? null : nomesVendedorMenuNoCanal(canalId, g.empresa, g.canal);
+      if (vendsSel.length) {
+        if (nomeMap) {
+          const cruz = {};
+          const ks = Object.keys(nomeMap);
+          for (let ki = 0; ki < ks.length; ki++) {
+            if (typeof vendedorEstaNaEscolha !== 'function' || vendedorEstaNaEscolha(op, ks[ki])) cruz[ks[ki]] = 1;
+          }
+          nomeMap = cruz;
+        } else {
+          nomeMap = {};
+          for (let vi = 0; vi < vendsSel.length; vi++) nomeMap[vendsSel[vi]] = 1;
+        }
+      }
+      let codsCanal = ehHoreca ? codsDoCanalHoreca(g.canal) : null;
+      if (vendsSel.length && ehHoreca && typeof codsDoNomeHoreca === 'function') {
+        const so = {};
+        for (let vi = 0; vi < vendsSel.length; vi++) {
+          const set = codsDoNomeHoreca(g.canal, vendsSel[vi]) || {};
+          const ks = Object.keys(set);
+          for (let ki = 0; ki < ks.length; ki++) so[ks[ki]] = 1;
+        }
+        codsCanal = so;
+      } else if (vendsSel.length) {
+        codsCanal = null;
+      }
       const met = metricasMenuCanal(quadro, periodo, g.empresa, g.canal, nomeMap, codsCanal);
-      const objM = ehHoreca ? objetivoCanalHorecaMenu(g.empresa, g.canal, periodo.ym) : (g.inteiro ? objetivoCanalMes(g.empresa, g.canal, periodo.ym) : null);
-      const objA = ehHoreca ? objetivoAcumCanalHorecaMenu(g.empresa, g.canal, ano, mes) : (g.inteiro ? objetivoAcumuladoQuadro(g.empresa, g.canal, ano, mes) : null);
+      if (vendsSel.length && !canaisSel.length && !(met.nTem || met.n1Tem || met.acTem || met.ac1Tem)) continue;
+      incluidos += 1;
+      const objM = vendsSel.length && typeof objetivoPessoasNosMeses === 'function'
+        ? objetivoPessoasNosMeses(g.empresa, g.canal, vendsSel, periodo.ymsSel)
+        : (ehHoreca
+          ? somarObjYm(ym => objetivoCanalHorecaMenu(g.empresa, g.canal, ym))
+          : (g.inteiro ? somarObjYm(ym => objetivoCanalMes(g.empresa, g.canal, ym)) : null));
+      const objA = vendsSel.length
+        ? (ehHoreca && typeof somarObjectivosConhecidos === 'function'
+          ? somarObjectivosConhecidos(vendsSel.map(nome => objetivoAcumVendedorHorecaMenu(g.empresa, g.canal, nome, ano, mesRef)))
+          : null)
+        : (ehHoreca ? objetivoAcumCanalHorecaMenu(g.empresa, g.canal, ano, mesRef) : (g.inteiro ? objetivoAcumuladoQuadro(g.empresa, g.canal, ano, mesRef) : null));
       if (objM == null) empObjOk = false;
       else objMesEmp += objM;
       if (objA == null) empObjAcOk = false;
@@ -29765,13 +30425,16 @@ function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn) {
       const vendedores = ehHoreca ? vendedoresMenuHoreca(quadro, periodo, g.empresa, g.canal, nomeMap) : vendedoresVisiveisMenu(quadro, periodo, g.empresa, g.canal, nomeMap);
       for (let v = 0; v < vendedores.length; v++) {
         const ven = vendedores[v];
+        if (vendsSel.length && typeof vendedorEstaNaEscolha === 'function' && !vendedorEstaNaEscolha(op, ven)) continue;
         if (!linhaMenuVisivel(f, g.empresa, g.canal, ven)) continue;
         const fv = { empresa: g.empresa, canal: g.canal, vendedor: ven };
         const onV = !!(f && filtroQuadroActivoIgual(f, g.empresa, g.canal, ven));
         const codsVen = ehHoreca ? codsDoNomeHoreca(g.canal, ven) : null;
         const metV = metricasMenuCanal(quadro, periodo, g.empresa, g.canal, mapaUmNomeVenda(ven), codsVen);
-        const objV = ehHoreca ? objetivoVendedorHorecaMenu(g.empresa, g.canal, ven, periodo.ym) : null;
-        const objVA = ehHoreca ? objetivoAcumVendedorHorecaMenu(g.empresa, g.canal, ven, ano, mes) : null;
+        const objV = ehHoreca
+          ? somarObjYm(ym => objetivoVendedorHorecaMenu(g.empresa, g.canal, ven, ym))
+          : (typeof objetivoPessoaMesQuadro === 'function' ? somarObjYm(ym => objetivoPessoaMesQuadro(g.empresa, g.canal, ven, ym)) : null);
+        const objVA = ehHoreca ? objetivoAcumVendedorHorecaMenu(g.empresa, g.canal, ven, ano, mesRef) : null;
         blocos += htmlLinhaVendasMenu(
           `<span class="vq-indent-vend">${esc(ven)}</span>`,
           'vq-vend',
@@ -29783,6 +30446,7 @@ function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn) {
         );
       }
     }
+    if ((canaisSel.length || vendsSel.length) && !incluidos) continue;
     metTotal = somarMetricasQuadro(metTotal, metEmp);
     if (!empObjOk) totalObjOk = false;
     else objMesTotal += objMesEmp;
@@ -29818,9 +30482,17 @@ function htmlQuadroVendasMenuCanal(quadro, mes, ano, canalId, filtro, escFn) {
     );
   }
   const vazio = algum ? '' : `<tr><td colspan="11" class="vq-muted" style="padding:16px;">Sem linhas neste filtro.</td></tr>`;
+  let bannerEscolha = '';
+  if (canaisSel.length || vendsSel.length) {
+    const partesEsc = [];
+    if (canaisSel.length) partesEsc.push('Canal: ' + canaisSel.map(k => k.split('|').slice(1).join('|') || k).join(', '));
+    if (vendsSel.length) partesEsc.push('Vendedor: ' + vendsSel.join(', '));
+    bannerEscolha = `<div class="vq-banner"><span>A ver ${esc(partesEsc.join(' · '))}</span><button type="button" class="btn btn-secondary btn-sm" onclick="limparEscolhaVendasMenu()">Limpar</button></div>`;
+  }
   return `
+    ${bannerEscolha}
     ${bannerFiltroVendasMenu(f, esc)}
-    <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget já gravado do mês. Var. obj. % = (N − Objetivo) / Objetivo. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo. Verde se positivo, vermelho se negativo. Sem objetivo, fica —.${ehHoreca ? ' No Horeca, o objectivo de cada vendedor é a parte desse Budget, na proporção do budget anual do código. No Institucional entra só a parte Horeca do mapa (sem o Balcão).' : ''}</div>
+    <div class="vq-legenda">N = ${esc(fraseN)} · N-1 = ${esc(fraseN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = ${variosMeses ? 'soma dos budgets desses meses' : 'Budget já gravado do mês'}. Var. obj. % = (N − Objetivo) / Objetivo. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo. Verde se positivo, vermelho se negativo. Sem objetivo, fica —.${ehHoreca ? ' No Horeca, o objectivo de cada vendedor é a parte desse Budget, na proporção do budget anual do código. No Institucional entra só a parte Horeca do mapa (sem o Balcão).' : ''}</div>
     <div class="vq-scroll vq-scroll-main">
       <table class="vq-table vq-table-menu">
         <thead><tr>
@@ -29862,9 +30534,13 @@ function preencherSelectsVendasMenu() {
   }
   if (!selM.dataset.ready) {
     const now = new Date();
-    selM.value = String(now.getMonth() + 1);
-    selA.value = String(now.getFullYear());
+    const guardada = (typeof lerMapaEscolhaGuardada === 'function') ? lerMapaEscolhaGuardada() : null;
+    const g = guardada && guardada.cvm ? guardada.cvm : null;
+    const mesesG = g && Array.isArray(g.meses) && typeof normalizarListaMeses === 'function' ? normalizarListaMeses(g.meses, 0) : [];
+    selM.value = String((mesesG.length ? mesesG[mesesG.length - 1] : 0) || (now.getMonth() + 1));
+    selA.value = String((g && g.ano) || now.getFullYear());
     selM.dataset.ready = '1';
+    if (typeof window !== 'undefined') window._cvmMesesIniciais = mesesG.length ? mesesG : [parseInt(selM.value, 10)];
   }
 }
 
@@ -29873,9 +30549,152 @@ function periodoVendasMenuSelecionado() {
   const selM = document.getElementById('cvm-mes');
   const selA = document.getElementById('cvm-ano');
   const now = new Date();
-  const mes = parseInt(selM && selM.value, 10) || (now.getMonth() + 1);
+  const mesSelect = parseInt(selM && selM.value, 10) || (now.getMonth() + 1);
   const ano = parseInt(selA && selA.value, 10) || now.getFullYear();
-  return { mes: mes, ano: ano, ym: ano + '-' + String(mes).padStart(2, '0') };
+  const marcados = (typeof lerChecksPainel === 'function') ? lerChecksPainel('cvm-meses-box', 'data-vq-mes') : null;
+  const meses = (marcados && marcados.length && typeof normalizarListaMeses === 'function')
+    ? normalizarListaMeses(marcados, mesSelect)
+    : [mesSelect];
+  const mes = meses[meses.length - 1];
+  if (selM && String(selM.value) !== String(mes)) selM.value = String(mes);
+  return { mes: mes, ano: ano, ym: ano + '-' + String(mes).padStart(2, '0'), meses: meses };
+}
+
+function cvmAnoMudou() {
+  if (typeof agendarGravarMapaEscolha === 'function') agendarGravarMapaEscolha();
+  cvmPeriodoMudou();
+}
+
+function cvmMesesMudaram() {
+  const meses = (typeof lerChecksPainel === 'function') ? lerChecksPainel('cvm-meses-box', 'data-vq-mes') : null;
+  if (meses && !meses.length) {
+    const sel = document.getElementById('cvm-mes');
+    const m = (sel && sel.value) || String(new Date().getMonth() + 1);
+    if (typeof marcarChecksPainel === 'function') marcarChecksPainel('cvm-meses-box', 'data-vq-mes', [m]);
+  }
+  const finais = (typeof lerChecksPainel === 'function') ? (lerChecksPainel('cvm-meses-box', 'data-vq-mes') || []) : [];
+  const sel = document.getElementById('cvm-mes');
+  if (sel && finais.length) {
+    let max = 0;
+    for (let i = 0; i < finais.length; i++) max = Math.max(max, parseInt(finais[i], 10) || 0);
+    if (max) sel.value = String(max);
+  }
+  if (typeof actualizarRotuloPainel === 'function') actualizarRotuloPainel('cvm-meses-box', 'meses');
+  if (typeof agendarGravarMapaEscolha === 'function') agendarGravarMapaEscolha();
+  cvmPeriodoMudou();
+}
+
+function cvmCanaisMudaram() {
+  if (typeof actualizarRotuloPainel === 'function') actualizarRotuloPainel('cvm-canais-box', 'canais');
+  if (typeof agendarGravarMapaEscolha === 'function') agendarGravarMapaEscolha();
+  if (typeof renderVendasMenuCanal === 'function') renderVendasMenuCanal();
+}
+function cvmVendsMudaram() {
+  if (typeof actualizarRotuloPainel === 'function') actualizarRotuloPainel('cvm-vends-box', 'vendedores');
+  if (typeof agendarGravarMapaEscolha === 'function') agendarGravarMapaEscolha();
+  if (typeof renderVendasMenuCanal === 'function') renderVendasMenuCanal();
+}
+function limparEscolhaVendasMenu() {
+  if (typeof marcarChecksPainel === 'function') {
+    marcarChecksPainel('cvm-canais-box', 'data-vq-canal', []);
+    marcarChecksPainel('cvm-vends-box', 'data-vq-vend', []);
+  }
+  if (typeof actualizarRotuloPainel === 'function') {
+    actualizarRotuloPainel('cvm-canais-box', 'canais');
+    actualizarRotuloPainel('cvm-vends-box', 'vendedores');
+  }
+  if (typeof agendarGravarMapaEscolha === 'function') agendarGravarMapaEscolha();
+  if (typeof renderVendasMenuCanal === 'function') renderVendasMenuCanal();
+}
+
+function garantirPaineisVendasMenu(quadro, canalId) {
+  if (typeof preencherSelectsVendasMenu === 'function') preencherSelectsVendasMenu();
+  const hostMes = document.getElementById('cvm-meses-host');
+  if (!hostMes || typeof hostMes.querySelector !== 'function' || typeof pintarPainelEscolha !== 'function') return;
+  const abrev = (typeof VENDAS_MES_ABREV !== 'undefined') ? VENDAS_MES_ABREV : [];
+  const marcados = lerChecksPainel('cvm-meses-box', 'data-vq-mes');
+  const base = (marcados && marcados.length)
+    ? marcados
+    : ((typeof window !== 'undefined' && window._cvmMesesIniciais && window._cvmMesesIniciais.length) ? window._cvmMesesIniciais : [parseInt((document.getElementById('cvm-mes') || {}).value, 10)]);
+  const set = {};
+  for (let i = 0; i < base.length; i++) set[String(parseInt(base[i], 10))] = 1;
+  const itensMes = [];
+  for (let m = 1; m <= 12; m++) {
+    const marca = m === (new Date().getMonth() + 1) ? ' · actual' : '';
+    itensMes.push({ value: String(m), label: (abrev[m - 1] || String(m)) + marca, checked: !!set[String(m)] });
+  }
+  pintarPainelEscolha('cvm-meses-host', 'cvm-meses-box', 'meses', itensMes, 'cvmMesesMudaram');
+
+  const filtros = document.getElementById('cvm-filtros');
+  if (!filtros || typeof filtros.querySelector !== 'function') return;
+  if (!filtros.dataset || filtros.dataset.montado !== '1') {
+    filtros.innerHTML = '<label style="font-size:12px;color:var(--muted);">Canal <span id="cvm-canais-host"></span></label>'
+      + '<label style="font-size:12px;color:var(--muted);">Vendedor <span id="cvm-vends-host"></span></label>';
+    filtros.dataset.montado = '1';
+  }
+  const guardada = (typeof lerMapaEscolhaGuardada === 'function') ? lerMapaEscolhaGuardada() : null;
+  const gravado = guardada && guardada.cvm && guardada.cvm.porCanal && canalId ? guardada.cvm.porCanal[canalId] : null;
+  const grupos = (typeof canaisVendaDoMenuApp === 'function') ? canaisVendaDoMenuApp(canalId) : [];
+  const cansMarcados = lerChecksPainel('cvm-canais-box', 'data-vq-canal') || (gravado && Array.isArray(gravado.canais) ? gravado.canais : []);
+  const setC = {};
+  for (let i = 0; i < cansMarcados.length; i++) setC[String(cansMarcados[i])] = 1;
+  const vistoC = {};
+  const itensC = [];
+  for (let i = 0; i < grupos.length; i++) {
+    const key = (typeof chaveCanalEscolha === 'function') ? chaveCanalEscolha(grupos[i].empresa, grupos[i].canal) : (grupos[i].empresa + '|' + grupos[i].canal);
+    if (vistoC[key]) continue;
+    vistoC[key] = 1;
+    const curto = grupos[i].empresa === 'Delta Foods Brasil' ? 'Delta' : (grupos[i].empresa === 'Q Brasil' ? 'Q Brasil' : grupos[i].empresa);
+    itensC.push({ value: key, label: grupos[i].canal + ' · ' + curto, checked: !!setC[key] });
+  }
+  if (!itensC.length) itensC.push({ value: '', label: 'Sem canais neste menu', checked: false });
+  pintarPainelEscolha('cvm-canais-host', 'cvm-canais-box', 'canais', itensC, 'cvmCanaisMudaram');
+
+  const nomes = {};
+  const normNome = (typeof normNomeVendaMenu === 'function') ? normNomeVendaMenu : function (s) { return String(s || ''); };
+  function guardarNome(nome, preferido) {
+    const n = normNome(nome);
+    if (!n || n === 'POR CLASSIFICAR') return;
+    if (!nomes[n] || preferido) nomes[n] = nome;
+  }
+  const canalApp = (typeof CANAIS_APP !== 'undefined' && canalId && CANAIS_APP[canalId]) ? CANAIS_APP[canalId] : null;
+  const listaApp = (canalApp && canalApp.vendedores) || [];
+  for (let i = 0; i < listaApp.length; i++) guardarNome(listaApp[i], true);
+  const mesesQ = (quadro && quadro.meses) || {};
+  const ymKeys = Object.keys(mesesQ);
+  for (let i = 0; i < ymKeys.length; i++) {
+    const cels = (mesesQ[ymKeys[i]] && mesesQ[ymKeys[i]].celulas) || {};
+    const vals = Object.values(cels);
+    for (let j = 0; j < vals.length; j++) {
+      const c = vals[j];
+      if (!c || !c.vendedor) continue;
+      if (vistoC[(typeof chaveCanalEscolha === 'function') ? chaveCanalEscolha(c.empresa, c.canal) : '']) guardarNome(c.vendedor, false);
+    }
+  }
+  const vendsMarcados = lerChecksPainel('cvm-vends-box', 'data-vq-vend') || (gravado && Array.isArray(gravado.vendedores) ? gravado.vendedores : []);
+  const setV = {};
+  for (let i = 0; i < vendsMarcados.length; i++) setV[normNome(vendsMarcados[i])] = 1;
+  const listaNomes = (typeof ordenarNomesQuadroPnL === 'function') ? ordenarNomesQuadroPnL(Object.keys(nomes).map(k => nomes[k])) : Object.keys(nomes).map(k => nomes[k]).sort();
+  const itensV = listaNomes.map(n => ({ value: n, label: n, checked: !!setV[normNome(n)] }));
+  if (!itensV.length) itensV.push({ value: '', label: 'Sem vendedores neste menu', checked: false });
+  const hostV = document.getElementById('cvm-vends-host');
+  if (hostV && hostV.dataset) hostV.dataset.canal = canalId || '';
+  pintarPainelEscolha('cvm-vends-host', 'cvm-vends-box', 'vendedores', itensV, 'cvmVendsMudaram');
+  const hostC = document.getElementById('cvm-canais-host');
+  if (hostC && hostC.dataset && hostC.dataset.canal !== (canalId || '')) {
+    hostC.dataset.sig = '';
+    pintarPainelEscolha('cvm-canais-host', 'cvm-canais-box', 'canais', itensC, 'cvmCanaisMudaram');
+    hostC.dataset.canal = canalId || '';
+  }
+}
+
+function escolhaVistaMenu() {
+  const canais = (typeof lerChecksPainel === 'function') ? lerChecksPainel('cvm-canais-box', 'data-vq-canal') : null;
+  const vendedores = (typeof lerChecksPainel === 'function') ? lerChecksPainel('cvm-vends-box', 'data-vq-vend') : null;
+  return {
+    canais: (canais || []).filter(Boolean),
+    vendedores: (vendedores || []).filter(Boolean),
+  };
 }
 
 /** Último dia civil do mês YYYY-MM. */
@@ -29975,6 +30794,10 @@ function renderVendasMenuCanal(quadroOpt) {
   let quadro = quadroOpt || (typeof window !== 'undefined' ? window._vendasQuadro : null);
   if (!quadro || !quadro.meses) quadro = quadroVendasVazio();
   else quadro = (typeof quadroVistaVendas === 'function') ? quadroVistaVendas(quadro) : quadroComMarcioIdentificado(quadro);
+  if (typeof garantirPaineisVendasMenu === 'function') {
+    const canalPre = (typeof resolveCanalActivoId === 'function') ? resolveCanalActivoId() : (typeof _canalActivo !== 'undefined' ? _canalActivo : null);
+    garantirPaineisVendasMenu(quadro, canalPre);
+  }
   const periodo = periodoVendasMenuSelecionado();
   const canalId = (typeof resolveCanalActivoId === 'function') ? resolveCanalActivoId() : (typeof _canalActivo !== 'undefined' ? _canalActivo : null);
   const titulo = document.getElementById('canal-vendas-titulo');
@@ -29982,11 +30805,28 @@ function renderVendasMenuCanal(quadroOpt) {
   if (titulo) titulo.textContent = canal ? ('Vendas · ' + canal.nome) : 'Vendas';
   const ateCanal = document.getElementById('canal-vendas-ate');
   if (ateCanal && typeof fraseAtualizacaoQuadroVisivel === 'function') {
-    ateCanal.textContent = fraseAtualizacaoQuadroVisivel(quadro, periodo.ym);
+    const ymsFrase = (periodo.meses || [periodo.mes]).map(m => periodo.ano + '-' + String(m).padStart(2, '0'));
+    let ymFrase = periodo.ym;
+    let melhorDia = '';
+    for (let fi = 0; fi < ymsFrase.length; fi++) {
+      const dia = (typeof diaMaxMesQuadro === 'function') ? diaMaxMesQuadro(quadro, ymsFrase[fi], (typeof coberturaParaFraseQuadro === 'function') ? coberturaParaFraseQuadro() : null) : '';
+      if (dia && dia >= melhorDia) { melhorDia = dia; ymFrase = ymsFrase[fi]; }
+    }
+    ateCanal.textContent = fraseAtualizacaoQuadroVisivel(quadro, ymFrase);
+  }
+  const txtPeriodo = document.getElementById('cvm-periodo-txt');
+  if (txtPeriodo) {
+    const rotulo = (typeof rotuloMesesQuadro === 'function' && periodo.meses) ? rotuloMesesQuadro(periodo.meses) : '';
+    txtPeriodo.textContent = rotulo ? ('Período: ' + rotulo + '/' + periodo.ano) : '';
   }
   const esc = (s) => (typeof escHtml === 'function' ? escHtml(s) : String(s || ''));
   const filtro = (typeof window !== 'undefined' && window._cvmFiltro) ? window._cvmFiltro : null;
-  el.innerHTML = htmlQuadroVendasMenuCanal(quadro, periodo.mes, periodo.ano, canalId, filtro, esc);
+  const escolhaUi = (typeof escolhaVistaMenu === 'function') ? escolhaVistaMenu() : { canais: [], vendedores: [] };
+  el.innerHTML = htmlQuadroVendasMenuCanal(quadro, periodo.mes, periodo.ano, canalId, filtro, esc, {
+    meses: periodo.meses,
+    canais: escolhaUi.canais,
+    vendedores: escolhaUi.vendedores,
+  });
   if (!el.dataset.cvmBound) {
     el.dataset.cvmBound = '1';
     el.addEventListener('click', onClickVendasMenuCanal);
@@ -31248,8 +32088,13 @@ function htmlLinhaResumoPnL(row, filtro, escFn, periodo) {
   else if (row.tipo === 'empresa') nome = esc(row.empresa);
   const emp = row.tipo === 'total' ? '' : (row.empresa || '');
   const can = row.tipo === 'canal' ? (row.canal || '') : '';
-  const objMes = periodo ? objetivoCanalMes(emp, can, periodo.ym) : null;
-  const objAc = periodo ? objetivoAcumuladoQuadro(emp, can, periodo.ano, periodo.mes) : null;
+  const ymsObj = (periodo && periodo.ymsSel && periodo.ymsSel.length) ? periodo.ymsSel : (periodo && periodo.ym ? [periodo.ym] : []);
+  const objMes = (row && Object.prototype.hasOwnProperty.call(row, 'objMes'))
+    ? row.objMes
+    : (periodo && typeof objetivoCanalNosMeses === 'function' ? objetivoCanalNosMeses(emp, can, ymsObj) : (periodo ? objetivoCanalMes(emp, can, periodo.ym) : null));
+  const objAc = (row && Object.prototype.hasOwnProperty.call(row, 'objAc'))
+    ? row.objAc
+    : (periodo ? objetivoAcumuladoQuadro(emp, can, periodo.ano, periodo.mes) : null);
   return htmlLinhaValorObjetivoPnL(nome, trCls, m, f, on, objMes, objAc);
 }
 
@@ -31361,7 +32206,20 @@ function htmlDetalheVendedorQuadro(detalhe, quadro, periodo, filtro, esc) {
       const c = grupo.linhas[i];
       const fdet = { empresa: c.empresa, canal: c.canal, vendedor: c.vendedor };
       const met = metricasLinhaQuadro(quadro, p, fdet);
-      const obj = objetivoMes(c.empresa, c.canal, c.vendedor, p.ym);
+      const ymsObj = (p.ymsSel && p.ymsSel.length) ? p.ymsSel : (p.ym ? [p.ym] : []);
+      let obj = null;
+      if (ymsObj.length <= 1) obj = objetivoMes(c.empresa, c.canal, c.vendedor, ymsObj[0] || p.ym);
+      else {
+        let somaObj = 0;
+        let temObj = false;
+        for (let oi = 0; oi < ymsObj.length; oi++) {
+          const ov = objetivoMes(c.empresa, c.canal, c.vendedor, ymsObj[oi]);
+          if (ov == null || !Number.isFinite(+ov)) continue;
+          somaObj += +ov;
+          temObj = true;
+        }
+        obj = temObj ? somaObj : null;
+      }
       const objAc = objetivoAcum(c.empresa, c.canal, c.vendedor);
       const on = filtroQuadroActivoIgual(filtro, c.empresa, c.canal, c.vendedor);
       const label = grupo.linhas.length > 1
@@ -31407,11 +32265,17 @@ function renderVendasQuadro(quadroOpt) {
     quadro = (typeof quadroVistaVendas === 'function') ? quadroVistaVendas(quadro) : quadroComMarcioIdentificado(quadro);
   }
   preencherSelectsQuadroVendas();
-  const { mes, ano, ym } = periodoQuadroSelecionado();
+  if (typeof garantirPaineisVendasQuadro === 'function') garantirPaineisVendasQuadro(quadro);
+  const periodoSel = periodoQuadroSelecionado();
+  const mes = periodoSel.mes;
+  const ano = periodoSel.ano;
+  const ym = periodoSel.ym;
+  const mesesSel = (periodoSel.meses && periodoSel.meses.length) ? periodoSel.meses : [mes];
+  const variosMeses = mesesSel.length > 1;
   const periodoEl = document.getElementById('vq-periodo');
-  const nomeMes = (VENDAS_MES_ABREV[mes - 1] || ym) + '/' + ano;
+  const nomeMes = (typeof rotuloMesesQuadro === 'function' ? rotuloMesesQuadro(mesesSel) : (VENDAS_MES_ABREV[mes - 1] || ym)) + '/' + ano;
   const hojeYm = (typeof vendasHojeISO === 'function' ? vendasHojeISO() : '').slice(0, 7);
-  const ehActual = ym === hojeYm;
+  const ehActual = !variosMeses && ym === hojeYm;
   if (periodoEl) periodoEl.textContent = ehActual ? ('Período: ' + nomeMes + ' · mês actual') : ('Período: ' + nomeMes);
   const badgeMes = document.getElementById('vq-mes-actual');
   if (badgeMes && badgeMes.style) badgeMes.style.display = ehActual ? '' : 'none';
@@ -31422,7 +32286,14 @@ function renderVendasQuadro(quadroOpt) {
   }
   const ateGeral = document.getElementById('vq-atualizado-ate');
   if (ateGeral && typeof fraseAtualizacaoQuadroVisivel === 'function') {
-    ateGeral.textContent = fraseAtualizacaoQuadroVisivel(quadro, ym);
+    const ymsFrase = mesesSel.map(m => ano + '-' + String(m).padStart(2, '0'));
+    let ymFrase = ym;
+    let melhorDia = '';
+    for (let fi = 0; fi < ymsFrase.length; fi++) {
+      const dia = (typeof diaMaxMesQuadro === 'function') ? diaMaxMesQuadro(quadro, ymsFrase[fi], (typeof coberturaParaFraseQuadro === 'function') ? coberturaParaFraseQuadro() : null) : '';
+      if (dia && dia >= melhorDia) { melhorDia = dia; ymFrase = ymsFrase[fi]; }
+    }
+    ateGeral.textContent = fraseAtualizacaoQuadroVisivel(quadro, ymFrase);
   }
 
   const mesAgg = quadro.meses[ym];
@@ -31441,14 +32312,20 @@ function renderVendasQuadro(quadroOpt) {
       ? 'quadro anterior — estes R$ ainda não são o Power BI. Dados → Carregar Vendas com o Excel de 2026.'
       : (quadroAntigo
         ? 'há meses com o quadro anterior (Ecommerce, Horeca, Varejo). Dados → Carregar Vendas com o Excel de 2026.'
-        : 'mês, ano anterior (N-1) e acumulado até esse mês — vendas líquidas, como no Power BI');
+        : (variosMeses
+          ? 'soma dos meses escolhidos, os mesmos meses do ano anterior (N-1) e acumulado até ao mês mais recente — vendas líquidas, como no Power BI'
+          : 'mês, ano anterior (N-1) e acumulado até esse mês — vendas líquidas, como no Power BI'));
   }
   const filtro = window._vqFiltro || null;
+  const escolhaUi = (typeof escolhaVistaQuadro === 'function') ? escolhaVistaQuadro() : { canais: [], vendedores: [] };
+  const escolha = { meses: mesesSel, canais: escolhaUi.canais || [], vendedores: escolhaUi.vendedores || [] };
   const esc = (s) => (typeof escHtml === 'function' ? escHtml(s) : String(s || ''));
-  const pacote = linhasResumoQuadroPnL(quadro, mes, ano);
+  const pacote = linhasResumoQuadroPnL(quadro, mes, ano, escolha);
   const metTot = pacote.linhas.length ? pacote.linhas[pacote.linhas.length - 1].met : metricasLinhaQuadro(quadro, pacote.periodo, null);
   const abrevMes = VENDAS_MES_ABREV[mes - 1] || nomeMes;
-  const nomeN1 = abrevMes + '/' + (ano - 1);
+  const nomeN1 = (typeof rotuloMesesQuadro === 'function' ? rotuloMesesQuadro(mesesSel) : abrevMes) + '/' + (ano - 1);
+  const fraseN = variosMeses ? ('soma de ' + (typeof fraseMesesQuadro === 'function' ? fraseMesesQuadro(mesesSel) : nomeMes) + '/' + ano) : nomeMes;
+  const fraseN1 = variosMeses ? ('soma de ' + (typeof fraseMesesQuadro === 'function' ? fraseMesesQuadro(mesesSel) : nomeN1) + '/' + (ano - 1)) : nomeN1;
 
   const notaValor = !quadro.valor_na_base
     ? `<div class="vcob-note">O valor em R$ <strong>não estava</strong> na tabela de vendas (só cliente, data, tipo e peso). O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.</div>`
@@ -31462,8 +32339,23 @@ function renderVendasQuadro(quadroOpt) {
   };
   const resumoRows = pacote.linhas.map(row => htmlLinhaResumoPnL(row, filtro, esc, pacote.periodo)).join('');
 
-  const detalhe = celulas
-    .filter(c => vendasQuadroPassaFiltro(c, filtro))
+  const filtroDetalhe = (typeof filtroMetricaEscolha === 'function') ? filtroMetricaEscolha(filtro, escolhaUi) : filtro;
+  const ymsDet = (pacote.periodo && pacote.periodo.ymsSel && pacote.periodo.ymsSel.length) ? pacote.periodo.ymsSel : [ym];
+  const vistosDet = {};
+  const detalheBase = [];
+  for (let di = 0; di < ymsDet.length; di++) {
+    const aggD = quadro.meses[ymsDet[di]];
+    const celsD = aggD && aggD.celulas ? Object.values(aggD.celulas) : [];
+    for (let dj = 0; dj < celsD.length; dj++) {
+      const cd = celsD[dj];
+      if (!cd || !vendasQuadroPassaFiltro(cd, filtroDetalhe)) continue;
+      const kd = (cd.empresa || '') + '\t' + (cd.canal || '') + '\t' + (cd.vendedor || '');
+      if (vistosDet[kd]) continue;
+      vistosDet[kd] = 1;
+      detalheBase.push(cd);
+    }
+  }
+  const detalhe = detalheBase
     .sort((a, b) => {
       const ia = ordemEmp.indexOf(a.empresa);
       const ib = ordemEmp.indexOf(b.empresa);
@@ -31478,6 +32370,17 @@ function renderVendasQuadro(quadroOpt) {
     });
 
   let banner = '';
+  if (typeof escolhaTemRestricao === 'function' && escolhaTemRestricao(escolhaUi)) {
+    const partesEsc = [];
+    const labsC = (typeof rotulosChecks === 'function') ? (rotulosChecks('vq-canais-box') || []) : [];
+    const labsV = (typeof rotulosChecks === 'function') ? (rotulosChecks('vq-vends-box') || []) : [];
+    if (labsC.length) partesEsc.push('Canal: ' + labsC.join(', '));
+    if (labsV.length) partesEsc.push('Vendedor: ' + labsV.join(', '));
+    banner += `<div class="vq-banner">
+      <span>A ver ${esc(partesEsc.join(' · '))}</span>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="limparEscolhaVendasQuadro()">Limpar</button>
+    </div>`;
+  }
   if (filtro && (filtro.empresa || filtro.canal || filtro.vendedor)) {
     const partes = [];
     if (filtro.empresa) partes.push('Empresa: ' + filtro.empresa);
@@ -31491,7 +32394,7 @@ function renderVendasQuadro(quadroOpt) {
 
   let detRows = htmlDetalheVendedorQuadro(detalhe, quadro, pacote.periodo, filtro, esc);
   if (!detRows) {
-    detRows = `<tr><td colspan="11" class="vq-muted" style="padding:16px;">Sem vendedores neste mês${filtro ? ' com este filtro' : ''}.</td></tr>`;
+    detRows = `<tr><td colspan="11" class="vq-muted" style="padding:16px;">Sem vendedores neste período${(filtro || (typeof escolhaTemRestricao === 'function' && escolhaTemRestricao(escolhaUi))) ? ' com este filtro' : ''}.</td></tr>`;
   }
 
   const ts = quadro.atualizado_em
@@ -31508,6 +32411,11 @@ function renderVendasQuadro(quadroOpt) {
     avisoQuadro = `<div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:8px;">Ainda não há agregado guardado. O objectivo do mês aparece na mesma. O R$ entra ao carregar o Excel do SAP.</div>` + avisoQuadro;
   }
 
+  const somaCard = somarQuadroNosMeses(
+    quadro,
+    (pacote.periodo && pacote.periodo.ymsSel) || [ym],
+    (typeof filtroMetricaEscolha === 'function') ? filtroMetricaEscolha(null, escolhaUi) : null
+  );
   const bindQuadro = () => {
     if (!el.dataset.vqBound) {
       el.dataset.vqBound = '1';
@@ -31518,8 +32426,8 @@ function renderVendasQuadro(quadroOpt) {
     ${avisoQuadro}
     <div class="vq-cards">
       <div class="vq-card${ehActual ? ' vq-card-actual' : ''}">
-        <div class="vq-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Mês ${esc(nomeMes)}${ehActual ? ' · actual' : ''}</div>
-        <strong>${formatValorQuadroRs(celulas.reduce((s, c) => somarValorQuadro(s, c.valor), 0), celulas.length > 0)}</strong>
+        <div class="vq-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">${variosMeses ? 'Meses' : 'Mês'} ${esc(nomeMes)}${ehActual ? ' · actual' : ''}</div>
+        <strong>${formatValorQuadroRs(somaCard.valor, somaCard.tem)}</strong>
       </div>
       <div class="vq-card">
         <div class="vq-muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Acumulado Jan–${esc(abrevMes)}/${ano}</div>
@@ -31527,7 +32435,7 @@ function renderVendasQuadro(quadroOpt) {
         <div class="vq-linhas">Janeiro até ${esc(abrevMes)}/${ano}</div>
       </div>
     </div>
-    <div class="vq-legenda">N = ${esc(nomeMes)} · N-1 = ${esc(nomeN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = Budget do mês, a seguir a N. Var. obj. % = (N − Objetivo) / Objetivo. Acum. objetivo = soma de Janeiro até este mês, Março inclusive. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo. O detalhe junta os códigos do mesmo vendedor; o subtotal soma-os. Sem objetivo por pessoa, a célula fica —.</div>
+    <div class="vq-legenda">N = ${esc(fraseN)} · N-1 = ${esc(fraseN1)} · Acumulado = Janeiro até ${esc(abrevMes)}. Objetivo = ${variosMeses ? 'soma dos budgets desses meses' : 'Budget do mês'}, a seguir a N. Var. obj. % = (N − Objetivo) / Objetivo. Acum. objetivo = soma de Janeiro até este mês, Março inclusive. Acum. var. obj. % = (Acum. N − Acum. objetivo) / Acum. objetivo. O detalhe junta os códigos do mesmo vendedor; o subtotal soma-os. Sem objetivo por pessoa, a célula fica —.</div>
     <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Resumo <span style="font-weight:400;text-transform:none;letter-spacing:0;">(clica num número para filtrar o detalhe)</span></div>
     <div class="vq-scroll vq-scroll-main">
       <table class="vq-table">
@@ -31712,6 +32620,7 @@ function onClickVendasResumoAnual(ev) {
   const selA = document.getElementById('vq-ano');
   if (selM) selM.value = String(parseInt(ym.slice(5), 10));
   if (selA) selA.value = ym.slice(0, 4);
+  if (typeof aplicarMesesNoPainel === 'function') aplicarMesesNoPainel('vq-meses-box', [parseInt(ym.slice(5), 10)]);
   window._vqFiltro = {
     empresa: btn.getAttribute('data-vq-empresa') || '',
     canal: btn.getAttribute('data-vq-canal') || '',
@@ -31742,11 +32651,18 @@ function pvMontarVistaVendas() {
           ${adminBtn}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
-          <label style="font-size:12px;color:var(--muted);">Mês
-            <select id="vq-mes" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasQuadro()"></select>
+          <label style="font-size:12px;color:var(--muted);">Meses
+            <select id="vq-mes" class="form-input" style="display:none;" onchange="renderVendasQuadro()"></select>
+            <span id="vq-meses-host"></span>
           </label>
           <label style="font-size:12px;color:var(--muted);">Ano
-            <select id="vq-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="renderVendasQuadro()"></select>
+            <select id="vq-ano" class="form-input" style="margin-left:4px;padding:6px 8px;font-size:13px;" onchange="vqAnoQuadroMudou()"></select>
+          </label>
+          <label style="font-size:12px;color:var(--muted);">Canal
+            <span id="vq-canais-host"></span>
+          </label>
+          <label style="font-size:12px;color:var(--muted);">Vendedor
+            <span id="vq-vends-host"></span>
           </label>
           <span id="vq-mes-actual" class="vq-mes-actual" style="display:none;">Mês actual</span>
           <span id="vq-periodo" style="font-size:13px;font-weight:600;"></span>
@@ -46682,12 +47598,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-18-nfe-carga-rapida: ZIP grava só notas novas. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-19-vendas-meses-filtros: vários meses, canal e vendedor. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-18-nfe-carga-rapida';
+  var CACHE_KEEP = 'v2026-11-19-vendas-meses-filtros';
 
   function tryRegister() {
     try {

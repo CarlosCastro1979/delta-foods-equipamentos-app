@@ -1,6 +1,6 @@
-// Service Worker v2026-11-18-nfe-carga-rapida — ZIP grava só notas novas
+// Service Worker v2026-11-19-vendas-meses-filtros — vários meses, canal e vendedor
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-18-nfe-carga-rapida';
+const CACHE = 'v2026-11-19-vendas-meses-filtros';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

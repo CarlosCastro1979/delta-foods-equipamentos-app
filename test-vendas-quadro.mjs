@@ -550,6 +550,11 @@ check('números do resumo filtram o detalhe; zero não é clicável', () => {
     },
   };
   ctx.window._vendasQuadro = quadro;
+  const mesFixo = ctx.document.getElementById('vq-mes');
+  const anoFixo = ctx.document.getElementById('vq-ano');
+  mesFixo.value = '10';
+  mesFixo.dataset.ready = '1';
+  anoFixo.value = '2026';
   ctx.renderVendasQuadro(quadro);
   const htmlOut = els['pv-vendas-quadro'].innerHTML;
   assert.ok(htmlOut.includes('Período') || (els['vq-periodo'].textContent || '').includes('Out'), 'período visível');
@@ -672,6 +677,8 @@ check('objectivos de Julho e Março oficial; 99520005 e 99530003 são o Marcio',
   assert.notEqual(falso.n, 20, 'volume não é o R$');
   ctx.window._vqCanal = { empresa: 'Delta Foods Brasil', canal: 'Lojas online' };
   ctx.window._vqFiltro = null;
+  ctx.document.getElementById('vq-mes').value = '10';
+  ctx.document.getElementById('vq-ano').value = '2026';
   ctx.renderVendasQuadro(ctx.quadroVendasVazio());
   const canalHtml = ctx.document.getElementById('pv-vendas-quadro').innerHTML;
   assert.ok(canalHtml.includes('Lojas online'));
@@ -985,10 +992,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-16-outlook-anexo-eml'));
+  assert.ok(sw.includes('v2026-11-19-vendas-meses-filtros'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-11-16-outlook-anexo-eml'));
+  assert.ok(html.includes('v2026-11-19-vendas-meses-filtros'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 
@@ -2097,6 +2104,79 @@ check('410730 e 423557 ficam em Distribuidores de retalho, não em Retalho moder
   assert.equal(seed['2025-03'][dk], 25445);
   assert.equal(seed['2026-09'][rk], 8498);
   assert.equal(seed['2026-09'][dk], 11180);
+});
+
+check('vários meses somam N, N-1 e o objetivo; canal e vendedor filtram', () => {
+  const nomes = [
+    'normalizarListaMeses', 'rotuloMesesQuadro', 'fraseMesesQuadro', 'chaveCanalEscolha',
+    'ymsNdoPeriodo', 'ymsN1doPeriodo', 'periodoComparacaoQuadro',
+    'vendasQuadroPassaFiltro', 'filtroMetricaEscolha', 'listaCanaisEscolha', 'listaVendedoresEscolha',
+    'escolhaTemRestricao', 'canalEstaNaEscolha', 'vendedorEstaNaEscolha',
+    'objetivoCanalNosMeses', 'somarObjectivosConhecidos',
+  ];
+  for (let i = 0; i < nomes.length; i++) {
+    if (typeof ctx[nomes[i]] !== 'function') vm.runInContext(extractFn(html, nomes[i]), ctx);
+    else vm.runInContext(extractFn(html, nomes[i]), ctx);
+  }
+  if (!ctx.PV_OBJETIVOS_CANAL) {
+    vm.runInContext('var PV_OBJETIVOS_CANAL = ' + extractConstObject(html, 'PV_OBJETIVOS_CANAL') + ';', ctx);
+  }
+  vm.runInContext(extractFn(html, 'objetivoCanalMes'), ctx);
+  vm.runInContext(extractFn(html, 'objetivoCanalNosMeses'), ctx);
+  vm.runInContext(extractFn(html, 'metricasLinhaQuadro'), ctx);
+  vm.runInContext(extractFn(html, 'normNomeVendaMenu'), ctx);
+
+  assert.deepEqual(ctx.normalizarListaMeses([11, 10, 11, 0, 13], 1), [10, 11]);
+  assert.equal(ctx.rotuloMesesQuadro([10, 11]), 'Out+Nov');
+  assert.equal(ctx.fraseMesesQuadro([10, 11]), 'Out e Nov');
+  const p1 = ctx.periodoComparacaoQuadro(9, 2026);
+  assert.equal(p1.ym, '2026-09');
+  assert.deepEqual(p1.ymsSel, ['2026-09']);
+  assert.equal(p1.ymsN.length, 9);
+  const p2 = ctx.periodoComparacaoQuadro(11, 2026, [10, 11]);
+  assert.equal(p2.mes, 11);
+  assert.deepEqual(p2.ymsSel, ['2026-10', '2026-11']);
+  assert.deepEqual(p2.ymsSelN1, ['2025-10', '2025-11']);
+  assert.equal(p2.ymsN[0], '2026-01');
+  assert.equal(p2.ymsN[p2.ymsN.length - 1], '2026-11');
+
+  function cel(empresa, canal, vendedor, valor) {
+    return { empresa, canal, vendedor, valor, linhas: 1, linhasComValor: 1 };
+  }
+  const q = ctx.quadroVendasVazio();
+  q.meses['2026-10'] = { celulas: {
+    a: cel('Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA', 100),
+    b: cel('Delta Foods Brasil', 'Restauração', 'PAULO FONTES', 40),
+  } };
+  q.meses['2026-11'] = { celulas: {
+    a: cel('Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA', 50),
+    b: cel('Delta Foods Brasil', 'Restauração', 'PAULO FONTES', 10),
+    c: cel('Q Brasil', 'Retalho moderno', 'DIOGO OLIVEIRA', 7),
+  } };
+  q.meses['2025-10'] = { celulas: { a: cel('Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA', 20) } };
+  q.meses['2025-11'] = { celulas: { a: cel('Delta Foods Brasil', 'Lojas online', 'MARCIO GORGA', 30) } };
+
+  const tudo = ctx.metricasLinhaQuadro(q, p2, null);
+  assert.equal(tudo.n, 100 + 40 + 50 + 10 + 7);
+  assert.equal(tudo.n1, 20 + 30);
+  const lojas = ctx.metricasLinhaQuadro(q, p2, { empresa: 'Delta Foods Brasil', canal: 'Lojas online' });
+  assert.equal(lojas.n, 150);
+  assert.equal(lojas.n1, 50);
+  const escolha = {
+    canais: [ctx.chaveCanalEscolha('Delta Foods Brasil', 'Lojas online')],
+    vendedores: ['Marcio Gorga'],
+  };
+  const filtrado = ctx.metricasLinhaQuadro(q, p2, ctx.filtroMetricaEscolha(null, escolha));
+  assert.equal(filtrado.n, 150);
+  assert.equal(ctx.vendasQuadroPassaFiltro(
+    cel('Delta Foods Brasil', 'Restauração', 'PAULO FONTES', 1),
+    ctx.filtroMetricaEscolha(null, escolha)
+  ), false);
+  const obj = ctx.objetivoCanalNosMeses('Delta Foods Brasil', 'Lojas online', p2.ymsSel);
+  assert.equal(obj, ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-10')
+    + ctx.objetivoCanalMes('Delta Foods Brasil', 'Lojas online', '2026-11'));
+  const um = ctx.objetivoCanalNosMeses('Delta Foods Brasil', '', ['2026-09']);
+  assert.equal(um, ctx.objetivoCanalMes('Delta Foods Brasil', '', '2026-09'));
 });
 
 if (process.exitCode) {
