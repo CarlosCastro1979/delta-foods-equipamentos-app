@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-16-outlook-anexo-eml Sem mailto quando há anexo (PC) -->
+<!-- dfb-build: v2026-11-18-nfe-carga-rapida ZIP grava só notas novas, sem reenviar PDF -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -14759,6 +14759,10 @@ let _nfePdfsNuvem = {};
 let _nfePdfNuvemErros = 0;
 /** Quantos blocos nfe_pdfs_N a célula anuncia. A lista não os pede; o clique na NF ou no WhatsApp pede. */
 let _nfePdfChunks = 0;
+/** True depois de uma leitura bem sucedida da célula. Sem isto não se acrescentam blocos — o índice 0 apagava os PDF já gravados. */
+let _nfeChunksConhecidos = false;
+/** PDF que ainda estão dentro da célula das notas (arquivo pequeno). Saem para blocos na próxima gravação, uma vez. */
+let _nfePdfsInlinePendentes = {};
 
 function nfeListaTemDocs(lista) {
   for (const c of lista || []) {
@@ -14979,6 +14983,94 @@ async function nfePersistir(notas) {
 }
 
 /**
+ * Grava o arquivo leve e só os PDF desta carga.
+ * Os blocos nfe_pdfs_N que já existem ficam. Os novos entram a seguir, sem descarregar os antigos.
+ * PDF que ainda estavam dentro da célula passam uma vez para blocos, para a célula leve não os apagar.
+ */
+async function nfePersistirAcrescimo(todas, comBinario) {
+  if (!_nfeChunksConhecidos) {
+    throw new Error('Não consegui ler as NF já gravadas. Actualiza a página e tenta outra vez.');
+  }
+  const arr = Array.isArray(todas) ? todas : [];
+  const novas = (comBinario || []).filter(n => n && n.chave && typeof nfeTemAlgumBinario === 'function' && nfeTemAlgumBinario(n));
+  const skip = new Set(novas.map(n => String(n.chave)));
+  const inline = [];
+  if (typeof nfeNotaDeHitPdf === 'function') {
+    Object.keys(_nfePdfsInlinePendentes || {}).forEach(ch => {
+      if (skip.has(String(ch))) return;
+      const n = nfeNotaDeHitPdf(ch, _nfePdfsInlinePendentes[ch]);
+      if (n) inline.push(n);
+    });
+  }
+  const enviados = inline.concat(novas);
+  const ts = new Date().toISOString();
+  const base = Number(_nfePdfChunks) || 0;
+  const chunks = enviados.length && typeof nfePartirPdfsEmChunks === 'function'
+    ? nfePartirPdfsEmChunks(enviados)
+    : [];
+  const prefer = Object.assign({}, HEADERS, { Prefer: 'resolution=merge-duplicates' });
+  for (let i = 0; i < chunks.length; i++) {
+    const resChunk = await fetch(LISTA_CLIENTES_SUPA_URL, {
+      method: 'POST',
+      headers: prefer,
+      body: JSON.stringify({
+        id: NFE_PDF_CHUNK_PREFIX + (base + i),
+        data: { __format: 'nfe_pdfs', pdfs: chunks[i] },
+        atualizado_em: ts,
+      }),
+    });
+    if (!resChunk.ok) {
+      const t = await resChunk.text().catch(() => '');
+      throw new Error('Supabase HTTP ' + resChunk.status + (t ? ' ' + t.slice(0, 140) : ''));
+    }
+  }
+  const totalChunks = base + chunks.length;
+  const leves = typeof nfeNotaSemPdfBinario === 'function'
+    ? arr.map(nfeNotaSemPdfBinario)
+    : arr;
+  const res = await fetch(LISTA_CLIENTES_SUPA_URL, {
+    method: 'POST',
+    headers: prefer,
+    body: JSON.stringify({
+      id: NFE_STORE_ID,
+      data: {
+        __format: 'nfe_emitidas',
+        __total: leves.length,
+        __pdfChunks: totalChunks,
+        __pdfPrefix: NFE_PDF_CHUNK_PREFIX,
+        notas: leves,
+      },
+      atualizado_em: ts,
+    }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error('Supabase HTTP ' + res.status + (t ? ' ' + t.slice(0, 140) : ''));
+  }
+  _nfePdfChunks = totalChunks;
+  _nfePdfsInlinePendentes = {};
+  if (typeof nfeMapaPdfs === 'function') _nfePdfsNuvem = nfeMapaPdfs(enviados, _nfePdfsNuvem || {});
+  let pdfsPrev = {};
+  try {
+    const pack = await idbGet(NFE_PDF_IDB_KEY);
+    if (pack && pack.pdfs) pdfsPrev = pack.pdfs;
+  } catch (_) {}
+  if (enviados.length) {
+    try {
+      await idbSet(NFE_PDF_IDB_KEY, { pdfs: nfeMapaPdfs(enviados, pdfsPrev), ts });
+    } catch (e) {
+      console.warn('nfe pdf idb', e);
+    }
+  }
+  try {
+    await idbSet(NFE_IDB_KEY, { notas: leves, ts });
+  } catch (e) {
+    console.warn('nfe idb', e);
+  }
+  return { pdfsFora: novas.length, chunks: chunks.length };
+}
+
+/**
  * Junta local + cloud. Não grava a meio de um parse — só reconcilia o que já estava guardado.
  * Nome no vendas_cliente com o mesmo NPess atual (um código ou vários do mesmo vendedor),
  * CPF sem vendedor → Marcio, e por fim o par Delta ES ↔ SP → Transferências internas (sai do Marcio).
@@ -15132,8 +15224,12 @@ async function nfeHidrateMeta(opts) {
       remote = pack;
     }
   } catch (_) { remote = null; }
-  _nfePdfsNuvem = pdfsInline;
-  _nfePdfChunks = nChunks;
+  if (remote != null) {
+    _nfePdfsNuvem = pdfsInline;
+    _nfePdfChunks = nChunks;
+    _nfeChunksConhecidos = true;
+    _nfePdfsInlinePendentes = pdfsInline || {};
+  }
   const catalogoNomes = await nfeCatalogoPronto();
   let base = local;
   let alteradas = 0;
@@ -15158,7 +15254,7 @@ async function nfeHidrateMeta(opts) {
     } catch (_) {}
   }
   nfeAplicarHotPath(leves);
-  _nfeMetaPronta = true;
+  if (remote != null || _nfeChunksConhecidos) _nfeMetaPronta = true;
 }
 
 async function nfeGarantirClientes() {
@@ -15240,10 +15336,10 @@ async function nfeOnFiles(ev) {
   if (input) input.value = '';
   if (!files.length || _nfeBusy) return;
   _nfeBusy = true;
-  _nfeStatusMsg = 'A ler o ficheiro… a gravação é só no fim.';
+  _nfeStatusMsg = 'A ler o ZIP…';
   nfeSyncVistas();
   try {
-    await nfeHidrate();
+    await nfeHidrateMeta();
     const parsed = [];
     const pdfs = [];
     let xmls = 0;
@@ -15271,46 +15367,48 @@ async function nfeOnFiles(ev) {
       atrib = parsed.map(n => nfeComCanal(nfeCruzarNota(n, index, nfeCanalDeNpess, catalogoNomes)));
     }
     /* Junta ao arquivo completo — `_nfeNotas` pode ser só os meses quentes. */
-    const merged = nfeMergeNotas(nfeArquivoNotas(), atrib);
-    const associado = typeof nfeAssociarPdfs === 'function'
-      ? nfeAssociarPdfs(merged.notas, pdfs)
-      : { notas: merged.notas, ligados: 0, soltos: pdfs.length };
-    const comBoleto = typeof nfeAssociarBoletos === 'function'
-      ? nfeAssociarBoletos(associado.notas, pdfs)
-      : { notas: associado.notas, ligados: 0, soltos: 0 };
-    const junto = typeof nfeAnexarDocsJuntos === 'function'
-      ? await nfeAnexarDocsJuntos(comBoleto.notas)
-      : { notas: comBoleto.notas, juntos: 0, falhas: 0 };
-    const reap = nfeAplicarRegraGuardada(junto.notas, catalogoNomes);
-    const pdfsNuvem = _nfePdfsNuvem || {};
-    const faltaBinarioNuvem = pdfs.length > 0 && (reap.notas || []).some(n => {
-      if (!n || !n.chave) return false;
-      const hit = pdfsNuvem[n.chave] || {};
-      if (typeof nfeTemPdfBinario === 'function' && nfeTemPdfBinario(n) && !(hit.b64 || hit.pdfBase64)) return true;
-      if (typeof nfeTemBoletoBinario === 'function' && nfeTemBoletoBinario(n)) {
-        const naNota = typeof nfeContaBoletosBinario === 'function' ? nfeContaBoletosBinario(n) : 1;
-        const noHit = Array.isArray(hit.boletos) && hit.boletos.length
-          ? hit.boletos.filter(b => b && (b.b64 || b.pdfBase64)).length
-          : ((hit.boletoB64 || hit.boletoBase64) ? 1 : 0);
-        if (noHit < naNota) return true;
-      }
-      if (typeof nfeTemJuntoBinario === 'function' && nfeTemJuntoBinario(n) && !(hit.juntoB64 || hit.pdfJuntoBase64)) return true;
-      return false;
-    });
-    if (merged.novas > 0 || reap.alteradas > 0 || associado.ligados > 0 || (comBoleto.ligados || 0) > 0 || (junto.juntos || 0) > 0 || faltaBinarioNuvem) {
-      await nfePersistir(reap.notas);
+    const primeiro = nfeMergeNotas(nfeArquivoNotas(), atrib);
+    const filtro = typeof nfePdfsPorTratar === 'function'
+      ? nfePdfsPorTratar(primeiro.notas, pdfs)
+      : { pdfs: [], chaves: [], soltosPdf: 0, soltosBoleto: 0 };
+    const chavesNovas = new Set(filtro.chaves || []);
+    let associado = { notas: [], ligados: 0, soltos: 0 };
+    let comBoleto = { notas: [], ligados: 0, soltos: 0 };
+    let junto = { notas: [], juntos: 0, falhas: 0 };
+    if (chavesNovas.size) {
+      _nfeStatusMsg = 'A juntar NF e boleto…';
+      nfeSyncVistas();
+      const trabalho = primeiro.notas.filter(n => n && chavesNovas.has(String(n.chave)));
+      associado = typeof nfeAssociarPdfs === 'function'
+        ? nfeAssociarPdfs(trabalho, filtro.pdfs)
+        : { notas: trabalho, ligados: 0, soltos: (filtro.pdfs || []).length };
+      comBoleto = typeof nfeAssociarBoletos === 'function'
+        ? nfeAssociarBoletos(associado.notas, filtro.pdfs)
+        : { notas: associado.notas, ligados: 0, soltos: 0 };
+      junto = typeof nfeAnexarDocsJuntos === 'function'
+        ? await nfeAnexarDocsJuntos(comBoleto.notas)
+        : { notas: comBoleto.notas, juntos: 0, falhas: 0 };
+    }
+    const merged = nfeMergeNotas(primeiro.notas, junto.notas);
+    const reap = nfeAplicarRegraGuardada(merged.notas, catalogoNomes);
+    if (primeiro.novas > 0 || reap.alteradas > 0 || chavesNovas.size) {
+      _nfeStatusMsg = 'A gravar as notas novas…';
+      nfeSyncVistas();
+      await nfePersistirAcrescimo(reap.notas, junto.notas);
     }
     nfeAplicarHotPath(reap.notas);
     const com = atrib.filter(n => n.status === 'unico').length;
     const sem = atrib.filter(n => n.status === 'sem_cliente').length;
     const multi = atrib.filter(n => n.status === 'cnpj_multiplos').length;
-    const pdfOnde = (associado.ligados || comBoleto.ligados || junto.juntos || faltaBinarioNuvem) ? ' · PDF gravado com a nota' : '';
+    const pdfOnde = (associado.ligados || comBoleto.ligados || junto.juntos) ? ' · PDF gravado com a nota' : '';
     const bolTxt = comBoleto.ligados
       ? ` · ${comBoleto.ligados} boleto${comBoleto.ligados === 1 ? '' : 's'}`
       : '';
     const juntoTxt = junto.juntos
       ? ` · ${junto.juntos} PDF com NF e boleto`
       : '';
+    const soltosPdf = (associado.soltos || 0) + (filtro.soltosPdf || 0);
+    const soltosBol = (comBoleto.soltos || 0) + (filtro.soltosBoleto || 0);
     const pdfTxt = (pdfs.length
       ? (associado.ligados
         ? ` · ${associado.ligados} PDF associado${associado.ligados === 1 ? '' : 's'}`
@@ -15318,35 +15416,36 @@ async function nfeOnFiles(ev) {
       : '')
       + bolTxt
       + juntoTxt
-      + (associado.soltos ? ` · ${associado.soltos} PDF sem nota` : '')
-      + (comBoleto.soltos ? ` · ${comBoleto.soltos} boleto sem nota` : '')
+      + (soltosPdf ? ` · ${soltosPdf} PDF sem nota` : '')
+      + (soltosBol ? ` · ${soltosBol} boleto sem nota` : '')
       + pdfOnde;
+    const semNota = !!(soltosPdf || soltosBol);
     _nfeStatusMsg = parsed.length
-      ? `${parsed.length} NF · ${merged.novas} novas · ${merged.repetidas} já guardadas · ${com} com cliente · ${sem} sem cliente · ${multi} com CNPJ em mais do que um código`
+      ? `${parsed.length} NF · ${primeiro.novas} novas · ${primeiro.repetidas} já guardadas · ${com} com cliente · ${sem} sem cliente · ${multi} com CNPJ em mais do que um código`
         + (ignorados ? ` · ${ignorados} XML ignorados` : '')
         + pdfTxt
       : (associado.ligados
         ? `${associado.ligados} PDF associado${associado.ligados === 1 ? '' : 's'}${pdfOnde}`
-        : 'O PDF não corresponde a nenhuma nota já carregada.');
+        : (semNota
+          ? 'O PDF não corresponde a nenhuma nota já carregada.'
+          : 'Nenhuma nota nova — estas chaves já estavam guardadas.'));
     if (typeof toast === 'function') {
-      toast(merged.novas > 0
-        ? ('NF guardadas. ' + merged.novas + ' novas'
-          + (junto.juntos ? (', ' + junto.juntos + ' com NF e boleto.') : (comBoleto.ligados ? (', ' + comBoleto.ligados + ' com boleto.') : (associado.ligados ? (', ' + associado.ligados + ' com PDF.') : (faltaBinarioNuvem ? ', com PDF.' : '.')))))
+      toast(primeiro.novas > 0
+        ? ('NF guardadas. ' + primeiro.novas + ' novas'
+          + (junto.juntos ? (', ' + junto.juntos + ' com NF e boleto.') : (comBoleto.ligados ? (', ' + comBoleto.ligados + ' com boleto.') : (associado.ligados ? (', ' + associado.ligados + ' com PDF.') : '.'))))
         : ((junto.juntos || comBoleto.ligados) > 0
           ? (junto.juntos
             ? ('NF e boleto num só PDF em ' + junto.juntos + (junto.juntos === 1 ? ' nota.' : ' notas.'))
             : ('Boleto gravado em ' + comBoleto.ligados + (comBoleto.ligados === 1 ? ' nota.' : ' notas.')))
           : (associado.ligados > 0
             ? ('PDF associado a ' + associado.ligados + (associado.ligados === 1 ? ' nota.' : ' notas.'))
-            : (faltaBinarioNuvem
-              ? 'PDF gravado com a nota.'
-              : (reap.alteradas > 0
-                ? (reap.transferencias > 0 && reap.transferencias === reap.alteradas
-                  ? 'Transferência interna saiu do vendedor.'
-                  : 'CPF sem vendedor ficou no Marcio Gorga (Ecommerce).')
-                : (pdfs.length && !parsed.length
-                  ? 'O PDF não corresponde a nenhuma nota já carregada.'
-                  : 'Nenhuma nota nova — estas chaves já estavam guardadas.'))))));
+            : (reap.alteradas > 0
+              ? (reap.transferencias > 0 && reap.transferencias === reap.alteradas
+                ? 'Transferência interna saiu do vendedor.'
+                : 'CPF sem vendedor ficou no Marcio Gorga (Ecommerce).')
+              : (pdfs.length && !parsed.length && semNota
+                ? 'O PDF não corresponde a nenhuma nota já carregada.'
+                : 'Nenhuma nota nova — estas chaves já estavam guardadas.')))));
     }
   } catch (e) {
     console.error(e);
@@ -46583,12 +46682,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-16-outlook-anexo-eml: Sem downloads extras se ponte OK. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-18-nfe-carga-rapida: ZIP grava só notas novas. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-16-outlook-anexo-eml';
+  var CACHE_KEEP = 'v2026-11-18-nfe-carga-rapida';
 
   function tryRegister() {
     try {

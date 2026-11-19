@@ -324,7 +324,7 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-10-28-contratos-editar'), 'service worker referido no index');
+  assert(html.includes('v2026-11-18-nfe-carga-rapida'), 'service worker referido no index');
   assert(!html.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no index');
@@ -336,7 +336,7 @@ function testUiCarga() {
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-10-28-contratos-editar'), 'service worker actualizado');
+  assert(sw.includes('v2026-11-18-nfe-carga-rapida'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no sw');
@@ -1337,10 +1337,17 @@ function testCargaLeve() {
   assert(html.includes('function nfeMesesQuentes(') && html.includes('function nfeGarantirMes('), 'há meses quentes e carga sob pesquisa');
   assert(html.includes('A carregar ') && html.includes('nfeAbrirMes'), 'mês antigo mostra estado de carga');
   const onIni = html.indexOf('async function nfeOnFiles(');
-  const onFim = html.indexOf('\nasync function nfe', onIni + 10);
-  const on = html.slice(onIni, onFim > onIni ? onFim : onIni + 2500);
-  assert(on.includes('await nfeHidrate()') && !on.includes('nfeHidrateMeta'), 'a carga do ZIP continua a juntar os PDF');
+  const onFim = html.indexOf('\nfunction nfeBucket(', onIni);
+  const on = html.slice(onIni, onFim > onIni ? onFim : onIni + 8000);
+  assert(on.includes('await nfeHidrateMeta()') && !on.includes('await nfeHidrate()'), 'a carga do ZIP não descarrega os PDF já gravados');
+  assert(on.includes('nfePdfsPorTratar') && on.includes('nfePersistirAcrescimo'), 'a carga só junta e grava as notas novas');
+  assert(!on.includes('await nfePersistir(') && !on.includes('nfeLerPdfsNuvem'), 'a carga do ZIP não reenvia nem relê o arquivo de PDF');
   assert(on.includes('nfeArquivoNotas()') && on.includes('nfeAplicarHotPath(reap.notas)'), 'o ZIP junta ao arquivo completo e volta ao hot path');
+  const accIni = html.indexOf('async function nfePersistirAcrescimo(');
+  const accFim = html.indexOf('function nfeAplicarRegraGuardada(', accIni);
+  const acc = html.slice(accIni, accFim > accIni ? accFim : accIni + 4000);
+  assert(acc.includes('NFE_PDF_CHUNK_PREFIX + (base + i)'), 'os PDF novos entram no fim dos blocos');
+  assert(!acc.includes('nfeLimparChunksPdf') && !acc.includes('nfeLerPdfsNuvem'), 'o acréscimo não apaga nem descarrega os blocos antigos');
   const pdfIni = html.indexOf('async function nfePdfResolvido(');
   const pdf = html.slice(pdfIni, html.indexOf('function nfeEhTelemovel('));
   assert(pdf.includes("idbGet('delta_nfe_pdfs')") && pdf.includes('nfeCarregarPdfDaNuvem'), 'o PDF só é lido ao abrir a NF ou no WhatsApp (IndexedDB ou blocos nfe_pdfs_N)');
@@ -1412,7 +1419,55 @@ testMenuCanal();
 testHorecaNaoListaEcommerce();
 testSiteProprioRegra();
 testFiltroMesCliente();
+function testPdfsPorTratar() {
+  const chave = '35261014830817000100550020001026061000000000';
+  const pasta = 'saida/NFe' + chave + '/';
+  const danfe = { name: pasta + 'NFe' + chave + '.pdf', pdfBase64: 'DANFE' };
+  const b1 = { name: pasta + 'Boleto_102606-2_1_3.pdf', pdfBase64: 'B1' };
+  const b2 = { name: pasta + 'Boleto_102606-2_2_3.pdf', pdfBase64: 'B2' };
+  const b3 = { name: pasta + 'Boleto_102606-2_3_3.pdf', pdfBase64: 'B3' };
+  const solto = { name: 'Boleto_9-1_1_1.pdf', pdfBase64: 'SOLTO' };
+  const nova = { chave: chave, numero: '102606', serie: '2' };
+  const primeira = nfe.nfePdfsPorTratar([nova], [danfe, b1, b2, b3, solto]);
+  assert(primeira.chaves.join(',') === chave, 'nota nova entra para juntar, veio ' + primeira.chaves.join(','));
+  assert(primeira.pdfs.length === 4 && primeira.soltosBoleto === 1, 'DANFE e 3 boletos entram; o boleto sem nota fica solto, veio ' + primeira.pdfs.length + '/' + primeira.soltosBoleto);
+  const pronta = {
+    chave: chave,
+    numero: '102606',
+    serie: '2',
+    temPdf: true,
+    pdfNome: 'NFe' + chave + '.pdf',
+    temBoleto: true,
+    temPdfJunto: true,
+    pdfJuntoNome: 'NF-102606-boleto.pdf',
+    boletos: [
+      { nome: 'Boleto_102606-2_1_3.pdf', parcela: 1, total: 3 },
+      { nome: 'Boleto_102606-2_2_3.pdf', parcela: 2, total: 3 },
+      { nome: 'Boleto_102606-2_3_3.pdf', parcela: 3, total: 3 },
+    ],
+  };
+  const repetida = nfe.nfePdfsPorTratar([pronta], [danfe, b1, b2, b3]);
+  assert(repetida.chaves.length === 0 && repetida.pdfs.length === 0, 'nota já com DANFE, boletos e PDF junto não volta a ser fundida');
+  const faltaJunto = Object.assign({}, pronta, { temPdfJunto: false, pdfJuntoNome: '' });
+  const refaz = nfe.nfePdfsPorTratar([faltaJunto], [danfe, b1, b2, b3]);
+  assert(refaz.chaves.length === 1 && refaz.pdfs.length === 4, 'sem PDF junto, a DANFE e os boletos voltam a entrar uma vez');
+  const umBoleto = Object.assign({}, pronta, {
+    boletos: [{ nome: 'Boleto_102606-2_1_3.pdf', parcela: 1, total: 1 }],
+  });
+  const mais = nfe.nfePdfsPorTratar([umBoleto], [danfe, b1, b2, b3]);
+  assert(mais.chaves.length === 1 && mais.pdfs.length === 4, 'boletos a mais trazem a DANFE para refazer o PDF único, veio ' + mais.pdfs.map(p => p.pdfBase64).join(','));
+  const hit = nfe.nfeNotaDeHitPdf(chave, {
+    nome: 'danfe.pdf',
+    b64: 'QQ==',
+    juntoNome: 'NF-102606-boleto.pdf',
+    juntoB64: 'Qg==',
+    boletos: [{ nome: 'Boleto_102606-2_1_3.pdf', b64: 'Qw==', parcela: 1, total: 1 }],
+  });
+  assert(hit && hit.pdfBase64 === 'QQ==' && hit.pdfJuntoBase64 === 'Qg==' && hit.boletos.length === 1, 'o PDF que ainda está na célula volta a ser um bloco');
+}
+
 testCargaLeve();
+testPdfsPorTratar();
 testXmlAvulso();
 testUiCarga();
 testPdfZipMinimo();

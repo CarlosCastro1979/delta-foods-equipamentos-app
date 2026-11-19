@@ -1,6 +1,6 @@
-// Service Worker v2026-11-16-outlook-anexo-eml — Display não-modal; sem downloads se diálogo aberto
+// Service Worker v2026-11-18-nfe-carga-rapida — ZIP grava só notas novas
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-16-outlook-anexo-eml';
+const CACHE = 'v2026-11-18-nfe-carga-rapida';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

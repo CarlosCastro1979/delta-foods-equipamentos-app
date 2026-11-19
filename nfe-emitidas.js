@@ -1308,6 +1308,122 @@
     });
   }
 
+  function nfeTemMarcaDanfe(n) {
+    if (!n) return false;
+    if (nfeTemPdfBinario(n)) return true;
+    if (n.temPdf) return true;
+    return typeof n.pdfNome === 'string' && n.pdfNome.length > 0;
+  }
+
+  function nfeTemMarcaJunto(n) {
+    if (!n) return false;
+    if (nfeTemJuntoBinario(n)) return true;
+    if (n.temPdfJunto) return true;
+    return typeof n.pdfJuntoNome === 'string' && n.pdfJuntoNome.length > 0;
+  }
+
+  /** Parcelas já gravadas. Sem o array, a marca antiga (um boleto) conta como uma. */
+  function nfeContaBoletosMarca(n) {
+    if (!n) return 0;
+    var comBytes = nfeContaBoletosBinario(n);
+    if (comBytes > 0) return comBytes;
+    if (Array.isArray(n.boletos) && n.boletos.length) return n.boletos.length;
+    if (n.temBoleto) return 1;
+    if (typeof n.boletoNome === 'string' && n.boletoNome.length > 0) return 1;
+    return 0;
+  }
+
+  /** Nota leve outra vez, a partir do mapa de PDF da célula (antes de o base64 sair de lá). */
+  function nfeNotaDeHitPdf(chave, hit) {
+    if (!chave || !hit) return null;
+    var n = { chave: String(chave) };
+    var b64 = hit.b64 || hit.pdfBase64 || '';
+    if (b64) {
+      n.pdfBase64 = b64;
+      n.pdfNome = hit.nome || hit.pdfNome || '';
+      n.temPdf = true;
+    }
+    var bols = nfeBoletosDoHit(hit);
+    if (bols.length) nfeAplicarBoletos(n, bols);
+    var jun = hit.juntoB64 || hit.pdfJuntoBase64 || '';
+    if (jun) {
+      n.pdfJuntoBase64 = jun;
+      n.pdfJuntoNome = hit.juntoNome || hit.pdfJuntoNome || '';
+      n.temPdfJunto = true;
+    }
+    return nfeTemAlgumBinario(n) ? n : null;
+  }
+
+  /**
+   * PDF deste ZIP que a nota guardada ainda não tem.
+   * DANFE, os mesmos boletos e o PDF junto já marcados ficam de fora:
+   * não se voltam a fundir nem a enviar. Boletos a mais trazem a DANFE
+   * do ZIP para refazer o PDF único. PDF sem nota fica solto.
+   */
+  function nfePdfsPorTratar(notas, pdfs) {
+    var by = new Map();
+    (notas || []).forEach(function (n) {
+      if (n && n.chave && !by.has(String(n.chave))) by.set(String(n.chave), n);
+    });
+
+    function resolver(name) {
+      if (nfeEhBoleto(name)) {
+        var ch = nfeChaveNoCaminho(name);
+        if (ch && by.has(ch)) return ch;
+        var ns = nfeBoletoNumeroSerie(name);
+        if (!ns) return '';
+        var hits = [];
+        by.forEach(function (n, chave) {
+          if (nfeNumIgual(n.numero, ns.numero) && nfeNumIgual(n.serie, ns.serie)) hits.push(chave);
+        });
+        return hits.length === 1 ? hits[0] : '';
+      }
+      var chd = nfeChaveNoNome(name);
+      if (chd && by.has(chd)) return chd;
+      var num = nfeNumeroNoNome(name);
+      if (!num) return '';
+      var hitsD = [];
+      by.forEach(function (n, chave) {
+        if (nfeNumIgual(n.numero, num)) hitsD.push(chave);
+      });
+      return hitsD.length === 1 ? hitsD[0] : '';
+    }
+
+    var porChave = new Map();
+    var soltosPdf = 0;
+    var soltosBoleto = 0;
+    (pdfs || []).forEach(function (p) {
+      if (!p || !nfeEhPdf(p.name) || !p.pdfBase64) return;
+      var ch = resolver(p.name);
+      if (!ch) {
+        if (nfeEhBoleto(p.name)) soltosBoleto++;
+        else soltosPdf++;
+        return;
+      }
+      if (!porChave.has(ch)) porChave.set(ch, { danfe: null, boletos: [] });
+      if (nfeEhBoleto(p.name)) porChave.get(ch).boletos.push(p);
+      else if (!porChave.get(ch).danfe) porChave.get(ch).danfe = p;
+    });
+
+    var tratar = [];
+    var chaves = [];
+    porChave.forEach(function (pack, ch) {
+      var ex = by.get(ch);
+      var nBol = pack.boletos.length;
+      var precisaDanfe = !!(pack.danfe && !nfeTemMarcaDanfe(ex));
+      var precisaBoleto = nBol > nfeContaBoletosMarca(ex);
+      var teraDanfe = !!(pack.danfe || nfeTemMarcaDanfe(ex));
+      var bolDepois = Math.max(nBol, nfeContaBoletosMarca(ex));
+      var precisaJunto = !!(teraDanfe && bolDepois > 0 && pack.danfe && nBol > 0 && !nfeTemMarcaJunto(ex));
+      if (precisaBoleto && nfeTemMarcaJunto(ex)) precisaJunto = true;
+      if (!precisaDanfe && !precisaBoleto && !precisaJunto) return;
+      chaves.push(ch);
+      if (pack.danfe && (precisaDanfe || precisaJunto)) tratar.push(pack.danfe);
+      if (precisaBoleto || precisaJunto) pack.boletos.forEach(function (b) { tratar.push(b); });
+    });
+    return { pdfs: tratar, chaves: chaves, soltosPdf: soltosPdf, soltosBoleto: soltosBoleto };
+  }
+
   function nfeU32(buf, off) { return buf.readUInt32LE(off); }
   function nfeU16(buf, off) { return buf.readUInt16LE(off); }
 
@@ -1416,6 +1532,11 @@
     nfeAssociarBoletos: nfeAssociarBoletos,
     nfeFundirPdfs: nfeFundirPdfs,
     nfeAnexarDocsJuntos: nfeAnexarDocsJuntos,
+    nfeTemMarcaDanfe: nfeTemMarcaDanfe,
+    nfeTemMarcaJunto: nfeTemMarcaJunto,
+    nfeContaBoletosMarca: nfeContaBoletosMarca,
+    nfeNotaDeHitPdf: nfeNotaDeHitPdf,
+    nfePdfsPorTratar: nfePdfsPorTratar,
     NFE_NUVEM_JSON_MAX: NFE_NUVEM_JSON_MAX,
     nfeNotaSemPdfBinario: nfeNotaSemPdfBinario,
     nfeNotasParaNuvem: nfeNotasParaNuvem,
