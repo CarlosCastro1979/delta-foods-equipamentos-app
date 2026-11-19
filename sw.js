@@ -1,6 +1,6 @@
-// Service Worker v2026-11-18-nfe-carga-rapida — ZIP grava só notas novas
+// Service Worker v2026-11-19-vendas-horeca-sem-marcio — Marcio só no Ecommerce
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-18-nfe-carga-rapida';
+const CACHE = 'v2026-11-19-vendas-horeca-sem-marcio';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
