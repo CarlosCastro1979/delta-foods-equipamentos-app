@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-19-vendas-massimo-eduardo Massimo+Eduardo; obj Dist = canal -->
+<!-- dfb-build: v2026-11-19-vendas-qb-massimo 99530002 = Massimo Q Brasil Dist -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -5765,8 +5765,9 @@ const VENDEDORES_DEFAULT = [
   { cod: 99520004, nome: 'DIOGO OLIVEIRA' },
   { cod: 99530001, nome: 'DIOGO OLIVEIRA' },
   { cod: 99530005, nome: 'DIOGO OLIVEIRA' },
-  // Distribuidores
+  // Distribuidores — Massimo (DFB 99520003 + Q Brasil 99530002) e Eduardo (DFB)
   { cod: 99520003, nome: 'MASSIMO BOTTELLO' },
+  { cod: 99530002, nome: 'MASSIMO BOTTELLO' },
   { cod: 99520020, nome: 'EDUARDO MADEIRA' },
   // Online / Institucional (Ecommerce) — todos → Marcio Gorga
   { cod: 99520001, nome: 'MARCIO GORGA' },
@@ -5774,7 +5775,7 @@ const VENDEDORES_DEFAULT = [
   { cod: 99520008, nome: 'MARCIO GORGA' },
   { cod: 99520011, nome: 'MARCIO GORGA' },
   { cod: 99520012, nome: 'MARCIO GORGA' },
-  // Por identificar: Institucional Balcão (99520005) e Restauração Q Brasil (99530003)
+  // Institucional Balcão (99520005) e Restauração Q Brasil (99530003) → Marcio
   { cod: 99520005, nome: 'MARCIO GORGA' },
   { cod: 99530003, nome: 'MARCIO GORGA' },
 ];
@@ -6749,6 +6750,7 @@ const NPESS_VENDEDOR_SC = {
   99530001: 'DIOGO OLIVEIRA',
   99530005: 'DIOGO OLIVEIRA',
   99520003: 'MASSIMO BOTTELLO',
+  99530002: 'MASSIMO BOTTELLO',
   99520020: 'EDUARDO MADEIRA',
   99520001: 'MARCIO GORGA',
   99520009: 'MARCIO GORGA',
@@ -12097,7 +12099,7 @@ const CANAIS_APP = {
     // Revendedores — Massimo / Eduardo
     sapCanais: ['13'],
     vendedores: ['Eduardo Madeira', 'Massimo Bottello'],
-    vendedorCods: [99520003, 99520020],
+    vendedorCods: [99520003, 99520020, 99530002],
   },
 };
 
@@ -27302,7 +27304,7 @@ function quadroVistaVendas(quadro) {
  * Linhas do P&L do quadro, iguais ao Power BI (não os canais da app).
  * Nomes de vendedor só de VENDEDORES_DEFAULT — não se inventa dono.
  * 99520005 (Institucional Balcão) e 99530003 (Restauração Q Brasil) são do Marcio Gorga.
- * 99530002 (Distribuidores regionais Q Brasil) continua sem nome: «Por classificar».
+ * 99530002 (Distribuidores regionais Q Brasil) é do Massimo Bottello.
  * Horeca restauração já mapeada (canal 04: 02/06/07/10) cai em Restauração.
  * Office (15/16/17/19) fica em Institucional, como no P&L. O split Horeca/Balcão não se desfaz.
  */
@@ -29445,8 +29447,9 @@ function objetivoPessoaMesQuadro(empresa, canal, vendedor, ym) {
   const DONO = {
     'Delta Foods Brasil\tLojas online': 'MARCIO GORGA',
     'Delta Foods Brasil\tSite próprio': 'MARCIO GORGA',
-    // Massimo é chefe do Dist. regionais: o objectivo dele é o total do canal (Eduardo entra nas vendas).
+    // Massimo é chefe do Dist. regionais (DFB + Q Brasil 99530002): objectivo = total do canal.
     'Delta Foods Brasil\tDistribuidores regionais': 'MASSIMO BOTTELLO',
+    'Q Brasil\tDistribuidores regionais': 'MASSIMO BOTTELLO',
     'Delta Foods Brasil\tDistribuidores de retalho': 'DIOGO OLIVEIRA',
     'Delta Foods Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
     'Q Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
@@ -29587,7 +29590,7 @@ function htmlLinhaValorObjetivoPnL(labelHtml, trCls, met, filtro, on, objMes, ob
   </tr>`;
 }
 
-/** 99520005 (Institucional) e 99530003 (Restauração Q Brasil) passam a Marcio. 99530002 fica. */
+/** 99520005 (Institucional) e 99530003 (Restauração Q Brasil) → Marcio. 99530002 (Dist. QB) → Massimo. */
 function nomeVendedorQuadroMarcio(empresa, canal, vendedor) {
   let v = String(vendedor || '');
   // Legado SAP / e-mail: «Eduardo Moreira» é o Eduardo Madeira (99520020).
@@ -29599,6 +29602,7 @@ function nomeVendedorQuadroMarcio(empresa, canal, vendedor) {
   }
   if (v && v !== 'Por classificar') return v;
   if (empresa === 'Q Brasil' && canal === 'Restauração') return 'MARCIO GORGA';
+  if (empresa === 'Q Brasil' && canal === 'Distribuidores regionais') return 'MASSIMO BOTTELLO';
   if (empresa === 'Delta Foods Brasil' && canal === 'Institucional') return 'MARCIO GORGA';
   return v || 'Por classificar';
 }
@@ -32214,6 +32218,7 @@ function htmlDetalheVendedorQuadro(detalhe, quadro, periodo, filtro, esc) {
     'Delta Foods Brasil\tLojas online': 'MARCIO GORGA',
     'Delta Foods Brasil\tSite próprio': 'MARCIO GORGA',
     'Delta Foods Brasil\tDistribuidores regionais': 'MASSIMO BOTTELLO',
+    'Q Brasil\tDistribuidores regionais': 'MASSIMO BOTTELLO',
     'Delta Foods Brasil\tDistribuidores de retalho': 'DIOGO OLIVEIRA',
     'Delta Foods Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
     'Q Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
@@ -47666,12 +47671,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-19-vendas-massimo-eduardo: Massimo+Eduardo; obj Dist=canal. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-19-vendas-qb-massimo: 99530002=Massimo Dist QB. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-19-vendas-massimo-eduardo';
+  var CACHE_KEEP = 'v2026-11-19-vendas-qb-massimo';
 
   function tryRegister() {
     try {

@@ -649,7 +649,7 @@ check('objectivos de Julho e Março oficial; 99520005 e 99530003 são o Marcio',
   assert.equal(acumJul, 866445 + 729334 + 975087 + 1065629 + 1144116 + 1176881 + 1028136);
   assert.equal(ctx.nomeVendedorQuadroMarcio('Delta Foods Brasil', 'Institucional', 'Por classificar'), 'MARCIO GORGA');
   assert.equal(ctx.nomeVendedorQuadroMarcio('Q Brasil', 'Restauração', 'Por classificar'), 'MARCIO GORGA');
-  assert.equal(ctx.nomeVendedorQuadroMarcio('Q Brasil', 'Distribuidores regionais', 'Por classificar'), 'Por classificar');
+  assert.equal(ctx.nomeVendedorQuadroMarcio('Q Brasil', 'Distribuidores regionais', 'Por classificar'), 'MASSIMO BOTTELLO');
   assert.equal(ctx.nomeVendedorQuadroMarcio('Delta Foods Brasil', 'Restauração', 'FILIPE NEVES'), 'FILIPE NEVES');
   const base = ctx.quadroVendasVazio();
   base.meses['2026-09'] = { celulas: {
@@ -674,7 +674,8 @@ check('objectivos de Julho e Março oficial; 99520005 e 99530003 são o Marcio',
   assert.equal(celula(n, '2026-09', 'Delta Foods Brasil', 'Institucional', 'MARCIO GORGA').valor, 935.75);
   assert.equal(celula(n, '2026-09', 'Delta Foods Brasil', 'Institucional', 'Por classificar'), null);
   assert.equal(celula(n, '2026-09', 'Q Brasil', 'Restauração', 'MARCIO GORGA').valor, 20);
-  assert.equal(celula(n, '2026-09', 'Q Brasil', 'Distribuidores regionais', 'Por classificar').valor, 9);
+  assert.equal(celula(n, '2026-09', 'Q Brasil', 'Distribuidores regionais', 'MASSIMO BOTTELLO').valor, 9);
+  assert.equal(celula(n, '2026-09', 'Q Brasil', 'Distribuidores regionais', 'Por classificar'), null);
   ctx.VENDAS_VOLUME_SEED = { '2026-09': { 'Q Brasil\tRestauração\tMARCIO GORGA': 1514 } };
   const vol = ctx.metricasVolumeLinhaQuadro(n, { ym: '2026-09', ymN1: '2025-09', ymsN: ['2026-09'], ymsN1: ['2025-09'] }, { empresa: 'Q Brasil', canal: 'Restauração', vendedor: 'MARCIO GORGA' });
   assert.equal(vol.n, 1514);
@@ -998,10 +999,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-19-vendas-massimo-eduardo'));
+  assert.ok(sw.includes('v2026-11-19-vendas-qb-massimo'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-11-19-vendas-massimo-eduardo'));
+  assert.ok(html.includes('v2026-11-19-vendas-qb-massimo'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 

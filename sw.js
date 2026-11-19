@@ -1,6 +1,6 @@
-// Service Worker v2026-11-19-vendas-massimo-eduardo — Massimo+Eduardo; obj Dist=canal
+// Service Worker v2026-11-19-vendas-qb-massimo — 99530002 = Massimo Dist Q Brasil
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-19-vendas-massimo-eduardo';
+const CACHE = 'v2026-11-19-vendas-qb-massimo';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
