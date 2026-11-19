@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-19-vendas-qb-massimo 99530002 = Massimo Q Brasil Dist -->
+<!-- dfb-build: v2026-11-19-vendas-obj-eduardo objectivos Out/Nov/Dez do Eduardo Dist -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -29407,6 +29407,16 @@ function objetivoCanalNosMeses(empresa, canal, yms) {
 }
 
 /**
+ * Objectivo mensal por pessoa (fora da partição Horeca / dono do canal).
+ * Eduardo Madeira — Dist. regionais DFB (valores dados Out/Nov/Dez 2026).
+ */
+const PV_OBJETIVOS_VENDEDOR = {
+  '2026-10': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 361481.37 },
+  '2026-11': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 190130.30 },
+  '2026-12': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 209162.65 },
+};
+
+/**
  * Budget da pessoa nesse mês, quando o canal tem dono ou parte (Horeca / Balcão).
  * Sem parte gravada → null. Não inventa o budget do canal inteiro.
  */
@@ -29414,6 +29424,13 @@ function objetivoPessoaMesQuadro(empresa, canal, vendedor, ym) {
   function chave(nome) {
     if (typeof normNomeVendaMenu === 'function') return normNomeVendaMenu(nome);
     return String(nome || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  }
+  const keyVend = String(empresa || '') + '\t' + String(canal || '') + '\t' + chave(vendedor);
+  const mapaVend = (typeof PV_OBJETIVOS_VENDEDOR !== 'undefined' && PV_OBJETIVOS_VENDEDOR)
+    ? PV_OBJETIVOS_VENDEDOR[String(ym || '')]
+    : null;
+  if (mapaVend && mapaVend[keyVend] != null && Number.isFinite(+mapaVend[keyVend])) {
+    return +mapaVend[keyVend];
   }
   if (empresa === 'Delta Foods Brasil' && canal === 'Restauração') {
     return (typeof objetivoVendedorHorecaMenu === 'function')
@@ -29474,8 +29491,19 @@ function somarObjectivosConhecidos(vals) {
 }
 
 function objetivoPessoasNosMeses(empresa, canal, vendedores, yms) {
-  const pessoas = Array.isArray(vendedores) ? vendedores : [];
+  let pessoas = Array.isArray(vendedores) ? vendedores.slice() : [];
   const meses = Array.isArray(yms) ? yms : [];
+  const norm = (typeof normNomeVendaMenu === 'function')
+    ? normNomeVendaMenu
+    : function (s) { return String(s || '').toUpperCase(); };
+  // Massimo no Dist. regionais: objectivo = total do canal. Não somar o Eduardo em cima.
+  if (String(canal || '') === 'Distribuidores regionais') {
+    let temMassimo = false;
+    for (let i = 0; i < pessoas.length; i++) {
+      if (norm(pessoas[i]) === 'MASSIMO BOTTELLO') { temMassimo = true; break; }
+    }
+    if (temMassimo) pessoas = ['MASSIMO BOTTELLO'];
+  }
   const partes = [];
   for (let i = 0; i < pessoas.length; i++) {
     for (let j = 0; j < meses.length; j++) partes.push(objetivoPessoaMesQuadro(empresa, canal, pessoas[i], meses[j]));
@@ -29502,7 +29530,17 @@ function objetivoPessoaAcumuladoQuadro(empresa, canal, vendedor, ano, mes) {
 }
 
 function objetivoPessoasAcumulado(empresa, canal, vendedores, ano, mes) {
-  const pessoas = Array.isArray(vendedores) ? vendedores : [];
+  let pessoas = Array.isArray(vendedores) ? vendedores.slice() : [];
+  const norm = (typeof normNomeVendaMenu === 'function')
+    ? normNomeVendaMenu
+    : function (s) { return String(s || '').toUpperCase(); };
+  if (String(canal || '') === 'Distribuidores regionais') {
+    let temMassimo = false;
+    for (let i = 0; i < pessoas.length; i++) {
+      if (norm(pessoas[i]) === 'MASSIMO BOTTELLO') { temMassimo = true; break; }
+    }
+    if (temMassimo) pessoas = ['MASSIMO BOTTELLO'];
+  }
   const partes = [];
   for (let i = 0; i < pessoas.length; i++) {
     partes.push(objetivoPessoaAcumuladoQuadro(empresa, canal, pessoas[i], ano, mes));
@@ -47671,12 +47709,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-19-vendas-qb-massimo: 99530002=Massimo Dist QB. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-19-vendas-obj-eduardo: objectivos Eduardo Dist Out/Nov/Dez. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-19-vendas-qb-massimo';
+  var CACHE_KEEP = 'v2026-11-19-vendas-obj-eduardo';
 
   function tryRegister() {
     try {
