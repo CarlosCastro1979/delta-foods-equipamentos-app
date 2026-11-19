@@ -1,6 +1,6 @@
-// Service Worker v2026-11-19-vendas-horeca-sem-marcio — Marcio só no Ecommerce
+// Service Worker v2026-11-19-ecommerce-clientes-mc00 — Ecommerce Clientes+MC00 (sem site 09)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-19-vendas-horeca-sem-marcio';
+const CACHE = 'v2026-11-19-ecommerce-clientes-mc00';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
