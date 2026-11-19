@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-19-vendas-obj-eduardo-ano objectivos anuais do Eduardo Dist -->
+<!-- dfb-build: v2026-11-19-vendas-horeca-sem-marcio Marcio só no Ecommerce -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -5780,8 +5780,8 @@ const VENDEDORES_DEFAULT = [
   { cod: 99530003, nome: 'MARCIO GORGA' },
 ];
 
-/** NPess do canal Ecommerce — display unificado (como Diogo no Varejo). */
-const ECOMMERCE_VENDEDOR_CODS = new Set([99520001, 99520009, 99520008, 99520011, 99520012]);
+/** NPess do canal Ecommerce — display unificado (como Diogo no Varejo). Inclui Balcão e Restauração QB. */
+const ECOMMERCE_VENDEDOR_CODS = new Set([99520001, 99520009, 99520008, 99520011, 99520012, 99520005, 99530003]);
 const ECOMMERCE_VENDEDOR_NOME = 'MARCIO GORGA';
 
 // Lista SAP ~29k: não voltar a ler o cadastro nem a remapear em cada ecrã/tecla.
@@ -12080,9 +12080,10 @@ const CANAIS_APP = {
     nome: 'Ecommerce',
     // Retalho / Institucional / Sellers (NPess Marcio) — descoberta alarga via clientes
     sapCanais: ['01', '03'],
-    // Acesso login: Marcio; NPess Online/Institucional → display Marcio Gorga
+    // Acesso login: Marcio; NPess Online/Institucional/Restauração QB → display Marcio Gorga
     vendedores: ['Marcio Gorga'],
-    vendedorCods: [99520001, 99520009, 99520008, 99520011, 99520012],
+    // 01/08/09 = online; 11/12/05 = Institucional Balcão; 99530003 = Restauração Q Brasil
+    vendedorCods: [99520001, 99520009, 99520008, 99520011, 99520012, 99520005, 99530003],
   },
   varejo: {
     id: 'varejo',
@@ -30427,9 +30428,16 @@ function objetivoAcumVendedorHorecaMenu(empresa, canal, nome, ano, mes) {
 function vendedoresMenuHoreca(quadro, periodo, empresa, canal, nomeMap) {
   const base = vendedoresVisiveisMenu(quadro, periodo, empresa, canal, null);
   const nomes = {};
+  const oficiais = {};
+  pesosPorNomeHoreca(canal).forEach(p => {
+    oficiais[normNomeVendaMenu(p.nome)] = 1;
+  });
   function add(nome) {
     const canon = canonizarNomeVendedorHoreca(canal, nome);
     if (!canon || canon === 'Por classificar') return;
+    // Marcio (Balcão / Restauração QB) fica no Ecommerce — nunca no quadro Horeca.
+    if (normNomeVendaMenu(canon) === 'MARCIO GORGA') return;
+    if (Object.keys(oficiais).length && !oficiais[normNomeVendaMenu(canon)]) return;
     if (nomeMap) {
       let ok = !!nomeMap[canon];
       if (!ok) {
@@ -30802,21 +30810,21 @@ function garantirPaineisVendasMenu(quadro, canalId) {
   function guardarNome(nome, preferido) {
     const n = normNome(nome);
     if (!n || n === 'POR CLASSIFICAR') return;
+    // No Horeca o Marcio (Balcão / Restauração QB) não entra — só no Ecommerce.
+    if (canalId === 'horeca' && n === 'MARCIO GORGA') return;
     if (!nomes[n] || preferido) nomes[n] = nome;
   }
   const canalApp = (typeof CANAIS_APP !== 'undefined' && canalId && CANAIS_APP[canalId]) ? CANAIS_APP[canalId] : null;
   const listaApp = (canalApp && canalApp.vendedores) || [];
   for (let i = 0; i < listaApp.length; i++) guardarNome(listaApp[i], true);
-  const mesesQ = (quadro && quadro.meses) || {};
-  const ymKeys = Object.keys(mesesQ);
-  for (let i = 0; i < ymKeys.length; i++) {
-    const cels = (mesesQ[ymKeys[i]] && mesesQ[ymKeys[i]].celulas) || {};
-    const vals = Object.values(cels);
-    for (let j = 0; j < vals.length; j++) {
-      const c = vals[j];
-      if (!c || !c.vendedor) continue;
-      if (vistoC[(typeof chaveCanalEscolha === 'function') ? chaveCanalEscolha(c.empresa, c.canal) : '']) guardarNome(c.vendedor, false);
-    }
+  // Nomes ligados aos NPess deste menu (não varrer células partilhadas — puxava o Marcio para o Horeca).
+  for (let i = 0; i < grupos.length; i++) {
+    const mapa = (typeof nomesVendedorMenuNoCanal === 'function')
+      ? nomesVendedorMenuNoCanal(canalId, grupos[i].empresa, grupos[i].canal)
+      : null;
+    if (!mapa) continue;
+    const ks = Object.keys(mapa);
+    for (let k = 0; k < ks.length; k++) guardarNome(ks[k], false);
   }
   const vendsMarcados = lerChecksPainel('cvm-vends-box', 'data-vq-vend') || (gravado && Array.isArray(gravado.vendedores) ? gravado.vendedores : []);
   const setV = {};
@@ -47718,12 +47726,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-19-vendas-obj-eduardo-ano: objectivos anuais Eduardo Dist. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-19-vendas-horeca-sem-marcio: Marcio só no Ecommerce. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-19-vendas-obj-eduardo-ano';
+  var CACHE_KEEP = 'v2026-11-19-vendas-horeca-sem-marcio';
 
   function tryRegister() {
     try {

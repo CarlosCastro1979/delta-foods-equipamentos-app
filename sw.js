@@ -1,6 +1,6 @@
-// Service Worker v2026-11-19-vendas-obj-eduardo-ano — objectivos anuais Eduardo Dist
+// Service Worker v2026-11-19-vendas-horeca-sem-marcio — Marcio só no Ecommerce
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-19-vendas-obj-eduardo-ano';
+const CACHE = 'v2026-11-19-vendas-horeca-sem-marcio';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

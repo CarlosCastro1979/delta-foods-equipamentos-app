@@ -999,10 +999,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-19-vendas-obj-eduardo-ano'));
+  assert.ok(sw.includes('v2026-11-19-vendas-horeca-sem-marcio'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-11-19-vendas-obj-eduardo-ano'));
+  assert.ok(html.includes('v2026-11-19-vendas-horeca-sem-marcio'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 
@@ -1150,6 +1150,19 @@ check('menu Vendas de cada canal: só os canais desse menu, vendedor na mesma ta
   const buttons = [...htmlOut.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].map(m => m[1].replace(/\u00a0/g, ' ').trim());
   assert.ok(buttons.every(b => b !== '0' && b !== '—' && b !== '0%'), 'zero e travessão não são clicáveis: ' + buttons.join(' | '));
   assert.ok(htmlOut.includes('vq-muted">0') || htmlOut.includes('vq-muted">—'));
+
+  // Nomes do filtro Horeca = só a equipa; Marcio (Balcão / Restauração QB) fica no Ecommerce.
+  const nomesHorecaRest = ctx.nomesVendedorMenuNoCanal('horeca', 'Delta Foods Brasil', 'Restauração');
+  const nomesHorecaInst = ctx.nomesVendedorMenuNoCanal('horeca', 'Delta Foods Brasil', 'Institucional');
+  assert.ok(!nomesHorecaRest['MARCIO GORGA'] && !nomesHorecaInst['MARCIO GORGA']);
+  const nomesEcomQb = ctx.nomesVendedorMenuNoCanal('ecommerce', 'Q Brasil', 'Restauração');
+  assert.ok(nomesEcomQb['MARCIO GORGA'], 'Restauração Q Brasil → Marcio no Ecommerce');
+  const nomesEcomInst = ctx.nomesVendedorMenuNoCanal('ecommerce', 'Delta Foods Brasil', 'Institucional');
+  assert.ok(nomesEcomInst['MARCIO GORGA'], 'Institucional Balcão → Marcio no Ecommerce');
+  assert.ok(ctx.CANAIS_APP.ecommerce.vendedorCods.includes(99530003));
+  assert.ok(ctx.CANAIS_APP.ecommerce.vendedorCods.includes(99520005));
+  const vendH = ctx.vendedoresMenuHoreca(quadro, ctx.periodoComparacaoQuadro(3, 2026), 'Delta Foods Brasil', 'Institucional', null);
+  assert.ok(!vendH.includes('MARCIO GORGA'), 'quadro Horeca não lista Marcio mesmo com célula no Institucional');
 
   const filtrado = ctx.htmlQuadroVendasMenuCanal(quadro, 3, 2026, 'horeca', {
     empresa: 'Delta Foods Brasil', canal: 'Restauração', vendedor: 'FILIPE NEVES',
