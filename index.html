@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-19-vendas-filipe-obj Filipe soma vendas e objectivos da equipa -->
+<!-- dfb-build: v2026-11-19-vendas-massimo-eduardo Massimo+Eduardo; obj Dist = canal -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -29445,6 +29445,8 @@ function objetivoPessoaMesQuadro(empresa, canal, vendedor, ym) {
   const DONO = {
     'Delta Foods Brasil\tLojas online': 'MARCIO GORGA',
     'Delta Foods Brasil\tSite próprio': 'MARCIO GORGA',
+    // Massimo é chefe do Dist. regionais: o objectivo dele é o total do canal (Eduardo entra nas vendas).
+    'Delta Foods Brasil\tDistribuidores regionais': 'MASSIMO BOTTELLO',
     'Delta Foods Brasil\tDistribuidores de retalho': 'DIOGO OLIVEIRA',
     'Delta Foods Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
     'Q Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
@@ -29898,7 +29900,11 @@ function normNomeVendaMenu(s) {
   return n;
 }
 
-/** Filipe Neves é supervisor Horeca: Daniela, Paulo e Hélcio. No filtro dele entra a equipa. */
+/**
+ * Chefes no filtro de vendedor:
+ * - Filipe Neves (Horeca) → ele + Daniela, Paulo e Hélcio
+ * - Massimo Bottello (Dist. regionais) → ele + Eduardo Madeira; o objectivo do Massimo é o do canal
+ */
 function equipaVendedorVendas(nome) {
   const n = (typeof normNomeVendaMenu === 'function')
     ? normNomeVendaMenu(nome)
@@ -29906,11 +29912,14 @@ function equipaVendedorVendas(nome) {
   if (n === 'FILIPE NEVES') {
     return ['FILIPE NEVES', 'DANIELA SANTOS', 'PAULO FONTES', 'HÉLCIO GRÉGIO'];
   }
+  if (n === 'MASSIMO BOTTELLO') {
+    return ['MASSIMO BOTTELLO', 'EDUARDO MADEIRA'];
+  }
   const raw = String(nome || '').trim();
   return raw ? [raw] : [];
 }
 
-/** Expande o filtro de vendedor (Filipe → ele + equipa). Lista vazia continua a significar todos. */
+/** Expande o filtro de vendedor (chefe → ele + equipa). Lista vazia continua a significar todos. */
 function expandirVendedoresEscolha(lista) {
   if (!Array.isArray(lista) || !lista.length) return [];
   const out = {};
@@ -32190,7 +32199,7 @@ function htmlLinhaResumoPnL(row, filtro, escFn, periodo) {
  * ficam juntos e, se houver mais do que um, a última linha do grupo é o subtotal.
  * Objetivo só com número já gravado — canal de um só dono, a parte da
  * Restauração, a parte Horeca do Institucional, ou o Balcão do Marcio.
- * Dist. regionais (Massimo e Eduardo) não tem parte por pessoa: fica —.
+ * Dist. regionais: o objectivo do canal é do Massimo (chefe); o Eduardo não tem parte.
  * O acumulado do objetivo só aparece se todos os meses de Janeiro até ao
  * mês escolhido tiverem número. Um mês em falta não se soma como se fosse o ano.
  */
@@ -32204,6 +32213,7 @@ function htmlDetalheVendedorQuadro(detalhe, quadro, periodo, filtro, esc) {
   const DONO = {
     'Delta Foods Brasil\tLojas online': 'MARCIO GORGA',
     'Delta Foods Brasil\tSite próprio': 'MARCIO GORGA',
+    'Delta Foods Brasil\tDistribuidores regionais': 'MASSIMO BOTTELLO',
     'Delta Foods Brasil\tDistribuidores de retalho': 'DIOGO OLIVEIRA',
     'Delta Foods Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
     'Q Brasil\tRetalho moderno': 'DIOGO OLIVEIRA',
@@ -47656,12 +47666,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-19-vendas-filipe-obj: Filipe soma vendas+objectivos da equipa. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-19-vendas-massimo-eduardo: Massimo+Eduardo; obj Dist=canal. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-19-vendas-filipe-obj';
+  var CACHE_KEEP = 'v2026-11-19-vendas-massimo-eduardo';
 
   function tryRegister() {
     try {

@@ -998,10 +998,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-19-vendas-filipe-obj'));
+  assert.ok(sw.includes('v2026-11-19-vendas-massimo-eduardo'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-11-19-vendas-filipe-obj'));
+  assert.ok(html.includes('v2026-11-19-vendas-massimo-eduardo'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 
@@ -1280,6 +1280,9 @@ check('filtro de vendedor no resumo; Eduardo Moreira = Madeira; Filipe soma a eq
   assert.deepEqual(ctx.equipaVendedorVendas('FILIPE NEVES').map(ctx.normNomeVendaMenu).sort(), [
     'DANIELA SANTOS', 'FILIPE NEVES', 'HELCIO GREGIO', 'PAULO FONTES',
   ].sort());
+  assert.deepEqual(ctx.equipaVendedorVendas('MASSIMO BOTTELLO').map(ctx.normNomeVendaMenu).sort(), [
+    'EDUARDO MADEIRA', 'MASSIMO BOTTELLO',
+  ].sort());
 
   function cel(empresa, canal, vendedor, valor) {
     return { empresa, canal, vendedor, valor, linhas: 1, linhasComValor: 1 };
@@ -1338,6 +1341,28 @@ check('filtro de vendedor no resumo; Eduardo Moreira = Madeira; Filipe soma a eq
   const rest = pacote.linhas.find(r => r.tipo === 'canal' && r.canal === 'Restauração');
   assert.ok(rest, 'resumo com filtro Filipe mostra Restauração');
   assert.equal(rest.objMes, objEquipa, 'o objectivo do resumo soma a equipa, não só o Filipe');
+
+  const metMassimo = ctx.metricasLinhaQuadro(q, periodo, ctx.filtroMetricaEscolha(null, { vendedores: ['MASSIMO BOTTELLO'] }));
+  assert.equal(metMassimo.n, 50 + 25, 'Massimo no filtro soma o Eduardo');
+  const soEduardo = ctx.metricasLinhaQuadro(q, periodo, ctx.filtroMetricaEscolha(null, { vendedores: ['EDUARDO MADEIRA'] }));
+  assert.equal(soEduardo.n, 25, 'Eduardo sozinho não puxa o Massimo');
+  vm.runInContext(extractFn(html, 'objetivoPessoaMesQuadro'), ctx);
+  const objCanalDist = ctx.objetivoCanalMes('Delta Foods Brasil', 'Distribuidores regionais', '2026-11');
+  assert.ok(objCanalDist > 0, 'Dist. regionais tem budget de canal');
+  assert.equal(
+    ctx.objetivoPessoaMesQuadro('Delta Foods Brasil', 'Distribuidores regionais', 'MASSIMO BOTTELLO', '2026-11'),
+    objCanalDist,
+    'objectivo do Massimo = total do canal Dist. regionais'
+  );
+  assert.equal(
+    ctx.objetivoPessoaMesQuadro('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA', '2026-11'),
+    null,
+    'Eduardo não tem objectivo próprio no Dist. regionais'
+  );
+  const pacoteM = ctx.linhasResumoQuadroPnL(q, 11, 2026, { vendedores: ['MASSIMO BOTTELLO'] });
+  const dist = pacoteM.linhas.find(r => r.tipo === 'canal' && r.canal === 'Distribuidores regionais');
+  assert.ok(dist, 'resumo com filtro Massimo mostra Dist. regionais');
+  assert.equal(dist.objMes, objCanalDist, 'com Massimo seleccionado o objectivo é o do canal (não duplica Eduardo)');
 
   const mesEl = ctx.document.getElementById('vq-mes');
   const anoEl = ctx.document.getElementById('vq-ano');
