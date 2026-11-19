@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-19-vendas-eduardo-filipe Eduardo=Madeira; Filipe soma a equipa -->
+<!-- dfb-build: v2026-11-19-vendas-filipe-obj Filipe soma vendas e objectivos da equipa -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -29021,8 +29021,18 @@ function linhasResumoQuadroPnL(quadro, mes, ano, escolha) {
       if (fixos.indexOf(can) < 0 && !tem) continue;
       if (soVendedor && !tem) continue;
       const row = { tipo: 'canal', empresa: emp, canal: can, met: met };
-      if (restrito && typeof listaVendedoresEscolha === 'function' && listaVendedoresEscolha(escolha).length && typeof objetivoPessoasNosMeses === 'function') {
-        row.objMes = objetivoPessoasNosMeses(emp, can, listaVendedoresEscolha(escolha), periodo.ymsSel);
+      if (restrito && typeof listaVendedoresEscolha === 'function' && listaVendedoresEscolha(escolha).length) {
+        const vendsObj = (typeof expandirVendedoresEscolha === 'function')
+          ? expandirVendedoresEscolha(listaVendedoresEscolha(escolha))
+          : listaVendedoresEscolha(escolha);
+        if (typeof objetivoPessoasNosMeses === 'function') {
+          row.objMes = objetivoPessoasNosMeses(emp, can, vendsObj, periodo.ymsSel);
+        }
+        if (typeof objetivoPessoasAcumulado === 'function') {
+          row.objAc = objetivoPessoasAcumulado(emp, can, vendsObj, periodo.ano, periodo.mes);
+        } else {
+          row.objAc = null;
+        }
       }
       filhos.push(row);
     }
@@ -29031,7 +29041,8 @@ function linhasResumoQuadroPnL(quadro, mes, ano, escolha) {
       const objs = filhos.map(r => (Object.prototype.hasOwnProperty.call(r, 'objMes') ? r.objMes : (typeof objetivoCanalNosMeses === 'function' ? objetivoCanalNosMeses(emp, r.canal, periodo.ymsSel) : null)));
       empRow.objMes = (typeof somarObjectivosConhecidos === 'function') ? somarObjectivosConhecidos(objs) : null;
       if (typeof listaVendedoresEscolha === 'function' && listaVendedoresEscolha(escolha).length) {
-        empRow.objAc = null;
+        const objsAc = filhos.map(r => (Object.prototype.hasOwnProperty.call(r, 'objAc') ? r.objAc : null));
+        empRow.objAc = (typeof somarObjectivosConhecidos === 'function') ? somarObjectivosConhecidos(objsAc) : null;
       }
     }
     if (empTem || filhos.length) linhas.push(empRow);
@@ -29040,11 +29051,16 @@ function linhasResumoQuadroPnL(quadro, mes, ano, escolha) {
   const totalRow = { tipo: 'total', empresa: 'Total', canal: '', met: metricasLinhaQuadro(quadro, periodo, (typeof filtroMetricaEscolha === 'function') ? filtroMetricaEscolha(null, escolha) : null) };
   if (restrito) {
     const objs = [];
+    const objsAc = [];
     for (let i = 0; i < linhas.length; i++) {
       if (linhas[i].tipo !== 'canal') continue;
       objs.push(Object.prototype.hasOwnProperty.call(linhas[i], 'objMes') ? linhas[i].objMes : (typeof objetivoCanalNosMeses === 'function' ? objetivoCanalNosMeses(linhas[i].empresa, linhas[i].canal, periodo.ymsSel) : null));
+      if (Object.prototype.hasOwnProperty.call(linhas[i], 'objAc')) objsAc.push(linhas[i].objAc);
     }
     totalRow.objMes = (typeof somarObjectivosConhecidos === 'function') ? somarObjectivosConhecidos(objs) : null;
+    if (typeof listaVendedoresEscolha === 'function' && listaVendedoresEscolha(escolha).length) {
+      totalRow.objAc = (typeof somarObjectivosConhecidos === 'function') ? somarObjectivosConhecidos(objsAc) : null;
+    }
   }
   linhas.push(totalRow);
   return { periodo, linhas };
@@ -29460,6 +29476,33 @@ function objetivoPessoasNosMeses(empresa, canal, vendedores, yms) {
     for (let j = 0; j < meses.length; j++) partes.push(objetivoPessoaMesQuadro(empresa, canal, pessoas[i], meses[j]));
   }
   return somarObjectivosConhecidos(partes);
+}
+
+/** Acumulado Jan→mês do objectivo de uma pessoa (mesma regra do mês: Horeca reparte, dono do canal, etc.). */
+function objetivoPessoaAcumuladoQuadro(empresa, canal, vendedor, ano, mes) {
+  const y = parseInt(ano, 10);
+  const m = parseInt(mes, 10);
+  if (!y || !m) return null;
+  let soma = 0;
+  let tem = false;
+  for (let i = 1; i <= m; i++) {
+    const v = (typeof objetivoPessoaMesQuadro === 'function')
+      ? objetivoPessoaMesQuadro(empresa, canal, vendedor, y + '-' + String(i).padStart(2, '0'))
+      : null;
+    if (v == null || !Number.isFinite(+v)) continue;
+    soma += +v;
+    tem = true;
+  }
+  return tem ? soma : null;
+}
+
+function objetivoPessoasAcumulado(empresa, canal, vendedores, ano, mes) {
+  const pessoas = Array.isArray(vendedores) ? vendedores : [];
+  const partes = [];
+  for (let i = 0; i < pessoas.length; i++) {
+    partes.push(objetivoPessoaAcumuladoQuadro(empresa, canal, pessoas[i], ano, mes));
+  }
+  return (typeof somarObjectivosConhecidos === 'function') ? somarObjectivosConhecidos(partes) : null;
 }
 
 /** Soma dos objectivos de Janeiro até ao mês, Março inclusive. Mês sem número não entra e não vira zero. */
@@ -47613,12 +47656,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-19-vendas-eduardo-filipe: Eduardo=Madeira; Filipe+equipa; sem detalhe. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-19-vendas-filipe-obj: Filipe soma vendas+objectivos da equipa. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-19-vendas-eduardo-filipe';
+  var CACHE_KEEP = 'v2026-11-19-vendas-filipe-obj';
 
   function tryRegister() {
     try {

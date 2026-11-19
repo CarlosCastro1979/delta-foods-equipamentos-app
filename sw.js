@@ -1,6 +1,6 @@
-// Service Worker v2026-11-19-vendas-eduardo-filipe — Eduardo=Madeira; Filipe+equipa; sem detalhe
+// Service Worker v2026-11-19-vendas-filipe-obj — Filipe soma vendas+objectivos da equipa
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-19-vendas-eduardo-filipe';
+const CACHE = 'v2026-11-19-vendas-filipe-obj';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

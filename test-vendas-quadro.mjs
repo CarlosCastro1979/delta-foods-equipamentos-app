@@ -998,10 +998,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-19-vendas-eduardo-filipe'));
+  assert.ok(sw.includes('v2026-11-19-vendas-filipe-obj'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-11-19-vendas-eduardo-filipe'));
+  assert.ok(html.includes('v2026-11-19-vendas-filipe-obj'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 
@@ -1308,6 +1308,36 @@ check('filtro de vendedor no resumo; Eduardo Moreira = Madeira; Filipe soma a eq
   assert.equal(soDaniela.n, 40, 'Daniela sozinha não puxa a equipa');
   const madeira = ctx.metricasLinhaQuadro(q, periodo, ctx.filtroMetricaEscolha(null, { vendedores: ['EDUARDO MOREIRA'] }));
   assert.equal(madeira.n, 25, 'filtro Moreira encontra Madeira');
+
+  for (const name of [
+    'objetivoPessoaMesQuadro', 'objetivoPessoasNosMeses', 'objetivoPessoaAcumuladoQuadro',
+    'objetivoPessoasAcumulado', 'objetivoVendedorHorecaMenu', 'objetivoCanalHorecaMenu',
+    'pesosPorNomeHoreca', 'linhasParticaoHoreca', 'nomePorNpessDefault', 'repartirInteirosProporcao',
+    'objetivoCanalMes', 'linhasResumoQuadroPnL', 'HORECA_BUDGET_ANUAL_NPESS',
+  ]) {
+    try { vm.runInContext(extractFn(html, name), ctx); } catch (_) {}
+  }
+  if (!ctx.PV_OBJETIVOS_CANAL) {
+    vm.runInContext('var PV_OBJETIVOS_CANAL = ' + extractConstObject(html, 'PV_OBJETIVOS_CANAL') + ';', ctx);
+  }
+  if (!ctx.HORECA_BUDGET_ANUAL_NPESS) {
+    vm.runInContext('var HORECA_BUDGET_ANUAL_NPESS = ' + extractConstObject(html, 'HORECA_BUDGET_ANUAL_NPESS') + ';', ctx);
+  }
+  if (!ctx.VENDEDORES_DEFAULT) {
+    vm.runInContext('var VENDEDORES_DEFAULT = ' + (() => {
+      const m = html.match(/const VENDEDORES_DEFAULT = (\[[\s\S]*?\]);/);
+      return m ? m[1] : '[]';
+    })() + ';', ctx);
+  }
+  const equipa = ctx.expandirVendedoresEscolha(['FILIPE NEVES']);
+  const objSoFilipe = ctx.objetivoPessoasNosMeses('Delta Foods Brasil', 'Restauração', ['FILIPE NEVES'], ['2026-11']);
+  const objEquipa = ctx.objetivoPessoasNosMeses('Delta Foods Brasil', 'Restauração', equipa, ['2026-11']);
+  assert.ok(objSoFilipe > 0, 'Filipe tem objectivo na Restauração');
+  assert.ok(objEquipa > objSoFilipe, 'objectivo da equipa > só o Filipe');
+  const pacote = ctx.linhasResumoQuadroPnL(q, 11, 2026, { vendedores: ['FILIPE NEVES'] });
+  const rest = pacote.linhas.find(r => r.tipo === 'canal' && r.canal === 'Restauração');
+  assert.ok(rest, 'resumo com filtro Filipe mostra Restauração');
+  assert.equal(rest.objMes, objEquipa, 'o objectivo do resumo soma a equipa, não só o Filipe');
 
   const mesEl = ctx.document.getElementById('vq-mes');
   const anoEl = ctx.document.getElementById('vq-ano');
