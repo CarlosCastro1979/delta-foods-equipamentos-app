@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-19-vendas-obj-eduardo objectivos Out/Nov/Dez do Eduardo Dist -->
+<!-- dfb-build: v2026-11-19-vendas-obj-eduardo-ano objectivos anuais do Eduardo Dist -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -29408,9 +29408,18 @@ function objetivoCanalNosMeses(empresa, canal, yms) {
 
 /**
  * Objectivo mensal por pessoa (fora da partição Horeca / dono do canal).
- * Eduardo Madeira — Dist. regionais DFB (valores dados Out/Nov/Dez 2026).
+ * Eduardo Madeira — Dist. regionais DFB (ano 2026 completo).
  */
 const PV_OBJETIVOS_VENDEDOR = {
+  '2026-01': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 171873.12 },
+  '2026-02': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 237638.05 },
+  '2026-03': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 199457.68 },
+  '2026-04': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 229198.67 },
+  '2026-05': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 271146.39 },
+  '2026-06': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 369857.62 },
+  '2026-07': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 220723.18 },
+  '2026-08': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 180562.74 },
+  '2026-09': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 314311.98 },
   '2026-10': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 361481.37 },
   '2026-11': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 190130.30 },
   '2026-12': { 'Delta Foods Brasil\tDistribuidores regionais\tEDUARDO MADEIRA': 209162.65 },
@@ -47709,12 +47718,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-19-vendas-obj-eduardo: objectivos Eduardo Dist Out/Nov/Dez. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-19-vendas-obj-eduardo-ano: objectivos anuais Eduardo Dist. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-19-vendas-obj-eduardo';
+  var CACHE_KEEP = 'v2026-11-19-vendas-obj-eduardo-ano';
 
   function tryRegister() {
     try {

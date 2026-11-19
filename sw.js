@@ -1,6 +1,6 @@
-// Service Worker v2026-11-19-vendas-obj-eduardo — objectivos Eduardo Dist Out/Nov/Dez
+// Service Worker v2026-11-19-vendas-obj-eduardo-ano — objectivos anuais Eduardo Dist
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-19-vendas-obj-eduardo';
+const CACHE = 'v2026-11-19-vendas-obj-eduardo-ano';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

@@ -999,10 +999,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-19-vendas-obj-eduardo'));
+  assert.ok(sw.includes('v2026-11-19-vendas-obj-eduardo-ano'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-11-19-vendas-obj-eduardo'));
+  assert.ok(html.includes('v2026-11-19-vendas-obj-eduardo-ano'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 
@@ -1359,24 +1359,25 @@ check('filtro de vendedor no resumo; Eduardo Moreira = Madeira; Filipe soma a eq
     vm.runInContext('var PV_OBJETIVOS_VENDEDOR = ' + extractConstObject(html, 'PV_OBJETIVOS_VENDEDOR') + ';', ctx);
   }
   vm.runInContext(extractFn(html, 'objetivoPessoaMesQuadro'), ctx);
+  vm.runInContext(extractFn(html, 'objetivoPessoaAcumuladoQuadro'), ctx);
   vm.runInContext(extractFn(html, 'objetivoPessoasNosMeses'), ctx);
-  assert.equal(
-    ctx.objetivoPessoaMesQuadro('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA', '2026-10'),
-    361481.37
-  );
-  assert.equal(
-    ctx.objetivoPessoaMesQuadro('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA', '2026-11'),
-    190130.30
-  );
-  assert.equal(
-    ctx.objetivoPessoaMesQuadro('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA', '2026-12'),
-    209162.65
-  );
-  assert.equal(
-    ctx.objetivoPessoaMesQuadro('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA', '2026-09'),
-    null,
-    'sem objectivo do Eduardo fora de Out–Dez'
-  );
+  const objEdu = {
+    '2026-01': 171873.12, '2026-02': 237638.05, '2026-03': 199457.68,
+    '2026-04': 229198.67, '2026-05': 271146.39, '2026-06': 369857.62,
+    '2026-07': 220723.18, '2026-08': 180562.74, '2026-09': 314311.98,
+    '2026-10': 361481.37, '2026-11': 190130.30, '2026-12': 209162.65,
+  };
+  Object.keys(objEdu).forEach(ym => {
+    assert.equal(
+      ctx.objetivoPessoaMesQuadro('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA', ym),
+      objEdu[ym],
+      'Eduardo Dist ' + ym
+    );
+  });
+  const acumNov = Object.keys(objEdu)
+    .filter(ym => ym <= '2026-11')
+    .reduce((s, ym) => s + objEdu[ym], 0);
+  assert.ok(Math.abs(ctx.objetivoPessoaAcumuladoQuadro('Delta Foods Brasil', 'Distribuidores regionais', 'EDUARDO MADEIRA', 2026, 11) - acumNov) < 0.02);
   const pacoteM = ctx.linhasResumoQuadroPnL(q, 11, 2026, { vendedores: ['MASSIMO BOTTELLO'] });
   const dist = pacoteM.linhas.find(r => r.tipo === 'canal' && r.canal === 'Distribuidores regionais');
   assert.ok(dist, 'resumo com filtro Massimo mostra Dist. regionais');
