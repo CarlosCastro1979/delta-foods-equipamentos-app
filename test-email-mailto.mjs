@@ -829,10 +829,13 @@ check('serve.ps1 silent prefer 8090 (evita CORS de outros processos em 8088)', (
   assert.ok(ps1.includes('8090, 5505, 8088, 8080') || ps1.includes('@($preferred, 8090, 5505, 8088, 8080)'), 'ordem silent');
   const bat = fs.readFileSync(path.join(root, 'Atualizar-Ponte-Outlook.bat'), 'utf8');
   assert.ok(bat.includes('Instalar-Ponte-Outlook-Todos.ps1'), 'bat usa instalador partilhado');
+  assert.ok(bat.includes('%TEMP%') || bat.includes('$env:TEMP'), 'bat corre instalador a partir de TEMP (nao suicida)');
   const todos = fs.readFileSync(path.join(root, 'Instalar-Ponte-Outlook-Todos.ps1'), 'utf8');
   assert.ok(todos.includes('Get-NetTCPConnection'), 'instalador IT mata portas');
   assert.ok(todos.includes('DeltaFoods-Outlook-Bridge.vbs'), 'instala VBS no Startup');
   assert.ok(todos.includes('DELTA_OUTLOOK_SILENT'), 'arranca silent');
+  assert.ok(todos.includes('$selfPid') || todos.includes('skipPids'), 'nao mata o proprio instalador');
+  assert.ok(!todos.includes("like '*DeltaFoodsOutlookBridge*'"), 'filtro antigo suicida removido');
 });
 
 check('App: ajuda ponte (este PC + comando IT) sem auto-download do .bat', () => {

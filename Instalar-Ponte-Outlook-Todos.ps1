@@ -38,25 +38,34 @@ try {
     New-Item -ItemType Directory -Force -Path $startup | Out-Null
 
     Write-Step '[1/4] A libertar portas e pontes antigas...'
+    # Nunca matar ESTE PowerShell (o .bat corre o instalador em %LOCALAPPDATA%\DeltaFoodsOutlookBridge
+    # — um filtro '*DeltaFoodsOutlookBridge*' suicidava o instalador → Codigo -1).
+    $selfPid = $PID
+    $skipPids = @{ [int]$selfPid = $true }
+    try {
+        $parentId = (Get-CimInstance Win32_Process -Filter "ProcessId=$selfPid" -ErrorAction SilentlyContinue).ParentProcessId
+        if ($parentId) { $skipPids[[int]$parentId] = $true }
+    } catch { }
+
     foreach ($p in $ports) {
         try {
             Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue |
                 ForEach-Object {
-                    $procId = $_.OwningProcess
-                    if ($procId -and $procId -gt 0) {
-                        Write-Step ("      PID $procId porta $p")
-                        Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
-                    }
+                    $procId = [int]$_.OwningProcess
+                    if ($procId -le 0) { return }
+                    if ($skipPids.ContainsKey($procId)) { return }
+                    Write-Step ("      PID $procId porta $p")
+                    Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
                 }
         } catch { }
     }
     try {
         Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
             Where-Object {
-                $_.CommandLine -and (
-                    $_.CommandLine -like '*serve.ps1*' -or
-                    $_.CommandLine -like '*DeltaFoodsOutlookBridge*'
-                )
+                $_.CommandLine -and
+                $_.CommandLine -like '*serve.ps1*' -and
+                $_.CommandLine -notlike '*Instalar-Ponte-Outlook-Todos.ps1*' -and
+                -not $skipPids.ContainsKey([int]$_.ProcessId)
             } |
             ForEach-Object {
                 Write-Step ("      kill serve PID $($_.ProcessId)")
