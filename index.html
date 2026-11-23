@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-23-cc-comercial-sap CC comercial SAP (BOTTELLO MASSIMO) -->
+<!-- dfb-build: v2026-11-23-dist-envio-equip-email Dist envio equip: Madeira email, TAG, .eml sem mailto -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2872,7 +2872,7 @@ var _unused_placeholder = 1;
 
     <!-- SUB: Distribuidores — Pedido de equipamentos -->
     <div id="at-panel-dist-equip" style="display:none;max-width:720px;">
-      <p style="font-size:13px;color:var(--muted);margin:0 0 16px">Pedido de <strong>envio de máquinas</strong> para clientes distribuidores (não é conserto). Indica a quantidade em cada linha — o resumo abaixo vai no email.</p>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px">Pedido de <strong>envio de máquinas</strong> — Canal Distribuidores. Indica a quantidade em cada linha — o resumo abaixo vai no email (a AT preenche a coluna TAG).</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
         <div class="form-group" style="margin:0">
           <label class="form-label">Vendedor</label>
@@ -25189,36 +25189,55 @@ function atDistClienteFromSelect(selId) {
   };
 }
 
-/** Tabela HTML código | descrição | qty (padrão MC00) — sem Stock. */
-function atDistEmailTabelaHtml(linhas, { codLabel = 'Código SAP', descLabel = 'Descrição', qtyLabel = 'Qt pedida' } = {}) {
+/** Tabela HTML código | descrição | qty (padrão MC00) — sem Stock.
+ *  tagCol: coluna vazia «TAG (AT)» para a equipa de AT preencher (envio equipamentos). */
+function atDistEmailTabelaHtml(linhas, {
+  codLabel = 'Código SAP', descLabel = 'Descrição', qtyLabel = 'Qt pedida',
+  tagCol = false, tagLabel = 'TAG (AT)',
+} = {}) {
   const td = 'border:1px solid #d1d5db;padding:6px 10px;font-family:Calibri,Arial,sans-serif;font-size:12px;';
   const th = td + 'background:#c8102e;color:#ffffff;font-weight:700;';
+  const tdTag = td + 'min-width:110px;background:#fffbeb;';
   const body = (linhas || []).map((l, i) => {
     const bg = i % 2 ? '#f9fafb' : '#ffffff';
     const cod = l.codigo || l.material || '—';
     const desc = l.desc || l.tipo || '—';
+    const tagCell = tagCol
+      ? `<td style="${tdTag}">${outlookEmailEsc(l.tag || '')}&nbsp;</td>`
+      : '';
     return `<tr style="background:${bg}">
       <td style="${td}white-space:nowrap;">${outlookEmailEsc(cod)}</td>
       <td style="${td}">${outlookEmailEsc(desc)}</td>
       <td style="${td}text-align:right;font-weight:700;">${outlookEmailEsc(l.qty)}</td>
+      ${tagCell}
     </tr>`;
   }).join('');
-  return `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8102e;min-width:480px;">
+  const thTag = tagCol
+    ? `<th style="${th}text-align:left;">${outlookEmailEsc(tagLabel)}</th>`
+    : '';
+  return `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8102e;min-width:${tagCol ? 580 : 480}px;">
   <thead><tr>
     <th style="${th}text-align:left;">${outlookEmailEsc(codLabel)}</th>
     <th style="${th}text-align:left;">${outlookEmailEsc(descLabel)}</th>
     <th style="${th}text-align:right;">${outlookEmailEsc(qtyLabel)}</th>
+    ${thTag}
   </tr></thead>
   <tbody>${body}</tbody>
 </table>`;
 }
 
 /** Fallback texto (só se mailto sem HTML) — não usar no caminho principal. */
-function atDistEmailTabelaText(linhas, { codLabel = 'Código SAP', descLabel = 'Descrição', qtyLabel = 'Qt pedida' } = {}) {
-  const header = `${codLabel} | ${descLabel} | ${qtyLabel}`;
-  const rows = (linhas || []).map(l =>
-    `${l.codigo || l.material || '—'} | ${l.desc || l.tipo || '—'} | ${l.qty}`
-  );
+function atDistEmailTabelaText(linhas, {
+  codLabel = 'Código SAP', descLabel = 'Descrição', qtyLabel = 'Qt pedida',
+  tagCol = false, tagLabel = 'TAG (AT)',
+} = {}) {
+  const header = tagCol
+    ? `${codLabel} | ${descLabel} | ${qtyLabel} | ${tagLabel}`
+    : `${codLabel} | ${descLabel} | ${qtyLabel}`;
+  const rows = (linhas || []).map(l => {
+    const base = `${l.codigo || l.material || '—'} | ${l.desc || l.tipo || '—'} | ${l.qty}`;
+    return tagCol ? `${base} | ${l.tag || ''}` : base;
+  });
   return [header, ...rows].join('\n');
 }
 
@@ -25231,17 +25250,17 @@ function atDistPecasEmailTabelaText(linhas) {
 }
 
 function atDistEquipEmailTabelaHtml(linhas) {
-  return atDistEmailTabelaHtml(linhas, { codLabel: 'Código SAP' });
+  return atDistEmailTabelaHtml(linhas, { codLabel: 'Código SAP', tagCol: true });
 }
 
 function atDistEquipEmailTabelaText(linhas) {
-  return atDistEmailTabelaText(linhas, { codLabel: 'Código SAP' });
+  return atDistEmailTabelaText(linhas, { codLabel: 'Código SAP', tagCol: true });
 }
 
 /** CC fixo da equipa Distribuidores — sempre em emails AT Dist (sem Filipe). */
 const AT_DIST_CC_EQUIPA = [
   'massimo.bottello@deltafoodsbrasil.com.br',
-  'eduardo.moreira@deltafoodsbrasil.com.br',
+  'eduardo.madeira@deltafoodsbrasil.com.br',
 ];
 
 /** Junta CC do tipo + equipa Dist, sem duplicados (case-insensitive). */
@@ -25307,7 +25326,7 @@ async function enviarPedidoDistEquip() {
 `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">
-<p>${outlookEmailEsc(saudacao)} Equipa de AT,<br><br>Pedido de <strong>envio de equipamentos</strong> — canal Distribuidores (não é conserto).</p>
+<p>${outlookEmailEsc(saudacao)} Equipa de AT,<br><br>Pedido de <strong>envio de equipamentos</strong> — Canal Distribuidores.</p>
 <p style="margin:0 0 4px"><strong>Data/Hora:</strong> ${outlookEmailEsc(data)} às ${outlookEmailEsc(hora)}<br>
 <strong>Urgência:</strong> ${outlookEmailEsc(urgenciaLabel)}<br>
 <strong>Vendedor:</strong> ${outlookEmailEsc(vendedor)}</p>
@@ -25319,13 +25338,13 @@ Vendedor cliente: ${outlookEmailEsc(cli.vendedorCli || '—')}</p>
 <p style="margin:16px 0 8px;font-weight:700;">Equipamentos a enviar (${linhas.length})</p>
 ${tabelaHtml}
 ${obs ? `<p style="margin-top:14px"><strong>Observações:</strong><br>${outlookEmailEsc(obs).replace(/\n/g, '<br>')}</p>` : ''}
-<p style="margin-top:18px">Solicitamos que a <strong>equipa de AT disponibilize o número das Tags</strong> dos equipamentos, para podermos seguir com o <strong>contrato e NF</strong>.</p>
+<p style="margin-top:18px">Solicitamos que a <strong>equipa de AT preencha a coluna TAG</strong> na tabela e disponibilize os números, para podermos seguir com o <strong>contrato e NF</strong>.</p>
 <p style="margin-top:18px;color:#6b7280;font-size:12px;">Enviado via Delta Foods App — Distribuidores</p>
 </body></html>`;
 
   const bodyTxt =
 `${saudacao} Equipa de AT,
-Pedido de envio de equipamentos — canal Distribuidores (não é conserto).
+Pedido de envio de equipamentos — Canal Distribuidores.
 
 Data/Hora: ${data} às ${hora}
 Urgência: ${urgenciaLabel}
@@ -25340,21 +25359,23 @@ Vendedor cliente: ${cli.vendedorCli || '—'}
 Equipamentos a enviar (${linhas.length})
 ${tabelaTxt}
 ${obs ? `\nObservações:\n${obs}\n` : ''}
-Solicitamos que a equipa de AT disponibilize o número das Tags dos equipamentos, para podermos seguir com o contrato e NF.
+Solicitamos que a equipa de AT preencha a coluna TAG na tabela e disponibilize os números, para podermos seguir com o contrato e NF.
 
 Enviado via Delta Foods App — Distribuidores`;
 
   // Abrir Outlook já com HTML (serve.ps1) ANTES do Supabase — foco tratado no Open-EmlDraft.
+  // forceEmlFallback: sem ponte NÃO usar mailto (perde tabela + UTF-8 partido, ex. PC Eduardo).
   await outlookAbrirRascunho({
     to: emailTo,
     cc: ccString(ccList),
     subject,
     html,
     draftName: 'Pedido_Equipamentos_Distribuidores.eml',
+    forceEmlFallback: true,
     toastMsg: '✅ Pedido de equipamentos — Outlook aberto com tabela HTML (CC: Carlos, Christian, Ricardo, Massimo, Eduardo).',
     mailtoFallback: {
       body: bodyTxt,
-      toastMsg: '📧 Email aberto (texto). Com serve.ps1 o Outlook abre a tabela HTML.',
+      toastMsg: '📧 Abre o .eml nas Transferências (tabela HTML + coluna TAG). Instala a ponte Outlook para abrir directo.',
     },
   });
 
@@ -25481,17 +25502,18 @@ Solicitamos a validação da equipa de AT para confirmar a disponibilidade das p
 
 Enviado via Delta Foods App — Distribuidores`;
 
-  // Abrir Outlook já com HTML (serve.ps1) ANTES do Supabase — foco tratado no Open-EmlDraft.
+  // forceEmlFallback: sem ponte → .eml HTML (não mailto — evita tabela em pipes + mojibake).
   await outlookAbrirRascunho({
     to: emailTo,
     cc: ccString(ccList),
     subject,
     html,
     draftName: 'Pedido_Pecas_Distribuidores.eml',
+    forceEmlFallback: true,
     toastMsg: '✅ Pedido de peças — Outlook aberto com tabela HTML (To: Ricardo · CC: Carlos, Christian, Massimo, Eduardo).',
     mailtoFallback: {
       body: bodyTxt,
-      toastMsg: '📧 Email aberto (texto). Com serve.ps1 o Outlook abre a tabela HTML.',
+      toastMsg: '📧 Abre o .eml nas Transferências (tabela HTML). Instala a ponte Outlook para abrir directo.',
     },
   });
 
@@ -36883,7 +36905,7 @@ const UTILIZADOR_EMAILS = {
   'CARLOS CASTRO':  'carlos.castro@deltafoodsbrasil.com.br',
   'MARCIO GORGA':   'marcio.gorga@deltafoodsbrasil.com.br',
   'DIOGO OLIVEIRA': 'diogo.oliveira@deltafoodsbrasil.com.br',
-  'EDUARDO MADEIRA': 'eduardo.moreira@deltafoodsbrasil.com.br',
+  'EDUARDO MADEIRA': 'eduardo.madeira@deltafoodsbrasil.com.br',
   'MASSIMO BOTTELLO': 'massimo.bottello@deltafoodsbrasil.com.br',
   // Área Técnica (Fernando/Marcelo: emails razoáveis — ajustar se houver conta oficial)
   'FERNANDO': 'fernando@deltafoodsbrasil.com.br',
@@ -38059,6 +38081,9 @@ async function outlookAbrirRascunho({
   toastMsg,
   mailtoFallback = null,
   ccExact = false,
+  // Sem ponte + sem anexos: mailto perde HTML/UTF-8 (ex. Dist equipamentos no PC do Eduardo).
+  // true → descarregar .eml com text/html; charset=UTF-8 em vez de mailto.
+  forceEmlFallback = false,
 } = {}) {
   // Outlook PT-BR: vários endereços no CC separados por ponto-e-vírgula
   // Sempre ccString: Filipe (Horeca), Diogo (Varejo), Marcio (Ecommerce) —
@@ -38184,18 +38209,20 @@ async function outlookAbrirRascunho({
   // PC sem ponte com-v3+.
   // COM anexos: NUNCA mailto — abre Outlook sem ficheiro e o .eml ia para
   // Transferências (parece que «não anexou»). Só o .eml (já leva o Excel).
-  // SEM anexos: mailto OK.
+  // SEM anexos: mailto OK — excepto forceEmlFallback (tabelas HTML Dist / UTF-8).
   if (isWindowsPc && !isMobile && to) {
-    if (hasAttachments) {
+    if (hasAttachments || forceEmlFallback) {
       let emlOk = false;
       try {
         outlookDownloadEml(eml, fileName);
         emlOk = true;
       } catch (_) {}
-      toast(
-        emlOk
+      const emlToast = (mailtoFallback && mailtoFallback.toastMsg)
+        || (hasAttachments
           ? '📧 Abre o .eml nas Transferências (já tem o Excel anexado).'
-          : '📧 Não foi possível gerar o .eml. Tenta outra vez.',
+          : '📧 Abre o .eml nas Transferências (tabela HTML no Outlook).');
+      toast(
+        emlOk ? emlToast : '📧 Não foi possível gerar o .eml. Tenta outra vez.',
         'warn'
       );
       return emlOk ? 'eml' : false;
@@ -47999,12 +48026,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-23-cc-comercial-sap: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-23-dist-envio-equip-email: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-23-cc-comercial-sap';
+  var CACHE_KEEP = 'v2026-11-23-dist-envio-equip-email';
 
   function tryRegister() {
     try {
@@ -49097,7 +49124,7 @@ function ctContratoEmailCc(criadorNome) {
     : String(criadorNome || '').toUpperCase().trim();
   const em = n => (typeof getEmailUtilizador === 'function' ? getEmailUtilizador(n) : '') || '';
   const massimo = em('MASSIMO BOTTELLO') || 'massimo.bottello@deltafoodsbrasil.com.br';
-  const eduardo = em('EDUARDO MADEIRA') || 'eduardo.moreira@deltafoodsbrasil.com.br';
+  const eduardo = em('EDUARDO MADEIRA') || 'eduardo.madeira@deltafoodsbrasil.com.br';
   const carlos = em('CARLOS CASTRO') || 'carlos.castro@deltafoodsbrasil.com.br';
   if (nome === 'EDUARDO MADEIRA') return [massimo, carlos];
   if (nome === 'MASSIMO BOTTELLO') return [eduardo];

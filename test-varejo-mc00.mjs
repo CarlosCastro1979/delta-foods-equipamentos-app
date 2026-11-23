@@ -211,7 +211,7 @@ check('MC00 CC: vendedor em cópia; se for ele a enviar → Carlos', () => {
     'MARCIO GORGA': 'marcio.gorga@deltafoodsbrasil.com.br',
     'DIOGO OLIVEIRA': 'diogo.oliveira@deltafoodsbrasil.com.br',
     'MASSIMO BOTTELLO': 'massimo.bottello@deltafoodsbrasil.com.br',
-    'EDUARDO MADEIRA': 'eduardo.moreira@deltafoodsbrasil.com.br',
+    'EDUARDO MADEIRA': 'eduardo.madeira@deltafoodsbrasil.com.br',
   };
   ctx.VENDEDOR_MAP = { '99520003': 'MASSIMO BOTTELLO', '99520020': 'EDUARDO MADEIRA', '99520008': 'MARCIO GORGA' };
   ctx.NPESS_VENDEDOR_SC = { 99520003: 'MASSIMO BOTTELLO', 99530002: 'MASSIMO BOTTELLO' };
@@ -323,10 +323,10 @@ check('switchSubTab redirecciona Novo/Por Registar no Varejo via canalRegistosTa
   assert.ok(fn.includes('_distAllowNovoForm'), 'Dist continua a poder abrir o form forçado');
 });
 
-check('Cache SW / dfb-build alinhados (cc-comercial-sap)', () => {
-  assert.ok(html.includes('v2026-11-23-cc-comercial-sap'));
-  assert.ok(sw.includes('v2026-11-23-cc-comercial-sap'));
-  assert.ok(/<!--\s*dfb-build:[^>]*cc-comercial-sap[^>]*-->/.test(html.slice(0, 300)));
+check('Cache SW / dfb-build alinhados (dist-envio-equip-email)', () => {
+  assert.ok(html.includes('v2026-11-23-dist-envio-equip-email'));
+  assert.ok(sw.includes('v2026-11-23-dist-envio-equip-email'));
+  assert.ok(/<!--\s*dfb-build:[^>]*dist-envio-equip-email[^>]*-->/.test(html.slice(0, 300)));
 });
 
 if (process.exitCode) process.exit(process.exitCode);

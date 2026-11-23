@@ -1,6 +1,6 @@
-// Service Worker v2026-11-23-cc-comercial-sap — CC comercial SAP (BOTTELLO MASSIMO)
+// Service Worker v2026-11-23-dist-envio-equip-email — Dist envio equip: Madeira email, TAG, .eml sem mailto
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-23-cc-comercial-sap';
+const CACHE = 'v2026-11-23-dist-envio-equip-email';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

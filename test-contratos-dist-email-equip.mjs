@@ -12,7 +12,7 @@ import path from 'path';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-11-16-outlook-anexo-eml';
+const CACHE = 'v2026-11-23-dist-envio-equip-email';
 
 function extractFn(src, name) {
   const start = src.indexOf(`function ${name}(`);
@@ -144,6 +144,7 @@ vm.createContext(context);
 
 vm.runInContext(extractConstAsVar(html, 'UTILIZADOR_EMAILS'), context);
 vm.runInContext(extractFn(html, 'normNomeUtilizador'), context);
+vm.runInContext(extractFn(html, 'resolveNomeUtilizador'), context);
 vm.runInContext(extractFn(html, 'getEmailUtilizador'), context);
 vm.runInContext(extractFn(html, 'ctEmptyGama'), context);
 vm.runInContext(extractFn(html, 'ctGamaLabel'), context);
@@ -243,7 +244,7 @@ check('Massimo cria Dist → CC Eduardo', () => {
   _dist = true;
   _user = 'Massimo Bottello';
   const cc = context.ctContratoEmailCc();
-  assert.deepEqual(cc, ['eduardo.moreira@deltafoodsbrasil.com.br']);
+  assert.deepEqual(cc, ['eduardo.madeira@deltafoodsbrasil.com.br']);
 });
 
 check('Horeca: ctContratoEmailCc vazio (Filipe fica no ccString)', () => {
