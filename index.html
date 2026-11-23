@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-23-mc00-cc-outlook MC00 CC responsavel + ponte Outlook -->
+<!-- dfb-build: v2026-11-23-outlook-ponte-seq Ponte Outlook sequencial (sem .eml) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -37767,15 +37767,16 @@ function outlookWarnPonteDesatualizada() {
 }
 
 /**
- * Confirma com-v4 com OPTIONS/GET — NUNCA fazer POST a pontes antigas.
+ * Confirma com-v3+ com OPTIONS/GET — NUNCA fazer POST a pontes antigas.
  * Um POST ao serve.ps1 antigo dispara outlook.exe /eml e o diálogo
  * «argumento de linha de comando não é válido» mesmo que depois rejeitemos a resposta.
  */
-async function outlookProbeBridgeVersion(ep) {
-  // 2.5s: cold-start / PNA no 1.º OPTIONS por vezes >700ms e a app
-  // caía no mailto sem anexo + .eml em Transferências.
+async function outlookProbeBridgeVersion(ep, timeoutMs) {
+  // 5s: cold-start + Private Network Access (github.io → 127.0.0.1) por vezes >2.5s.
+  // serve.ps1 é monothread — probes em paralelo enchiam a fila e o POST do MC00 falhava.
+  const ms = timeoutMs != null ? timeoutMs : 5000;
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const t = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, 2500) : null;
+  const t = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, ms) : null;
   try {
     let r = await fetch(ep, { method: 'OPTIONS', signal: ctrl ? ctrl.signal : undefined });
     if ((r.status === 204 || r.ok) && outlookBridgeVersionOk(r)) return true;
@@ -37794,50 +37795,84 @@ async function outlookProbeBridgeVersion(ep) {
   return false;
 }
 
-/** POST à API Outlook — só depois de OPTIONS com-v4.
+/** POST à API Outlook — só depois de OPTIONS com-v3+.
  *  Devolve: endpoint (ok) | 'dialog' (Outlook com caixa aberta) | null (falhou).
+ *  skipProbe: true se outlookFindLiveApi acabou de validar o endpoint (evita fila monothread).
  */
-async function outlookPostDraft(ep, eml, timeoutMs) {
-  if (!(await outlookProbeBridgeVersion(ep))) return null;
+async function outlookPostDraft(ep, eml, timeoutMs, opts) {
+  const skipProbe = !!(opts && opts.skipProbe);
+  if (!skipProbe && !(await outlookProbeBridgeVersion(ep))) return null;
   const size = (typeof eml === 'string') ? eml.length : (eml?.byteLength || eml?.size || 0);
   const autoMs = Math.min(90000, Math.max(15000, Math.ceil(size / 40) + 10000));
   const ms = timeoutMs != null ? timeoutMs : autoMs;
-  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const t = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, ms) : null;
-  try {
-    const r = await fetch(ep, {
-      method: 'POST',
-      headers: { 'Content-Type': 'message/rfc822; charset=utf-8' },
-      body: eml,
-      signal: ctrl ? ctrl.signal : undefined,
-    });
-    if (r.status === 503) return 'dialog';
-    if (!(r.status === 204 || r.ok)) return null;
-    if (!outlookBridgeVersionOk(r)) {
-      outlookWarnPonteDesatualizada();
+  const doPost = async () => {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const t = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, ms) : null;
+    try {
+      const r = await fetch(ep, {
+        method: 'POST',
+        headers: { 'Content-Type': 'message/rfc822; charset=utf-8' },
+        body: eml,
+        signal: ctrl ? ctrl.signal : undefined,
+      });
+      if (r.status === 503) return 'dialog';
+      if (!(r.status === 204 || r.ok)) return null;
+      if (!outlookBridgeVersionOk(r)) {
+        outlookWarnPonteDesatualizada();
+        return null;
+      }
+      return ep;
+    } catch (_) {
       return null;
+    } finally {
+      if (t) clearTimeout(t);
     }
-    return ep;
-  } catch (_) {
-    return null;
-  } finally {
-    if (t) clearTimeout(t);
+  };
+  let result = await doPost();
+  // Um retry rápido: cold-start COM / PNA por vezes falha no 1.º POST.
+  if (result == null) {
+    await new Promise(r => setTimeout(r, 350));
+    result = await doPost();
   }
+  return result;
 }
 
-/** Descobre qual porta do serve.ps1 está viva E é com-v4 (sem POST). */
+/** Cache em memória + promise partilhada — evita flood monothread no serve.ps1. */
+let _outlookFindInflight = null;
+let _outlookLiveEp = null;
+let _outlookLiveAt = 0;
+
+/** Descobre qual porta do serve.ps1 está viva E é com-v3+ (sem POST). Sequencial. */
 async function outlookFindLiveApi() {
-  const urls = outlookDraftApiUrls();
-  const probeOne = async (ep) => ((await outlookProbeBridgeVersion(ep)) ? ep : null);
-  if (urls[0]) {
-    const hit = await probeOne(urls[0]);
-    if (hit) return hit;
-    try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
-  }
-  const rest = urls.slice(1);
-  if (!rest.length) return null;
-  const raced = await Promise.all(rest.map(probeOne));
-  return raced.find(Boolean) || null;
+  if (_outlookFindInflight) return _outlookFindInflight;
+  _outlookFindInflight = (async () => {
+    try {
+      // Reutilizar endpoint fresco (<45s) sem varrer portas de novo.
+      if (_outlookLiveEp && (Date.now() - _outlookLiveAt) < 45000) {
+        if (await outlookProbeBridgeVersion(_outlookLiveEp, 3000)) return _outlookLiveEp;
+        _outlookLiveEp = null;
+      }
+      const urls = outlookDraftApiUrls();
+      for (let i = 0; i < urls.length; i++) {
+        const ep = urls[i];
+        if (!ep) continue;
+        if (await outlookProbeBridgeVersion(ep)) {
+          _outlookLiveEp = ep;
+          _outlookLiveAt = Date.now();
+          try { sessionStorage.setItem(OUTLOOK_API_CACHE_KEY, ep); } catch (_) {}
+          return ep;
+        }
+        // Cache morto: limpar e continuar a lista (não abortar a descoberta).
+        if (i === 0) {
+          try { sessionStorage.removeItem(OUTLOOK_API_CACHE_KEY); } catch (_) {}
+        }
+      }
+      return null;
+    } finally {
+      _outlookFindInflight = null;
+    }
+  })();
+  return _outlookFindInflight;
 }
 
 /**
@@ -38030,12 +38065,13 @@ async function outlookAbrirRascunho({
   const eml = parts.join('\r\n');
   const fileName = draftName || 'Delta_rascunho_Outlook.eml';
 
-  // PC Windows: SÓ POST à ponte com-v4 já validada por OPTIONS.
+  // PC Windows: SÓ POST à ponte com-v3+ já validada por OPTIONS (sequencial).
   // Nunca varrer portas com POST — pontes antigas abrem o diálogo «argumento inválido».
+  // skipProbe: findLiveApi já validou — evita 2.ª fila no serve.ps1 monothread (MC00 grande).
   let openedEp = null;
   if (isWindowsPc && !isMobile) {
     const live = await outlookFindLiveApi();
-    if (live) openedEp = await outlookPostDraft(live, eml);
+    if (live) openedEp = await outlookPostDraft(live, eml, null, { skipProbe: true });
   }
   if (openedEp && openedEp !== 'dialog') {
     try { sessionStorage.setItem(OUTLOOK_API_CACHE_KEY, openedEp); } catch (_) {}
@@ -42835,7 +42871,7 @@ async function editSwitchTab(tab) {
     if (modal) modal.classList.add('modal-wide-cad');
   } else if (tab === 'mc00') {
     garantirFichaCadastralEmCasa();
-    // Pré-aquecer ponte Outlook (PNA) antes do clique em exportar — igual Horeca.
+    // Warm leve (1× sequencial, partilhado) — NÃO flood paralelo (serve.ps1 monothread).
     if (typeof outlookIsWindowsPc === 'function' && outlookIsWindowsPc()
         && typeof outlookFindLiveApi === 'function') {
       try { outlookFindLiveApi().catch(() => null); } catch (_) {}
@@ -43657,12 +43693,12 @@ async function mc00Exportar() {
   await guardarMc00Cliente({ silent: true });
   if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar MC00…</span>';
   try {
-    // Aquecer a ponte enquanto o Excel gera — evita PNA/timeout e cair no .eml em Transferências.
+    // Igual Horeca/cadastro: Excel com skipDownload (preserva gesto → POST localhost).
+    // Warm sequencial partilhado em paralelo — sem Promise.all a saturar o serve.ps1.
     const bridgeWarm = (typeof outlookIsWindowsPc === 'function' && outlookIsWindowsPc()
       && typeof outlookFindLiveApi === 'function')
       ? outlookFindLiveApi().catch(() => null)
       : Promise.resolve(null);
-    // Excel vai em anexo no Outlook — nunca Save As / download do .xlsx aqui.
     const excel = await mc00GerarExcel(data, { skipDownload: true });
     await bridgeWarm;
     if (st) st.innerHTML = '<span style="color:#16a34a">A abrir email no Outlook…</span>';
@@ -47811,12 +47847,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-23-mc00-cc-outlook: MC00 CC responsavel + ponte. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-23-outlook-ponte-seq: ponte sequencial monothread. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-23-mc00-cc-outlook';
+  var CACHE_KEEP = 'v2026-11-23-outlook-ponte-seq';
 
   function tryRegister() {
     try {
