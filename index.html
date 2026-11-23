@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-23-outlook-ponte-seq Ponte Outlook sequencial (sem .eml) -->
+<!-- dfb-build: v2026-11-23-outlook-ponte-8090 Ponte prefer 8090 (evita CORS 8088) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -37706,7 +37706,9 @@ function outlookDownloadEml(eml, fileName) {
 function outlookDraftApiUrls() {
   // Porta actual / cache primeiro (menos latência → Outlook abre com foco)
   const pagePort = Number(location.port) || 0;
-  const ports = [8088, 8080, 8090, 5505];
+  // Ponte instalada (silent) prefer 8090 — 8088/8080 muitas vezes têm outro
+  // servidor sem CORS (consola: No Access-Control-Allow-Origin → .eml).
+  const ports = [8090, 5505, 8088, 8080];
   if (pagePort && !ports.includes(pagePort)) ports.unshift(pagePort);
   else if (pagePort) {
     ports.splice(ports.indexOf(pagePort), 1);
@@ -38099,8 +38101,8 @@ async function outlookAbrirRascunho({
       } catch (_) {}
       toast(
         emlOk
-          ? '📧 Ponte offline — abre o .eml nas Transferências (já tem o Excel anexado). Corre Atualizar-Ponte-Outlook.bat uma vez para anexar automático.'
-          : '📧 Ponte offline. Corre Atualizar-Ponte-Outlook.bat uma vez.',
+          ? '📧 Ponte offline (8088/8080 ocupada ou serve.ps1 parado) — abre o .eml nas Transferências. Corre Atualizar-Ponte-Outlook.bat uma vez.'
+          : '📧 Ponte offline. Corre Atualizar-Ponte-Outlook.bat uma vez (liberta 8088/8080 e sobe a ponte).',
         'warn'
       );
       return emlOk ? 'eml' : false;
@@ -43709,7 +43711,7 @@ async function mc00Exportar() {
       } else if (ok === 'dialog') {
         st.innerHTML = '<span style="color:#b45309">Fecha a caixa de diálogo do Outlook e volta a exportar (sem downloads).</span>';
       } else if (ok === 'eml') {
-        st.innerHTML = '<span style="color:#b45309">Ponte Outlook offline — abre o .eml nas Transferências (já tem o Excel). Corre Atualizar-Ponte-Outlook.bat uma vez.</span>';
+        st.innerHTML = '<span style="color:#b45309">Ponte Outlook offline (porta ocupada ou serve.ps1 parado) — abre o .eml. Corre Atualizar-Ponte-Outlook.bat uma vez.</span>';
       } else {
         st.innerHTML = '<span style="color:#b45309">No tablet: Outlook abre o email e o Excel MC00 é descarregado — anexa o .xlsx. No PC Windows: Atualizar-Ponte-Outlook.bat (1×).</span>';
       }
@@ -47847,12 +47849,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-23-outlook-ponte-seq: ponte sequencial monothread. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-23-outlook-ponte-8090: ponte prefer 8090. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-23-outlook-ponte-seq';
+  var CACHE_KEEP = 'v2026-11-23-outlook-ponte-8090';
 
   function tryRegister() {
     try {
