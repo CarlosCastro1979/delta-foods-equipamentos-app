@@ -785,8 +785,9 @@ check('serve.ps1 abre rascunho SÓ via COM (nunca /eml — evita argumento invá
   assert.ok(!startFn.includes('Start-Process'), 'Start-EmlDraft sem Start-Process outlook.exe');
   assert.ok(ps1.includes('Deferred'), 'cold-start COM depois do HTTP 204');
   assert.ok(fs.existsSync(path.join(root, 'Atualizar-Ponte-Outlook.bat')), 'bat para actualizar a ponte');
-  const bat = fs.readFileSync(path.join(root, 'Atualizar-Ponte-Outlook.bat'), 'utf8');
-  assert.ok(bat.includes('com-v4'), 'bat verifica com-v4');
+  assert.ok(fs.existsSync(path.join(root, 'Instalar-Ponte-Outlook-Todos.ps1')), 'instalador IT / todos os PCs');
+  const todos = fs.readFileSync(path.join(root, 'Instalar-Ponte-Outlook-Todos.ps1'), 'utf8');
+  assert.ok(todos.includes('com-v') && todos.includes('X-Delta-Outlook-Bridge'), 'instalador verifica header da ponte');
 });
 
 check('browser aceita ponte com-v3+ e NUNCA faz POST a pontes antigas', () => {
@@ -827,8 +828,22 @@ check('serve.ps1 silent prefer 8090 (evita CORS de outros processos em 8088)', (
   assert.ok(ps1.includes('elseif ($silent) { 8090 }'), 'silent → preferred 8090');
   assert.ok(ps1.includes('8090, 5505, 8088, 8080') || ps1.includes('@($preferred, 8090, 5505, 8088, 8080)'), 'ordem silent');
   const bat = fs.readFileSync(path.join(root, 'Atualizar-Ponte-Outlook.bat'), 'utf8');
-  assert.ok(bat.includes('Get-NetTCPConnection'), 'bat mata portas com Get-NetTCPConnection');
-  assert.ok(bat.includes('8090,5505,8088,8080') || bat.includes('8090, 5505, 8088, 8080'), 'bat verifica 8090 primeiro');
+  assert.ok(bat.includes('Instalar-Ponte-Outlook-Todos.ps1'), 'bat usa instalador partilhado');
+  const todos = fs.readFileSync(path.join(root, 'Instalar-Ponte-Outlook-Todos.ps1'), 'utf8');
+  assert.ok(todos.includes('Get-NetTCPConnection'), 'instalador IT mata portas');
+  assert.ok(todos.includes('DeltaFoods-Outlook-Bridge.vbs'), 'instala VBS no Startup');
+  assert.ok(todos.includes('DELTA_OUTLOOK_SILENT'), 'arranca silent');
+});
+
+check('App: ajuda ponte (este PC + comando IT) sem auto-download do .bat', () => {
+  assert.ok(html.includes('function outlookMostrarAjudaPonte'));
+  assert.ok(html.includes('function outlookDescarregarBatPonte'));
+  assert.ok(html.includes('outlook-ponte-overlay'));
+  assert.ok(html.includes('Instalar-Ponte-Outlook-Todos.ps1'));
+  // Não descarregar .bat sozinho no warn/export — só por clique
+  const warn = html.slice(html.indexOf('function outlookWarnPonteDesatualizada'), html.indexOf('async function outlookProbeBridgeVersion'));
+  assert.ok(warn.includes('outlookMostrarAjudaPonte'));
+  assert.ok(!warn.includes('outlookDescarregarBatPonte()'), 'warn não descarrega bat');
 });
 
 check('SW não intercepta localhost nem API Outlook (Private Network Access)', () => {
