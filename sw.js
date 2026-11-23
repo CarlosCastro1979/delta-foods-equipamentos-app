@@ -1,6 +1,6 @@
-// Service Worker v2026-11-23-outlook-ponte-8090 — Ponte prefer 8090 (evita CORS 8088)
+// Service Worker v2026-11-23-outlook-ponte-todos — Instalador IT / todos os PCs
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-23-outlook-ponte-8090';
+const CACHE = 'v2026-11-23-outlook-ponte-todos';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
