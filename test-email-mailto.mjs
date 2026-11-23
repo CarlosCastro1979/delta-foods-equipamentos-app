@@ -874,16 +874,37 @@ check('PC Windows sem ponte + anexos: só .eml (nunca mailto sem anexo)', () => 
   assert.ok(!/for \(const ep of outlookDraftApiUrls\(\)\)/.test(fn));
   const pcBlock = fn.indexOf('PC sem ponte');
   assert.ok(pcBlock >= 0);
-  const attIf = fn.indexOf('if (hasAttachments)', pcBlock);
-  assert.ok(attIf > pcBlock, 'ramo if (hasAttachments) no PC');
+  const attIf = fn.indexOf('if (hasAttachments || forceEmlFallback)', pcBlock);
+  assert.ok(attIf > pcBlock, 'ramo if (hasAttachments || forceEmlFallback) no PC');
   const retEml = fn.indexOf("return emlOk ? 'eml'", attIf);
   assert.ok(retEml > attIf, 'return eml sem mailto');
   const attSlice = fn.slice(attIf, retEml + 40);
   assert.ok(attSlice.includes('outlookDownloadEml'));
-  assert.ok(!attSlice.includes('outlookOpenMailtoPlusExcel'), 'com anexos não abre mailto');
+  assert.ok(!attSlice.includes('outlookOpenMailtoPlusExcel'), 'com anexos / forceEml não abre mailto');
   const probe = html.slice(html.indexOf('async function outlookProbeBridgeVersion'), html.indexOf('async function outlookPostDraft'));
   assert.ok(probe.includes('5000'), 'probe timeout 5000ms (PNA cold-start)');
   assert.ok(!probe.includes('2500') || probe.includes('5000'), 'timeout actualizado');
+});
+
+check('Dist envio equipamentos: email Madeira, Canal Distribuidores, TAG, forceEml', () => {
+  assert.ok(!html.includes('eduardo.moreira@deltafoodsbrasil.com.br'), 'email Moreira removido');
+  assert.ok(html.includes("'EDUARDO MADEIRA': 'eduardo.madeira@deltafoodsbrasil.com.br'"));
+  assert.ok(html.includes("eduardo.madeira@deltafoodsbrasil.com.br"));
+  assert.ok(!/canal Distribuidores \(não é conserto\)/i.test(html));
+  assert.ok(html.includes('Canal Distribuidores'));
+  const equipFn = html.slice(
+    html.indexOf('async function enviarPedidoDistEquip'),
+    html.indexOf('async function enviarPedidoDistPecas')
+  );
+  assert.ok(equipFn.includes('forceEmlFallback: true'));
+  assert.ok(equipFn.includes('Canal Distribuidores'));
+  assert.ok(!/não é conserto/i.test(equipFn));
+  const tbl = html.slice(
+    html.indexOf('function atDistEmailTabelaHtml'),
+    html.indexOf('function atDistPecasEmailTabelaHtml')
+  );
+  assert.ok(tbl.includes('tagCol') && tbl.includes('TAG (AT)'));
+  assert.ok(html.includes('tagCol: true'), 'equip usa coluna TAG');
 });
 
 
