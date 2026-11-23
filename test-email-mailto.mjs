@@ -817,6 +817,18 @@ check('browser aceita ponte com-v3+ e NUNCA faz POST a pontes antigas', () => {
   const findFn = html.slice(html.indexOf('async function outlookFindLiveApi'), html.indexOf('async function outlookAbrirEmailTexto'));
   assert.ok(findFn.includes('for (let i = 0') || findFn.includes('for (const ep of'), 'probe sequencial');
   assert.ok(!findFn.includes('Promise.all'), 'sem flood paralelo de OPTIONS');
+  // Prefer 8090: 8088/8080 muitas vezes têm outro servidor sem CORS
+  const urlsFn = html.slice(html.indexOf('function outlookDraftApiUrls'), html.indexOf('const OUTLOOK_BRIDGE_VERSION'));
+  assert.ok(/ports\s*=\s*\[\s*8090\s*,\s*5505\s*,\s*8088\s*,\s*8080\s*\]/.test(urlsFn), 'probe 8090 antes de 8088/8080');
+});
+
+check('serve.ps1 silent prefer 8090 (evita CORS de outros processos em 8088)', () => {
+  const ps1 = fs.readFileSync(path.join(root, 'serve.ps1'), 'utf8');
+  assert.ok(ps1.includes('elseif ($silent) { 8090 }'), 'silent → preferred 8090');
+  assert.ok(ps1.includes('8090, 5505, 8088, 8080') || ps1.includes('@($preferred, 8090, 5505, 8088, 8080)'), 'ordem silent');
+  const bat = fs.readFileSync(path.join(root, 'Atualizar-Ponte-Outlook.bat'), 'utf8');
+  assert.ok(bat.includes('Get-NetTCPConnection'), 'bat mata portas com Get-NetTCPConnection');
+  assert.ok(bat.includes('8090,5505,8088,8080') || bat.includes('8090, 5505, 8088, 8080'), 'bat verifica 8090 primeiro');
 });
 
 check('SW não intercepta localhost nem API Outlook (Private Network Access)', () => {
@@ -836,7 +848,7 @@ check('PC Windows sem ponte + anexos: só .eml (nunca mailto sem anexo)', () => 
   const end = html.indexOf('\nfunction isAdmin()', start);
   const fn = html.slice(start, end);
   assert.ok(fn.includes('outlookDownloadEml'));
-  assert.ok(fn.includes('NUNCA mailto') || fn.includes('já tem o Excel anexado'));
+  assert.ok(fn.includes('NUNCA mailto') || fn.includes('Ponte offline') || fn.includes('já tem o Excel'));
   assert.ok(!/for \(const ep of outlookDraftApiUrls\(\)\)/.test(fn));
   const pcBlock = fn.indexOf('PC sem ponte');
   assert.ok(pcBlock >= 0);

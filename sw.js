@@ -1,6 +1,6 @@
-// Service Worker v2026-11-23-outlook-ponte-seq — Ponte Outlook sequencial (sem flood .eml)
+// Service Worker v2026-11-23-outlook-ponte-8090 — Ponte prefer 8090 (evita CORS 8088)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-23-outlook-ponte-seq';
+const CACHE = 'v2026-11-23-outlook-ponte-8090';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

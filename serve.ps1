@@ -1,6 +1,9 @@
-$preferred = if ($env:PORT) { [int]$env:PORT } else { 8088 }
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Ponte instalada (silent): preferir 8090 — 8088/8080 costumam estar ocupadas
+# por Live Server / IIS / outros sem CORS → Chrome: «No Access-Control-Allow-Origin»
+# e a app cai no .eml em Transferências.
 $silent = ($env:DELTA_OUTLOOK_SILENT -eq '1')
+$preferred = if ($env:PORT) { [int]$env:PORT } elseif ($silent) { 8090 } else { 8088 }
+$root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $appDir = Join-Path $root 'delta-foods-equipamentos-app'
 $syncFiles = @('index.html', 'manifest.json', 'sw.js', 'simulador-template.js', 'exceljs.min.js', 'xlsx.full.min.js', 'pdf-lib.min.js', 'mc00-template.xlsx', 'quebra-template.xlsx', 'icon-192.png', 'icon-512.png')
 
@@ -457,7 +460,12 @@ function Set-CorsHeaders($res) {
 
 $listener = $null
 $port = $null
-foreach ($tryPort in @($preferred, 8088, 8080, 8090, 5505)) {
+$portOrder = if ($silent) {
+    @($preferred, 8090, 5505, 8088, 8080) | Select-Object -Unique
+} else {
+    @($preferred, 8088, 8080, 8090, 5505) | Select-Object -Unique
+}
+foreach ($tryPort in $portOrder) {
     try {
         $listener = Start-AppListener $tryPort
         $port = $tryPort
