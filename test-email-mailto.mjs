@@ -464,9 +464,12 @@ check('mapa EMAIL + rascunho Outlook aplicam CC Diogo/Marcio por canal', () => {
     html.indexOf('let _modoAlteracaoCnpj'),
   );
   // Dist (soDaniela) passa ccExact; retalho/Horeca continua a usar ccString no Outlook.
+  // Comercial do cliente entra via ccComComercialCliente antes do rascunho.
   assert.ok(cad.includes('outlookAbrirRascunho'));
-  assert.ok(cad.includes('cc: mail.cc'));
+  assert.ok(cad.includes('ccComComercialCliente') || cad.includes('cc: mail.cc') || cad.includes('cc,'));
   assert.ok(cad.includes('ccExact') || cad.includes('ccString(mail.cc'));
+  assert.ok(html.includes('function ccComComercialCliente'));
+  assert.ok(html.includes('function resolveNomeUtilizador'));
   assert.ok(html.includes('ccString('));
 });
 check('mc00SaudacaoHora nunca inclui Carlos', () => {

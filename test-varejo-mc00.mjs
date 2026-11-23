@@ -179,25 +179,14 @@ check('MC00 no editar: aba existe; email reutiliza EMAIL_MC00_TO', () => {
 });
 
 check('MC00 CC: vendedor em cópia; se for ele a enviar → Carlos', () => {
-  const emails = {
-    'MARCIO GORGA': 'marcio.gorga@deltafoodsbrasil.com.br',
-    'DIOGO OLIVEIRA': 'diogo.oliveira@deltafoodsbrasil.com.br',
-    'MASSIMO BOTTELLO': 'massimo.bottello@deltafoodsbrasil.com.br',
-    'CARLOS CASTRO': 'carlos.castro@deltafoodsbrasil.com.br',
-  };
   const ctx = {
     console,
     String,
     Array,
     Set,
+    Object,
+    Number,
     EMAIL_MC00_CC_CARLOS: 'carlos.castro@deltafoodsbrasil.com.br',
-    getEmailUtilizador(nome) {
-      const k = String(nome || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-      return emails[k] || '';
-    },
-    normNomeUtilizador(s) {
-      return String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-    },
     outlookMailtoAddrList(input) {
       const raw = Array.isArray(input) ? input : [input];
       const seen = new Set();
@@ -216,7 +205,22 @@ check('MC00 CC: vendedor em cópia; se for ele a enviar → Carlos', () => {
     },
   };
   vm.createContext(ctx);
-  for (const name of ['remetenteEhUtilizador', 'mc00MontarCc']) {
+  // Dependências de mc00MontarCc / resolveNomeUtilizador
+  ctx.UTILIZADOR_EMAILS = {
+    'CARLOS CASTRO': 'carlos.castro@deltafoodsbrasil.com.br',
+    'MARCIO GORGA': 'marcio.gorga@deltafoodsbrasil.com.br',
+    'DIOGO OLIVEIRA': 'diogo.oliveira@deltafoodsbrasil.com.br',
+    'MASSIMO BOTTELLO': 'massimo.bottello@deltafoodsbrasil.com.br',
+    'EDUARDO MADEIRA': 'eduardo.moreira@deltafoodsbrasil.com.br',
+  };
+  ctx.VENDEDOR_MAP = { '99520003': 'MASSIMO BOTTELLO', '99520020': 'EDUARDO MADEIRA', '99520008': 'MARCIO GORGA' };
+  ctx.NPESS_VENDEDOR_SC = { 99520003: 'MASSIMO BOTTELLO', 99530002: 'MASSIMO BOTTELLO' };
+  ctx.EMAIL_MC00_CC_CARLOS = 'carlos.castro@deltafoodsbrasil.com.br';
+  for (const name of [
+    'normNomeUtilizador', 'resolveNomeUtilizador', 'getEmailUtilizador',
+    'emailComercialCliente', 'ccComComercialCliente',
+    'remetenteEhUtilizador', 'mc00MontarCc',
+  ]) {
     vm.runInContext(extractFn(html, name), ctx);
   }
   // Carlos faz MC00 de cliente do Marcio → Marcio em CC (sem Carlos a auto-copiar)
@@ -247,6 +251,23 @@ check('MC00 CC: vendedor em cópia; se for ele a enviar → Carlos', () => {
   assert.deepEqual(
     ctx.mc00MontarCc({ vendedor: 'MASSIMO BOTTELLO' }, 'Carlos Castro'),
     ['massimo.bottello@deltafoodsbrasil.com.br']
+  );
+  // Formato SAP Dist (era o bug: CC vazio)
+  assert.deepEqual(
+    ctx.mc00MontarCc({ vendedor: '99520003 - BOTTELLO MASSIMO' }, 'Carlos Castro'),
+    ['massimo.bottello@deltafoodsbrasil.com.br']
+  );
+  assert.equal(
+    ctx.resolveNomeUtilizador('99520003 - BOTTELLO MASSIMO'),
+    'MASSIMO BOTTELLO'
+  );
+  assert.deepEqual(
+    ctx.ccComComercialCliente([], '99520003 - BOTTELLO MASSIMO', 'Carlos Castro'),
+    ['massimo.bottello@deltafoodsbrasil.com.br']
+  );
+  assert.deepEqual(
+    ctx.ccComComercialCliente([], '99520003 - BOTTELLO MASSIMO', 'Massimo Bottello'),
+    []
   );
 });
 
@@ -302,10 +323,10 @@ check('switchSubTab redirecciona Novo/Por Registar no Varejo via canalRegistosTa
   assert.ok(fn.includes('_distAllowNovoForm'), 'Dist continua a poder abrir o form forçado');
 });
 
-check('Cache SW / dfb-build alinhados (outlook-eml-sem-popup)', () => {
-  assert.ok(html.includes('v2026-11-23-outlook-eml-sem-popup'));
-  assert.ok(sw.includes('v2026-11-23-outlook-eml-sem-popup'));
-  assert.ok(/<!--\s*dfb-build:[^>]*outlook-eml-sem-popup[^>]*-->/.test(html.slice(0, 300)));
+check('Cache SW / dfb-build alinhados (cc-comercial-sap)', () => {
+  assert.ok(html.includes('v2026-11-23-cc-comercial-sap'));
+  assert.ok(sw.includes('v2026-11-23-cc-comercial-sap'));
+  assert.ok(/<!--\s*dfb-build:[^>]*cc-comercial-sap[^>]*-->/.test(html.slice(0, 300)));
 });
 
 if (process.exitCode) process.exit(process.exitCode);

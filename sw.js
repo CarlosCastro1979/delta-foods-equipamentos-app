@@ -1,6 +1,6 @@
-// Service Worker v2026-11-23-outlook-eml-sem-popup — Sem popup instalador; .eml
+// Service Worker v2026-11-23-cc-comercial-sap — CC comercial SAP (BOTTELLO MASSIMO)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-23-outlook-eml-sem-popup';
+const CACHE = 'v2026-11-23-cc-comercial-sap';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

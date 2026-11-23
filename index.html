@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-23-outlook-eml-sem-popup Sem popup instalador; .eml -->
+<!-- dfb-build: v2026-11-23-cc-comercial-sap CC comercial SAP (BOTTELLO MASSIMO) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -9951,6 +9951,12 @@ function openEditWithRegisto(registo) {
     return;
   }
   editingId = registo.id;
+  // Hidratar ficha se só existir no fallback docs.__cadastro_ficha (sem coluna cadastro_json).
+  if ((!registo.cadastro_json || typeof registo.cadastro_json !== 'object')
+      && typeof registoCadastroJson === 'function') {
+    const cadHydra = registoCadastroJson(registo);
+    if (cadHydra) registo.cadastro_json = cadHydra;
+  }
   window._editingRegisto = registo;
   // Garantir que allData conhece o registo (ex.: aberto a partir de Contratos em falta)
   if (Array.isArray(allData) && !allData.some(r => r.id === registo.id)) {
@@ -36896,8 +36902,54 @@ function normNomeUtilizador(s) {
   return n;
 }
 
+/**
+ * Converte «99520003 - BOTTELLO MASSIMO» / «MASSIMO BOTTELLO» / NPess → nome canónico
+ * (chave de UTILIZADOR_EMAILS). Sem isto o CC do comercial no MC00 Dist ficava vazio.
+ */
+function resolveNomeUtilizador(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return '';
+  if (s.includes('@')) {
+    const em = s.toLowerCase();
+    for (const [nome, email] of Object.entries(UTILIZADOR_EMAILS)) {
+      if (String(email).toLowerCase() === em) return nome;
+    }
+    return '';
+  }
+  // NPess no início: «99520003 - BOTTELLO MASSIMO» ou só o código
+  const mCod = s.match(/^(\d{6,})/);
+  if (mCod) {
+    const cod = mCod[1];
+    const n = Number(cod);
+    const fromMap = (typeof VENDEDOR_MAP !== 'undefined' && (VENDEDOR_MAP[cod] || VENDEDOR_MAP[n]))
+      || (typeof NPESS_VENDEDOR_SC !== 'undefined' && (NPESS_VENDEDOR_SC[cod] || NPESS_VENDEDOR_SC[n]));
+    if (fromMap) return normNomeUtilizador(fromMap);
+  }
+  // Texto após «COD - …»
+  let rest = s.replace(/^\d{6,}\s*[-–—:]\s*/, '').trim();
+  rest = rest.replace(/\s+/g, ' ');
+  const direct = normNomeUtilizador(rest);
+  if (UTILIZADOR_EMAILS[direct]) return direct;
+  // «BOTTELLO MASSIMO» → «MASSIMO BOTTELLO» (e pares de 2–3 tokens)
+  const parts = direct.split(' ').filter(Boolean);
+  if (parts.length >= 2) {
+    const swapped = normNomeUtilizador(parts.slice(1).concat(parts[0]).join(' '));
+    if (UTILIZADOR_EMAILS[swapped]) return swapped;
+  }
+  // Match por tokens (todos os tokens do alvo presentes no input)
+  const tokens = new Set(parts);
+  if (tokens.size) {
+    for (const nome of Object.keys(UTILIZADOR_EMAILS)) {
+      const nt = nome.split(' ').filter(Boolean);
+      if (nt.length && nt.every(t => tokens.has(t))) return nome;
+    }
+  }
+  return direct;
+}
+
 function getEmailUtilizador(nome) {
-  return UTILIZADOR_EMAILS[normNomeUtilizador(nome)] || '';
+  const key = resolveNomeUtilizador(nome) || normNomeUtilizador(nome);
+  return UTILIZADOR_EMAILS[key] || '';
 }
 
 // Filipe Neves = supervisor só do Horeca — CC automático apenas nesse canal.
@@ -36982,20 +37034,61 @@ function remetenteEhMarcio(remetente) {
 }
 
 /**
+ * Email do comercial do cliente (SAP «99520003 - BOTTELLO…», nome, ou NPess).
+ * Regra app-wide: se não for ele a enviar, tem de ir em CC.
+ */
+function emailComercialCliente(vendedorRaw) {
+  if (typeof getEmailUtilizador !== 'function') return '';
+  return getEmailUtilizador(vendedorRaw) || '';
+}
+
+/**
+ * Acrescenta o comercial do cliente ao CC se o remetente não for ele.
+ * Usar em todos os emails sobre um cliente (MC00, cadastro, contratos, AT, …).
+ */
+function ccComComercialCliente(cc, vendedorRaw, remetente) {
+  const list = typeof outlookMailtoAddrList === 'function'
+    ? outlookMailtoAddrList(cc)
+    : [].concat(cc || []).filter(Boolean);
+  const vendEmail = emailComercialCliente(vendedorRaw);
+  if (!vendEmail) return list;
+  const rem = remetente != null
+    ? remetente
+    : (typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '');
+  const vendNome = (typeof resolveNomeUtilizador === 'function'
+    ? resolveNomeUtilizador(vendedorRaw)
+    : '') || String(vendedorRaw || '');
+  if (typeof remetenteEhUtilizador === 'function'
+      && remetenteEhUtilizador(rem, vendNome, vendEmail)) {
+    return list;
+  }
+  if (list.some(e => String(e).toLowerCase() === vendEmail.toLowerCase())) return list;
+  return typeof outlookMailtoAddrList === 'function'
+    ? outlookMailtoAddrList(list.concat(vendEmail))
+    : list.concat(vendEmail);
+}
+
+/**
  * CC base do MC00 (antes do ccString por canal):
  * - Se o remetente é o vendedor do cliente → Carlos em cópia.
  * - Se outro (ex.: Carlos) faz MC00 num cliente dele → vendedor responsável em cópia.
  * - Se outro admin faz → vendedor + Carlos (oversight).
  * Horeca/Varejo/Ecommerce: ccString acrescenta Filipe/Diogo/Marcio se faltar.
+ * Aceita vendedor em formato SAP («99520003 - BOTTELLO MASSIMO»).
  */
 function mc00MontarCc(d, remetente) {
   const carlos = EMAIL_MC00_CC_CARLOS;
-  const vendNome = (d && d.vendedor) || '';
-  const vendEmail = typeof getEmailUtilizador === 'function' ? getEmailUtilizador(vendNome) : '';
+  const vendRaw = (d && d.vendedor) || '';
+  const vendNome = (typeof resolveNomeUtilizador === 'function'
+    ? resolveNomeUtilizador(vendRaw)
+    : '') || vendRaw;
+  const vendEmail = typeof emailComercialCliente === 'function'
+    ? emailComercialCliente(vendRaw)
+    : (typeof getEmailUtilizador === 'function' ? getEmailUtilizador(vendRaw) : '');
   const rem = remetente != null
     ? remetente
     : (typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '');
-  const remEhVend = !!(vendNome && remetenteEhUtilizador(rem, vendNome, vendEmail));
+  const remEhVend = !!(vendEmail && remetenteEhUtilizador(rem, vendNome, vendEmail));
   const remEhCarlos = remetenteEhUtilizador(rem, 'CARLOS CASTRO', carlos);
   const out = [];
   if (remEhVend) {
@@ -42596,9 +42689,19 @@ ${remetente}${remetenteEmail ? '\n' + remetenteEmail : ''}`;
 async function prosAbrirEmailCadastro(dados, opts = {}) {
   const mail = prosCadastroMontarEmail(dados, opts);
   const ccExact = !!(opts.ccExact || mail.ccExact);
+  const remetente = (typeof getUtilizadorAtual === 'function') ? getUtilizadorAtual() : '';
+  // Comercial do cliente em CC se não for ele a enviar (toda a app).
+  let cc = mail.cc;
+  if (typeof ccComComercialCliente === 'function') {
+    cc = ccComComercialCliente(
+      cc,
+      (dados && dados.vendedor) || opts.vendedor || '',
+      remetente
+    );
+  }
   return outlookAbrirRascunho({
     to: mail.to,
-    cc: mail.cc,
+    cc,
     ccExact,
     subject: mail.subject,
     html: mail.html,
@@ -43260,7 +43363,9 @@ function mc00RefreshPagtoDropdown(canalCod, selectedPagto) {
 function mc00PagtoFromCadastro(r) {
   const live = (document.getElementById('pg-pagto')?.value || '').trim();
   if (live) return live;
-  const cad = (r?.cadastro_json && typeof r.cadastro_json === 'object') ? r.cadastro_json : {};
+  const cad = (typeof registoCadastroJson === 'function' ? registoCadastroJson(r) : null)
+    || ((r?.cadastro_json && typeof r.cadastro_json === 'object') ? r.cadastro_json : {})
+    || {};
   if (cad.pagto) return String(cad.pagto).trim();
   return '';
 }
@@ -43269,7 +43374,9 @@ function mc00PagtoFromCadastro(r) {
 function mc00SyncHeaderFromCadastro() {
   const r = window._editingRegisto;
   if (!r) return;
-  const cad = (r.cadastro_json && typeof r.cadastro_json === 'object') ? r.cadastro_json : {};
+  const cad = (typeof registoCadastroJson === 'function' ? registoCadastroJson(r) : null)
+    || ((r.cadastro_json && typeof r.cadastro_json === 'object') ? r.cadastro_json : {})
+    || {};
   const sap = (getListaClientesActiva() || []).find(c => normCod(c.cod) === normCod(r.cod)) || {};
   const live = (id) => (document.getElementById(id)?.value || '').trim();
 
@@ -44136,32 +44243,75 @@ async function preencherFichaCadastro(r) {
   if (cafeNao) cafeNao.checked = true;
 }
 
+/** Lê ficha de cadastro do registo (coluna cadastro_json ou fallback docs.__cadastro_ficha). */
+function registoCadastroJson(r) {
+  if (!r || typeof r !== 'object') return null;
+  if (r.cadastro_json && typeof r.cadastro_json === 'object') return r.cadastro_json;
+  const docs = r.docs;
+  if (docs && typeof docs === 'object' && docs.__cadastro_ficha && typeof docs.__cadastro_ficha === 'object') {
+    return docs.__cadastro_ficha;
+  }
+  return null;
+}
+
 // Guarda a ficha de cadastro completa no próprio cliente registado (registos.cadastro_json),
 // para poder consultar/editar sempre. Devolve true em caso de sucesso.
+// Se a coluna cadastro_json ainda não existir no Supabase, grava em docs.__cadastro_ficha.
 async function guardarCadastroCliente(opts) {
   opts = opts || {};
   const st = document.getElementById('edit-cadastro-status');
   if (!editingId) { toast('Abre um cliente (Editar) primeiro.', 'error'); return false; }
   const cad = prosCadastroCollectFromForm();
   if (!opts.silent && st) st.innerHTML = '<span style="color:var(--muted)">A guardar cadastro...</span>';
+  const applyLocal = (extraDocs) => {
+    if (window._editingRegisto) {
+      window._editingRegisto.cadastro_json = cad;
+      if (extraDocs) window._editingRegisto.docs = extraDocs;
+    }
+    const inAll = (allData || []).find(x => String(x.id) === String(editingId));
+    if (inAll) {
+      inAll.cadastro_json = cad;
+      if (extraDocs) inAll.docs = extraDocs;
+    }
+    try { setRegistosCache(allData); } catch (e) {}
+  };
   try {
-    const res = await fetch(`${SUPA_URL}?id=eq.${editingId}`, {
+    let res = await fetch(`${SUPA_URL}?id=eq.${editingId}`, {
       method: 'PATCH',
       headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
       body: JSON.stringify({ cadastro_json: cad })
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
-      if (/cadastro_json/.test(txt) && /column|schema/i.test(txt)) {
-        throw new Error('Falta a coluna cadastro_json na tabela registos. Corre o SQL de migração no Supabase.');
+      if (/cadastro_json/.test(txt) && /column|schema|PGRST204/i.test(txt)) {
+        const prev = (window._editingRegisto && window._editingRegisto.docs
+          && typeof window._editingRegisto.docs === 'object')
+          ? window._editingRegisto.docs
+          : {};
+        const docs = { ...prev, __cadastro_ficha: cad };
+        res = await fetch(`${SUPA_URL}?id=eq.${editingId}`, {
+          method: 'PATCH',
+          headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ docs })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status + ' (fallback docs)');
+        applyLocal(docs);
+        // Alinha prazo do MC00 em memória se estiver aberto
+        try {
+          if (typeof mc00SyncPrazoFromCadastro === 'function') mc00SyncPrazoFromCadastro();
+        } catch (_) {}
+        if (!opts.silent) {
+          toast('✅ Cadastro guardado.');
+          if (st) st.innerHTML = '<span style="color:#16a34a">Cadastro guardado no cliente.</span>';
+        }
+        return true;
       }
-      throw new Error('HTTP ' + res.status);
+      throw new Error(txt || ('HTTP ' + res.status));
     }
-    // Atualiza memória e cache para consulta imediata (sem recarregar).
-    if (window._editingRegisto) window._editingRegisto.cadastro_json = cad;
-    const inAll = (allData || []).find(x => String(x.id) === String(editingId));
-    if (inAll) inAll.cadastro_json = cad;
-    try { setRegistosCache(allData); } catch (e) {}
+    applyLocal();
+    try {
+      if (typeof mc00SyncPrazoFromCadastro === 'function') mc00SyncPrazoFromCadastro();
+    } catch (_) {}
     if (!opts.silent) {
       toast('✅ Cadastro guardado.');
       if (st) st.innerHTML = '<span style="color:#16a34a">Cadastro guardado no cliente.</span>';
@@ -44169,7 +44319,7 @@ async function guardarCadastroCliente(opts) {
     return true;
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro ao guardar: ${e.message}</span>`;
-    toast('Erro ao guardar cadastro: ' + e.message, 'error');
+    if (!opts.silent) toast('Erro ao guardar cadastro: ' + e.message, 'error');
     return false;
   }
 }
@@ -47849,12 +47999,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-23-outlook-eml-sem-popup: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-23-cc-comercial-sap: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-23-outlook-eml-sem-popup';
+  var CACHE_KEEP = 'v2026-11-23-cc-comercial-sap';
 
   function tryRegister() {
     try {
