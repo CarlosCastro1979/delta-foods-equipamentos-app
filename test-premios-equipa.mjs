@@ -69,6 +69,23 @@ check('mensal: ≥100% paga; <100% zero; sem obj zero', () => {
   assert.equal(pe.premiosPctCumprimento(50, null), null);
 });
 
+check('var. obj. %: (N−obj)/obj — Excel/menu, não base 100', () => {
+  assert.ok(Math.abs(pe.premiosVarObjPct(339848.80, 350129) - ((339848.80 - 350129) / 350129)) < 1e-9);
+  assert.ok(pe.premiosVarObjPct(339848.80, 350129) < 0); // Set Filipe ≈ −3%
+  assert.ok(Math.abs(pe.premiosVarObjPct(118, 100) - 0.18) < 1e-9);
+  assert.equal(pe.peFmtVarObj(-0.03), '−3%');
+  assert.equal(pe.peFmtVarObj(0.186), '+18,6%');
+  assert.equal(pe.peFmtVarObj(0), '0%');
+  // Cumprimento 0.97 (= −3%) NÃO paga
+  assert.equal(pe.premiosValorMensal(pe.premiosPctCumprimento(339848.80, 350129), 3000), 0);
+});
+
+check('YYYY-MM → mês 1–12 (sem off-by-one: Set=9 não 8)', () => {
+  assert.deepEqual(pe.premiosYmParaMesAno('2026-09'), { ano: 2026, mes: 9 });
+  assert.deepEqual(pe.premiosYmParaMesAno('2026-01'), { ano: 2026, mes: 1 });
+  assert.deepEqual(pe.premiosYmParaMesAno('2026-12'), { ano: 2026, mes: 12 });
+});
+
 check('comissão: (fat−55k)×2,3%; abaixo de 55k = 0', () => {
   assert.equal(pe.premiosComissaoExcedente(54999), 0);
   assert.equal(pe.premiosComissaoExcedente(55000), 0);
@@ -126,10 +143,10 @@ check('Marcio 99% → 0; 100% → 500', () => {
   assert.equal(pe.premiosCalcularPessoaMes(cfg, serie, 3).premio, 500);
 });
 
-check('Cache SW / dfb-build alinhados (premios-equipa)', () => {
-  assert.ok(html.includes('v2026-11-23-premios-equipa'));
-  assert.ok(sw.includes('v2026-11-23-premios-equipa'));
-  assert.ok(/<!--\s*dfb-build:[^>]*premios-equipa[^>]*-->/.test(html.slice(0, 400)));
+check('Cache SW / dfb-build alinhados (premios-mes-var)', () => {
+  assert.ok(html.includes('v2026-11-23-premios-mes-var'));
+  assert.ok(sw.includes('v2026-11-23-premios-mes-var'));
+  assert.ok(/<!--\s*dfb-build:[^>]*premios-mes-var[^>]*-->/.test(html.slice(0, 400)));
 });
 
 if (!process.exitCode) console.log('\nTodos os testes Prémios Equipa passaram.');

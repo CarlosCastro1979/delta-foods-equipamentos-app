@@ -1,6 +1,6 @@
-// Service Worker v2026-11-23-premios-equipa — Premios Equipa Financeira (mensal+trim+2.3%)
+// Service Worker v2026-11-23-premios-mes-var — Premios: mes 1-12 + var obj %
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-23-premios-equipa';
+const CACHE = 'v2026-11-23-premios-mes-var';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
