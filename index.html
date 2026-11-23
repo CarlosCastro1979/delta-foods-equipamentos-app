@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-23-cc-comercial-sap CC comercial SAP (BOTTELLO MASSIMO) -->
+<!-- dfb-build: v2026-11-23-cadastro-tel-alteracao Cadastro alteracao: Tel opcional se SAP sem telefone -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -10780,9 +10780,22 @@ async function carregarListaSAP(event) {
   const iCidade = findH(/^(cid|cidade|localidade|municipio|local)\b/);
   const iUF     = findH(/^(uf|regiao|estado|rg)\b/);
   const iEmail  = findH(/e-?mail|mail|correo/);
-  const _telIdx = findAll(/tel|fone|celular|telefone|phone/);
-  const iTel1   = _telIdx[0] != null ? _telIdx[0] : -1;
-  const iTel2   = _telIdx[1] != null ? _telIdx[1] : -1;
+  // Telefone: pontuar cabeçalhos (evitar falsos positivos tipo «Hotel»).
+  // Lista publicada actual: 0% com tel1 — o Excel SAP muitas vezes usa «Telefone» / «Telf.» / «Telemóvel».
+  const _telScored = [];
+  headers.forEach((h, idx) => {
+    const low = String(h || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const compact = low.replace(/[^a-z0-9]+/g, '');
+    let score = 0;
+    if (/telefone|telemovel|telf|celular|whatsapp|\bphone\b/.test(low)) score += 10;
+    if (/^tel\d*$/.test(compact) || /^fone\d*$/.test(compact)) score += 8;
+    if (/\btel\b|\bfone\b|n[ºo°]?\s*tel|nr\.?\s*tel/.test(low)) score += 5;
+    if (/fax|hotel|cartel|hostel/.test(low)) score -= 20;
+    if (score > 0) _telScored.push({ idx, score });
+  });
+  _telScored.sort((a, b) => b.score - a.score || a.idx - b.idx);
+  const iTel1 = _telScored[0] != null ? _telScored[0].idx : -1;
+  const iTel2 = _telScored[1] != null ? _telScored[1].idx : -1;
   const iIE     = findH(/inscr.*estad|^ie$|insc\.?\s*est|i\.?\s*e\.?$/);
   // Rota do vendedor (export SAP BR: coluna ZD)
   const iZD     = findH(/^zd$|^z\.?\s*d\.?$|zona\s*de\s*distrib|rota\s*(zd|sap)?$/);
@@ -11015,7 +11028,16 @@ function mesclarSapNoCadastro(cadOrig, sap, opts) {
   set('canal', pgCanalFromSap(sap.canal), 'Canal');
   set('vendedor', pgVendedorSapFromNome(sap.vendedor), 'Vendedor');
   set('regiao', pgRegiaoFromCep(sap.cep), 'Região');
-  set('pagto', sap.pagto, 'Cond. Pagamento');
+  // CPgt SAP costuma vir só o código (BRE3) — normalizar para o label do dropdown.
+  let pagtoVal = sap.pagto;
+  if (pagtoVal != null && String(pagtoVal).trim()) {
+    const code = String(pagtoVal).trim().split(/\s+/)[0].toUpperCase();
+    if (typeof PRAZOS_PAGAMENTO !== 'undefined' && PRAZOS_PAGAMENTO[code]
+        && typeof prazoPagtoLabel === 'function') {
+      pagtoVal = prazoPagtoLabel(code);
+    }
+  }
+  set('pagto', pagtoVal, 'Cond. Pagamento');
   return { cad, changed: campos.length > 0, campos };
 }
 
@@ -41806,9 +41828,17 @@ function prosCadastroMergedFromLead(p, useForm) {
   };
 }
 
-function prosValidarCadastroObrigatorio(data) {
+/**
+ * opts.alteracao: cliente já em SAP — Tel. 1 não bloqueia (a lista publicada
+ * muitas vezes vem sem telefone; 0% dos ~29k clientes têm tel1).
+ */
+function prosValidarCadastroObrigatorio(data, opts) {
+  const alteracao = !!(opts && opts.alteracao)
+    || (typeof _modoAlteracaoRegisto !== 'undefined' && !!_modoAlteracaoRegisto)
+    || /altera[cç][aã]o\s+de\s+(cliente|cnpj)/i.test(String((data && data.motivo) || ''));
   const missing = [];
   PROS_CADASTRO_OBRIGATORIOS.forEach(([key, label]) => {
+    if (alteracao && (key === 'tel1' || key === 'tel2')) return;
     if (key !== 'cnpj' && !(data[key] || '').trim()) missing.push(label);
   });
   if ((data.cnpj || '').replace(/\D/g, '').length !== 14) missing.push('CNPJ / CPF (14 dígitos)');
@@ -42887,7 +42917,7 @@ async function prosExportarAlteracaoCnpj() {
   }
   const data = prosCadastroCollectFromForm();
   data.motivo = 'Alteração de CNPJ';
-  const emFalta = prosValidarCadastroObrigatorio(data);
+  const emFalta = prosValidarCadastroObrigatorio(data, { alteracao: true });
   if (emFalta.length) {
     const idMap = {
       'Nome / Razão Social': 'pg-nome', 'CNPJ / CPF': 'pg-cnpj', 'CNPJ / CPF (14 dígitos)': 'pg-cnpj',
@@ -44163,6 +44193,11 @@ async function preencherFichaCadastro(r) {
   } else if (via.filled) {
     stMsg = '<span style="color:#166534">Morada completada via CEP (ViaCEP).</span>';
   }
+  if (naLista && sapRico && !(sap.tel1 || '').toString().trim()) {
+    const telHint = '<span style="color:#b45309">Lista SAP sem telefone para este cliente — '
+      + 'preenche Tel. 1 se souberes; na alteração não bloqueia o envio.</span>';
+    stMsg = stMsg ? (stMsg + '<br>' + telHint) : telHint;
+  }
   if (stCad && stMsg) stCad.innerHTML = stMsg;
   window._editCadastroStatusMsg = stMsg;
 
@@ -44329,7 +44364,8 @@ async function alteracaoCadastralExportar() {
   _editCadAutoSaveTimer = null;
   const st = document.getElementById('edit-cadastro-status');
   const data = prosCadastroCollectFromForm();
-  const emFalta = prosValidarCadastroObrigatorio(data);
+  // Cliente já em SAP: não exigir Tel. 1 (lista publicada muitas vezes sem telefone).
+  const emFalta = prosValidarCadastroObrigatorio(data, { alteracao: true });
   if (emFalta.length) {
     const idMap = {
       'Nome / Razão Social': 'pg-nome', 'CNPJ / CPF': 'pg-cnpj', 'CNPJ / CPF (14 dígitos)': 'pg-cnpj',
@@ -47999,12 +48035,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-23-cc-comercial-sap: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-23-cadastro-tel-alteracao: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-23-cc-comercial-sap';
+  var CACHE_KEEP = 'v2026-11-23-cadastro-tel-alteracao';
 
   function tryRegister() {
     try {
