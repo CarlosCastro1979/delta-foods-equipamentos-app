@@ -795,7 +795,7 @@ check('browser aceita ponte com-v3+ e NUNCA faz POST a pontes antigas', () => {
   assert.ok(html.includes('OUTLOOK_BRIDGE_MIN_MAJOR = 3') || html.includes('OUTLOOK_BRIDGE_MIN_MAJOR=3'));
   assert.ok(html.includes('outlookBridgeVersionOk'));
   assert.ok(html.includes('outlookProbeBridgeVersion'));
-  assert.ok(html.includes('Atualizar-Ponte-Outlook.bat'));
+  assert.ok(fs.existsSync(path.join(root, 'Atualizar-Ponte-Outlook.bat')), 'bat opcional ainda no repo');
   const ver = html.slice(html.indexOf('function outlookBridgeVersionOk'), html.indexOf('function outlookWarnPonteDesatualizada'));
   assert.ok(ver.includes('com-v') && ver.includes('MIN_MAJOR'), 'aceita com-v3+ (todos os canais)');
   const post = html.slice(html.indexOf('async function outlookPostDraft'), html.indexOf('let _outlookFindInflight'));
@@ -838,15 +838,16 @@ check('serve.ps1 silent prefer 8090 (evita CORS de outros processos em 8088)', (
   assert.ok(!todos.includes("like '*DeltaFoodsOutlookBridge*'"), 'filtro antigo suicida removido');
 });
 
-check('App: ajuda ponte (este PC + comando IT) sem auto-download do .bat', () => {
-  assert.ok(html.includes('function outlookMostrarAjudaPonte'));
-  assert.ok(html.includes('function outlookDescarregarBatPonte'));
-  assert.ok(html.includes('outlook-ponte-overlay'));
-  assert.ok(html.includes('Instalar-Ponte-Outlook-Todos.ps1'));
-  // Não descarregar .bat sozinho no warn/export — só por clique
+check('App: sem popup instalador — fallback .eml sem nag do .bat', () => {
+  assert.ok(!html.includes('outlook-ponte-overlay'), 'sem modal instalador');
+  assert.ok(!html.includes('function outlookMostrarAjudaPonte'));
+  assert.ok(!html.includes('function outlookDescarregarBatPonte'));
   const warn = html.slice(html.indexOf('function outlookWarnPonteDesatualizada'), html.indexOf('async function outlookProbeBridgeVersion'));
-  assert.ok(warn.includes('outlookMostrarAjudaPonte'));
-  assert.ok(!warn.includes('outlookDescarregarBatPonte()'), 'warn não descarrega bat');
+  assert.ok(warn.includes('.eml') || warn.includes('Transferências'));
+  assert.ok(!warn.includes('outlookDescarregarBatPonte'));
+  const abrir = html.slice(html.indexOf('async function outlookAbrirRascunho'), html.indexOf('\nfunction isAdmin()'));
+  assert.ok(abrir.includes('outlookDownloadEml'));
+  assert.ok(!abrir.includes('outlookMostrarAjudaPonte'));
 });
 
 check('SW não intercepta localhost nem API Outlook (Private Network Access)', () => {
