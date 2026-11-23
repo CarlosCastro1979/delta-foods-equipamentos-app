@@ -169,10 +169,93 @@ check('MC00 no editar: aba existe; email reutiliza EMAIL_MC00_TO', () => {
   const toM = html.match(/const EMAIL_MC00_TO = '([^']+)'/);
   assert.equal(toM[1], 'condicoes.especiais@gruponabeiro.com');
   const bloco = html.slice(html.indexOf('async function mc00AbrirEmail'));
-  const fn = bloco.slice(0, 2500);
+  const fn = bloco.slice(0, 2800);
   assert.ok(fn.includes('to: EMAIL_MC00_TO'));
-  assert.ok(fn.includes('ccString(EMAIL_MC00_CC'));
+  assert.ok(fn.includes('mc00MontarCc'));
+  assert.ok(html.includes('function mc00MontarCc'));
+  assert.ok(html.includes('function remetenteEhMarcio'));
+  assert.ok(html.includes('CC_FIXO_MARCIO'));
   assert.equal((html.match(/async function mc00AbrirEmail/g) || []).length, 1);
+});
+
+check('MC00 CC: vendedor em cópia; se for ele a enviar → Carlos', () => {
+  const emails = {
+    'MARCIO GORGA': 'marcio.gorga@deltafoodsbrasil.com.br',
+    'DIOGO OLIVEIRA': 'diogo.oliveira@deltafoodsbrasil.com.br',
+    'MASSIMO BOTTELLO': 'massimo.bottello@deltafoodsbrasil.com.br',
+    'CARLOS CASTRO': 'carlos.castro@deltafoodsbrasil.com.br',
+  };
+  const ctx = {
+    console,
+    String,
+    Array,
+    Set,
+    EMAIL_MC00_CC_CARLOS: 'carlos.castro@deltafoodsbrasil.com.br',
+    getEmailUtilizador(nome) {
+      const k = String(nome || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      return emails[k] || '';
+    },
+    normNomeUtilizador(s) {
+      return String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    },
+    outlookMailtoAddrList(input) {
+      const raw = Array.isArray(input) ? input : [input];
+      const seen = new Set();
+      const out = [];
+      for (const item of raw) {
+        for (const part of String(item == null ? '' : item).split(/[,;]/)) {
+          const e = String(part || '').trim();
+          if (!e || e.indexOf('@') < 1) continue;
+          const k = e.toLowerCase();
+          if (seen.has(k)) continue;
+          seen.add(k);
+          out.push(e);
+        }
+      }
+      return out;
+    },
+  };
+  vm.createContext(ctx);
+  for (const name of ['remetenteEhUtilizador', 'mc00MontarCc']) {
+    vm.runInContext(extractFn(html, name), ctx);
+  }
+  // Carlos faz MC00 de cliente do Marcio → Marcio em CC (sem Carlos a auto-copiar)
+  assert.deepEqual(
+    ctx.mc00MontarCc({ vendedor: 'MARCIO GORGA' }, 'Carlos Castro'),
+    ['marcio.gorga@deltafoodsbrasil.com.br']
+  );
+  // Marcio faz o próprio MC00 → Carlos em CC
+  assert.deepEqual(
+    ctx.mc00MontarCc({ vendedor: 'MARCIO GORGA' }, 'Marcio Gorga'),
+    ['carlos.castro@deltafoodsbrasil.com.br']
+  );
+  // Carlos faz MC00 de cliente do Diogo → Diogo
+  assert.deepEqual(
+    ctx.mc00MontarCc({ vendedor: 'DIOGO OLIVEIRA' }, 'Carlos Castro'),
+    ['diogo.oliveira@deltafoodsbrasil.com.br']
+  );
+  // Diogo faz → Carlos
+  assert.deepEqual(
+    ctx.mc00MontarCc({ vendedor: 'DIOGO OLIVEIRA' }, 'Diogo Oliveira'),
+    ['carlos.castro@deltafoodsbrasil.com.br']
+  );
+  // Massimo faz → Carlos; Carlos faz de Massimo → Massimo
+  assert.deepEqual(
+    ctx.mc00MontarCc({ vendedor: 'MASSIMO BOTTELLO' }, 'Massimo Bottello'),
+    ['carlos.castro@deltafoodsbrasil.com.br']
+  );
+  assert.deepEqual(
+    ctx.mc00MontarCc({ vendedor: 'MASSIMO BOTTELLO' }, 'Carlos Castro'),
+    ['massimo.bottello@deltafoodsbrasil.com.br']
+  );
+});
+
+check('MC00 export aquace ponte e não descarrega Excel antes do Outlook', () => {
+  const fn = extractFn(html, 'mc00Exportar');
+  assert.ok(fn.includes('skipDownload: true'));
+  assert.ok(fn.includes('outlookFindLiveApi'));
+  assert.ok(fn.includes("ok === 'eml'") || fn.includes('ok === "eml"'));
+  assert.ok(!fn.includes("toast('✅ MC00 gerado!')"));
 });
 
 check('MC00 grupo default: Horeca HORECA; Varejo/Ecommerce RETALHO; 13 DISTRIBUIDORES; 03 OFFICE', () => {
@@ -219,10 +302,10 @@ check('switchSubTab redirecciona Novo/Por Registar no Varejo via canalRegistosTa
   assert.ok(fn.includes('_distAllowNovoForm'), 'Dist continua a poder abrir o form forçado');
 });
 
-check('Cache SW / dfb-build alinhados (ecommerce-clientes-mc00)', () => {
-  assert.ok(html.includes('v2026-11-19-ecommerce-clientes-mc00'));
-  assert.ok(sw.includes('v2026-11-19-ecommerce-clientes-mc00'));
-  assert.ok(/<!--\s*dfb-build:[^>]*ecommerce-clientes-mc00[^>]*-->/.test(html.slice(0, 300)));
+check('Cache SW / dfb-build alinhados (mc00-cc-outlook)', () => {
+  assert.ok(html.includes('v2026-11-23-mc00-cc-outlook'));
+  assert.ok(sw.includes('v2026-11-23-mc00-cc-outlook'));
+  assert.ok(/<!--\s*dfb-build:[^>]*mc00-cc-outlook[^>]*-->/.test(html.slice(0, 300)));
 });
 
 if (process.exitCode) process.exit(process.exitCode);

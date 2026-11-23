@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-19-ecommerce-clientes-mc00 Registo+MC00 Ecommerce sem site 09 -->
+<!-- dfb-build: v2026-11-23-mc00-cc-outlook MC00 CC responsavel + ponte Outlook -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -36904,10 +36904,14 @@ function getEmailUtilizador(nome) {
 const CC_FIXO_FILIPE = 'filipe.neves@deltafoodsbrasil.com.br';
 // Diogo Oliveira = supervisor Varejo / Dist. retalho — CC se o remetente não for ele.
 const CC_FIXO_DIOGO = getEmailUtilizador('DIOGO OLIVEIRA') || 'diogo.oliveira@deltafoodsbrasil.com.br';
+// Marcio Gorga = responsável Ecommerce — CC se o remetente não for ele.
+const CC_FIXO_MARCIO = getEmailUtilizador('MARCIO GORGA') || 'marcio.gorga@deltafoodsbrasil.com.br';
 /** Destino único do email MC00 (HTML, mailto e .eml). Não usar o email do Carlos em Para. */
 const EMAIL_MC00_TO = 'condicoes.especiais@gruponabeiro.com';
-/** CC do MC00: Carlos. Horeca: Filipe via ccString. Varejo: Diogo via ccString. */
-const EMAIL_MC00_CC = ['carlos.castro@deltafoodsbrasil.com.br'];
+/** Carlos: CC quando o vendedor responsável é quem envia o MC00 (ou oversight se outro admin envia). */
+const EMAIL_MC00_CC_CARLOS = 'carlos.castro@deltafoodsbrasil.com.br';
+/** @deprecated usar EMAIL_MC00_CC_CARLOS / mc00MontarCc — mantido p/ testes e fallbacks. */
+const EMAIL_MC00_CC = [EMAIL_MC00_CC_CARLOS];
 /** Cadastro / Abertura de Cliente: Carlos pede aprovação; Daniela recebe o já aprovado. */
 const EMAIL_CADASTRO_CARLOS = 'carlos.castro@deltafoodsbrasil.com.br';
 const EMAIL_CADASTRO_DANIELA = 'daniela.kucinski@deltafoodsbrasil.com.br';
@@ -36939,22 +36943,68 @@ function isCanalListaSapActivo() {
     || (typeof isCanalEcommerceActivo === 'function' && isCanalEcommerceActivo());
 }
 
-/** True se o remetente (nome ou email) for o Diogo Oliveira. */
-function remetenteEhDiogo(remetente) {
-  const diogo = String(CC_FIXO_DIOGO || '').toLowerCase();
-  if (!diogo) return false;
+/**
+ * Remetente (nome ou email) é este utilizador?
+ * Usado no CC do MC00 / emails: responsável em cópia excepto se for ele a enviar.
+ */
+function remetenteEhUtilizador(remetente, nomeAlvo, emailAlvo) {
+  const alvoEmail = String(
+    emailAlvo
+    || (typeof getEmailUtilizador === 'function' ? getEmailUtilizador(nomeAlvo) : '')
+    || ''
+  ).toLowerCase();
   let nome = String(remetente == null ? '' : remetente).trim();
   if (!nome && typeof getUtilizadorAtual === 'function') {
     nome = String(getUtilizadorAtual() || '').trim();
   }
   if (!nome) return false;
-  if (nome.includes('@')) return nome.toLowerCase() === diogo;
+  if (nome.includes('@')) return !!(alvoEmail && nome.toLowerCase() === alvoEmail);
   if (typeof getEmailUtilizador === 'function') {
     const em = getEmailUtilizador(nome);
-    if (em && em.toLowerCase() === diogo) return true;
+    if (em && alvoEmail && em.toLowerCase() === alvoEmail) return true;
+  }
+  if (typeof normNomeUtilizador === 'function') {
+    return normNomeUtilizador(nome) === normNomeUtilizador(nomeAlvo);
   }
   const norm = nome.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-  return norm === 'DIOGO OLIVEIRA';
+  const alvo = String(nomeAlvo || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  return !!(norm && alvo && norm === alvo);
+}
+
+/** True se o remetente (nome ou email) for o Diogo Oliveira. */
+function remetenteEhDiogo(remetente) {
+  return remetenteEhUtilizador(remetente, 'DIOGO OLIVEIRA', CC_FIXO_DIOGO);
+}
+
+/** True se o remetente (nome ou email) for o Marcio Gorga. */
+function remetenteEhMarcio(remetente) {
+  return remetenteEhUtilizador(remetente, 'MARCIO GORGA', CC_FIXO_MARCIO);
+}
+
+/**
+ * CC base do MC00 (antes do ccString por canal):
+ * - Se o remetente é o vendedor do cliente → Carlos em cópia.
+ * - Se outro (ex.: Carlos) faz MC00 num cliente dele → vendedor responsável em cópia.
+ * - Se outro admin faz → vendedor + Carlos (oversight).
+ * Horeca/Varejo/Ecommerce: ccString acrescenta Filipe/Diogo/Marcio se faltar.
+ */
+function mc00MontarCc(d, remetente) {
+  const carlos = EMAIL_MC00_CC_CARLOS;
+  const vendNome = (d && d.vendedor) || '';
+  const vendEmail = typeof getEmailUtilizador === 'function' ? getEmailUtilizador(vendNome) : '';
+  const rem = remetente != null
+    ? remetente
+    : (typeof getUtilizadorAtual === 'function' ? getUtilizadorAtual() : '');
+  const remEhVend = !!(vendNome && remetenteEhUtilizador(rem, vendNome, vendEmail));
+  const remEhCarlos = remetenteEhUtilizador(rem, 'CARLOS CASTRO', carlos);
+  const out = [];
+  if (remEhVend) {
+    out.push(carlos);
+  } else {
+    if (vendEmail) out.push(vendEmail);
+    if (!remEhCarlos) out.push(carlos);
+  }
+  return typeof outlookMailtoAddrList === 'function' ? outlookMailtoAddrList(out) : out;
 }
 
 /** Remove lixo invisível / pontuação que o Gmail marca a vermelho. */
@@ -36990,10 +37040,12 @@ function outlookMailtoAddrList(input) {
 // Monta CC.
 // Horeca: inclui sempre o Filipe; noutros canais nunca o inclui.
 // Varejo / Dist. retalho: inclui o Diogo excepto se já estiver no To/CC ou for o remetente.
+// Ecommerce: inclui o Marcio excepto se já estiver no To/CC ou for o remetente.
 // Separador no .eml / Outlook desktop: ponto-e-vírgula (PT-BR).
 function ccString(cc, opts) {
   const filipe = CC_FIXO_FILIPE.toLowerCase();
   const diogo = String((typeof CC_FIXO_DIOGO !== 'undefined' && CC_FIXO_DIOGO) || '').toLowerCase();
+  const marcio = String((typeof CC_FIXO_MARCIO !== 'undefined' && CC_FIXO_MARCIO) || '').toLowerCase();
   const toList = outlookMailtoAddrList(opts && opts.to);
   const remetente = opts && Object.prototype.hasOwnProperty.call(opts, 'remetente')
     ? opts.remetente
@@ -37010,6 +37062,14 @@ function ccString(cc, opts) {
       arr = arr.filter(e => e.toLowerCase() !== diogo);
     } else if (!arr.some(e => e.toLowerCase() === diogo)) {
       arr = outlookMailtoAddrList(arr.concat(CC_FIXO_DIOGO));
+    }
+  }
+  if (typeof isCanalEcommerceActivo === 'function' && isCanalEcommerceActivo() && marcio) {
+    const jaEmTo = toList.some(e => e.toLowerCase() === marcio);
+    if ((typeof remetenteEhMarcio === 'function' && remetenteEhMarcio(remetente)) || jaEmTo) {
+      arr = arr.filter(e => e.toLowerCase() !== marcio);
+    } else if (!arr.some(e => e.toLowerCase() === marcio)) {
+      arr = outlookMailtoAddrList(arr.concat(CC_FIXO_MARCIO));
     }
   }
   return arr.join('; ');
@@ -37871,7 +37931,8 @@ async function outlookAbrirRascunho({
   ccExact = false,
 } = {}) {
   // Outlook PT-BR: vários endereços no CC separados por ponto-e-vírgula
-  // Sempre ccString: Filipe (Horeca) e Diogo (Varejo, se o remetente não for ele).
+  // Sempre ccString: Filipe (Horeca), Diogo (Varejo), Marcio (Ecommerce) —
+  // excepto se o remetente for o próprio supervisor.
   // ccExact: a lista pedida, sem acrescentar o supervisor do canal (comissão de RC).
   const remetenteNome = (typeof getUtilizadorAtual === 'function') ? getUtilizadorAtual() : '';
   let ccVal;
@@ -42774,6 +42835,11 @@ async function editSwitchTab(tab) {
     if (modal) modal.classList.add('modal-wide-cad');
   } else if (tab === 'mc00') {
     garantirFichaCadastralEmCasa();
+    // Pré-aquecer ponte Outlook (PNA) antes do clique em exportar — igual Horeca.
+    if (typeof outlookIsWindowsPc === 'function' && outlookIsWindowsPc()
+        && typeof outlookFindLiveApi === 'function') {
+      try { outlookFindLiveApi().catch(() => null); } catch (_) {}
+    }
     if (!_editMc00Preenchido) {
       const st = document.getElementById('mc00-status');
       if (st) st.innerHTML = '<span style="color:var(--muted)">A carregar MC00...</span>';
@@ -43591,15 +43657,26 @@ async function mc00Exportar() {
   await guardarMc00Cliente({ silent: true });
   if (st) st.innerHTML = '<span style="color:var(--muted)">A gerar MC00…</span>';
   try {
-    // Excel vai em anexo no Outlook — não forçar Save As do .xlsx (roubava o foco).
+    // Aquecer a ponte enquanto o Excel gera — evita PNA/timeout e cair no .eml em Transferências.
+    const bridgeWarm = (typeof outlookIsWindowsPc === 'function' && outlookIsWindowsPc()
+      && typeof outlookFindLiveApi === 'function')
+      ? outlookFindLiveApi().catch(() => null)
+      : Promise.resolve(null);
+    // Excel vai em anexo no Outlook — nunca Save As / download do .xlsx aqui.
     const excel = await mc00GerarExcel(data, { skipDownload: true });
-    toast('✅ MC00 gerado!');
-    if (st) st.innerHTML = '<span style="color:#16a34a">MC00 gerado — a abrir email no Outlook...</span>';
+    await bridgeWarm;
+    if (st) st.innerHTML = '<span style="color:#16a34a">A abrir email no Outlook…</span>';
     const ok = await mc00AbrirEmail(data, excel?.blob, excel?.filename);
     if (st) {
-      st.innerHTML = ok
-        ? '<span style="color:#16a34a">Outlook aberto com MC00 em anexo.</span>'
-        : '<span style="color:#b45309">No tablet: Outlook abre o email e o Excel MC00 é descarregado — anexa o .xlsx ao email. No PC Windows: Instalar-Abertura-Automatica-Outlook.bat (1×).</span>';
+      if (ok === true) {
+        st.innerHTML = '<span style="color:#16a34a">Outlook aberto com MC00 em anexo.</span>';
+      } else if (ok === 'dialog') {
+        st.innerHTML = '<span style="color:#b45309">Fecha a caixa de diálogo do Outlook e volta a exportar (sem downloads).</span>';
+      } else if (ok === 'eml') {
+        st.innerHTML = '<span style="color:#b45309">Ponte Outlook offline — abre o .eml nas Transferências (já tem o Excel). Corre Atualizar-Ponte-Outlook.bat uma vez.</span>';
+      } else {
+        st.innerHTML = '<span style="color:#b45309">No tablet: Outlook abre o email e o Excel MC00 é descarregado — anexa o .xlsx. No PC Windows: Atualizar-Ponte-Outlook.bat (1×).</span>';
+      }
     }
   } catch (e) {
     if (st) st.innerHTML = `<span style="color:var(--danger)">Erro: ${escHtml(e.message)}</span>`;
@@ -43873,17 +43950,14 @@ Aguardo a vossa aprovação.
 Cumprimentos,
 ${remetente}`;
 
+  // Lista em bruto — outlookAbrirRascunho aplica ccString (Filipe/Diogo/Marcio por canal).
+  // Não pré-formatar com ccString aqui (evitava acrescentar o responsável do cliente).
+  const ccList = typeof mc00MontarCc === 'function'
+    ? mc00MontarCc(d, remetente)
+    : (EMAIL_MC00_CC || [EMAIL_MC00_CC_CARLOS]);
   return outlookAbrirRascunho({
     to: EMAIL_MC00_TO,
-    // Para: condições especiais; CC Carlos (Filipe no Horeca / Diogo no Varejo via ccString)
-    cc: typeof ccString === 'function'
-      ? ccString(EMAIL_MC00_CC, { to: EMAIL_MC00_TO, remetente })
-      : EMAIL_MC00_CC.concat(
-          isCanalHorecaActivo() ? [CC_FIXO_FILIPE] : [],
-          (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo()
-            && !(typeof remetenteEhDiogo === 'function' && remetenteEhDiogo(remetente))
-            ? [CC_FIXO_DIOGO] : [])
-        ).join('; '),
+    cc: ccList,
     subject: `MC00 - Condições Especiais - ${d.nome || d.cod || 'Cliente'}`,
     html,
     attachments: excelBlob ? [{ blob: excelBlob, filename: excelFilename || 'MC00.xlsx' }] : [],
@@ -47737,12 +47811,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-19-ecommerce-clientes-mc00: Ecommerce Clientes+MC00 (sem site 09). SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-23-mc00-cc-outlook: MC00 CC responsavel + ponte. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-19-ecommerce-clientes-mc00';
+  var CACHE_KEEP = 'v2026-11-23-mc00-cc-outlook';
 
   function tryRegister() {
     try {
