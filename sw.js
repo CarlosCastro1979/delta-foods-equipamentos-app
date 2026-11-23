@@ -1,6 +1,6 @@
-// Service Worker v2026-11-23-outlook-ponte-todos — Instalador IT / todos os PCs
+// Service Worker v2026-11-23-outlook-eml-sem-popup — Sem popup instalador; .eml
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-23-outlook-ponte-todos';
+const CACHE = 'v2026-11-23-outlook-eml-sem-popup';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
