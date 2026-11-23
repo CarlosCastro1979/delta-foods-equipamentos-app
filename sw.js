@@ -1,6 +1,6 @@
-// Service Worker v2026-11-23-mc00-cc-outlook — MC00 CC responsavel + ponte Outlook
+// Service Worker v2026-11-23-outlook-ponte-seq — Ponte Outlook sequencial (sem flood .eml)
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-23-mc00-cc-outlook';
+const CACHE = 'v2026-11-23-outlook-ponte-seq';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

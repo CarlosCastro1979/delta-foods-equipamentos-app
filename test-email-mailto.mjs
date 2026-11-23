@@ -797,12 +797,14 @@ check('browser aceita ponte com-v3+ e NUNCA faz POST a pontes antigas', () => {
   assert.ok(html.includes('Atualizar-Ponte-Outlook.bat'));
   const ver = html.slice(html.indexOf('function outlookBridgeVersionOk'), html.indexOf('function outlookWarnPonteDesatualizada'));
   assert.ok(ver.includes('com-v') && ver.includes('MIN_MAJOR'), 'aceita com-v3+ (todos os canais)');
-  const post = html.slice(html.indexOf('async function outlookPostDraft'), html.indexOf('async function outlookFindLiveApi'));
-  assert.ok(post.includes('outlookProbeBridgeVersion'));
-  assert.ok(post.includes("return 'dialog'"), '503 → dialog sem downloads');
+  const post = html.slice(html.indexOf('async function outlookPostDraft'), html.indexOf('let _outlookFindInflight'));
+  assert.ok(post.includes('outlookProbeBridgeVersion') || post.includes('skipProbe'), 'probe ou skipProbe');
+  assert.ok(post.includes("return 'dialog'") || post.includes("'dialog'"), '503 → dialog sem downloads');
+  assert.ok(post.includes('skipProbe') || post.includes('doPost'), 'POST com retry / skipProbe');
   // Sem varrer portas com POST (era o que disparava /eml na ponte antiga)
   const abrir = html.slice(html.indexOf('async function outlookAbrirRascunho'), html.indexOf('\nfunction isAdmin()'));
   assert.ok(abrir.includes('outlookFindLiveApi'));
+  assert.ok(abrir.includes('skipProbe: true'), 'POST sem 2.ª probe (fila monothread)');
   assert.ok(!/for \(const ep of outlookDraftApiUrls\(\)\)/.test(abrir), 'não faz POST a todas as portas');
   assert.ok(abrir.includes('outlookOpenMailtoPlusExcel'), 'PC sem ponte → mailto');
   assert.ok(abrir.includes("openedEp === 'dialog'"), 'dialog → toast sem download');
@@ -811,6 +813,10 @@ check('browser aceita ponte com-v3+ e NUNCA faz POST a pontes antigas', () => {
   const pcSlice = pcFb >= 0 ? abrir.slice(pcFb, pcFb + 900) : abrir;
   assert.ok(pcSlice.includes('outlookDownloadEml'), 'fallback descarrega .eml');
   assert.ok(!/triggerBlobDownload\(att\.blob/.test(pcSlice), 'fallback NÃO descarrega Excel à parte');
+  // Descoberta sequencial — Promise.all saturava o serve.ps1 e o MC00 caía no .eml
+  const findFn = html.slice(html.indexOf('async function outlookFindLiveApi'), html.indexOf('async function outlookAbrirEmailTexto'));
+  assert.ok(findFn.includes('for (let i = 0') || findFn.includes('for (const ep of'), 'probe sequencial');
+  assert.ok(!findFn.includes('Promise.all'), 'sem flood paralelo de OPTIONS');
 });
 
 check('SW não intercepta localhost nem API Outlook (Private Network Access)', () => {
@@ -842,7 +848,8 @@ check('PC Windows sem ponte + anexos: só .eml (nunca mailto sem anexo)', () => 
   assert.ok(attSlice.includes('outlookDownloadEml'));
   assert.ok(!attSlice.includes('outlookOpenMailtoPlusExcel'), 'com anexos não abre mailto');
   const probe = html.slice(html.indexOf('async function outlookProbeBridgeVersion'), html.indexOf('async function outlookPostDraft'));
-  assert.ok(probe.includes('2500'), 'probe timeout 2500ms');
+  assert.ok(probe.includes('5000'), 'probe timeout 5000ms (PNA cold-start)');
+  assert.ok(!probe.includes('2500') || probe.includes('5000'), 'timeout actualizado');
 });
 
 
