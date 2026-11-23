@@ -46,18 +46,28 @@
     return (Number(mensal) || 0) * 3;
   }
 
-  /** Cumprimento vendas/obj; null se sem objectivo. */
+  /** Cumprimento vendas/obj (1 = 100%); null se sem objectivo. */
   function premiosPctCumprimento(vendas, obj) {
     if (obj == null || !Number.isFinite(+obj) || +obj <= 0) return null;
     var v = Number.isFinite(+vendas) ? +vendas : 0;
     return v / (+obj);
   }
 
+  /**
+   * Variação vs objectivo (Excel / menu Vendas): (vendas − obj) / obj.
+   * Ex.: −0.03 → «−3%» (abaixo); +0.186 → «+18,6%» (acima).
+   */
+  function premiosVarObjPct(vendas, obj) {
+    if (obj == null || !Number.isFinite(+obj) || +obj <= 0) return null;
+    var v = Number.isFinite(+vendas) ? +vendas : 0;
+    return (v - (+obj)) / (+obj);
+  }
+
   function premiosAtingiuMeta(pct) {
     return pct != null && Number.isFinite(+pct) && +pct >= 1;
   }
 
-  /** Prémio mensal: ≥ 100% → valor; senão 0. Sem % → 0. */
+  /** Prémio mensal: vendas ≥ obj (var ≥ 0) → valor; senão 0. */
   function premiosValorMensal(pct, valorMensal) {
     if (!premiosAtingiuMeta(pct)) return 0;
     return Number(valorMensal) || 0;
@@ -108,6 +118,7 @@
     var obj = cell.obj;
     var temVendas = !!cell.temVendas;
     var pct = premiosPctCumprimento(vendas, obj);
+    var varPct = premiosVarObjPct(vendas, obj);
     var premio = premiosValorMensal(pct, pessoa.mensal);
     var comissao = pessoa.comissao ? premiosComissaoExcedente(vendas) : 0;
     var totalMes = premio + comissao;
@@ -134,6 +145,7 @@
       premiosMensaisTrim.push(premiosValorMensal(pctI, pessoa.mensal));
     }
     var pctTrim = temObjTrim ? premiosPctCumprimento(vendasTrim, objTrim) : null;
+    var varPctTrim = temObjTrim ? premiosVarObjPct(vendasTrim, objTrim) : null;
     var atingiuTrim = premiosAtingiuMeta(pctTrim);
     var tecto = premiosTectoTrim(pessoa.mensal);
     var premioTrim = premiosValorTrim(atingiuTrim, pessoa.trim);
@@ -152,6 +164,7 @@
       temVendas: temVendas,
       obj: obj != null && Number.isFinite(+obj) ? +obj : null,
       pct: pct,
+      varPct: varPct,
       atingiu: premiosAtingiuMeta(pct),
       premio: premio,
       comissao: comissao,
@@ -160,6 +173,7 @@
       vendasTrim: temVendTrim ? vendasTrim : null,
       objTrim: temObjTrim ? objTrim : null,
       pctTrim: pctTrim,
+      varPctTrim: varPctTrim,
       atingiuTrim: atingiuTrim,
       tecto: tecto,
       premioTrim: premioTrim,
@@ -214,10 +228,20 @@
     return (typeof window !== 'undefined') ? window : (typeof globalThis !== 'undefined' ? globalThis : {});
   }
 
+  /** YYYY-MM → mês 1–12 (periodoComparacaoQuadro usa 1–12, NÃO 0–11). */
+  function premiosYmParaMesAno(ym) {
+    var s = String(ym || '');
+    var y = parseInt(s.slice(0, 4), 10);
+    var m = parseInt(s.slice(5, 7), 10);
+    return { ano: y, mes: m };
+  }
+
   function peSomarCanal(quadro, ym, empresa, canal, nomes, cods) {
     var h = peHost();
-    var periodo = (typeof h.periodoComparacaoQuadro === 'function')
-      ? h.periodoComparacaoQuadro(parseInt(String(ym).slice(5), 10) - 1, parseInt(String(ym).slice(0, 4), 10))
+    var ma = premiosYmParaMesAno(ym);
+    // periodoComparacaoQuadro(mes, ano) espera mês 1–12 (igual ao menu Vendas).
+    var periodo = (typeof h.periodoComparacaoQuadro === 'function' && ma.mes >= 1 && ma.mes <= 12)
+      ? h.periodoComparacaoQuadro(ma.mes, ma.ano)
       : { ym: ym, ymsSel: [ym] };
     var nomeMap = null;
     if (nomes && nomes.length) {
@@ -379,9 +403,21 @@
     return (+n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   }
 
-  function pePct(pct) {
-    if (pct == null || !Number.isFinite(+pct)) return '—';
-    return ((+pct) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+  /** Formata variação vs obj: «+18,6%» / «−3%» (não base 100). */
+  function peFmtVarObj(varPct) {
+    if (varPct == null || !Number.isFinite(+varPct)) return '—';
+    var p = (+varPct) * 100;
+    var abs = Math.abs(p).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+    if (p > 0) return '+' + abs + '%';
+    if (p < 0) return '−' + abs + '%';
+    return '0%';
+  }
+
+  /** Aceita cumprimento (vendas/obj) ou já a variação; mostra sempre vs objectivo. */
+  function pePct(cumprimentoOuVar, jaEVar) {
+    if (cumprimentoOuVar == null || !Number.isFinite(+cumprimentoOuVar)) return '—';
+    var v = jaEVar ? +cumprimentoOuVar : (+cumprimentoOuVar - 1);
+    return peFmtVarObj(v);
   }
 
   function peFillMesAno() {
@@ -458,7 +494,7 @@
       + '<th style="text-align:left;padding:8px 10px;">Vendedor</th>'
       + '<th style="text-align:right;padding:8px 10px;">Vendas</th>'
       + '<th style="text-align:right;padding:8px 10px;">Objectivo</th>'
-      + '<th style="text-align:right;padding:8px 10px;">%</th>'
+      + '<th style="text-align:right;padding:8px 10px;">Var. obj. %</th>'
       + '<th style="text-align:right;padding:8px 10px;">Prémio</th>'
       + '<th style="text-align:right;padding:8px 10px;">Comissão</th>'
       + '<th style="text-align:right;padding:8px 10px;">Total mês</th>';
@@ -472,7 +508,7 @@
     var linhas = modelo.linhas.filter(peLinhaPassaFiltro);
     for (var i = 0; i < linhas.length; i++) {
       var r = linhas[i];
-      var pctCls = r.atingiu ? 'color:#166534;font-weight:600;' : (r.pct != null ? 'color:#b45309;' : '');
+      var pctCls = r.atingiu ? 'color:#166534;font-weight:600;' : (r.varPct != null ? 'color:#b45309;' : '');
       body += '<tr style="border-bottom:1px solid var(--border);">'
         + '<td style="padding:8px 10px;">' + peEsc(r.nome)
         + (r.comissaoCfg ? ' <span style="font-size:11px;color:var(--muted);">(+2,3%)</span>' : '')
@@ -480,7 +516,7 @@
         + '</td>'
         + '<td style="padding:8px 10px;text-align:right;">' + (r.temVendas ? peRs(r.vendas) : '—') + '</td>'
         + '<td style="padding:8px 10px;text-align:right;">' + peRs(r.obj) + '</td>'
-        + '<td style="padding:8px 10px;text-align:right;' + pctCls + '">' + pePct(r.pct) + '</td>'
+        + '<td style="padding:8px 10px;text-align:right;' + pctCls + '">' + peFmtVarObj(r.varPct) + '</td>'
         + '<td style="padding:8px 10px;text-align:right;font-weight:600;">' + peRs(r.premio) + '</td>'
         + '<td style="padding:8px 10px;text-align:right;">' + (r.comissaoCfg ? peRs(r.comissao) : '—') + '</td>'
         + '<td style="padding:8px 10px;text-align:right;font-weight:700;">' + peRs(r.totalMes) + '</td>';
@@ -558,6 +594,9 @@
     PREMIOS_MESES: PREMIOS_MESES,
     premiosTectoTrim: premiosTectoTrim,
     premiosPctCumprimento: premiosPctCumprimento,
+    premiosVarObjPct: premiosVarObjPct,
+    premiosYmParaMesAno: premiosYmParaMesAno,
+    peFmtVarObj: peFmtVarObj,
     premiosAtingiuMeta: premiosAtingiuMeta,
     premiosValorMensal: premiosValorMensal,
     premiosComissaoExcedente: premiosComissaoExcedente,
