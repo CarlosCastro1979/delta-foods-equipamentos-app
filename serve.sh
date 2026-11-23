@@ -7,8 +7,11 @@ PORT="${PORT:-8080}"
 
 mkdir -p "$APP_DIR"
 for f in index.html manifest.json sw.js icon-192.png icon-512.png \
-         quebra-template.xlsx mc00-template.xlsx simulador-template.js \
-         serve.sh serve.ps1 serve.py; do
+         quebra-template.xlsx mc00-template.xlsx \
+         serve.sh serve.ps1 serve.py \
+         premios-equipa.js comissao-rc.js comissao-rc-mapa.js \
+         simulador-template.js nfe-emitidas.js pdf-lib.min.js \
+         validades-stock.js vendas-volume-familias.js; do
   if [[ -e "$ROOT/$f" ]]; then
     ln -sfn "$ROOT/$f" "$APP_DIR/$f"
   fi

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-23-cc-comercial-sap CC comercial SAP (BOTTELLO MASSIMO) -->
+<!-- dfb-build: v2026-11-23-premios-equipa Premios Equipa Financeira (mensal+trim+2.3%) -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2195,6 +2195,7 @@ var _unused_placeholder = 1;
 <script src="nfe-emitidas.js"></script>
 <script src="comissao-rc-mapa.js"></script>
 <script src="comissao-rc.js?v=2026-11-06-email"></script>
+<script src="premios-equipa.js?v=2026-11-23"></script>
 <script src="vendas-volume-familias.js"></script>
 <script src="validades-stock.js"></script>
 </head>
@@ -4092,6 +4093,7 @@ var _unused_placeholder = 1;
         <button type="button" class="sub-tab" id="af-tab-div" onclick="showAreaFinanceira('divida-sem-compras')">Dívida + sem compras ≥ 3m</button>
         <button type="button" class="sub-tab" id="af-tab-quebra" onclick="showAreaFinanceira('quebra')">Criar documento Quebra</button>
         <button type="button" class="sub-tab" id="af-tab-rc" onclick="showAreaFinanceira('comissao-rc')">Comissão de RC</button>
+        <button type="button" class="sub-tab" id="af-tab-pe" onclick="showAreaFinanceira('premios-equipa')">Prémios Equipa</button>
       </div>
       <div id="af-sec-encerramentos">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
@@ -4223,6 +4225,23 @@ var _unused_placeholder = 1;
           </div>
         </div>
         <div id="cr-host"><div style="color:var(--muted);font-size:13px;padding:12px 0;">A carregar…</div></div>
+      </div>
+      <div id="af-sec-premios-equipa" style="display:none;">
+        <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:12px;">
+          <div>
+            <h3 style="font-size:16px;font-weight:600;margin:0 0 4px;">Prémios Equipa de Vendas</h3>
+            <p style="font-size:12px;color:var(--muted);margin:0;line-height:1.45;">Apuramento automático (vendas ÷ objectivo). Meta ≥ 100%. Hélcio e Daniela: 2,3% acima de R$ 55.000. Trimestre: prémio + recuperação.</p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <label style="font-size:12px;color:var(--muted);">Mês
+              <select id="pe-mes" class="form-input" style="height:36px;min-width:120px;margin-left:6px;" onchange="premiosEquipaOnPeriodoChange()"></select>
+            </label>
+            <label style="font-size:12px;color:var(--muted);">Ano
+              <select id="pe-ano" class="form-input" style="height:36px;min-width:90px;margin-left:6px;" onchange="premiosEquipaOnPeriodoChange()"></select>
+            </label>
+          </div>
+        </div>
+        <div id="pe-host"><div style="color:var(--muted);font-size:13px;padding:12px 0;">A carregar…</div></div>
       </div>
     </div>
   </div>
@@ -45628,6 +45647,7 @@ function showAreaFinanceira(sub) {
     'divida-sem-compras': 'af-sec-divida-sem-compras',
     quebra: 'af-sec-quebra',
     'comissao-rc': 'af-sec-comissao-rc',
+    'premios-equipa': 'af-sec-premios-equipa',
   };
   Object.values(map).forEach(id => {
     const el = document.getElementById(id);
@@ -45641,11 +45661,13 @@ function showAreaFinanceira(sub) {
   document.getElementById('af-tab-div')?.classList.toggle('active', _afSubActiva === 'divida-sem-compras');
   document.getElementById('af-tab-quebra')?.classList.toggle('active', _afSubActiva === 'quebra');
   document.getElementById('af-tab-rc')?.classList.toggle('active', _afSubActiva === 'comissao-rc');
+  document.getElementById('af-tab-pe')?.classList.toggle('active', _afSubActiva === 'premios-equipa');
   if (_afSubActiva === 'encerramentos') loadAfEncerramentos();
   else if (_afSubActiva === 'contencioso') loadAfContencioso();
   else if (_afSubActiva === 'divida-sem-compras') loadAfDividaSemCompras();
   else if (_afSubActiva === 'quebra') quebraInitPanel();
   else if (_afSubActiva === 'comissao-rc' && typeof renderComissaoRc === 'function') renderComissaoRc();
+  else if (_afSubActiva === 'premios-equipa' && typeof renderPremiosEquipa === 'function') renderPremiosEquipa();
 }
 
 async function loadAfEncerramentos() {
@@ -47999,12 +48021,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-23-cc-comercial-sap: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-23-premios-equipa: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-23-cc-comercial-sap';
+  var CACHE_KEEP = 'v2026-11-23-premios-equipa';
 
   function tryRegister() {
     try {

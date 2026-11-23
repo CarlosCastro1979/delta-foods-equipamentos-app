@@ -1,0 +1,135 @@
+#!/usr/bin/env node
+/**
+ * Prémios Equipa: mensal ≥100%, comissão 2,3% acima 55k, trim + recuperação.
+ */
+import fs from 'fs';
+import path from 'path';
+import assert from 'assert';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const pe = require(path.join(root, 'premios-equipa.js'));
+const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+
+function check(title, fn) {
+  try {
+    fn();
+    console.log('OK  ' + title);
+  } catch (e) {
+    console.error('FAIL ' + title);
+    console.error(e && e.stack ? e.stack : e);
+    process.exitCode = 1;
+  }
+}
+
+check('UI: separador Prémios Equipa ao lado de Comissão de RC', () => {
+  assert.ok(html.includes("showAreaFinanceira('premios-equipa')"));
+  assert.ok(html.includes('id="af-sec-premios-equipa"'));
+  assert.ok(html.includes('id="af-tab-pe"'));
+  assert.ok(html.includes('premios-equipa.js'));
+  const iRc = html.indexOf("showAreaFinanceira('comissao-rc')");
+  const iPe = html.indexOf("showAreaFinanceira('premios-equipa')");
+  assert.ok(iRc > 0 && iPe > iRc, 'tab Prémios depois de Comissão RC');
+  assert.ok(html.includes("'premios-equipa': 'af-sec-premios-equipa'"));
+  assert.ok(html.includes('renderPremiosEquipa'));
+});
+
+check('pacotes 2026: valores mensais/trim e comissão só Hélcio/Daniela', () => {
+  const by = Object.fromEntries(pe.PREMIOS_EQUIPA_PESSOAS.map(p => [p.id, p]));
+  assert.equal(by.marcio.mensal, 500);
+  assert.equal(by.marcio.trim, 1000);
+  assert.equal(by.massimo.mensal, 3000);
+  assert.equal(by.eduardo.mensal, 3000);
+  assert.equal(by.diogo.mensal, 3000);
+  assert.equal(by.filipe.mensal, 3000);
+  assert.equal(by.filipe.scope, 'filipe_equipa');
+  assert.equal(by.helcio.mensal, 1300);
+  assert.equal(by.helcio.trim, 1600);
+  assert.equal(by.helcio.comissao, true);
+  assert.equal(by.daniela.mensal, 1300);
+  assert.equal(by.daniela.trim, 1600);
+  assert.equal(by.daniela.comissao, true);
+  assert.equal(by.paulo.mensal, 1650);
+  assert.equal(by.paulo.trim, 2050);
+  assert.equal(by.paulo.comissao, false);
+  assert.equal(pe.PREMIOS_LIMIAR_COMISSAO, 55000);
+  assert.equal(pe.PREMIOS_TAXA_COMISSAO, 0.023);
+});
+
+check('mensal: ≥100% paga; <100% zero; sem obj zero', () => {
+  assert.equal(pe.premiosValorMensal(1, 3000), 3000);
+  assert.equal(pe.premiosValorMensal(1.05, 3000), 3000);
+  assert.equal(pe.premiosValorMensal(0.99, 3000), 0);
+  assert.equal(pe.premiosValorMensal(null, 3000), 0);
+  assert.equal(pe.premiosPctCumprimento(100, 100), 1);
+  assert.equal(pe.premiosPctCumprimento(50, 100), 0.5);
+  assert.equal(pe.premiosPctCumprimento(50, null), null);
+});
+
+check('comissão: (fat−55k)×2,3%; abaixo de 55k = 0', () => {
+  assert.equal(pe.premiosComissaoExcedente(54999), 0);
+  assert.equal(pe.premiosComissaoExcedente(55000), 0);
+  const c = pe.premiosComissaoExcedente(92055);
+  assert.ok(Math.abs(c - (92055 - 55000) * 0.023) < 0.001);
+  // typo Abril Excel (5500) NÃO se replica
+  assert.ok(pe.premiosComissaoExcedente(92055, 5500) > pe.premiosComissaoExcedente(92055));
+});
+
+check('trimestre: recuperação = tecto − já pago; só se fechou trim', () => {
+  assert.equal(pe.premiosTectoTrim(3000), 9000);
+  assert.equal(pe.premiosRecuperacaoTrim(false, [0, 0, 3000], 9000), 0);
+  assert.equal(pe.premiosRecuperacaoTrim(true, [0, 0, 3000], 9000), 6000);
+  assert.equal(pe.premiosRecuperacaoTrim(true, [3000, 3000, 3000], 9000), 0);
+  assert.equal(pe.premiosRecuperacaoTrim(true, [3000, 0, 3000], 9000), 3000);
+  assert.equal(pe.premiosValorTrim(true, 1600), 1600);
+  assert.equal(pe.premiosValorTrim(false, 1600), 0);
+});
+
+check('Massimo Jan falhou / Fev falhou / Mar ok + trim ok → recuperação 6000', () => {
+  const cfg = { id: 'massimo', nome: 'Massimo', mensal: 3000, trim: 3000, comissao: false };
+  const serie = [
+    { vendas: 100, obj: 200, temVendas: true }, // 50%
+    { vendas: 100, obj: 200, temVendas: true }, // 50%
+    { vendas: 700, obj: 200, temVendas: true }, // 350% → trim ok
+  ];
+  // pad rest
+  while (serie.length < 12) serie.push({ vendas: 0, obj: null, temVendas: false });
+  const mar = pe.premiosCalcularPessoaMes(cfg, serie, 2);
+  assert.equal(mar.premio, 3000);
+  assert.ok(mar.atingiuTrim);
+  assert.equal(mar.premioTrim, 3000);
+  assert.equal(mar.recuperacao, 6000);
+  assert.equal(mar.totalFecho, 3000 + 6000 + 3000);
+  assert.equal(mar.ehFechoTrim, true);
+});
+
+check('Hélcio: prémio + comissão no mesmo mês', () => {
+  const cfg = { id: 'helcio', nome: 'Hélcio', mensal: 1300, trim: 1600, comissao: true };
+  const serie = Array.from({ length: 12 }, () => ({ vendas: 0, obj: null, temVendas: false }));
+  serie[0] = { vendas: 92055, obj: 80000, temVendas: true };
+  const jan = pe.premiosCalcularPessoaMes(cfg, serie, 0);
+  assert.equal(jan.premio, 1300);
+  assert.ok(Math.abs(jan.comissao - (92055 - 55000) * 0.023) < 0.001);
+  assert.ok(Math.abs(jan.totalMes - (1300 + jan.comissao)) < 0.001);
+  assert.equal(jan.ehFechoTrim, false);
+});
+
+check('Marcio 99% → 0; 100% → 500', () => {
+  const cfg = { id: 'marcio', nome: 'Marcio', mensal: 500, trim: 1000, comissao: false };
+  const serie = Array.from({ length: 12 }, () => ({ vendas: 0, obj: null, temVendas: false }));
+  serie[3] = { vendas: 99, obj: 100, temVendas: true };
+  assert.equal(pe.premiosCalcularPessoaMes(cfg, serie, 3).premio, 0);
+  serie[3] = { vendas: 100, obj: 100, temVendas: true };
+  assert.equal(pe.premiosCalcularPessoaMes(cfg, serie, 3).premio, 500);
+});
+
+check('Cache SW / dfb-build alinhados (premios-equipa)', () => {
+  assert.ok(html.includes('v2026-11-23-premios-equipa'));
+  assert.ok(sw.includes('v2026-11-23-premios-equipa'));
+  assert.ok(/<!--\s*dfb-build:[^>]*premios-equipa[^>]*-->/.test(html.slice(0, 400)));
+});
+
+if (!process.exitCode) console.log('\nTodos os testes Prémios Equipa passaram.');
