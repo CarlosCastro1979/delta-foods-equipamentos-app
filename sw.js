@@ -1,6 +1,6 @@
-// Service Worker v2026-11-19-ecommerce-clientes-mc00 — Ecommerce Clientes+MC00 (sem site 09)
+// Service Worker v2026-11-23-mc00-cc-outlook — MC00 CC responsavel + ponte Outlook
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-19-ecommerce-clientes-mc00';
+const CACHE = 'v2026-11-23-mc00-cc-outlook';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const CACHE = 'v2026-11-19-ecommerce-clientes-mc00';
+const CACHE = 'v2026-11-23-mc00-cc-outlook';
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 

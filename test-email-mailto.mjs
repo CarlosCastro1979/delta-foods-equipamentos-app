@@ -47,7 +47,9 @@ function extractFn(src, name) {
 const names = [
   'outlookSanitizeEmail',
   'outlookMailtoAddrList',
+  'remetenteEhUtilizador',
   'remetenteEhDiogo',
+  'remetenteEhMarcio',
   'ccString',
   'mailtoAddr',
   'mailtoToPath',
@@ -61,22 +63,27 @@ const names = [
 
 let horeca = true;
 let varejo = false;
+let ecommerce = false;
 let utilizador = 'Carlos Castro';
 const EMAILS = {
   'DIOGO OLIVEIRA': 'diogo.oliveira@deltafoodsbrasil.com.br',
+  'MARCIO GORGA': 'marcio.gorga@deltafoodsbrasil.com.br',
   'CARLOS CASTRO': 'carlos.castro@deltafoodsbrasil.com.br',
   'FILIPE NEVES': 'filipe.neves@deltafoodsbrasil.com.br',
 };
 const context = {
   CC_FIXO_FILIPE: 'filipe.neves@deltafoodsbrasil.com.br',
   CC_FIXO_DIOGO: 'diogo.oliveira@deltafoodsbrasil.com.br',
+  CC_FIXO_MARCIO: 'marcio.gorga@deltafoodsbrasil.com.br',
   isCanalHorecaActivo: () => horeca,
   isCanalVarejoActivo: () => varejo,
+  isCanalEcommerceActivo: () => ecommerce,
   getUtilizadorAtual: () => utilizador,
   getEmailUtilizador: (nome) => {
     const k = String(nome || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
     return EMAILS[k] || '';
   },
+  normNomeUtilizador: (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(),
   console,
   Date,
 };
@@ -166,17 +173,20 @@ check('outlookAbrirRascunho: cabeçalho Cc do .eml usa ; (nunca vírgula entre e
 check('Horeca: Filipe em CC, Diogo não é forçado (Carlos a enviar)', () => {
   horeca = true;
   varejo = false;
+  ecommerce = false;
   utilizador = 'Carlos Castro';
   const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br'], {
     remetente: 'Carlos Castro',
   });
   assert.ok(s.includes('filipe.neves@deltafoodsbrasil.com.br'));
   assert.equal(countAddr(s, 'diogo.oliveira'), 0);
+  assert.equal(countAddr(s, 'marcio.gorga'), 0);
 });
 
 check('Retalho + Carlos: Diogo em CC (sem duplicar, sem Filipe)', () => {
   horeca = false;
   varejo = true;
+  ecommerce = false;
   utilizador = 'Carlos Castro';
   const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br'], {
     remetente: 'Carlos Castro',
@@ -202,6 +212,7 @@ check('Retalho + Carlos: Diogo em CC (sem duplicar, sem Filipe)', () => {
 check('Retalho + Diogo remetente: não duplica o Diogo no CC', () => {
   horeca = false;
   varejo = true;
+  ecommerce = false;
   utilizador = 'Diogo Oliveira';
   const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br'], {
     remetente: 'Diogo Oliveira',
@@ -224,6 +235,7 @@ check('Retalho + Diogo remetente: não duplica o Diogo no CC', () => {
 check('Retalho: Diogo já no To não entra em CC', () => {
   horeca = false;
   varejo = true;
+  ecommerce = false;
   utilizador = 'Carlos Castro';
   const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br'], {
     to: 'diogo.oliveira@deltafoodsbrasil.com.br',
@@ -232,15 +244,42 @@ check('Retalho: Diogo já no To não entra em CC', () => {
   assert.equal(countAddr(s, 'diogo.oliveira'), 0);
 });
 
-check('fora do retalho (ex. Dist) não força Diogo nem Filipe', () => {
+check('Ecommerce + Carlos: Marcio em CC (sem Filipe/Diogo)', () => {
   horeca = false;
   varejo = false;
+  ecommerce = true;
+  utilizador = 'Carlos Castro';
+  const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br'], {
+    remetente: 'Carlos Castro',
+  });
+  assert.ok(s.includes('marcio.gorga@deltafoodsbrasil.com.br'));
+  assert.equal(countAddr(s, 'marcio.gorga'), 1);
+  assert.ok(!s.includes('filipe.neves@deltafoodsbrasil.com.br'));
+  assert.equal(countAddr(s, 'diogo.oliveira'), 0);
+});
+
+check('Ecommerce + Marcio remetente: Carlos em CC, sem Marcio', () => {
+  horeca = false;
+  varejo = false;
+  ecommerce = true;
+  utilizador = 'Marcio Gorga';
+  const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br'], {
+    remetente: 'Marcio Gorga',
+  });
+  assert.equal(countAddr(s, 'marcio.gorga'), 0);
+  assert.ok(s.includes('carlos.castro@deltafoodsbrasil.com.br'));
+});
+
+check('fora do retalho/ecommerce (ex. Dist) não força Diogo/Marcio/Filipe', () => {
+  horeca = false;
+  varejo = false;
+  ecommerce = false;
   utilizador = 'Carlos Castro';
   const s = context.ccString(['carlos.castro@deltafoodsbrasil.com.br']);
   assert.equal(countAddr(s, 'diogo.oliveira'), 0);
+  assert.equal(countAddr(s, 'marcio.gorga'), 0);
   assert.ok(!s.includes('filipe.neves@deltafoodsbrasil.com.br'));
 });
-
 check('sanitiza lixo invisível / <> que o Gmail rejeita', () => {
   const e = context.outlookSanitizeEmail('\u200B<info.br@gruponabeiro.com>;\u00A0');
   assert.equal(e, 'info.br@gruponabeiro.com');
@@ -366,16 +405,16 @@ check('MC00 mailtoFallback no código chama o quadro de produtos', () => {
   assert.equal(bodyTxt.includes('Anexa o ficheiro Excel MC00') && !bodyTxt.includes('mc00ResumoProdutosEmailText'), false);
 });
 
-check('MC00 Para é condições especiais; Carlos em CC; saudação sem nome', () => {
+check('MC00 Para é condições especiais; CC via mc00MontarCc; saudação sem nome', () => {
   const toM = html.match(/const EMAIL_MC00_TO = '([^']+)'/);
-  const ccM = html.match(/const EMAIL_MC00_CC = \[([^\]]+)\]/);
   assert.ok(toM, 'EMAIL_MC00_TO definida');
   assert.equal(toM[1], 'condicoes.especiais@gruponabeiro.com');
-  assert.ok(ccM && ccM[1].includes('carlos.castro@deltafoodsbrasil.com.br'));
+  assert.ok(html.includes("EMAIL_MC00_CC_CARLOS = 'carlos.castro@deltafoodsbrasil.com.br'")
+    || html.includes('carlos.castro@deltafoodsbrasil.com.br'));
   const bloco = html.slice(html.indexOf('async function mc00AbrirEmail'));
   const fn = bloco.slice(0, bloco.indexOf('\n}\n\n') + 1);
   assert.ok(fn.includes('to: EMAIL_MC00_TO'));
-  assert.ok(/ccString\(EMAIL_MC00_CC/.test(fn), 'MC00 usa ccString (Filipe/Diogo por canal)');
+  assert.ok(fn.includes('mc00MontarCc'), 'MC00 monta CC pelo vendedor responsável');
   assert.ok(!fn.includes("to: 'carlos.castro@deltafoodsbrasil.com.br'"));
   assert.ok(!fn.includes("to: 'condicoes.especiais@gruponabeiro.com'"),
     'usar a constante EMAIL_MC00_TO, não o literal no rascunho');
@@ -401,11 +440,18 @@ check('MC00 Para é condições especiais; Carlos em CC; saudação sem nome', (
     'um único caminho a abrir o email MC00');
 });
 
-check('mapa EMAIL + rascunho Outlook aplicam CC Diogo no retalho', () => {
+check('mapa EMAIL + rascunho Outlook aplicam CC Diogo/Marcio por canal', () => {
   assert.ok(html.includes("'DIOGO OLIVEIRA': 'diogo.oliveira@deltafoodsbrasil.com.br'"));
+  assert.ok(html.includes('marcio.gorga@deltafoodsbrasil.com.br'));
   assert.ok(html.includes("getEmailUtilizador('DIOGO OLIVEIRA')"));
   assert.ok(html.includes('function isCanalVarejoActivo'));
+  assert.ok(html.includes('function isCanalEcommerceActivo'));
   assert.ok(html.includes('function remetenteEhDiogo'));
+  assert.ok(html.includes('function remetenteEhMarcio'));
+  assert.ok(html.includes('CC_FIXO_MARCIO'));
+  const ccFn = extractFn(html, 'ccString');
+  assert.ok(ccFn.includes('isCanalEcommerceActivo'));
+  assert.ok(ccFn.includes('remetenteEhMarcio'));
   const start = html.indexOf('async function outlookAbrirRascunho');
   const end = html.indexOf('\nfunction isAdmin()', start);
   assert.ok(start >= 0 && end > start);
@@ -423,7 +469,6 @@ check('mapa EMAIL + rascunho Outlook aplicam CC Diogo no retalho', () => {
   assert.ok(cad.includes('ccExact') || cad.includes('ccString(mail.cc'));
   assert.ok(html.includes('ccString('));
 });
-
 check('mc00SaudacaoHora nunca inclui Carlos', () => {
   vm.runInContext(extractFn(html, 'mc00SaudacaoHora'), context);
   const manha = context.mc00SaudacaoHora(new Date('2026-08-28T10:00:00'));
