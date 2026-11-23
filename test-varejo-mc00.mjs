@@ -323,10 +323,35 @@ check('switchSubTab redirecciona Novo/Por Registar no Varejo via canalRegistosTa
   assert.ok(fn.includes('_distAllowNovoForm'), 'Dist continua a poder abrir o form forçado');
 });
 
-check('Cache SW / dfb-build alinhados (cc-comercial-sap)', () => {
-  assert.ok(html.includes('v2026-11-23-cc-comercial-sap'));
-  assert.ok(sw.includes('v2026-11-23-cc-comercial-sap'));
-  assert.ok(/<!--\s*dfb-build:[^>]*cc-comercial-sap[^>]*-->/.test(html.slice(0, 300)));
+check('Cache SW / dfb-build alinhados (cadastro-tel-alteracao)', () => {
+  assert.ok(html.includes('v2026-11-23-cadastro-tel-alteracao'));
+  assert.ok(sw.includes('v2026-11-23-cadastro-tel-alteracao'));
+  assert.ok(/<!--\s*dfb-build:[^>]*cadastro-tel-alteracao[^>]*-->/.test(html.slice(0, 300)));
+});
+
+check('Alteração de Cliente: Tel. 1 não bloqueia se SAP sem telefone', () => {
+  assert.ok(html.includes('alteracao: true') || html.includes('opts.alteracao'));
+  const fn = extractFn(html, 'prosValidarCadastroObrigatorio');
+  assert.ok(fn.includes('tel1') && fn.includes('alteracao'));
+  const ctx = {
+    console, String, Array,
+    PROS_CADASTRO_OBRIGATORIOS: [
+      ['nome', 'Nome / Razão Social'], ['cnpj', 'CNPJ / CPF'], ['fantasia', 'Nome Fantasia'],
+      ['email', 'Email'], ['tel1', 'Tel. 1'], ['rua', 'Rua'], ['nro', 'Nro.'], ['bairro', 'Bairro'],
+      ['cep', 'CEP'], ['cidade', 'Cidade'], ['canal', 'Canal Distribuição'], ['regiao', 'Região (Estado)'],
+      ['pagto', 'Cond. Pagamento'], ['rota', 'Rota'], ['vendedor', 'Vendedor'],
+    ],
+  };
+  vm.createContext(ctx);
+  vm.runInContext(fn, ctx);
+  const base = {
+    nome: 'BERMAR', cnpj: '41.877.273/0001-04', fantasia: 'BERMAR', email: 'a@b.com',
+    tel1: '', rua: 'RUA', nro: '1', bairro: 'B', cep: '20220-280', cidade: 'RJ',
+    canal: '13 - Revendedores', regiao: 'RJ - Rio de Janeiro', pagto: 'BRE3 - 60/90/120',
+    rota: '3 - Rota 3', vendedor: 'MASSIMO', motivo: 'Alteração de Cliente',
+  };
+  assert.ok(!ctx.prosValidarCadastroObrigatorio(base, { alteracao: true }).includes('Tel. 1'));
+  assert.ok(ctx.prosValidarCadastroObrigatorio({ ...base, motivo: 'Abertura de Cliente' }, {}).includes('Tel. 1'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);
