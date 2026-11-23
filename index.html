@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-19-vendas-horeca-sem-marcio Marcio só no Ecommerce -->
+<!-- dfb-build: v2026-11-19-ecommerce-clientes-mc00 Registo+MC00 Ecommerce sem site 09 -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2345,7 +2345,7 @@ var _unused_placeholder = 1;
         <button type="button" class="home-canal-card" data-canal="ecommerce" onclick="entrarCanal('ecommerce')">
           <span class="hc-code">Canal 2</span>
           <span class="hc-name">Ecommerce</span>
-          <span class="hc-desc">Mesmos menus (réplica). Ajustes por canal a seguir.</span>
+          <span class="hc-desc">Marcio — lista SAP e MC00 no editar. Sem clientes do site (canal 09).</span>
         </button>
         <button type="button" class="home-canal-card" data-canal="varejo" onclick="entrarCanal('varejo')">
           <span class="hc-code">Canal 3</span>
@@ -6360,8 +6360,8 @@ function renderTable() {
   if (typeof filterByUtilizadorActivo === 'function') {
     activos = filterByUtilizadorActivo(activos);
   }
-  // Varejo: NPess do Diogo = já registados — junta a lista SAP aos registos gravados
-  if (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo()
+  // Varejo / Ecommerce: NPess do canal = já registados — junta a lista SAP aos registos gravados
+  if (typeof isCanalListaSapActivo === 'function' && isCanalListaSapActivo()
       && typeof mergeVarejoSapComoRegistos === 'function') {
     const sap = typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : [];
     activos = mergeVarejoSapComoRegistos(activos, sap);
@@ -6423,10 +6423,10 @@ function renderTable() {
   const countEl = document.getElementById('record-count');
   if (countEl) {
     const isDistLista = typeof isCanalDistribuidores === 'function' && isCanalDistribuidores();
-    const isVarejoLista = typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo();
+    const isListaSap = typeof isCanalListaSapActivo === 'function' && isCanalListaSapActivo();
     countEl.textContent = isDistLista
       ? `${filtered.length} registos OK`
-      : isVarejoLista
+      : isListaSap
         ? `${filtered.length} de ${activos.length} clientes`
         : `${filtered.length} de ${activos.length} registos`;
   }
@@ -6434,12 +6434,12 @@ function renderTable() {
 
   if (!filtered.length) {
     if (tabelaBody) {
-      const isVarejoLista = typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo();
+      const isListaSap = typeof isCanalListaSapActivo === 'function' && isCanalListaSapActivo();
       pintarTbodyEmFatias(
         tabelaBody,
         [],
         () => '',
-        isVarejoLista
+        isListaSap
           ? '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum cliente encontrado.</td></tr>'
           : '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Nenhum registo encontrado.</td></tr>'
       );
@@ -6497,10 +6497,13 @@ function _applyRegistosToListaUI(rows) {
   renderTable();
 }
 
-/** Junta clientes SAP do Varejo (NPess Diogo) que ainda não têm linha em `registos`. */
+/** Junta clientes SAP (Varejo Diogo / Ecommerce Marcio) que ainda não têm linha em `registos`. */
 function mergeVarejoSapComoRegistos(registos, sapClientes) {
   const rows = Array.isArray(registos) ? registos.slice() : [];
   const have = new Set();
+  const vendDefault = (typeof isCanalEcommerceActivo === 'function' && isCanalEcommerceActivo())
+    ? 'MARCIO GORGA'
+    : 'DIOGO OLIVEIRA';
   for (const r of rows) {
     const k = typeof normCod === 'function' ? normCod(r && r.cod) : String((r && r.cod) || '').trim();
     if (k && k !== '0') have.add(k);
@@ -6514,7 +6517,7 @@ function mergeVarejoSapComoRegistos(registos, sapClientes) {
       cod: c.cod,
       nome: c.nome || '',
       cep: c.cep || '',
-      vendedor: c.vendedor || 'DIOGO OLIVEIRA',
+      vendedor: c.vendedor || vendDefault,
       contrato: '',
       contratos: [],
       equipamentos: [],
@@ -6541,7 +6544,7 @@ async function loadData(forceRefresh = false) {
     try { await distCargaLoadAll(false); } catch (_) {}
   }
   // Varejo: lista = clientes SAP do Diogo (já considerados registados)
-  if (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo()
+  if (typeof isCanalListaSapActivo === 'function' && isCanalListaSapActivo()
       && typeof sincronizarListaClientes === 'function') {
     try { await sincronizarListaClientes(); } catch (_) {}
   }
@@ -9863,7 +9866,7 @@ async function fetchRegistoById(id) {
   }
 }
 
-/** Garante uma linha em `registos` para o cliente SAP do Varejo (lazy, no Editar/MC00). */
+/** Garante uma linha em `registos` para o cliente SAP (Varejo/Ecommerce — lazy no Editar/MC00). */
 async function ensureRegistoVarejoCliente(cliOrCod) {
   const cli = (cliOrCod && typeof cliOrCod === 'object') ? cliOrCod : { cod: cliOrCod };
   const cod = cli.cod;
@@ -9874,7 +9877,10 @@ async function ensureRegistoVarejoCliente(cliOrCod) {
     ? (getListaClientesActiva() || []).find(c => (typeof normCod === 'function' ? normCod(c.cod) : String(c.cod || '').trim()) === alvo)
     : null) || {};
   const nome = cli.nome || sap.nome || '';
-  const vendedor = cli.vendedor || sap.vendedor || 'DIOGO OLIVEIRA';
+  const vendDefault = (typeof isCanalEcommerceActivo === 'function' && isCanalEcommerceActivo())
+    ? 'MARCIO GORGA'
+    : 'DIOGO OLIVEIRA';
+  const vendedor = cli.vendedor || sap.vendedor || vendDefault;
   const cep = cli.cep || sap.cep || '';
 
   const mem = (allData || []).find(r => r && r.id && (typeof normCod === 'function' ? normCod(r.cod) : String(r.cod || '').trim()) === alvo);
@@ -10466,8 +10472,8 @@ async function corrigirCodRevisao(codOrig) {
 }
 
 function preencherNovo(cod, nome, cep, vendedor) {
-  // Varejo: não há Novo Registo — abrir editar (MC00) do cliente SAP
-  if (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo()) {
+  // Varejo / Ecommerce: não há Novo Registo — abrir editar (MC00) do cliente SAP
+  if (typeof isCanalListaSapActivo === 'function' && isCanalListaSapActivo()) {
     if (typeof openEditClienteSap === 'function') openEditClienteSap(cod);
     return;
   }
@@ -11830,31 +11836,11 @@ async function loadResumo() {
       ? 'cursor:pointer;text-decoration:underline;text-underline-offset:2px;'
       : '';
     const contCardOn = nContencioso ? `onclick="showAnalise('clientes-contencioso')" title="Ver Clientes no Contencioso"` : '';
-    const isEcommerce = (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : _canalActivo) === 'ecommerce';
 
     let html = `<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin-left:24px;">`;
 
-    // Ecommerce: sem menu Registo Clientes → só Total + Contencioso (sem Registados/Cobertura)
-    if (isEcommerce) {
-      html += `<div style="${wrap}">
-      <div style="${title}">Clientes</div>
-      <div style="${cards}">
-        <div style="${card('#f9f9f9','#e8e8e8')}"><div style="${num('#333')}">${totalSistema}</div><div style="${lbl('var(--muted)')}">Total</div></div>
-        <div ${contCardOn} style="${card('#FEF2F2','#FECACA')}${contCardClick}"><div style="${num('#7f1d1d')}">${nContencioso || '—'}</div><div style="${lbl('#991b1b')}">Contencioso</div></div>
-      </div>
-      <table style="width:auto;border-collapse:collapse;">
-        <thead><tr style="background:#f5f5f5;border-bottom:2px solid var(--accent);">
-          <th style="${th}text-align:left;">Vendedor</th>
-          <th style="${th}text-align:center;">Total</th>
-        </tr></thead><tbody>`;
-      Object.entries(vendedores).sort((a,b) => b[1].total - a[1].total || a[0].localeCompare(b[0])).forEach(([vend, s], i) => {
-        html += `<tr style="background:${i%2===0?'#fff':'#fafafa'}">
-          <td style="${td}font-weight:500;">${vend}</td>
-          <td style="${td}text-align:center;">${s.total}</td>
-        </tr>`;
-      });
-      html += `</tbody></table></div>`;
-    } else {
+    // Ecommerce: mesma cobertura de registos (lista SAP + MC00; site 09 fora da lista)
+    {
       html += `<div style="${wrap}">
       <div style="${title}">Registo de Clientes</div>
       <div style="${cards}">
@@ -12078,11 +12064,12 @@ const CANAIS_APP = {
   ecommerce: {
     id: 'ecommerce',
     nome: 'Ecommerce',
-    // Retalho / Institucional / Sellers (NPess Marcio) — descoberta alarga via clientes
-    sapCanais: ['01', '03'],
+    // 01 Retalho/Lojas · 03 Institucional · 13 Sellers/QB — sem 09 (site próprio)
+    sapCanais: ['01', '03', '13'],
     // Acesso login: Marcio; NPess Online/Institucional/Restauração QB → display Marcio Gorga
+    // 99520009 (site) fica nos códigos SAP mas é excluído da lista/MC00 deste menu
     vendedores: ['Marcio Gorga'],
-    // 01/08/09 = online; 11/12/05 = Institucional Balcão; 99530003 = Restauração Q Brasil
+    // 01/08/09 = online/site; 11/12/05 = Institucional Balcão; 99530003 = Restauração Q Brasil
     vendedorCods: [99520001, 99520009, 99520008, 99520011, 99520012, 99520005, 99530003],
   },
   varejo: {
@@ -12290,6 +12277,15 @@ function filterPgVendedoresPorEmpresa(vendedoresSap, gn) {
   });
 }
 
+/** Site próprio do Marcio — fora do menu Ecommerce (lista / MC00). */
+function clienteEcommerceEhSite(cli) {
+  if (!cli) return false;
+  const ch = String(cli.canal == null ? '' : cli.canal).replace(/\D/g, '').padStart(2, '0').slice(-2);
+  if (ch === '09') return true;
+  const np = parseInt(cli.npess, 10);
+  return np === 99520009;
+}
+
 /** Cliente pertence ao canal? NPess é autoridade exclusiva; senão nome do vendedor do canal. */
 function clientePertenceAoCanal(cli, canalId) {
   if (!cli) return false;
@@ -12298,6 +12294,10 @@ function clientePertenceAoCanal(cli, canalId) {
   if (ov) return !!id && ov === id;
   const c = CANAIS_APP[id];
   if (!c) return true; // sem canal activo → não filtrar
+  // Ecommerce: ignora clientes do site (canal SAP 09 / NPess 99520009)
+  if (id === 'ecommerce' && typeof clienteEcommerceEhSite === 'function' && clienteEcommerceEhSite(cli)) {
+    return false;
+  }
   const nomes = getVendedoresNomesDoCanal(c.id);
   const cods = getVendedorCodsDoCanal(c.id);
   const sapCanais = (c.sapCanais || []).map(x => String(x).padStart(2, '0'));
@@ -12388,11 +12388,9 @@ function atualizarCanalBar(label) {
   document.querySelectorAll('.tab-hide-varejo').forEach(t => {
     t.style.display = (_canalActivo === 'varejo') ? 'none' : '';
   });
-  // Ecommerce: sem Registo Clientes
+  // Ecommerce: Registo Clientes + MC00 activos (lista SAP; site 09 excluído)
   const tabRegistos = document.getElementById('tab-registos');
-  if (tabRegistos) {
-    tabRegistos.style.display = (_canalActivo === 'ecommerce') ? 'none' : '';
-  }
+  if (tabRegistos) tabRegistos.style.display = '';
 }
 
 let _canalPinPendente = null; // canalId à espera de PIN
@@ -22993,12 +22991,9 @@ function switchTab(tab) {
     abrirDadosHome();
     return;
   }
-  if (tab === 'registos' && _canalActivo === 'ecommerce') {
-    tab = 'analise';
-  }
   if (tab === 'visitas' && _canalActivo !== 'horeca') {
     toast('Visitas do dia só está disponível no canal Horeca.', 'warn');
-    tab = (_canalActivo === 'ecommerce') ? 'analise' : 'registos';
+    tab = 'registos';
   }
   if ((tab === 'at' || tab === 'historico-at') && _canalActivo === 'varejo') {
     toast('Pedido AT e Histórico AT não estão disponíveis no Varejo.', 'warn');
@@ -36931,6 +36926,19 @@ function isCanalVarejoActivo() {
   return id === 'varejo';
 }
 
+function isCanalEcommerceActivo() {
+  const id = typeof resolveCanalActivoId === 'function'
+    ? resolveCanalActivoId()
+    : (typeof _canalActivo !== 'undefined' ? _canalActivo : null);
+  return id === 'ecommerce';
+}
+
+/** Varejo e Ecommerce: lista SAP + MC00 no editar (sem Novo / Por Registar). */
+function isCanalListaSapActivo() {
+  return (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo())
+    || (typeof isCanalEcommerceActivo === 'function' && isCanalEcommerceActivo());
+}
+
 /** True se o remetente (nome ou email) for o Diogo Oliveira. */
 function remetenteEhDiogo(remetente) {
   const diogo = String(CC_FIXO_DIOGO || '').toLowerCase();
@@ -43215,9 +43223,11 @@ function mc00NormalizeGrupo(v) {
   return 'HORECA';
 }
 
-/** Grupo MC00 por canal: Varejo/Dist. retalho → RETALHO (13 → DISTRIBUIDORES). Horeca inalterado. */
+/** Grupo MC00 por canal: Varejo/Ecommerce → RETALHO (13 → DISTRIBUIDORES; 03 → OFFICE). Horeca inalterado. */
 function mc00GrupoDefaultCanal(r) {
-  if (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo()) {
+  if ((typeof isCanalListaSapActivo === 'function' && isCanalListaSapActivo())
+      || (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo())
+      || (typeof isCanalEcommerceActivo === 'function' && isCanalEcommerceActivo())) {
     const sap = (typeof getListaClientesActiva === 'function'
       ? (getListaClientesActiva() || []).find(c => (typeof normCod === 'function' ? normCod(c.cod) : String(c.cod || '').trim()) === (typeof normCod === 'function' ? normCod(r && r.cod) : String((r && r.cod) || '').trim()))
       : null) || {};
@@ -43226,17 +43236,18 @@ function mc00GrupoDefaultCanal(r) {
       ? mc00NormalizeCanal(cad.canal || sap.canal || '')
       : String(cad.canal || sap.canal || '');
     if (String(canal).startsWith('13')) return 'DISTRIBUIDORES';
+    if (String(canal).startsWith('03')) return 'OFFICE';
     return 'RETALHO';
   }
   return 'HORECA';
 }
 
-/** Mostra a aba MC00 no editar (Horeca e Varejo). Dist Massimo não é alterado. */
+/** Mostra a aba MC00 no editar (Horeca, Varejo e Ecommerce). Dist Massimo não é alterado. */
 function adaptarEditTabsCanal() {
   const btnM = document.getElementById('edit-tab-btn-mc00');
   if (!btnM) return;
   if ((typeof isCanalHorecaActivo === 'function' && isCanalHorecaActivo())
-      || (typeof isCanalVarejoActivo === 'function' && isCanalVarejoActivo())) {
+      || (typeof isCanalListaSapActivo === 'function' && isCanalListaSapActivo())) {
     btnM.style.display = '';
   }
 }
@@ -47726,12 +47737,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-19-vendas-horeca-sem-marcio: Marcio só no Ecommerce. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-19-ecommerce-clientes-mc00: Ecommerce Clientes+MC00 (sem site 09). SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-19-vendas-horeca-sem-marcio';
+  var CACHE_KEEP = 'v2026-11-19-ecommerce-clientes-mc00';
 
   function tryRegister() {
     try {
@@ -49856,7 +49867,7 @@ function isCanalDistribuidores() {
 
 /**
  * Tabs do menu Registo Clientes por canal.
- * Varejo (Diogo): sem Novo / Por Registar — NPess do Diogo = já registados.
+ * Varejo (Diogo) / Ecommerce (Marcio): sem Novo / Por Registar — lista SAP + MC00.
  * Dist (Massimo): sem Novo; Por registar + Contratos em falta.
  * Horeca: Novo + Por Registar + Todos os Registos.
  */
@@ -49865,15 +49876,15 @@ function canalRegistosTabsState(canalId) {
     || (typeof resolveCanalActivoId === 'function' ? resolveCanalActivoId() : (typeof _canalActivo !== 'undefined' ? _canalActivo : null))
     || null;
   const isDist = id === 'distribuidores';
-  const isVarejo = id === 'varejo';
+  const isListaSap = id === 'varejo' || id === 'ecommerce';
   return {
     canalId: id,
-    hideNovo: isDist || isVarejo,
-    hidePendentes: isVarejo,
+    hideNovo: isDist || isListaSap,
+    hidePendentes: isListaSap,
     hideContratosFalta: !isDist,
     listaLabel: isDist ? 'Registos OK' : 'Todos os Registos',
     pendLabel: isDist ? 'Por registar' : 'Por Registar',
-    startSub: isDist ? 'pendentes' : (isVarejo ? 'lista' : 'novo'),
+    startSub: isDist ? 'pendentes' : (isListaSap ? 'lista' : 'novo'),
   };
 }
 

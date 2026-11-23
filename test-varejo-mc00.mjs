@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * Varejo / Dist. retalho (Diogo):
- *  - sem Novo Registo / Por Registar (clientes SAP já registados)
+ * Varejo / Ecommerce (lista SAP) + Dist. retalho:
+ *  - Varejo/Ecommerce: sem Novo Registo / Por Registar (clientes SAP já registados)
  *  - lista junta SAP; Editar abre MC00 como no Horeca
+ *  - Ecommerce: exclui site (canal 09 / NPess 99520009)
  *  - Dist Massimo e Horeca MC00 inalterados
  */
 import fs from 'fs';
@@ -13,6 +14,7 @@ import path from 'path';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
 function extractFn(src, name) {
   const start = src.indexOf(`function ${name}(`);
@@ -45,9 +47,14 @@ const context = {
   String,
   Array,
   Set,
+  parseInt,
   _canalActivo: null,
   resolveCanalActivoId() { return context._canalActivo; },
   isCanalVarejoActivo() { return context._canalActivo === 'varejo'; },
+  isCanalEcommerceActivo() { return context._canalActivo === 'ecommerce'; },
+  isCanalListaSapActivo() {
+    return context._canalActivo === 'varejo' || context._canalActivo === 'ecommerce';
+  },
   getListaClientesActiva() { return context._sap || []; },
   normCod(v) { return String(v || '').trim().replace(/^0+/, '') || '0'; },
 };
@@ -57,6 +64,7 @@ for (const name of [
   'mergeVarejoSapComoRegistos',
   'mc00NormalizeCanal',
   'mc00GrupoDefaultCanal',
+  'clienteEcommerceEhSite',
 ]) {
   vm.runInContext(extractFn(html, name), context);
 }
@@ -88,6 +96,38 @@ check('Varejo Diogo: sem Novo e sem Por Registar, arranque lista', () => {
   assert.equal(st.hideContratosFalta, true);
   assert.equal(st.startSub, 'lista');
   assert.equal(st.listaLabel, 'Todos os Registos');
+});
+
+check('Ecommerce Marcio: sem Novo e sem Por Registar, arranque lista', () => {
+  const st = context.canalRegistosTabsState('ecommerce');
+  assert.equal(st.hideNovo, true);
+  assert.equal(st.hidePendentes, true);
+  assert.equal(st.hideContratosFalta, true);
+  assert.equal(st.startSub, 'lista');
+  assert.equal(st.listaLabel, 'Todos os Registos');
+});
+
+check('Ecommerce: tab Registo Clientes visível; site 09 fora de sapCanais', () => {
+  assert.ok(html.includes('id="tab-registos"'));
+  assert.ok(html.includes('Ecommerce: Registo Clientes + MC00 activos'));
+  assert.ok(html.includes("function isCanalEcommerceActivo"));
+  assert.ok(html.includes("function isCanalListaSapActivo"));
+  assert.ok(html.includes("function clienteEcommerceEhSite"));
+  // sapCanais ecommerce sem 09
+  const m = html.match(/ecommerce:\s*\{[\s\S]*?sapCanais:\s*\[([^\]]+)\]/);
+  assert.ok(m, 'sapCanais ecommerce');
+  const canais = m[1].replace(/['"\s]/g, '').split(',').filter(Boolean);
+  assert.deepEqual(canais, ['01', '03', '13']);
+  assert.ok(!canais.includes('09'));
+});
+
+check('Ecommerce: clientes site (canal 09 / NPess 99520009) ignorados', () => {
+  assert.equal(context.clienteEcommerceEhSite({ canal: '09', npess: 99520001 }), true);
+  assert.equal(context.clienteEcommerceEhSite({ canal: '9', npess: 99520001 }), true);
+  assert.equal(context.clienteEcommerceEhSite({ canal: '01', npess: 99520009 }), true);
+  assert.equal(context.clienteEcommerceEhSite({ canal: '01', npess: 99520001 }), false);
+  assert.equal(context.clienteEcommerceEhSite({ canal: '03', npess: 99520005 }), false);
+  assert.ok(html.includes("id === 'ecommerce'") && html.includes('clienteEcommerceEhSite'));
 });
 
 check('Varejo não é Dist (comodato Massimo intacto)', () => {
@@ -125,7 +165,7 @@ check('MC00 no editar: aba existe; email reutiliza EMAIL_MC00_TO', () => {
   assert.ok(html.includes('function adaptarEditTabsCanal'));
   const adapt = extractFn(html, 'adaptarEditTabsCanal');
   assert.ok(adapt.includes('isCanalHorecaActivo'));
-  assert.ok(adapt.includes('isCanalVarejoActivo'));
+  assert.ok(adapt.includes('isCanalListaSapActivo'));
   const toM = html.match(/const EMAIL_MC00_TO = '([^']+)'/);
   assert.equal(toM[1], 'condicoes.especiais@gruponabeiro.com');
   const bloco = html.slice(html.indexOf('async function mc00AbrirEmail'));
@@ -135,7 +175,7 @@ check('MC00 no editar: aba existe; email reutiliza EMAIL_MC00_TO', () => {
   assert.equal((html.match(/async function mc00AbrirEmail/g) || []).length, 1);
 });
 
-check('MC00 grupo default: Horeca HORECA; Varejo RETALHO; canal 13 DISTRIBUIDORES', () => {
+check('MC00 grupo default: Horeca HORECA; Varejo/Ecommerce RETALHO; 13 DISTRIBUIDORES; 03 OFFICE', () => {
   context._canalActivo = 'horeca';
   assert.equal(context.mc00GrupoDefaultCanal({}), 'HORECA');
   context._canalActivo = 'varejo';
@@ -143,6 +183,13 @@ check('MC00 grupo default: Horeca HORECA; Varejo RETALHO; canal 13 DISTRIBUIDORE
   assert.equal(context.mc00GrupoDefaultCanal({ cod: '749355' }), 'RETALHO');
   context._sap = [{ cod: '749355', canal: '13' }];
   assert.equal(context.mc00GrupoDefaultCanal({ cod: '749355' }), 'DISTRIBUIDORES');
+  context._canalActivo = 'ecommerce';
+  context._sap = [{ cod: '800001', canal: '01' }];
+  assert.equal(context.mc00GrupoDefaultCanal({ cod: '800001' }), 'RETALHO');
+  context._sap = [{ cod: '800002', canal: '03' }];
+  assert.equal(context.mc00GrupoDefaultCanal({ cod: '800002' }), 'OFFICE');
+  context._sap = [{ cod: '800003', canal: '13' }];
+  assert.equal(context.mc00GrupoDefaultCanal({ cod: '800003' }), 'DISTRIBUIDORES');
 });
 
 check('Editar lista chama openEditRegistoOuSap (SAP sem id)', () => {
@@ -150,8 +197,18 @@ check('Editar lista chama openEditRegistoOuSap (SAP sem id)', () => {
   assert.ok(html.includes('function openEditClienteSap'));
   assert.ok(html.includes('function ensureRegistoVarejoCliente'));
   assert.ok(html.includes("onclick=\"openEditRegistoOuSap('"));
-  assert.ok(html.includes('preencherNovo') && html.includes('isCanalVarejoActivo')
+  assert.ok(html.includes('preencherNovo') && html.includes('isCanalListaSapActivo')
     && html.includes('openEditClienteSap'));
+});
+
+check('merge SAP Ecommerce usa MARCIO GORGA como vendedor default', () => {
+  context._canalActivo = 'ecommerce';
+  const out = context.mergeVarejoSapComoRegistos([], [
+    { cod: '900001', nome: 'LOJA MARCIO', cep: '01000-000' },
+  ]);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].vendedor, 'MARCIO GORGA');
+  assert.equal(out[0]._varejoSap, true);
 });
 
 check('switchSubTab redirecciona Novo/Por Registar no Varejo via canalRegistosTabsState', () => {
@@ -162,5 +219,11 @@ check('switchSubTab redirecciona Novo/Por Registar no Varejo via canalRegistosTa
   assert.ok(fn.includes('_distAllowNovoForm'), 'Dist continua a poder abrir o form forçado');
 });
 
+check('Cache SW / dfb-build alinhados (ecommerce-clientes-mc00)', () => {
+  assert.ok(html.includes('v2026-11-19-ecommerce-clientes-mc00'));
+  assert.ok(sw.includes('v2026-11-19-ecommerce-clientes-mc00'));
+  assert.ok(/<!--\s*dfb-build:[^>]*ecommerce-clientes-mc00[^>]*-->/.test(html.slice(0, 300)));
+});
+
 if (process.exitCode) process.exit(process.exitCode);
-console.log('Todos os testes Varejo/MC00 passaram.');
+console.log('Todos os testes Varejo/Ecommerce/MC00 passaram.');
