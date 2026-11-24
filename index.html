@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-dist-carga-por-cod Dist carga NF só por código SAP -->
+<!-- dfb-build: v2026-11-24-dist-resumo-carga Dist resumo carga por distribuidor -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -464,6 +464,21 @@
     color: var(--muted);
     margin-bottom: 8px;
   }
+  .dist-resumo-chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    min-width: 120px;
+  }
+  .dist-resumo-chip .drv { font-size: 18px; font-weight: 600; font-family: var(--font-mono); color: var(--text); }
+  .dist-resumo-chip .drl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .dist-resumo-chip.is-clickable { cursor: pointer; }
+  .dist-resumo-chip.is-clickable:hover { border-color: var(--accent); }
+  .dist-resumo-chip.is-active { border-color: var(--accent); background: #fef2f2; }
+  .dist-resumo-chip.is-zero { cursor: default; opacity: 0.7; }
+  #dist-resumo-body tr.dist-resumo-row { cursor: pointer; }
+  #dist-resumo-body tr.dist-resumo-row:hover { background: var(--surface-hover); }
   .dist-carga-banner {
     font-size: 12px;
     color: #166534;
@@ -2409,6 +2424,10 @@ var _unused_placeholder = 1;
         class="sub-tab" style="display:none">
         Contratos em falta
       </button>
+      <button id="sub-resumo-carga" onclick="switchSubTab('registos','resumo-carga')"
+        class="sub-tab" style="display:none">
+        Resumo carga
+      </button>
       <button id="sub-lista" onclick="switchSubTab('registos','lista')"
         class="sub-tab">
         Todos os Registos
@@ -2607,6 +2626,39 @@ var _unused_placeholder = 1;
         </thead>
         <tbody id="dist-falta-body">
           <tr class="loading-row"><td colspan="6"><span class="spinner"></span>A carregar...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+    </div>
+
+  <!-- DIST: RESUMO CARGA (qty + valor por distribuidor) -->
+    <div id="sub-panel-resumo-carga" style="display:none;">
+<div id="panel-resumo-carga">
+    <div class="pending-toolbar">
+      <input type="text" id="dist-resumo-search" placeholder="🔍 Pesquisar cliente, código ou vendedor…" oninput="agendarRenderDistResumoCarga()">
+      <select id="dist-resumo-filter-vendedor" onchange="renderDistResumoCarga()">
+        <option value="">Todos os vendedores</option>
+      </select>
+      <span class="count-badge" id="dist-resumo-count-badge"></span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">
+      Quadro da carga Excel (NF): equipamentos profissionais e valor líquido por código de distribuidor.
+    </p>
+    <div id="dist-resumo-summary" class="dist-resumo-summary" style="display:flex;flex-wrap:wrap;gap:10px;margin:0 0 12px;"></div>
+    <div class="table-wrap table-wrap--freeze">
+      <table>
+        <thead>
+          <tr>
+            <th class="col-code sticky-col freeze-1">Cód.</th>
+            <th class="col-nome sticky-col freeze-2 sticky-col-last">Distribuidor</th>
+            <th style="text-align:right">Equipamentos</th>
+            <th style="text-align:right">Valor Eq</th>
+            <th>Vendedor</th>
+          </tr>
+        </thead>
+        <tbody id="dist-resumo-body">
+          <tr class="loading-row"><td colspan="5"><span class="spinner"></span>A carregar...</td></tr>
         </tbody>
       </table>
     </div>
@@ -6380,6 +6432,7 @@ function agendarUi(id, fn, ms) {
 function agendarRenderTabela() { agendarUi('renderTable', renderTable, 140); }
 function agendarRenderPendentes() { agendarUi('renderPendentes', renderPendentes, 140); }
 function agendarRenderDistFalta() { agendarUi('renderDistFalta', renderDistContratosFalta, 140); }
+function agendarRenderDistResumoCarga() { agendarUi('renderDistResumo', renderDistResumoCarga, 140); }
 function agendarFiltroContratos() { agendarUi('filtrarContratos', filtrarContratosVendedor, 140); }
 
 /** Primeiras linhas já; o resto em frames para a pesquisa não congelar o ecrã. */
@@ -9111,7 +9164,7 @@ function switchSubTab(group, sub) {
       sub = tabs.startSub || 'lista';
     }
     window._registosSubTab = sub;
-    ['novo','lista','pendentes','contratos-falta','vendedores','carga-sap'].forEach(s => {
+    ['novo','lista','pendentes','contratos-falta','resumo-carga','vendedores','carga-sap'].forEach(s => {
       const btn = document.getElementById('sub-' + s);
       const panel = document.getElementById('sub-panel-' + s);
       const active = s === sub;
@@ -9142,6 +9195,7 @@ function switchSubTab(group, sub) {
     if (sub === 'lista') loadData(false);
     if (sub === 'pendentes') loadPendentes();
     if (sub === 'contratos-falta') loadDistContratosFalta();
+    if (sub === 'resumo-carga') loadDistResumoCarga();
     if (sub === 'vendedores') renderVendedoresTable();
     if (sub === 'carga-sap') { try { renderUltimaCargaSAP(); } catch (_) {} }
   }
@@ -10409,6 +10463,207 @@ function renderDistContratosFalta() {
         }
       } else {
         preencherNovo(btn.dataset.cod, btn.dataset.nome, btn.dataset.cep, btn.dataset.vend);
+      }
+    });
+  }
+}
+
+/** Resumo carga Dist: agrega por código SAP (qty + valor). */
+let distResumoCargaData = [];
+let _distResumoFiltroBucket = null; // null | 'com_valor' | 'sem_valor'
+
+function distBuildResumoCargaRows() {
+  const rows = typeof distCargaAllRows === 'function' ? distCargaAllRows() : [];
+  const byCod = new Map();
+  (rows || []).forEach(r => {
+    const cod = typeof distNormCodCliente === 'function'
+      ? distNormCodCliente(r.cod_cliente)
+      : String(r.cod_cliente || '').replace(/^0+/, '');
+    if (!cod || cod === '0') return;
+    if (!byCod.has(cod)) {
+      byCod.set(cod, {
+        cod,
+        nome: r.nome_cliente || '',
+        qty: 0,
+        valor: 0,
+        vendedor: '',
+        cep: '',
+      });
+    }
+    const g = byCod.get(cod);
+    g.qty += typeof distSanitizeQty === 'function' ? distSanitizeQty(r.qty) : (Number(r.qty) || 1);
+    g.valor += typeof distCargaRowValor === 'function' ? distCargaRowValor(r) : 0;
+    if (!g.nome && r.nome_cliente) g.nome = r.nome_cliente;
+  });
+  // Vendedor / CEP da lista SAP Dist
+  try {
+    const lista = (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : [])
+      .filter(c => typeof clientePertenceAoCanal !== 'function' || clientePertenceAoCanal(c, 'distribuidores'));
+    const idx = new Map();
+    lista.forEach(c => {
+      const k = typeof normCod === 'function' ? normCod(c.cod) : String(c.cod || '').replace(/^0+/, '');
+      if (k && k !== '0' && !idx.has(k)) idx.set(k, c);
+    });
+    byCod.forEach((g, cod) => {
+      const cli = idx.get(cod);
+      if (!cli) return;
+      if (cli.vendedor) g.vendedor = cli.vendedor;
+      if (cli.cep) g.cep = cli.cep;
+      if (cli.nome && (!g.nome || g.nome.length < String(cli.nome).length)) g.nome = cli.nome;
+    });
+  } catch (_) {}
+  return [...byCod.values()].sort((a, b) => {
+    if (b.valor !== a.valor) return b.valor - a.valor;
+    return String(a.nome || a.cod).localeCompare(String(b.nome || b.cod), 'pt');
+  });
+}
+
+async function loadDistResumoCarga() {
+  const body = document.getElementById('dist-resumo-body');
+  const sum = document.getElementById('dist-resumo-summary');
+  if (body) body.innerHTML = '<tr class="loading-row"><td colspan="5"><span class="spinner"></span>A carregar...</td></tr>';
+  if (sum) sum.innerHTML = '';
+  try {
+    if (typeof distCargaLoadAll === 'function') await distCargaLoadAll(false);
+    if (typeof sincronizarListaClientes === 'function') {
+      try { await sincronizarListaClientes(); } catch (_) {}
+    }
+    distResumoCargaData = distBuildResumoCargaRows();
+  } catch (e) {
+    console.error('loadDistResumoCarga:', e);
+    distResumoCargaData = [];
+    toast('Erro ao carregar resumo da carga Dist.', 'error');
+  }
+  fillVendedorSelectCanal('dist-resumo-filter-vendedor', {
+    emptyLabel: 'Todos os vendedores',
+    keepExtra: false,
+  });
+  renderDistResumoCarga();
+}
+
+function distResumoSetBucket(bucket) {
+  _distResumoFiltroBucket = bucket || null;
+  renderDistResumoCarga();
+}
+
+function distResumoLimparFiltro() {
+  _distResumoFiltroBucket = null;
+  renderDistResumoCarga();
+}
+
+function renderDistResumoCarga() {
+  const search = document.getElementById('dist-resumo-search')?.value?.trim()?.toLowerCase() || '';
+  const vendFilt = document.getElementById('dist-resumo-filter-vendedor')?.value || '';
+  let filtered = (distResumoCargaData || []).slice();
+  if (search) {
+    filtered = filtered.filter(c =>
+      (c.nome || '').toLowerCase().includes(search)
+      || (c.cod || '').toLowerCase().includes(search)
+      || (c.vendedor || '').toLowerCase().includes(search)
+    );
+  }
+  if (vendFilt) {
+    filtered = filtered.filter(c => normNomeUtilizador(c.vendedor) === normNomeUtilizador(vendFilt));
+  }
+
+  const base = filtered;
+  const nComValor = base.filter(c => c.valor > 0).length;
+  const nSemValor = base.filter(c => !(c.valor > 0)).length;
+  const totEquip = base.reduce((s, c) => s + (c.qty || 0), 0);
+  const totValor = base.reduce((s, c) => s + (c.valor || 0), 0);
+
+  if (_distResumoFiltroBucket === 'com_valor') {
+    filtered = base.filter(c => c.valor > 0);
+  } else if (_distResumoFiltroBucket === 'sem_valor') {
+    filtered = base.filter(c => !(c.valor > 0));
+  }
+
+  const badge = document.getElementById('dist-resumo-count-badge');
+  if (badge) badge.textContent = `${filtered.length} distribuidor${filtered.length === 1 ? '' : 'es'}`;
+
+  const sum = document.getElementById('dist-resumo-summary');
+  if (sum) {
+    const fmt = (n) => Number(n || 0).toLocaleString('pt-BR');
+    const money = (n) => (typeof distFmtValorBRL === 'function'
+      ? (distFmtValorBRL(n) || 'R$ 0,00')
+      : ('R$ ' + Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
+    const chip = (label, val, opts) => {
+      opts = opts || {};
+      const clickable = !!opts.bucket && opts.count > 0;
+      const active = _distResumoFiltroBucket === opts.bucket;
+      const cls = 'dist-resumo-chip'
+        + (clickable ? ' is-clickable' : '')
+        + (active ? ' is-active' : '')
+        + (!opts.count && opts.bucket ? ' is-zero' : '');
+      const next = active ? 'null' : JSON.stringify(opts.bucket);
+      const onclick = clickable ? `onclick="distResumoSetBucket(${next})"` : '';
+      const title = clickable
+        ? (active ? 'Clique para limpar o filtro' : 'Clique para filtrar a lista')
+        : '';
+      return `<div class="${cls}" ${onclick} title="${title}"><div class="drv">${val}</div><div class="drl">${label}</div></div>`;
+    };
+    let banner = '';
+    if (_distResumoFiltroBucket) {
+      const lab = _distResumoFiltroBucket === 'com_valor' ? 'só com valor na carga' : 'só sem valor na carga';
+      banner = `<div style="flex:1 1 100%;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        Filtro activo: <strong>${lab}</strong>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="distResumoLimparFiltro()">✕ Limpar</button>
+      </div>`;
+    }
+    sum.innerHTML = banner
+      + chip('Distribuidores', fmt(base.length))
+      + chip('Equipamentos', fmt(totEquip))
+      + chip('Valor Eq', money(totValor))
+      + chip('Com valor', fmt(nComValor), { bucket: 'com_valor', count: nComValor })
+      + chip('Sem valor', fmt(nSemValor), { bucket: 'sem_valor', count: nSemValor });
+  }
+
+  const tbody = document.getElementById('dist-resumo-body');
+  if (!tbody) return;
+  tbody.innerHTML = filtered.length
+    ? filtered.map(c => {
+        const vTxt = c.valor > 0
+          ? (typeof distFmtValorBRL === 'function' ? distFmtValorBRL(c.valor) : String(c.valor))
+          : '—';
+        const nome = String(c.nome || '—').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        return `<tr class="dist-resumo-row" data-dist-resumo-cod="${String(c.cod).replace(/"/g, '')}"
+          data-nome="${nome.replace(/'/g, '&#39;')}" data-cep="${c.cep || ''}" data-vend="${(c.vendedor || '').replace(/"/g, '&quot;')}">
+          <td class="col-code sticky-col freeze-1">${c.cod}</td>
+          <td class="col-nome sticky-col freeze-2 sticky-col-last" title="${nome}">${c.nome || '—'}</td>
+          <td style="text-align:right;font-family:var(--font-mono)">${c.qty || 0}</td>
+          <td style="text-align:right;font-family:var(--font-mono)">${vTxt}</td>
+          <td><span class="vendedor-badge">${c.vendedor || '—'}</span></td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Sem carga de equipamentos Dist. Importa o Excel em Dados.</td></tr>';
+
+  try {
+    contratosEnsureFreezeResize();
+    contratosSyncFreezeOffsets(tbody.closest('.table-wrap--freeze') || tbody);
+  } catch (_) {}
+
+  if (!tbody._hasResumoListener) {
+    tbody._hasResumoListener = true;
+    tbody.addEventListener('click', async function(e) {
+      const tr = e.target.closest('[data-dist-resumo-cod]');
+      if (!tr) return;
+      const cod = tr.dataset.distResumoCod;
+      if (!cod) return;
+      try {
+        const index = (typeof distBuildRegistosIndex === 'function')
+          ? (_distRegistosIndex && _distRegistosIndex.size
+            ? _distRegistosIndex
+            : await distBuildRegistosIndex())
+          : null;
+        const k = typeof normCod === 'function' ? normCod(cod) : String(cod);
+        const reg = index && index.get(k);
+        if (reg && typeof openEditWithRegisto === 'function') {
+          openEditWithRegisto(reg);
+          return;
+        }
+      } catch (_) {}
+      if (typeof preencherNovo === 'function') {
+        preencherNovo(cod, tr.dataset.nome || '', tr.dataset.cep || '', tr.dataset.vend || '');
       }
     });
   }
@@ -12935,6 +13190,7 @@ function abrirCanalConfirmado(canalId) {
     fillVendedorSelectCanal('filtro-vendedor-lista', { emptyLabel: 'Todos os vendedores' });
     fillVendedorSelectCanal('pending-filter-vendedor', { emptyLabel: 'Todos os vendedores' });
     fillVendedorSelectCanal('dist-falta-filter-vendedor', { emptyLabel: 'Todos os vendedores' });
+    fillVendedorSelectCanal('dist-resumo-filter-vendedor', { emptyLabel: 'Todos os vendedores' });
     fillVendedorSelectCanal('contratos-vendedor', { emptyLabel: 'Todos os vendedores' });
     fillVendedorSelectCanal('contratos-pr-vendedor', { emptyLabel: 'Todos os vendedores' });
     fillVendedorSelectCanal('sc-vendedor', { emptyLabel: 'Todos os vendedores' });
@@ -48203,12 +48459,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-dist-carga-por-cod: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-dist-resumo-carga: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-dist-carga-por-cod';
+  var CACHE_KEEP = 'v2026-11-24-dist-resumo-carga';
 
   function tryRegister() {
     try {
@@ -50348,6 +50604,7 @@ function canalRegistosTabsState(canalId) {
     hideNovo: isDist || isListaSap,
     hidePendentes: isListaSap,
     hideContratosFalta: !isDist,
+    hideResumoCarga: !isDist,
     listaLabel: isDist ? 'Registos OK' : 'Todos os Registos',
     pendLabel: isDist ? 'Por registar' : 'Por Registar',
     startSub: isDist ? 'pendentes' : (isListaSap ? 'lista' : 'novo'),
@@ -50387,9 +50644,10 @@ function adaptarFormRegistoCanal() {
 function adaptarRegistoTabsCanal() {
   const st = typeof canalRegistosTabsState === 'function'
     ? canalRegistosTabsState()
-    : { hideNovo: false, hidePendentes: false, hideContratosFalta: true, listaLabel: 'Todos os Registos', pendLabel: 'Por Registar' };
+    : { hideNovo: false, hidePendentes: false, hideContratosFalta: true, hideResumoCarga: true, listaLabel: 'Todos os Registos', pendLabel: 'Por Registar' };
   const btnNovo = document.getElementById('sub-novo');
   const btnFalta = document.getElementById('sub-contratos-falta');
+  const btnResumo = document.getElementById('sub-resumo-carga');
   const btnLista = document.getElementById('sub-lista');
   const btnPend = document.getElementById('sub-pendentes');
   if (btnNovo) btnNovo.style.display = st.hideNovo ? 'none' : '';
@@ -50398,10 +50656,15 @@ function adaptarRegistoTabsCanal() {
     btnPend.textContent = st.pendLabel;
   }
   if (btnFalta) btnFalta.style.display = st.hideContratosFalta ? 'none' : '';
+  if (btnResumo) btnResumo.style.display = st.hideResumoCarga ? 'none' : '';
   if (btnLista) btnLista.textContent = st.listaLabel;
   if (st.hideContratosFalta) {
     const panelFalta = document.getElementById('sub-panel-contratos-falta');
     if (panelFalta) panelFalta.style.display = 'none';
+  }
+  if (st.hideResumoCarga) {
+    const panelResumo = document.getElementById('sub-panel-resumo-carga');
+    if (panelResumo) panelResumo.style.display = 'none';
   }
 }
 

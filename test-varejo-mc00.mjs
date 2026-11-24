@@ -74,6 +74,7 @@ check('Horeca: Novo Registo visível e é o arranque', () => {
   assert.equal(st.hideNovo, false);
   assert.equal(st.hidePendentes, false);
   assert.equal(st.hideContratosFalta, true);
+  assert.equal(st.hideResumoCarga, true);
   assert.equal(st.startSub, 'novo');
   assert.equal(st.listaLabel, 'Todos os Registos');
   assert.equal(st.pendLabel, 'Por Registar');
@@ -84,6 +85,7 @@ check('Dist Massimo: sem Novo, com Por registar, arranque pendentes', () => {
   assert.equal(st.hideNovo, true);
   assert.equal(st.hidePendentes, false);
   assert.equal(st.hideContratosFalta, false);
+  assert.equal(st.hideResumoCarga, false);
   assert.equal(st.startSub, 'pendentes');
   assert.equal(st.listaLabel, 'Registos OK');
   assert.equal(st.pendLabel, 'Por registar');
@@ -94,6 +96,7 @@ check('Varejo Diogo: sem Novo e sem Por Registar, arranque lista', () => {
   assert.equal(st.hideNovo, true);
   assert.equal(st.hidePendentes, true);
   assert.equal(st.hideContratosFalta, true);
+  assert.equal(st.hideResumoCarga, true);
   assert.equal(st.startSub, 'lista');
   assert.equal(st.listaLabel, 'Todos os Registos');
 });
@@ -103,6 +106,7 @@ check('Ecommerce Marcio: sem Novo e sem Por Registar, arranque lista', () => {
   assert.equal(st.hideNovo, true);
   assert.equal(st.hidePendentes, true);
   assert.equal(st.hideContratosFalta, true);
+  assert.equal(st.hideResumoCarga, true);
   assert.equal(st.startSub, 'lista');
   assert.equal(st.listaLabel, 'Todos os Registos');
 });
@@ -323,10 +327,10 @@ check('switchSubTab redirecciona Novo/Por Registar no Varejo via canalRegistosTa
   assert.ok(fn.includes('_distAllowNovoForm'), 'Dist continua a poder abrir o form forçado');
 });
 
-check('Cache SW / dfb-build alinhados (dist-carga-por-cod)', () => {
-  assert.ok(html.includes('v2026-11-24-dist-carga-por-cod'));
-  assert.ok(sw.includes('v2026-11-24-dist-carga-por-cod'));
-  assert.ok(/<!--\s*dfb-build:[^>]*dist-carga-por-cod[^>]*-->/.test(html.slice(0, 300)));
+check('Cache SW / dfb-build alinhados (dist-resumo-carga)', () => {
+  assert.ok(html.includes('v2026-11-24-dist-resumo-carga'));
+  assert.ok(sw.includes('v2026-11-24-dist-resumo-carga'));
+  assert.ok(/<!--\s*dfb-build:[^>]*dist-resumo-carga[^>]*-->/.test(html.slice(0, 300)));
 });
 
 if (process.exitCode) process.exit(process.exitCode);

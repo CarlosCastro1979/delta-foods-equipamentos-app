@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-dist-carga-por-cod — Dist carga NF por código
+// Service Worker v2026-11-24-dist-resumo-carga — Dist resumo carga
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-dist-carga-por-cod';
+const CACHE = 'v2026-11-24-dist-resumo-carga';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
