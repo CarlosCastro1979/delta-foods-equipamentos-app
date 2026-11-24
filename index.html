@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-premios-recup-sem-ano Prémios: rec. semestral + anual -->
+<!-- dfb-build: v2026-11-24-vendas-hora-upd Vendas mapa: só data/hora actualização -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -32530,10 +32530,6 @@ function renderVendasQuadro(quadroOpt) {
   const fraseN = variosMeses ? ('soma de ' + (typeof fraseMesesQuadro === 'function' ? fraseMesesQuadro(mesesSel) : nomeMes) + '/' + ano) : nomeMes;
   const fraseN1 = variosMeses ? ('soma de ' + (typeof fraseMesesQuadro === 'function' ? fraseMesesQuadro(mesesSel) : nomeN1) + '/' + (ano - 1)) : nomeN1;
 
-  const notaValor = !quadro.valor_na_base
-    ? `<div class="vcob-note">O valor em R$ <strong>não estava</strong> na tabela de vendas (só cliente, data, tipo e peso). O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.</div>`
-    : `<div class="vcob-note">Valores em R$ gravados na tabela de vendas. O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra.</div>`;
-
   const resumoRows = pacote.linhas.map(row => htmlLinhaResumoPnL(row, filtro, esc, pacote.periodo)).join('');
 
   let banner = '';
@@ -32559,10 +32555,13 @@ function renderVendasQuadro(quadroOpt) {
     </div>`;
   }
 
-  const ts = quadro.atualizado_em
-    ? new Date(quadro.atualizado_em).toLocaleString('pt-BR')
+  const tsAtualizado = quadro.atualizado_em ? new Date(quadro.atualizado_em) : null;
+  const tsTxt = (tsAtualizado && !isNaN(tsAtualizado.getTime()))
+    ? tsAtualizado.toLocaleString('pt-BR')
     : '';
-  const baseTxt = 'Agregado guardado' + (ts ? ' · ' + ts : '') + '.';
+  const notaAtualizado = tsTxt
+    ? `<div class="vcob-note">Actualizado em ${esc(tsTxt)}</div>`
+    : `<div class="vcob-note">Ainda sem data de actualização das vendas.</div>`;
 
   let avisoQuadro = mesAntigo
     ? `<div class="vq-aviso-antigo" style="background:#fff7ed;border:1px solid #c2410c;color:#9a3412;border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:14px;line-height:1.5;"><strong>Estes R$ são o quadro anterior</strong> (Ecommerce, Horeca, Varejo ou Distribuidores). Ainda não são as linhas do Power BI. Para substituir este mês: <strong>Dados → Carregar Vendas</strong> com o Excel de 2026 (coluna de vendas líquidas e Nº pessoal).</div>`
@@ -32608,9 +32607,7 @@ function renderVendasQuadro(quadroOpt) {
         <tbody>${resumoRows}</tbody>
       </table>
     </div>
-    ${notaValor}
-    <div class="vcob-note">${baseTxt}<br>
-      A carga lê o mês corrente e o mês anterior e funde só os dias do ficheiro. Os outros dias do mês e os meses anteriores ficam como estão.</div>
+    ${notaAtualizado}
   `;
   bindQuadro();
 }
@@ -48027,12 +48024,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-premios-recup-sem-ano: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-vendas-hora-upd: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-premios-recup-sem-ano';
+  var CACHE_KEEP = 'v2026-11-24-vendas-hora-upd';
 
   function tryRegister() {
     try {

@@ -303,10 +303,10 @@ check('scorecard email: só tabela, sem saudação', () => {
   assert.ok(js.includes('Scorecard: só a tabela'));
 });
 
-check('Cache SW / dfb-build alinhados (premios-recup-sem-ano)', () => {
-  assert.ok(html.includes('v2026-11-24-premios-recup-sem-ano'));
-  assert.ok(sw.includes('v2026-11-24-premios-recup-sem-ano'));
-  assert.ok(/<!--\s*dfb-build:[^>]*premios-recup-sem-ano[^>]*-->/.test(html.slice(0, 400)));
+check('Cache SW / dfb-build alinhados (vendas-hora-upd)', () => {
+  assert.ok(html.includes('v2026-11-24-vendas-hora-upd'));
+  assert.ok(sw.includes('v2026-11-24-vendas-hora-upd'));
+  assert.ok(/<!--\s*dfb-build:[^>]*vendas-hora-upd[^>]*-->/.test(html.slice(0, 400)));
 });
 
 if (!process.exitCode) console.log('\nTodos os testes Prémios Equipa passaram.');

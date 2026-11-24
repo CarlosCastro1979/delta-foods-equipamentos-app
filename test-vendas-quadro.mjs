@@ -998,11 +998,16 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   );
   assert.ok(!html.includes('desde ~2019'));
   assert.ok(!html.includes('só se gravam linhas do <strong>dia de hoje</strong>'));
+  // Mapa Vendas Mês: só data/hora da última actualização (sem texto longo do agregado).
+  const renderFn = html.slice(html.indexOf('function renderVendasQuadro'), html.indexOf('function onClickVendasQuadro'));
+  assert.ok(renderFn.includes('Actualizado em'), 'mapa mostra «Actualizado em» + data/hora');
+  assert.ok(!renderFn.includes('Agregado guardado'), 'sem «Agregado guardado» no mapa');
+  assert.ok(!renderFn.includes('não estava</strong> na tabela de vendas'), 'sem nota longa de R$ no mapa');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-24-premios-recup-sem-ano'));
+  assert.ok(sw.includes('v2026-11-24-vendas-hora-upd'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-11-24-premios-recup-sem-ano'));
+  assert.ok(html.includes('v2026-11-24-vendas-hora-upd'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 

@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-premios-recup-sem-ano — Prémios rec sem+ano
+// Service Worker v2026-11-24-vendas-hora-upd — Vendas hora actualização
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-premios-recup-sem-ano';
+const CACHE = 'v2026-11-24-vendas-hora-upd';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
