@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-dados-atualizado-em — Dados Actualizado em
+// Service Worker v2026-11-24-dados-datas-nuvem — Dados datas nuvem
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-dados-atualizado-em';
+const CACHE = 'v2026-11-24-dados-datas-nuvem';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

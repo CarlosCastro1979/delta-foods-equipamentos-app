@@ -320,6 +320,9 @@ function testUiCarga() {
   assert(!html.includes('id="nfe-file-input"'), 'não ficou input de upload na previsão');
   assert(html.includes('id="dados-nfe-ultima"'), 'Dados mostra Actualizado em das NF');
   assert(html.includes('dadosHtmlAtualizadoEm'), 'helper comum de data de actualização em Dados');
+  assert(html.includes('nfeRefreshAtualizadoEm'), 'NF lê actualizado_em da nuvem no cartão Dados');
+  assert(html.includes('id=eq.comissao_rc'), 'RC lê data da nuvem');
+  assert(html.includes('dadosPickMaisRecente'), 'escolhe a data mais recente local/nuvem');
   assert(html.includes('id="dados-rc-ultima"'), 'Dados RC tem data de actualização');
   assert(html.includes('id="dados-cobertura-ultima"'), 'Dados cobertura tem data de actualização');
   assert(html.includes('id="dados-cod-rel-ultima"'), 'Dados códigos relacionados tem data de actualização');
@@ -331,7 +334,7 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-11-24-dados-atualizado-em'), 'service worker referido no index');
+  assert(html.includes('v2026-11-24-dados-datas-nuvem'), 'service worker referido no index');
   assert(!html.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no index');
@@ -343,7 +346,7 @@ function testUiCarga() {
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-11-24-dados-atualizado-em'), 'service worker actualizado');
+  assert(sw.includes('v2026-11-24-dados-datas-nuvem'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no sw');
