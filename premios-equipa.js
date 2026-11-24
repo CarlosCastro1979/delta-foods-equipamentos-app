@@ -21,6 +21,16 @@
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
     'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
   ];
+  // Apuramento mensal → Baker Tilly (DP) + Andrea/Carlos em CC. Separador ; (Outlook/.eml).
+  var PREMIOS_EMAIL_TO = [
+    'Departamento Pessoal - SPBPO <dp_spbpo@bakertilly.com.br>',
+    'Keilla Nascimento <keilla.nascimento@bakertilly.com.br>',
+    'Marcelo Dantas Vieira <marcelo.dantas@bakertilly.com.br>',
+  ].join('; ');
+  var PREMIOS_EMAIL_CC = [
+    'Andrea Albuquerque <andrea.albuquerque@deltafoodsbrasil.com.br>',
+    'Carlos Alexandre Castro <carlos.castro@deltafoodsbrasil.com.br>',
+  ].join('; ');
 
   /**
    * Pacotes 2026 (folha Premios por pessoa / Premios Equipa Vendas).
@@ -761,8 +771,8 @@
     var texto = [saudacao + ',', '', frase, '', 'Obrigado,', remetente].filter(Boolean).join('\n');
     var mm = String(mesIdx + 1).padStart(2, '0');
     return {
-      to: '',
-      cc: '',
+      to: PREMIOS_EMAIL_TO,
+      cc: PREMIOS_EMAIL_CC,
       subject: 'Prémios Equipa de Vendas — ' + mesNome + ' ' + ano,
       html: html,
       texto: texto,
@@ -979,6 +989,8 @@
     PREMIOS_TAXA_COMISSAO: PREMIOS_TAXA_COMISSAO,
     PREMIOS_EQUIPA_PESSOAS: PREMIOS_EQUIPA_PESSOAS,
     PREMIOS_MESES: PREMIOS_MESES,
+    PREMIOS_EMAIL_TO: PREMIOS_EMAIL_TO,
+    PREMIOS_EMAIL_CC: PREMIOS_EMAIL_CC,
     premiosTectoTrim: premiosTectoTrim,
     premiosTectoAnual: premiosTectoAnual,
     premiosTectoAteMes: premiosTectoAteMes,

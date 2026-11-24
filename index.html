@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-dados-mestres-email Dados Mestres: delta-cafes.pt -->
+<!-- dfb-build: v2026-11-24-premios-email-dp Prémios: Para Baker Tilly + CC Andrea/Carlos; Dados Mestres delta-cafes -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -48027,12 +48027,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-dados-mestres-email: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-premios-email-dp: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-dados-mestres-email';
+  var CACHE_KEEP = 'v2026-11-24-premios-email-dp';
 
   function tryRegister() {
     try {

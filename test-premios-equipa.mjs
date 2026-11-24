@@ -173,7 +173,7 @@ check('scorecard: ganhos÷tecto; comissão fora; tecto = 12×mensal+4×trim', ()
   assert.equal(score.linhas[0].acumPct, 1);
 });
 
-check('email: saudação + frase com mês + Obrigado + remetente; To vazio', () => {
+check('email: saudação + frase + Baker Tilly Para + Andrea/Carlos CC', () => {
   const cfg = { id: 'diogo', nome: 'Diogo', mensal: 3000, trim: 3000, comissao: false };
   const serie = Array.from({ length: 12 }, () => ({ vendas: 50, obj: 100, temVendas: true }));
   const modelo = pe.premiosCalcularQuadro([Object.assign({}, cfg, { id: 'diogo' })], { diogo: serie }, 8);
@@ -190,7 +190,15 @@ check('email: saudação + frase com mês + Obrigado + remetente; To vazio', () 
     remetente: 'Carlos Castro',
     agora: new Date(2026, 8, 15, 15, 0, 0),
   });
-  assert.equal(email.to, '');
+  assert.ok(email.to.includes('dp_spbpo@bakertilly.com.br'));
+  assert.ok(email.to.includes('keilla.nascimento@bakertilly.com.br'));
+  assert.ok(email.to.includes('marcelo.dantas@bakertilly.com.br'));
+  assert.ok(email.to.includes('; '), 'Para com ; (Outlook/.eml)');
+  assert.ok(email.cc.includes('andrea.albuquerque@deltafoodsbrasil.com.br'));
+  assert.ok(email.cc.includes('carlos.castro@deltafoodsbrasil.com.br'));
+  assert.ok(email.cc.includes('; '), 'CC com ; (Outlook/.eml)');
+  assert.equal(email.to, pe.PREMIOS_EMAIL_TO);
+  assert.equal(email.cc, pe.PREMIOS_EMAIL_CC);
   assert.ok(email.subject.includes('Setembro'));
   assert.ok(email.html.includes('Boa tarde'));
   assert.ok(email.html.includes('apuração do prémio referente ao mês Setembro'));
@@ -200,16 +208,26 @@ check('email: saudação + frase com mês + Obrigado + remetente; To vazio', () 
   assert.ok(email.filename.includes('2026-09'));
 });
 
+check('apuramento mensal: Para Baker Tilly e CC Andrea/Carlos (sem vírgula entre endereços)', () => {
+  assert.ok(!pe.PREMIOS_EMAIL_TO.includes(','));
+  assert.ok(!pe.PREMIOS_EMAIL_CC.includes(','));
+  assert.ok(pe.PREMIOS_EMAIL_TO.includes('Departamento Pessoal - SPBPO'));
+  assert.ok(pe.PREMIOS_EMAIL_TO.includes('Keilla Nascimento'));
+  assert.ok(pe.PREMIOS_EMAIL_TO.includes('Marcelo Dantas Vieira'));
+  assert.ok(pe.PREMIOS_EMAIL_CC.includes('Andrea Albuquerque'));
+  assert.ok(pe.PREMIOS_EMAIL_CC.includes('Carlos Alexandre Castro'));
+});
+
 check('scorecard email: só tabela, sem saudação', () => {
   const js = fs.readFileSync(path.join(root, 'premios-equipa.js'), 'utf8');
   assert.ok(js.includes('peScorecardTabelaHtml'));
   assert.ok(js.includes('Scorecard: só a tabela'));
 });
 
-check('Cache SW / dfb-build alinhados (dados-mestres-email)', () => {
-  assert.ok(html.includes('v2026-11-24-dados-mestres-email'));
-  assert.ok(sw.includes('v2026-11-24-dados-mestres-email'));
-  assert.ok(/<!--\s*dfb-build:[^>]*dados-mestres-email[^>]*-->/.test(html.slice(0, 400)));
+check('Cache SW / dfb-build alinhados (premios-email-dp)', () => {
+  assert.ok(html.includes('v2026-11-24-premios-email-dp'));
+  assert.ok(sw.includes('v2026-11-24-premios-email-dp'));
+  assert.ok(/<!--\s*dfb-build:[^>]*premios-email-dp[^>]*-->/.test(html.slice(0, 400)));
 });
 
 if (!process.exitCode) console.log('\nTodos os testes Prémios Equipa passaram.');
