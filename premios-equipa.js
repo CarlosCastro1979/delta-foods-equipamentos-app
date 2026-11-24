@@ -576,21 +576,20 @@
 
   function peTabelaHtml(modelo) {
     var fecho = modelo.linhas[0] && modelo.linhas[0].ehFechoTrim;
+    // Sempre «Total a Pagar»: no mês normal = prémio+comissões; no fecho trim = totalFecho.
     var head = '<tr style="background:var(--bg-secondary);">'
       + '<th style="text-align:left;padding:8px 10px;">Vendedor</th>'
       + '<th style="text-align:right;padding:8px 10px;">Vendas</th>'
       + '<th style="text-align:right;padding:8px 10px;">Objectivo</th>'
       + '<th style="text-align:right;padding:8px 10px;">Var. obj. %</th>'
       + '<th style="text-align:right;padding:8px 10px;">Prémio</th>'
-      + '<th style="text-align:right;padding:8px 10px;">Comissão</th>'
-      + '<th style="text-align:right;padding:8px 10px;">Total mês</th>';
+      + '<th style="text-align:right;padding:8px 10px;">Comissão</th>';
     if (fecho) {
       head += '<th style="text-align:right;padding:8px 10px;">Var. trim. %</th>'
         + '<th style="text-align:right;padding:8px 10px;">Prémio trim.</th>'
-        + '<th style="text-align:right;padding:8px 10px;">Recuperação</th>'
-        + '<th style="text-align:right;padding:8px 10px;">Total a Pagar</th>';
+        + '<th style="text-align:right;padding:8px 10px;">Recuperação</th>';
     }
-    head += '</tr>';
+    head += '<th style="text-align:right;padding:8px 10px;">Total a Pagar</th></tr>';
     var body = '';
     var linhas = modelo.linhas.filter(peLinhaPassaFiltro);
     for (var i = 0; i < linhas.length; i++) {
@@ -605,18 +604,19 @@
         + '<td style="padding:8px 10px;text-align:right;">' + peRs(r.obj) + '</td>'
         + '<td style="padding:8px 10px;text-align:right;' + pctCls + '">' + peFmtVarObj(r.varPct) + '</td>'
         + '<td style="padding:8px 10px;text-align:right;font-weight:600;">' + peRs(r.premio) + '</td>'
-        + '<td style="padding:8px 10px;text-align:right;">' + (r.comissaoCfg ? peRs(r.comissao) : '—') + '</td>'
-        + '<td style="padding:8px 10px;text-align:right;font-weight:700;">' + peRs(r.totalMes) + '</td>';
+        + '<td style="padding:8px 10px;text-align:right;">' + (r.comissaoCfg ? peRs(r.comissao) : '—') + '</td>';
       if (fecho) {
         var trimCls = r.atingiuTrim ? 'color:#166534;font-weight:600;' : (r.varPctTrim != null ? 'color:#b45309;' : '');
         body += '<td style="padding:8px 10px;text-align:right;' + trimCls + '">' + peFmtVarObj(r.varPctTrim) + '</td>'
           + '<td style="padding:8px 10px;text-align:right;">' + peRs(r.premioTrim) + '</td>'
           + '<td style="padding:8px 10px;text-align:right;">' + peRs(r.recuperacao) + '</td>'
           + '<td style="padding:8px 10px;text-align:right;font-weight:700;">' + peRs(r.totalFecho) + '</td>';
+      } else {
+        body += '<td style="padding:8px 10px;text-align:right;font-weight:700;">' + peRs(r.totalMes) + '</td>';
       }
       body += '</tr>';
     }
-    var nCols = fecho ? 11 : 7;
+    var nCols = fecho ? 10 : 7;
     if (!linhas.length) {
       body = '<tr><td colspan="' + nCols + '" style="padding:24px;text-align:center;color:var(--muted);">Nenhuma linha neste filtro.</td></tr>';
     }
@@ -687,8 +687,11 @@
     var fecho = modelo.linhas[0] && modelo.linhas[0].ehFechoTrim;
     var td = 'border:1px solid #d1d5db;padding:6px 10px;font-family:Calibri,Arial,sans-serif;font-size:12px;';
     var th = td + 'background:#c8102e;color:#ffffff;font-weight:700;';
-    var cols = ['Vendedor', 'Vendas', 'Objectivo', 'Var. obj. %', 'Prémio', 'Comissão', 'Total mês'];
-    if (fecho) cols = cols.concat(['Var. trim. %', 'Prémio trim.', 'Recuperação', 'Total a Pagar']);
+    var cols = ['Vendedor', 'Vendas', 'Objectivo', 'Var. obj. %', 'Prémio', 'Comissão'];
+    if (fecho) cols = cols.concat(['Var. trim. %', 'Prémio trim.', 'Recuperação']);
+    cols.push('Total a Pagar');
+    var textIdx = { 0: 1, 3: 1 };
+    if (fecho) textIdx[6] = 1;
     var head = cols.map(function (c, i) {
       return '<th style="' + th + 'text-align:' + (i === 0 ? 'left' : 'right') + ';">' + peEsc(c) + '</th>';
     }).join('');
@@ -704,20 +707,21 @@
         peFmtVarObj(r.varPct),
         r.premio,
         r.comissaoCfg ? r.comissao : null,
-        r.totalMes,
       ];
       if (fecho) {
         vals.push(peFmtVarObj(r.varPctTrim), r.premioTrim, r.recuperacao, r.totalFecho);
+      } else {
+        vals.push(r.totalMes);
       }
       aoaRows.push(vals.map(function (v, idx) {
-        if (idx === 0 || idx === 3 || (fecho && idx === 7)) return v == null ? '' : String(v);
+        if (textIdx[idx]) return v == null ? '' : String(v);
         return v == null || !Number.isFinite(+v) ? '' : +v;
       }));
       body += '<tr>';
       for (var c = 0; c < vals.length; c++) {
         var align = c === 0 ? 'left' : 'right';
         var txt;
-        if (c === 0 || c === 3 || (fecho && c === 7)) txt = peEsc(vals[c] == null ? '—' : vals[c]);
+        if (textIdx[c]) txt = peEsc(vals[c] == null ? '—' : vals[c]);
         else if (vals[c] == null || !Number.isFinite(+vals[c])) txt = '—';
         else txt = peEsc(peRs(vals[c]));
         body += '<td style="' + td + 'text-align:' + align + ';">' + txt + '</td>';
@@ -725,17 +729,21 @@
       body += '</tr>';
     }
     var tot = modelo.totais || {};
-    var totVals = ['Total', '', '', '', tot.premio, tot.comissao, tot.totalMes];
-    if (fecho) totVals = totVals.concat(['', tot.premioTrim, tot.recuperacao, (tot.totalMes || 0) + (tot.premioTrim || 0) + (tot.recuperacao || 0)]);
+    var totPagar = fecho
+      ? (tot.totalMes || 0) + (tot.premioTrim || 0) + (tot.recuperacao || 0)
+      : (tot.totalMes || 0);
+    var totVals = ['Total', '', '', '', tot.premio, tot.comissao];
+    if (fecho) totVals = totVals.concat(['', tot.premioTrim, tot.recuperacao]);
+    totVals.push(totPagar);
     aoaRows.push(totVals.map(function (v, idx) {
-      if (idx === 0 || typeof v === 'string') return v == null ? '' : String(v);
+      if (textIdx[idx] || idx === 0) return v == null ? '' : String(v);
       return v == null || !Number.isFinite(+v) ? '' : +v;
     }));
     body += '<tr style="font-weight:700;background:#f3f4f6;">';
     for (var t = 0; t < totVals.length; t++) {
       var ta = t === 0 ? 'left' : 'right';
       var tv = totVals[t];
-      var tt = (t === 0 || t === 3 || (fecho && t === 7) || tv === '') ? peEsc(tv === '' ? '' : String(tv))
+      var tt = (textIdx[t] || t === 0 || tv === '') ? peEsc(tv === '' ? '' : String(tv))
         : peEsc(peRs(tv));
       body += '<td style="' + td + 'text-align:' + ta + ';">' + tt + '</td>';
     }
@@ -762,7 +770,7 @@
       folhas: [{
         name: 'Apuramento',
         tipos: cols.map(function (_, idx) {
-          if (idx === 0 || idx === 3 || (fecho && idx === 7)) return 'text';
+          if (textIdx[idx]) return 'text';
           return 'rs';
         }),
         cols: cols.map(function (_, idx) { return { wch: idx === 0 ? 28 : 14 }; }),
@@ -772,8 +780,7 @@
   }
 
   function peBlobXlsx(folhas) {
-    var h = peHost();
-    var XLSX = h.XLSX;
+    var XLSX = (typeof window !== 'undefined' && window.XLSX) ? window.XLSX : null;
     if (!XLSX || !XLSX.utils) throw new Error('Excel indisponível');
     var wb = XLSX.utils.book_new();
     var lista = folhas || [];
@@ -824,25 +831,23 @@
   async function premiosEquipaExportarEmail() {
     var btn = typeof document !== 'undefined' ? document.getElementById('pe-btn-email') : null;
     if (btn) btn.disabled = true;
-    var h = peHost();
     try {
       if (!_peModelo || !_peSeries) {
         if (typeof toast === 'function') toast('Aguarda o quadro carregar.', 'warn');
         return;
       }
-      var remetente = typeof h.getUtilizadorAtual === 'function' ? String(h.getUtilizadorAtual() || '').trim() : '';
+      var remetente = typeof getUtilizadorAtual === 'function' ? String(getUtilizadorAtual() || '').trim() : '';
       var email;
       var folhas;
       if (_peVista === 'scorecard' && _peScore) {
-        // Scorecard: só a tabela (sem saudação / fecho) — texto vem depois.
-        var tabelaScore = peScorecardTabelaHtml(_peScore, { email: true });
+        // Scorecard: só a tabela (sem saudação / fecho).
         email = {
           to: '',
           cc: '',
           subject: 'Scorecard Prémios Equipa — ' + _peAno,
           html: '<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
             + '<body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;">'
-            + tabelaScore
+            + peScorecardTabelaHtml(_peScore, { email: true })
             + '</body></html>',
           texto: '',
           filename: 'Premios_Scorecard_' + _peAno + '.xlsx',
@@ -857,25 +862,19 @@
           agora: new Date(),
         });
         folhas = email.folhas.slice();
-        if (_peScore) folhas.push(peScorecardFolha(_peScore, _peAno));
       }
       if (typeof toast === 'function') toast('A gerar Excel…');
-      // Mesmo padrão da Comissão de RC: ensureXLSX + outlookAbrirRascunho (ponte COM).
-      // Sem forceEmlFallback — senão cai em Transferências em vez do Outlook.
       if (typeof ensureXLSX === 'function') await ensureXLSX();
-      else if (typeof h.ensureXLSX === 'function') await h.ensureXLSX();
       var blob = peBlobXlsx(folhas);
-      var abrir = typeof outlookAbrirRascunho === 'function' ? outlookAbrirRascunho
-        : (typeof h.outlookAbrirRascunho === 'function' ? h.outlookAbrirRascunho : null);
-      if (!abrir) {
+      // Idêntico à Comissão de RC: outlookAbrirRascunho global (ponte serve.ps1).
+      if (typeof outlookAbrirRascunho !== 'function') {
         if (typeof triggerBlobDownload === 'function') triggerBlobDownload(blob, email.filename);
-        else if (typeof h.triggerBlobDownload === 'function') h.triggerBlobDownload(blob, email.filename);
         if (typeof toast === 'function') toast('Excel descarregado. O Outlook não está disponível neste ecrã.', 'warn');
         return;
       }
-      await abrir({
-        to: email.to || '',
-        cc: email.cc || '',
+      await outlookAbrirRascunho({
+        to: email.to,
+        cc: email.cc,
         subject: email.subject,
         html: email.html,
         attachments: [{
@@ -886,7 +885,7 @@
         draftName: email.filename.replace(/\.xlsx$/i, '') + '.eml',
         toastMsg: '📧 Outlook aberto com a tabela no corpo e o Excel em anexo.',
         mailtoFallback: {
-          body: email.texto || '',
+          body: email.texto,
           toastMsg: '📧 Outlook a abrir. Anexa o Excel descarregado ao email.',
         },
         ccExact: true,

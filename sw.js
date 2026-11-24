@@ -1,6 +1,6 @@
-// Service Worker v2026-11-23-premios-outlook-padrao — Premios: Total a Pagar + Outlook padrao
+// Service Worker v2026-11-24-premios-total-pagar — Premios: Total a Pagar + to vazio OK
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-23-premios-outlook-padrao';
+const CACHE = 'v2026-11-24-premios-total-pagar';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
