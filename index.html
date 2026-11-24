@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-dados-datas-nuvem Dados: datas da nuvem SAP/RC/NF -->
+<!-- dfb-build: v2026-11-24-dist-carga-por-cod Dist carga NF só por código SAP -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -10271,22 +10271,11 @@ async function distBuildRegistosIndex() {
   return map;
 }
 
+/** Registo Dist só por código SAP — o mesmo nome (ex. Beer Bev) pode ter 2+ códigos. */
 function distFindRegistoForCliente(cliente, index) {
   const idx = index || _distRegistosIndex;
   if (!idx || !cliente) return null;
-  const byCod = idx.get(normCod(cliente.cod));
-  if (byCod) return byCod;
-  const nn = typeof distNormNomeCliente === 'function'
-    ? distNormNomeCliente(cliente.nome)
-    : String(cliente.nome || '').toUpperCase();
-  if (!nn) return null;
-  for (const r of idx.values()) {
-    const rn = typeof distNormNomeCliente === 'function'
-      ? distNormNomeCliente(r.nome)
-      : String(r.nome || '').toUpperCase();
-    if (rn && rn === nn) return r;
-  }
-  return null;
+  return idx.get(normCod(cliente.cod)) || null;
 }
 
 async function loadPendentes() {
@@ -48214,12 +48203,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-dados-datas-nuvem: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-dist-carga-por-cod: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-dados-datas-nuvem';
+  var CACHE_KEEP = 'v2026-11-24-dist-carga-por-cod';
 
   function tryRegister() {
     try {
@@ -51273,30 +51262,26 @@ function distCargaAllRows() {
 }
 
 /**
- * Linhas da carga para um cliente. Match por código; fallback por nome
- * (útil se o import guardou nome em cod_cliente por bug de auto-map).
- * opts: { nome }
+ * Linhas da carga para um cliente — só por código SAP.
+ * NF ↔ código é 1:1; o mesmo nome comercial (Beer Bev, etc.) pode ter vários códigos
+ * e cada um só vê as suas NFs. Sem fallback por nome (já partilhou NFs entre códigos).
+ * opts: ignorado (mantido por compatibilidade das chamadas).
  */
 function distCargaByCliente(cod, opts) {
-  opts = opts || {};
+  void opts;
   const all = distCargaAllRows();
   const n = distNormCodCliente(cod);
-  let rows = [];
-  if (n && n !== '0') {
-    rows = all.filter(r => distNormCodCliente(r.cod_cliente) === n);
-  }
-  if (!rows.length && opts.nome) {
-    const nn = distNormNomeCliente(opts.nome);
-    if (nn && nn.length >= 5) {
-      rows = all.filter(r => {
-        const byNome = distNormNomeCliente(r.nome_cliente);
-        const byCodAsNome = distNormNomeCliente(r.cod_cliente); // map bug: nome no campo código
-        return (byNome && (byNome === nn || byNome.includes(nn) || nn.includes(byNome)))
-          || (byCodAsNome && byCodAsNome.length >= 5 && (byCodAsNome === nn || byCodAsNome.includes(nn) || nn.includes(byCodAsNome)));
-      });
-    }
-  }
-  return rows;
+  if (!n || n === '0') return [];
+  return all.filter(r => distNormCodCliente(r.cod_cliente) === n);
+}
+
+/** Carga antiga poluída: CEP ou nome no campo código (não é SAP útil). */
+function distCargaRowIsCodSuspect(r) {
+  const raw = String((r && r.cod_cliente) || '').trim();
+  if (!raw) return true;
+  if (typeof distLooksLikeCep === 'function' && distLooksLikeCep(raw)) return true;
+  const n = distNormCodCliente(raw);
+  return !n || n === '0';
 }
 
 /** NF-e: remove zeros à esquerda (000143383 → 143383). Mantém não-numérico tal qual. */
@@ -51908,12 +51893,15 @@ async function distCargaEquipConfirmMap() {
 
   // Guardar local sempre
   const prev = distCargaGetLocal();
-  // Qty antiga dos clientes/nomes tocados — evitar apagar 95 com um import de 19
+  // Qty antiga só dos códigos tocados (+ poluição CEP/nome do mesmo nome) —
+  // NÃO somar outro código SAP da mesma empresa (Beer Bev 458529 ≠ 458532).
+  const prevIsTouchedOrSuspect = (p) => {
+    if (touchedCods.has(distNormCodCliente(p.cod_cliente))) return true;
+    if (touchedNomes.size && touchedNomes.has(distNormNomeCliente(p.nome_cliente)) && distCargaRowIsCodSuspect(p)) return true;
+    return false;
+  };
   const prevTouchedQty = prev
-    .filter(p =>
-      touchedCods.has(distNormCodCliente(p.cod_cliente))
-      || (touchedNomes.size && touchedNomes.has(distNormNomeCliente(p.nome_cliente)))
-    )
+    .filter(prevIsTouchedOrSuspect)
     .reduce((s, p) => s + distSanitizeQty(p.qty), 0);
   if (prevTouchedQty > 0 && qtySum < prevTouchedQty * 0.5) {
     const ok = confirm(
@@ -51923,25 +51911,25 @@ async function distCargaEquipConfirmMap() {
     if (!ok) return;
   }
 
-  // Substituir por cliente tocado OU mesmo nome (limpa carga antiga com CEP como código)
-  const kept = prev.filter(p => {
-    if (touchedCods.has(distNormCodCliente(p.cod_cliente))) return false;
-    if (touchedNomes.size && touchedNomes.has(distNormNomeCliente(p.nome_cliente))) return false;
-    return true;
-  });
+  // Substituir só códigos tocados; limpa CEP/nome-como-código do mesmo nome, mas
+  // preserva outros códigos SAP da mesma empresa.
+  const kept = prev.filter(p => !prevIsTouchedOrSuspect(p));
   const merged = kept.concat(parsed);
   distCargaSetLocal(merged);
 
-  // Tentar Supabase: apagar carga antiga destes clientes (evita 2×/N× ao reimportar) + insert
+  // Tentar Supabase: apagar carga antiga destes códigos (evita 2×/N× ao reimportar) + insert
   let remoteOk = false;
   try {
     const codList = [...touchedCods].filter(Boolean);
     // Códigos antigos errados (ex. CEP 69058) do mesmo nome — apagar também
+    // (não apagar outro código SAP válido da mesma empresa)
     prev.forEach(p => {
-      if (touchedNomes.size && touchedNomes.has(distNormNomeCliente(p.nome_cliente))) {
-        const oc = distNormCodCliente(p.cod_cliente);
-        if (oc) codList.push(oc);
-      }
+      if (!touchedNomes.size || !touchedNomes.has(distNormNomeCliente(p.nome_cliente))) return;
+      if (!distCargaRowIsCodSuspect(p)) return;
+      const raw = String(p.cod_cliente || '').trim();
+      if (raw) codList.push(raw);
+      const oc = distNormCodCliente(raw);
+      if (oc) codList.push(oc);
     });
     const codVariants = new Set(codList);
     codList.forEach(c => {
@@ -51978,8 +51966,7 @@ async function distCargaEquipConfirmMap() {
     const el = document.getElementById(prefix === 'e' ? 'e-cod' : 'f-cod');
     if (!el || !el.value) return;
     const n = document.getElementById(prefix === 'e' ? 'e-nome' : 'f-nome')?.value || '';
-    if (touchedCods.has(distNormCodCliente(el.value))
-        || (touchedNomes.size && touchedNomes.has(distNormNomeCliente(n)))) {
+    if (touchedCods.has(distNormCodCliente(el.value))) {
       distPrepareFormForCod(prefix, el.value, { nome: n });
     }
   });

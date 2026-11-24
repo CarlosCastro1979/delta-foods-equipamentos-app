@@ -303,10 +303,10 @@ check('scorecard email: só tabela, sem saudação', () => {
   assert.ok(js.includes('Scorecard: só a tabela'));
 });
 
-check('Cache SW / dfb-build alinhados (dados-atualizado-em)', () => {
-  assert.ok(html.includes('v2026-11-24-dados-datas-nuvem'));
-  assert.ok(sw.includes('v2026-11-24-dados-datas-nuvem'));
-  assert.ok(/<!--\s*dfb-build:[^>]*dados-atualizado-em[^>]*-->/.test(html.slice(0, 400)));
+check('Cache SW / dfb-build alinhados (dist-carga-por-cod)', () => {
+  assert.ok(html.includes('v2026-11-24-dist-carga-por-cod'));
+  assert.ok(sw.includes('v2026-11-24-dist-carga-por-cod'));
+  assert.ok(/<!--\s*dfb-build:[^>]*dist-carga-por-cod[^>]*-->/.test(html.slice(0, 400)));
 });
 
 if (!process.exitCode) console.log('\nTodos os testes Prémios Equipa passaram.');

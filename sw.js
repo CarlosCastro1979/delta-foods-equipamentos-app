@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-dados-datas-nuvem — Dados datas nuvem
+// Service Worker v2026-11-24-dist-carga-por-cod — Dist carga NF por código
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-dados-datas-nuvem';
+const CACHE = 'v2026-11-24-dist-carga-por-cod';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
