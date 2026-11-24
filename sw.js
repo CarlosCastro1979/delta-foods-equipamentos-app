@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-premios-total-pagar — Premios: Total a Pagar + to vazio OK
+// Service Worker v2026-11-24-ponte-arranque — Ponte Outlook: listen antes do update
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-premios-total-pagar';
+const CACHE = 'v2026-11-24-ponte-arranque';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
