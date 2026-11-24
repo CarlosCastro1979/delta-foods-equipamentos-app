@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-premios-email-fmt — Prémios email formato
+// Service Worker v2026-11-24-premios-email-addr — Prémios email só addr
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-premios-email-fmt';
+const CACHE = 'v2026-11-24-premios-email-addr';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
