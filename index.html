@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-23-premios-mes-var Premios: mes 1-12 + var obj % -->
+<!-- dfb-build: v2026-11-23-premios-outlook-padrao Premios: Total a Pagar + Outlook padrao -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2195,7 +2195,7 @@ var _unused_placeholder = 1;
 <script src="nfe-emitidas.js"></script>
 <script src="comissao-rc-mapa.js"></script>
 <script src="comissao-rc.js?v=2026-11-06-email"></script>
-<script src="premios-equipa.js?v=2026-11-23-mes-var"></script>
+<script src="premios-equipa.js?v=2026-11-23-outlook-padrao"></script>
 <script src="vendas-volume-familias.js"></script>
 <script src="validades-stock.js"></script>
 </head>
@@ -4227,18 +4227,23 @@ var _unused_placeholder = 1;
         <div id="cr-host"><div style="color:var(--muted);font-size:13px;padding:12px 0;">A carregar…</div></div>
       </div>
       <div id="af-sec-premios-equipa" style="display:none;">
+        <div class="sub-nav" id="pe-subnav" style="margin-bottom:12px;">
+          <button type="button" class="sub-tab active" id="pe-sub-mensal" onclick="showPremiosEquipaSub('mensal')">Apuramento mensal</button>
+          <button type="button" class="sub-tab" id="pe-sub-score" onclick="showPremiosEquipaSub('scorecard')">Scorecard anual</button>
+        </div>
         <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:12px;">
           <div>
             <h3 style="font-size:16px;font-weight:600;margin:0 0 4px;">Prémios Equipa de Vendas</h3>
-            <p style="font-size:12px;color:var(--muted);margin:0;line-height:1.45;">Apuramento automático (vendas ÷ objectivo). Meta ≥ 100%. Hélcio e Daniela: 2,3% acima de R$ 55.000. Trimestre: prémio + recuperação.</p>
+            <p id="pe-lead" style="font-size:12px;color:var(--muted);margin:0;line-height:1.45;">Apuramento automático (vendas ÷ objectivo). Meta ≥ 100%. Hélcio e Daniela: 2,3% acima de R$ 55.000. Trimestre: prémio + recuperação.</p>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-            <label style="font-size:12px;color:var(--muted);">Mês
+            <label id="pe-mes-wrap" style="font-size:12px;color:var(--muted);">Mês
               <select id="pe-mes" class="form-input" style="height:36px;min-width:120px;margin-left:6px;" onchange="premiosEquipaOnPeriodoChange()"></select>
             </label>
             <label style="font-size:12px;color:var(--muted);">Ano
               <select id="pe-ano" class="form-input" style="height:36px;min-width:90px;margin-left:6px;" onchange="premiosEquipaOnPeriodoChange()"></select>
             </label>
+            <button type="button" class="btn btn-primary btn-sm" id="pe-btn-email" onclick="premiosEquipaExportarEmail()" style="min-height:36px;">Exportar e enviar email</button>
           </div>
         </div>
         <div id="pe-host"><div style="color:var(--muted);font-size:13px;padding:12px 0;">A carregar…</div></div>
@@ -48021,12 +48026,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-23-premios-mes-var: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-23-premios-outlook-padrao: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-23-premios-mes-var';
+  var CACHE_KEEP = 'v2026-11-23-premios-outlook-padrao';
 
   function tryRegister() {
     try {

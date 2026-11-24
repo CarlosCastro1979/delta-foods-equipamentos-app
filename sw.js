@@ -1,6 +1,6 @@
-// Service Worker v2026-11-23-premios-mes-var — Premios: mes 1-12 + var obj %
+// Service Worker v2026-11-23-premios-outlook-padrao — Premios: Total a Pagar + Outlook padrao
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-23-premios-mes-var';
+const CACHE = 'v2026-11-23-premios-outlook-padrao';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
