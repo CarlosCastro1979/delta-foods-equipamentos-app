@@ -212,14 +212,15 @@ check('email: saudação + frase + Baker Tilly Para + Andrea/Carlos CC', () => {
   assert.ok(email.filename.includes('2026-09'));
 });
 
-check('apuramento mensal: Para Baker Tilly e CC Andrea/Carlos (sem vírgula entre endereços)', () => {
+check('apuramento mensal: só endereços (sem Nome <email>), ; entre eles', () => {
+  assert.equal(pe.PREMIOS_EMAIL_TO,
+    'dp_spbpo@bakertilly.com.br; keilla.nascimento@bakertilly.com.br; marcelo.dantas@bakertilly.com.br');
+  assert.equal(pe.PREMIOS_EMAIL_CC,
+    'andrea.albuquerque@deltafoodsbrasil.com.br; carlos.castro@deltafoodsbrasil.com.br');
+  assert.ok(!pe.PREMIOS_EMAIL_TO.includes('<'));
+  assert.ok(!pe.PREMIOS_EMAIL_CC.includes('<'));
   assert.ok(!pe.PREMIOS_EMAIL_TO.includes(','));
   assert.ok(!pe.PREMIOS_EMAIL_CC.includes(','));
-  assert.ok(pe.PREMIOS_EMAIL_TO.includes('Departamento Pessoal - SPBPO'));
-  assert.ok(pe.PREMIOS_EMAIL_TO.includes('Keilla Nascimento'));
-  assert.ok(pe.PREMIOS_EMAIL_TO.includes('Marcelo Dantas Vieira'));
-  assert.ok(pe.PREMIOS_EMAIL_CC.includes('Andrea Albuquerque'));
-  assert.ok(pe.PREMIOS_EMAIL_CC.includes('Carlos Alexandre Castro'));
 });
 
 check('scorecard email: só tabela, sem saudação', () => {
@@ -228,10 +229,10 @@ check('scorecard email: só tabela, sem saudação', () => {
   assert.ok(js.includes('Scorecard: só a tabela'));
 });
 
-check('Cache SW / dfb-build alinhados (premios-email-fmt)', () => {
-  assert.ok(html.includes('v2026-11-24-premios-email-fmt'));
-  assert.ok(sw.includes('v2026-11-24-premios-email-fmt'));
-  assert.ok(/<!--\s*dfb-build:[^>]*premios-email-fmt[^>]*-->/.test(html.slice(0, 400)));
+check('Cache SW / dfb-build alinhados (premios-email-addr)', () => {
+  assert.ok(html.includes('v2026-11-24-premios-email-addr'));
+  assert.ok(sw.includes('v2026-11-24-premios-email-addr'));
+  assert.ok(/<!--\s*dfb-build:[^>]*premios-email-addr[^>]*-->/.test(html.slice(0, 400)));
 });
 
 if (!process.exitCode) console.log('\nTodos os testes Prémios Equipa passaram.');

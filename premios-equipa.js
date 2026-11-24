@@ -21,15 +21,17 @@
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
     'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
   ];
-  // Apuramento mensal → Baker Tilly (DP) + Andrea/Carlos em CC. Separador ; (Outlook/.eml).
+  // Apuramento mensal → Baker Tilly (DP) + Andrea/Carlos em CC.
+  // Só o endereço (sem «Nome <email>») — o Outlook/ponte falha com o texto completo.
+  // Separador ; (Outlook/.eml).
   var PREMIOS_EMAIL_TO = [
-    'Departamento Pessoal - SPBPO <dp_spbpo@bakertilly.com.br>',
-    'Keilla Nascimento <keilla.nascimento@bakertilly.com.br>',
-    'Marcelo Dantas Vieira <marcelo.dantas@bakertilly.com.br>',
+    'dp_spbpo@bakertilly.com.br',
+    'keilla.nascimento@bakertilly.com.br',
+    'marcelo.dantas@bakertilly.com.br',
   ].join('; ');
   var PREMIOS_EMAIL_CC = [
-    'Andrea Albuquerque <andrea.albuquerque@deltafoodsbrasil.com.br>',
-    'Carlos Alexandre Castro <carlos.castro@deltafoodsbrasil.com.br>',
+    'andrea.albuquerque@deltafoodsbrasil.com.br',
+    'carlos.castro@deltafoodsbrasil.com.br',
   ].join('; ');
 
   /**

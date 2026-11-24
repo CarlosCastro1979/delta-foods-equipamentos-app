@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-premios-email-fmt Prémios email: Segue + tab + espaço tabela -->
+<!-- dfb-build: v2026-11-24-premios-email-addr Prémios email: só endereços To/CC -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -48027,12 +48027,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-premios-email-fmt: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-premios-email-addr: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-premios-email-fmt';
+  var CACHE_KEEP = 'v2026-11-24-premios-email-addr';
 
   function tryRegister() {
     try {
