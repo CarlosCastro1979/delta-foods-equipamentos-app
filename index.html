@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-premios-email-addr Prémios email: só endereços To/CC -->
+<!-- dfb-build: v2026-11-24-premios-recup-sem-ano Prémios: rec. semestral + anual -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -4234,7 +4234,7 @@ var _unused_placeholder = 1;
         <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:12px;">
           <div>
             <h3 style="font-size:16px;font-weight:600;margin:0 0 4px;">Prémios Equipa de Vendas</h3>
-            <p id="pe-lead" style="font-size:12px;color:var(--muted);margin:0;line-height:1.45;">Apuramento automático (vendas ÷ objectivo). Meta ≥ 100%. Hélcio e Daniela: 2,3% acima de R$ 55.000. Trimestre: prémio + recuperação.</p>
+            <p id="pe-lead" style="font-size:12px;color:var(--muted);margin:0;line-height:1.45;">Apuramento automático (vendas ÷ objectivo). Meta ≥ 100%. Hélcio e Daniela: 2,3% acima de R$ 55.000. Recuperação: trim (3 meses), semestre (6) e anual (12).</p>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
             <label id="pe-mes-wrap" style="font-size:12px;color:var(--muted);">Mês
@@ -48027,12 +48027,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-premios-email-addr: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-premios-recup-sem-ano: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-premios-email-addr';
+  var CACHE_KEEP = 'v2026-11-24-premios-recup-sem-ano';
 
   function tryRegister() {
     try {

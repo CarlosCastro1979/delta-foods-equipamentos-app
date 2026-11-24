@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Prémios Equipa: mensal ≥100%, comissão 2,3% acima 55k, trim + recuperação.
+ * Prémios Equipa: mensal ≥100%, comissão 2,3% acima 55k,
+ * recuperação trim (3) + semestre (6) + anual (12).
  */
 import fs from 'fs';
 import path from 'path';
@@ -97,10 +98,13 @@ check('comissão: (fat−55k)×2,3%; abaixo de 55k = 0', () => {
 
 check('trimestre: recuperação = tecto − já pago; só se fechou trim', () => {
   assert.equal(pe.premiosTectoTrim(3000), 9000);
+  assert.equal(pe.premiosTectoSem(3000), 18000);
+  assert.equal(pe.premiosTectoAnoMensal(3000), 36000);
   assert.equal(pe.premiosRecuperacaoTrim(false, [0, 0, 3000], 9000), 0);
   assert.equal(pe.premiosRecuperacaoTrim(true, [0, 0, 3000], 9000), 6000);
   assert.equal(pe.premiosRecuperacaoTrim(true, [3000, 3000, 3000], 9000), 0);
   assert.equal(pe.premiosRecuperacaoTrim(true, [3000, 0, 3000], 9000), 3000);
+  assert.equal(pe.premiosRecuperacaoPeriodo(true, [0, 0, 0, 0, 0, 3000], 18000, 6000), 9000);
   assert.equal(pe.premiosValorTrim(true, 1600), 1600);
   assert.equal(pe.premiosValorTrim(false, 1600), 0);
 });
@@ -118,9 +122,73 @@ check('Massimo Jan falhou / Fev falhou / Mar ok + trim ok → recuperação 6000
   assert.equal(mar.premio, 3000);
   assert.ok(mar.atingiuTrim);
   assert.equal(mar.premioTrim, 3000);
+  assert.equal(mar.recuperacaoTrim, 6000);
+  assert.equal(mar.recuperacaoSem, 0);
+  assert.equal(mar.recuperacaoAnual, 0);
   assert.equal(mar.recuperacao, 6000);
   assert.equal(mar.totalFecho, 3000 + 6000 + 3000);
   assert.equal(mar.ehFechoTrim, true);
+  assert.equal(mar.ehFechoSem, false);
+});
+
+check('semestre: Q1 falhou + H1 ok → rec. sem recupera os 3 meses do Q1 (sem duplicar rec. trim Q2)', () => {
+  const cfg = { id: 'diogo', nome: 'Diogo', mensal: 3000, trim: 3000, comissao: false };
+  // Jan–Mai = 0; Jun = 600 (obj 100) → H1 600/600 e Q2 600/300
+  const serie = Array.from({ length: 12 }, () => ({ vendas: 0, obj: 100, temVendas: true }));
+  serie[5] = { vendas: 600, obj: 100, temVendas: true };
+  const jun = pe.premiosCalcularPessoaMes(cfg, serie, 5);
+  assert.ok(jun.ehFechoTrim && jun.ehFechoSem);
+  assert.ok(jun.atingiuTrim, 'Q2 atingiu');
+  assert.ok(jun.atingiuSem, 'H1 atingiu');
+  assert.equal(jun.recuperacaoTrim, 6000); // Abr+Mai
+  assert.equal(jun.recuperacaoSem, 9000); // Jan+Fev+Mar (Q1 sem rec. trim)
+  assert.equal(jun.recuperacaoAnual, 0);
+  assert.equal(jun.recuperacao, 15000);
+  assert.equal(jun.premio, 3000);
+});
+
+check('anual: H2 falhou nos meses mas ano ok → rec. anual cobre o que trim/sem não pagaram', () => {
+  const cfg = { id: 'eduardo', nome: 'Eduardo', mensal: 3000, trim: 3000, comissao: false };
+  // H1 tudo 100%; Jul–Nov = 0; Dez = 1200 → ano 1800/1200, Q4 1200/300, H2 1200/600
+  const serie = Array.from({ length: 12 }, (_, m) => (
+    m <= 5
+      ? { vendas: 100, obj: 100, temVendas: true }
+      : { vendas: 0, obj: 100, temVendas: true }
+  ));
+  serie[11] = { vendas: 1200, obj: 100, temVendas: true };
+  const dez = pe.premiosCalcularPessoaMes(cfg, serie, 11);
+  assert.ok(dez.ehFechoAnual && dez.ehFechoSem && dez.ehFechoTrim);
+  assert.ok(dez.atingiuAno);
+  assert.ok(dez.atingiuSem);
+  assert.ok(dez.atingiuTrim);
+  // Q4=Out+Nov+Dez → rec.trim 6000; H2 → rec.sem 9000 (Jul–Set); ano já coberto → rec.anual 0
+  assert.equal(dez.recuperacaoTrim, 6000);
+  assert.equal(dez.recuperacaoSem, 9000);
+  assert.equal(dez.recuperacaoAnual, 0);
+  assert.equal(dez.recuperacao, 15000);
+});
+
+check('anual: só Dez salva o ano quando trim/sem H2 falham → rec. anual = meses em falta', () => {
+  const cfg = { id: 'paulo', nome: 'Paulo', mensal: 1650, trim: 2050, comissao: false };
+  // H1 ok; H2: Jul–Nov 0; Dez vendas exactamente 100 (obj 100) → Q4=100/300 fail, H2=100/600 fail, ano=(600+100)/1200 fail
+  // Need ano ok: Dez = 700 → ano 1300/1200 ok; Q4 700/300 ok; H2 700/600 ok → then sem/trim take most
+  // Force trim+sem H2 fail but year ok: impossible if equal monthly objs because year = H1+H2.
+  // Use uneven objs: H1 obj small, H2 obj large, miss H2 months but year still ok via H1 overperformance.
+  const serie = Array.from({ length: 12 }, () => ({ vendas: 0, obj: 100, temVendas: true }));
+  // H1 smash: each month 200/100
+  for (let m = 0; m < 6; m++) serie[m] = { vendas: 200, obj: 100, temVendas: true };
+  // H2 miss all but tiny Dez so H2 and Q4 fail; year = 1200+50 / 1200 < 1 — still fail.
+  // Year needs >=1200: H1=1200 already → year ok even with H2=0!
+  for (let m = 6; m < 12; m++) serie[m] = { vendas: 0, obj: 100, temVendas: true };
+  const dez = pe.premiosCalcularPessoaMes(cfg, serie, 11);
+  assert.ok(dez.atingiuAno);
+  assert.ok(!dez.atingiuTrim, 'Q4 falhou');
+  assert.ok(!dez.atingiuSem, 'H2 falhou');
+  assert.equal(dez.recuperacaoTrim, 0);
+  assert.equal(dez.recuperacaoSem, 0);
+  // 6 meses H2 × 1650 ainda por recuperar
+  assert.equal(dez.recuperacaoAnual, 6 * 1650);
+  assert.equal(dez.recuperacao, 6 * 1650);
 });
 
 check('Hélcio: prémio + comissão no mesmo mês', () => {
@@ -143,13 +211,18 @@ check('Marcio 99% → 0; 100% → 500', () => {
   assert.equal(pe.premiosCalcularPessoaMes(cfg, serie, 3).premio, 500);
 });
 
-check('Total a Pagar (não Total mês); Outlook sem forceEmlFallback', () => {
+check('Total a Pagar (não Total mês); Outlook sem forceEmlFallback; rec. sem/anual', () => {
   const js = fs.readFileSync(path.join(root, 'premios-equipa.js'), 'utf8');
   assert.ok(js.includes('Var. trim. %'));
+  assert.ok(js.includes('Rec. trim.'));
+  assert.ok(js.includes('Rec. sem.'));
+  assert.ok(js.includes('Rec. anual'));
   assert.ok(js.includes('Total a Pagar'));
   assert.ok(!js.includes('Total mês'));
   assert.ok(!js.includes('Total fecho'));
   assert.ok(js.includes('varPctTrim'));
+  assert.ok(js.includes('recuperacaoSem'));
+  assert.ok(js.includes('recuperacaoAnual'));
   assert.ok(js.includes('premiosCalcularScorecard'));
   assert.ok(js.includes('premiosEquipaExportarEmail'));
   assert.ok(!/forceEmlFallback\s*:/.test(js), 'seguir padrão Comissão RC — ponte Outlook, não .eml em Transferências');
@@ -158,6 +231,7 @@ check('Total a Pagar (não Total mês); Outlook sem forceEmlFallback', () => {
   assert.ok(html.includes("showPremiosEquipaSub('scorecard')"));
   assert.ok(html.includes('id="pe-btn-email"'));
   assert.ok(html.includes('To vazio + anexos'));
+  assert.ok(html.includes('semestre (6) e anual (12)'));
 });
 
 check('scorecard: ganhos÷tecto; comissão fora; tecto = 12×mensal+4×trim', () => {
@@ -229,10 +303,10 @@ check('scorecard email: só tabela, sem saudação', () => {
   assert.ok(js.includes('Scorecard: só a tabela'));
 });
 
-check('Cache SW / dfb-build alinhados (premios-email-addr)', () => {
-  assert.ok(html.includes('v2026-11-24-premios-email-addr'));
-  assert.ok(sw.includes('v2026-11-24-premios-email-addr'));
-  assert.ok(/<!--\s*dfb-build:[^>]*premios-email-addr[^>]*-->/.test(html.slice(0, 400)));
+check('Cache SW / dfb-build alinhados (premios-recup-sem-ano)', () => {
+  assert.ok(html.includes('v2026-11-24-premios-recup-sem-ano'));
+  assert.ok(sw.includes('v2026-11-24-premios-recup-sem-ano'));
+  assert.ok(/<!--\s*dfb-build:[^>]*premios-recup-sem-ano[^>]*-->/.test(html.slice(0, 400)));
 });
 
 if (!process.exitCode) console.log('\nTodos os testes Prémios Equipa passaram.');

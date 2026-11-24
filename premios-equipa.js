@@ -4,6 +4,8 @@
  * - Mensal: % (vendas÷obj) ≥ 100% → valor fixo por pessoa
  * - Hélcio / Daniela: se faturação ≥ 55k → (fat − 55k) × 2,3%
  * - Trimestre: se meta trim ≥ 100% → prémio trim + recuperação (tecto 3×mensal − já pago)
+ * - Semestre (Jun/Dez): se meta sem ≥ 100% → recuperação 6×mensal − mensais − rec. trim já paga
+ * - Anual (Dez): se meta ano ≥ 100% → recuperação 12×mensal − mensais − rec. trim/sem já pagas
  * Sem DOM na parte de cálculo (browser + Node).
  */
 (function (root, factory) {
@@ -62,6 +64,27 @@
     return (Number(mensal) || 0) * 3;
   }
 
+  function premiosTectoSem(mensal) {
+    return (Number(mensal) || 0) * 6;
+  }
+
+  function premiosTectoAnoMensal(mensal) {
+    return (Number(mensal) || 0) * 12;
+  }
+
+  function premiosEhFechoTrim(mesIdx) {
+    return ((mesIdx | 0) % 3) === 2;
+  }
+
+  function premiosEhFechoSem(mesIdx) {
+    var mi = mesIdx | 0;
+    return mi === 5 || mi === 11;
+  }
+
+  function premiosEhFechoAnual(mesIdx) {
+    return (mesIdx | 0) === 11;
+  }
+
   /** Cumprimento vendas/obj (1 = 100%); null se sem objectivo. */
   function premiosPctCumprimento(vendas, obj) {
     if (obj == null || !Number.isFinite(+obj) || +obj <= 0) return null;
@@ -102,17 +125,23 @@
   }
 
   /**
-   * Recuperação trimestral: se fechou o trim, tecto − soma dos 3 prémios mensais.
-   * tecto = 3 × mensal. Só prémios (não comissão).
+   * Recuperação de período: se atingiu meta, tecto − mensais − já recuperado.
+   * Só prémios mensais (não comissão).
    */
-  function premiosRecuperacaoTrim(atingiuTrim, premiosMensais, tecto) {
-    if (!atingiuTrim) return 0;
+  function premiosRecuperacaoPeriodo(atingiu, premiosMensais, tecto, jaRecuperado) {
+    if (!atingiu) return 0;
     var pago = 0;
     var lista = Array.isArray(premiosMensais) ? premiosMensais : [];
     for (var i = 0; i < lista.length; i++) pago += Number(lista[i]) || 0;
     var tec = Number(tecto) || 0;
-    var rec = tec - pago;
+    var ja = Number(jaRecuperado) || 0;
+    var rec = tec - pago - ja;
     return rec > 0 ? rec : 0;
+  }
+
+  /** Compat: recuperação trim = período de 3 meses sem «já recuperado». */
+  function premiosRecuperacaoTrim(atingiuTrim, premiosMensais, tecto) {
+    return premiosRecuperacaoPeriodo(atingiuTrim, premiosMensais, tecto, 0);
   }
 
   function premiosValorTrim(atingiuTrim, valorTrim) {
@@ -121,7 +150,80 @@
   }
 
   /**
-   * Calcula um mês + contexto de trimestre para uma pessoa.
+   * Agrega vendas/obj/prémios mensais num intervalo [m0, m0+n).
+   */
+  function premiosAggPeriodo(serie, pessoa, m0, n) {
+    var vendas = 0;
+    var obj = 0;
+    var temObj = false;
+    var temVend = false;
+    var premios = [];
+    var mensal = pessoa && pessoa.mensal;
+    for (var i = 0; i < n; i++) {
+      var c = (serie && serie[m0 + i]) || {};
+      if (c.temVendas) {
+        temVend = true;
+        vendas += Number(c.vendas) || 0;
+      }
+      if (c.obj != null && Number.isFinite(+c.obj) && +c.obj > 0) {
+        temObj = true;
+        obj += +c.obj;
+      }
+      premios.push(premiosValorMensal(premiosPctCumprimento(c.vendas, c.obj), mensal));
+    }
+    var pct = temObj ? premiosPctCumprimento(vendas, obj) : null;
+    return {
+      vendas: temVend ? vendas : null,
+      obj: temObj ? obj : null,
+      pct: pct,
+      varPct: temObj ? premiosVarObjPct(vendas, obj) : null,
+      atingiu: premiosAtingiuMeta(pct),
+      premiosMensais: premios,
+    };
+  }
+
+  /** Recuperação trim paga no mês de fecho (2/5/8/11); 0 noutros. */
+  function premiosRecTrimNoFecho(pessoa, serie, fechoMes) {
+    var mi = fechoMes | 0;
+    if (!premiosEhFechoTrim(mi)) return 0;
+    var t0 = Math.floor(mi / 3) * 3;
+    var agg = premiosAggPeriodo(serie, pessoa, t0, 3);
+    return premiosRecuperacaoPeriodo(agg.atingiu, agg.premiosMensais, premiosTectoTrim(pessoa.mensal), 0);
+  }
+
+  /**
+   * Recuperação semestral no fecho (Jun=5 / Dez=11).
+   * Desconta recuperações trim do semestre (incl. a do próprio mês).
+   */
+  function premiosRecSemNoFecho(pessoa, serie, fechoMes) {
+    var mi = fechoMes | 0;
+    if (!premiosEhFechoSem(mi)) return 0;
+    var s0 = mi === 5 ? 0 : 6;
+    var agg = premiosAggPeriodo(serie, pessoa, s0, 6);
+    var ja = premiosRecTrimNoFecho(pessoa, serie, s0 + 2)
+      + premiosRecTrimNoFecho(pessoa, serie, s0 + 5);
+    return premiosRecuperacaoPeriodo(agg.atingiu, agg.premiosMensais, premiosTectoSem(pessoa.mensal), ja);
+  }
+
+  /**
+   * Recuperação anual no fecho (Dez=11).
+   * Desconta todas as rec. trim + sem do ano (incl. as do próprio Dez).
+   */
+  function premiosRecAnualNoFecho(pessoa, serie, fechoMes) {
+    var mi = fechoMes | 0;
+    if (!premiosEhFechoAnual(mi)) return 0;
+    var agg = premiosAggPeriodo(serie, pessoa, 0, 12);
+    var ja = premiosRecTrimNoFecho(pessoa, serie, 2)
+      + premiosRecTrimNoFecho(pessoa, serie, 5)
+      + premiosRecTrimNoFecho(pessoa, serie, 8)
+      + premiosRecTrimNoFecho(pessoa, serie, 11)
+      + premiosRecSemNoFecho(pessoa, serie, 5)
+      + premiosRecSemNoFecho(pessoa, serie, 11);
+    return premiosRecuperacaoPeriodo(agg.atingiu, agg.premiosMensais, premiosTectoAnoMensal(pessoa.mensal), ja);
+  }
+
+  /**
+   * Calcula um mês + contexto trim/sem/ano para uma pessoa.
    * mesesSerie: array de 1..12 com { vendas, obj } (índice 0 = Jan).
    * mesIdx: 0–11 do mês seleccionado.
    */
@@ -141,33 +243,26 @@
 
     var trimIdx = Math.floor(mi / 3); // 0..3
     var m0 = trimIdx * 3;
-    var mesesTrim = [serie[m0] || {}, serie[m0 + 1] || {}, serie[m0 + 2] || {}];
-    var vendasTrim = 0;
-    var objTrim = 0;
-    var temObjTrim = false;
-    var temVendTrim = false;
-    var premiosMensaisTrim = [];
-    for (var i = 0; i < 3; i++) {
-      var c = mesesTrim[i];
-      if (c.temVendas) {
-        temVendTrim = true;
-        vendasTrim += Number(c.vendas) || 0;
-      }
-      if (c.obj != null && Number.isFinite(+c.obj) && +c.obj > 0) {
-        temObjTrim = true;
-        objTrim += +c.obj;
-      }
-      var pctI = premiosPctCumprimento(c.vendas, c.obj);
-      premiosMensaisTrim.push(premiosValorMensal(pctI, pessoa.mensal));
-    }
-    var pctTrim = temObjTrim ? premiosPctCumprimento(vendasTrim, objTrim) : null;
-    var varPctTrim = temObjTrim ? premiosVarObjPct(vendasTrim, objTrim) : null;
-    var atingiuTrim = premiosAtingiuMeta(pctTrim);
+    var aggTrim = premiosAggPeriodo(serie, pessoa, m0, 3);
     var tecto = premiosTectoTrim(pessoa.mensal);
-    var premioTrim = premiosValorTrim(atingiuTrim, pessoa.trim);
-    var recuperacao = premiosRecuperacaoTrim(atingiuTrim, premiosMensaisTrim, tecto);
-    var ehFechoTrim = (mi % 3) === 2;
-    var totalFecho = ehFechoTrim ? (premioTrim + recuperacao + totalMes) : null;
+    var premioTrim = premiosValorTrim(aggTrim.atingiu, pessoa.trim);
+    var recuperacaoTrim = premiosRecTrimNoFecho(pessoa, serie, mi);
+
+    var semIdx = mi < 6 ? 0 : 1;
+    var s0 = semIdx * 6;
+    var aggSem = premiosAggPeriodo(serie, pessoa, s0, 6);
+    var recuperacaoSem = premiosRecSemNoFecho(pessoa, serie, mi);
+
+    var aggAno = premiosAggPeriodo(serie, pessoa, 0, 12);
+    var recuperacaoAnual = premiosRecAnualNoFecho(pessoa, serie, mi);
+
+    var ehFechoTrim = premiosEhFechoTrim(mi);
+    var ehFechoSem = premiosEhFechoSem(mi);
+    var ehFechoAnual = premiosEhFechoAnual(mi);
+    var recuperacao = recuperacaoTrim + recuperacaoSem + recuperacaoAnual;
+    var totalFecho = ehFechoTrim
+      ? (premioTrim + recuperacao + totalMes)
+      : null;
 
     return {
       id: pessoa.id,
@@ -186,16 +281,32 @@
       comissao: comissao,
       totalMes: totalMes,
       trimIdx: trimIdx,
-      vendasTrim: temVendTrim ? vendasTrim : null,
-      objTrim: temObjTrim ? objTrim : null,
-      pctTrim: pctTrim,
-      varPctTrim: varPctTrim,
-      atingiuTrim: atingiuTrim,
+      vendasTrim: aggTrim.vendas,
+      objTrim: aggTrim.obj,
+      pctTrim: aggTrim.pct,
+      varPctTrim: aggTrim.varPct,
+      atingiuTrim: aggTrim.atingiu,
       tecto: tecto,
       premioTrim: premioTrim,
+      recuperacaoTrim: recuperacaoTrim,
+      recuperacaoSem: recuperacaoSem,
+      recuperacaoAnual: recuperacaoAnual,
       recuperacao: recuperacao,
-      premiosMensaisTrim: premiosMensaisTrim,
+      premiosMensaisTrim: aggTrim.premiosMensais,
+      semIdx: semIdx,
+      vendasSem: aggSem.vendas,
+      objSem: aggSem.obj,
+      pctSem: aggSem.pct,
+      varPctSem: aggSem.varPct,
+      atingiuSem: aggSem.atingiu,
+      vendasAno: aggAno.vendas,
+      objAno: aggAno.obj,
+      pctAno: aggAno.pct,
+      varPctAno: aggAno.varPct,
+      atingiuAno: aggAno.atingiu,
       ehFechoTrim: ehFechoTrim,
+      ehFechoSem: ehFechoSem,
+      ehFechoAnual: ehFechoAnual,
       totalFecho: totalFecho,
     };
   }
@@ -207,6 +318,9 @@
     var totComissao = 0;
     var totMes = 0;
     var totRec = 0;
+    var totRecTrim = 0;
+    var totRecSem = 0;
+    var totRecAnual = 0;
     var totTrim = 0;
     var nAtingiu = 0;
     for (var i = 0; i < lista.length; i++) {
@@ -219,6 +333,9 @@
       totMes += row.totalMes;
       if (row.ehFechoTrim) {
         totRec += row.recuperacao;
+        totRecTrim += row.recuperacaoTrim;
+        totRecSem += row.recuperacaoSem;
+        totRecAnual += row.recuperacaoAnual;
         totTrim += row.premioTrim;
       }
       if (row.atingiu) nAtingiu++;
@@ -231,6 +348,9 @@
         comissao: totComissao,
         totalMes: totMes,
         recuperacao: totRec,
+        recuperacaoTrim: totRecTrim,
+        recuperacaoSem: totRecSem,
+        recuperacaoAnual: totRecAnual,
         premioTrim: totTrim,
         nAtingiu: nAtingiu,
         n: out.length,
@@ -560,6 +680,12 @@
     if (modelo.linhas[0] && modelo.linhas[0].ehFechoTrim) {
       html += cell('trim', 'Prémio trim.', peRs(t.premioTrim), true)
         + cell('rec', 'Recuperação', peRs(t.recuperacao), true);
+      if (modelo.linhas[0].ehFechoSem) {
+        html += cell('rec-sem', 'Rec. semestral', peRs(t.recuperacaoSem), true);
+      }
+      if (modelo.linhas[0].ehFechoAnual) {
+        html += cell('rec-anual', 'Rec. anual', peRs(t.recuperacaoAnual), true);
+      }
     }
     html += '</div>';
     if (filtro) {
@@ -578,6 +704,8 @@
     if (f === 'comissao') return row.comissao > 0;
     if (f === 'trim') return row.premioTrim > 0;
     if (f === 'rec') return row.recuperacao > 0;
+    if (f === 'rec-sem') return row.recuperacaoSem > 0;
+    if (f === 'rec-anual') return row.recuperacaoAnual > 0;
     return true;
   }
 
@@ -596,10 +724,20 @@
       + '<th style="text-align:right;padding:8px 10px;">Var. obj. %</th>'
       + '<th style="text-align:right;padding:8px 10px;">Prémio</th>'
       + '<th style="text-align:right;padding:8px 10px;">Comissão</th>';
+    var fechoSem = fecho && modelo.linhas[0].ehFechoSem;
+    var fechoAnual = fecho && modelo.linhas[0].ehFechoAnual;
     if (fecho) {
       head += '<th style="text-align:right;padding:8px 10px;">Var. trim. %</th>'
         + '<th style="text-align:right;padding:8px 10px;">Prémio trim.</th>'
-        + '<th style="text-align:right;padding:8px 10px;">Recuperação</th>';
+        + '<th style="text-align:right;padding:8px 10px;">Rec. trim.</th>';
+      if (fechoSem) {
+        head += '<th style="text-align:right;padding:8px 10px;">Var. sem. %</th>'
+          + '<th style="text-align:right;padding:8px 10px;">Rec. sem.</th>';
+      }
+      if (fechoAnual) {
+        head += '<th style="text-align:right;padding:8px 10px;">Var. ano %</th>'
+          + '<th style="text-align:right;padding:8px 10px;">Rec. anual</th>';
+      }
     }
     head += '<th style="text-align:right;padding:8px 10px;">Total a Pagar</th></tr>';
     var body = '';
@@ -621,14 +759,24 @@
         var trimCls = r.atingiuTrim ? 'color:#166534;font-weight:600;' : (r.varPctTrim != null ? 'color:#b45309;' : '');
         body += '<td style="padding:8px 10px;text-align:right;' + trimCls + '">' + peFmtVarObj(r.varPctTrim) + '</td>'
           + '<td style="padding:8px 10px;text-align:right;">' + peRs(r.premioTrim) + '</td>'
-          + '<td style="padding:8px 10px;text-align:right;">' + peRs(r.recuperacao) + '</td>'
-          + '<td style="padding:8px 10px;text-align:right;font-weight:700;">' + peRs(r.totalFecho) + '</td>';
+          + '<td style="padding:8px 10px;text-align:right;">' + peRs(r.recuperacaoTrim) + '</td>';
+        if (fechoSem) {
+          var semCls = r.atingiuSem ? 'color:#166534;font-weight:600;' : (r.varPctSem != null ? 'color:#b45309;' : '');
+          body += '<td style="padding:8px 10px;text-align:right;' + semCls + '">' + peFmtVarObj(r.varPctSem) + '</td>'
+            + '<td style="padding:8px 10px;text-align:right;">' + peRs(r.recuperacaoSem) + '</td>';
+        }
+        if (fechoAnual) {
+          var anoCls = r.atingiuAno ? 'color:#166534;font-weight:600;' : (r.varPctAno != null ? 'color:#b45309;' : '');
+          body += '<td style="padding:8px 10px;text-align:right;' + anoCls + '">' + peFmtVarObj(r.varPctAno) + '</td>'
+            + '<td style="padding:8px 10px;text-align:right;">' + peRs(r.recuperacaoAnual) + '</td>';
+        }
+        body += '<td style="padding:8px 10px;text-align:right;font-weight:700;">' + peRs(r.totalFecho) + '</td>';
       } else {
         body += '<td style="padding:8px 10px;text-align:right;font-weight:700;">' + peRs(r.totalMes) + '</td>';
       }
       body += '</tr>';
     }
-    var nCols = fecho ? 10 : 7;
+    var nCols = fecho ? (10 + (fechoSem ? 2 : 0) + (fechoAnual ? 2 : 0)) : 7;
     if (!linhas.length) {
       body = '<tr><td colspan="' + nCols + '" style="padding:24px;text-align:center;color:var(--muted);">Nenhuma linha neste filtro.</td></tr>';
     }
@@ -697,13 +845,19 @@
     var frase = 'Segue abaixo a apuração do prémio referente ao mês ' + mesNome
       + ' para a devida contabilização e pagamento.';
     var fecho = modelo.linhas[0] && modelo.linhas[0].ehFechoTrim;
+    var fechoSem = fecho && modelo.linhas[0].ehFechoSem;
+    var fechoAnual = fecho && modelo.linhas[0].ehFechoAnual;
     var td = 'border:1px solid #d1d5db;padding:6px 10px;font-family:Calibri,Arial,sans-serif;font-size:12px;';
     var th = td + 'background:#c8102e;color:#ffffff;font-weight:700;';
     var cols = ['Vendedor', 'Vendas', 'Objectivo', 'Var. obj. %', 'Prémio', 'Comissão'];
-    if (fecho) cols = cols.concat(['Var. trim. %', 'Prémio trim.', 'Recuperação']);
+    if (fecho) cols = cols.concat(['Var. trim. %', 'Prémio trim.', 'Rec. trim.']);
+    if (fechoSem) cols = cols.concat(['Var. sem. %', 'Rec. sem.']);
+    if (fechoAnual) cols = cols.concat(['Var. ano %', 'Rec. anual']);
     cols.push('Total a Pagar');
     var textIdx = { 0: 1, 3: 1 };
     if (fecho) textIdx[6] = 1;
+    if (fechoSem) textIdx[9] = 1;
+    if (fechoAnual) textIdx[fechoSem ? 11 : 9] = 1;
     var head = cols.map(function (c, i) {
       return '<th style="' + th + 'text-align:' + (i === 0 ? 'left' : 'right') + ';">' + peEsc(c) + '</th>';
     }).join('');
@@ -721,7 +875,10 @@
         r.comissaoCfg ? r.comissao : null,
       ];
       if (fecho) {
-        vals.push(peFmtVarObj(r.varPctTrim), r.premioTrim, r.recuperacao, r.totalFecho);
+        vals.push(peFmtVarObj(r.varPctTrim), r.premioTrim, r.recuperacaoTrim);
+        if (fechoSem) vals.push(peFmtVarObj(r.varPctSem), r.recuperacaoSem);
+        if (fechoAnual) vals.push(peFmtVarObj(r.varPctAno), r.recuperacaoAnual);
+        vals.push(r.totalFecho);
       } else {
         vals.push(r.totalMes);
       }
@@ -745,7 +902,9 @@
       ? (tot.totalMes || 0) + (tot.premioTrim || 0) + (tot.recuperacao || 0)
       : (tot.totalMes || 0);
     var totVals = ['Total', '', '', '', tot.premio, tot.comissao];
-    if (fecho) totVals = totVals.concat(['', tot.premioTrim, tot.recuperacao]);
+    if (fecho) totVals = totVals.concat(['', tot.premioTrim, tot.recuperacaoTrim]);
+    if (fechoSem) totVals = totVals.concat(['', tot.recuperacaoSem]);
+    if (fechoAnual) totVals = totVals.concat(['', tot.recuperacaoAnual]);
     totVals.push(totPagar);
     aoaRows.push(totVals.map(function (v, idx) {
       if (textIdx[idx] || idx === 0) return v == null ? '' : String(v);
@@ -922,7 +1081,7 @@
     if (lead) {
       lead.textContent = _peVista === 'scorecard'
         ? '% de prémios ganhos face ao tecto possível (mensal + trim.). Comissões 2,3% não entram. Útil para ranking nas áreas comerciais.'
-        : 'Apuramento automático (vendas ÷ objectivo). Meta ≥ 100%. Hélcio e Daniela: 2,3% acima de R$ 55.000. Trimestre: prémio + recuperação.';
+        : 'Apuramento automático (vendas ÷ objectivo). Meta ≥ 100%. Hélcio e Daniela: 2,3% acima de R$ 55.000. Recuperação: trim (3 meses), semestre (6) e anual (12).';
     }
     renderPremiosEquipa();
   }
@@ -969,7 +1128,9 @@
     var lead = '<p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;">'
       + peEsc(mesNome) + ' ' + peEsc(_peAno)
       + ' — meta mensal ≥ 100%. Hélcio e Daniela: comissão 2,3% sobre o excedente acima de R$ 55.000. '
-      + 'No fecho do trimestre (Mar/Jun/Set/Dez), prémio trim. + recuperação do que falhou nos meses.</p>';
+      + 'Fecho trim (Mar/Jun/Set/Dez): prémio trim. + rec. dos 3 meses. '
+      + 'Fecho semestre (Jun/Dez): rec. dos 6 meses. Fecho anual (Dez): rec. dos 12 meses '
+      + '(sem pagar duas vezes o que já foi recuperado).</p>';
 
     host.innerHTML = lead + peResumoHtml(_peModelo) + peTabelaHtml(_peModelo);
   }
@@ -996,6 +1157,8 @@
     PREMIOS_EMAIL_TO: PREMIOS_EMAIL_TO,
     PREMIOS_EMAIL_CC: PREMIOS_EMAIL_CC,
     premiosTectoTrim: premiosTectoTrim,
+    premiosTectoSem: premiosTectoSem,
+    premiosTectoAnoMensal: premiosTectoAnoMensal,
     premiosTectoAnual: premiosTectoAnual,
     premiosTectoAteMes: premiosTectoAteMes,
     premiosGanhosAteMes: premiosGanhosAteMes,
@@ -1007,7 +1170,12 @@
     premiosAtingiuMeta: premiosAtingiuMeta,
     premiosValorMensal: premiosValorMensal,
     premiosComissaoExcedente: premiosComissaoExcedente,
+    premiosRecuperacaoPeriodo: premiosRecuperacaoPeriodo,
     premiosRecuperacaoTrim: premiosRecuperacaoTrim,
+    premiosRecTrimNoFecho: premiosRecTrimNoFecho,
+    premiosRecSemNoFecho: premiosRecSemNoFecho,
+    premiosRecAnualNoFecho: premiosRecAnualNoFecho,
+    premiosAggPeriodo: premiosAggPeriodo,
     premiosValorTrim: premiosValorTrim,
     premiosCalcularPessoaMes: premiosCalcularPessoaMes,
     premiosCalcularQuadro: premiosCalcularQuadro,
