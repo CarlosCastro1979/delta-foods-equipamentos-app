@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-ponte-arranque — Ponte Outlook: listen antes do update
+// Service Worker v2026-11-24-premios-email-dp — Prémios email DP + Dados Mestres
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-ponte-arranque';
+const CACHE = 'v2026-11-24-premios-email-dp';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
