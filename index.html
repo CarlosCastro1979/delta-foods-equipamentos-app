@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-vendas-hora-upd Vendas mapa: só data/hora actualização -->
+<!-- dfb-build: v2026-11-24-dados-atualizado-em Dados + NF: Actualizado em -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -4379,6 +4379,7 @@ var _unused_placeholder = 1;
         <div id="dados-vendas-cobertura">
           <div style="color:var(--muted);font-size:13px;">A carregar cobertura…</div>
         </div>
+        <div id="dados-cobertura-ultima" style="font-size:12px;color:var(--muted);margin-top:8px;"></div>
       </div>
 
       <!-- CARREGAR LISTA SAP -->
@@ -4419,6 +4420,7 @@ var _unused_placeholder = 1;
         <input type="file" id="dados-rc-input" accept=".xlsx,.xls" style="display:none" onchange="carregarListaComissaoRc(event)">
         <button type="button" class="btn btn-primary btn-sm" id="dados-rc-btn" onclick="document.getElementById('dados-rc-input').click()">📂 Selecionar ficheiro</button>
         <div id="dados-rc-status" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+        <div id="dados-rc-ultima" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
       </div>
 
       <!-- CARREGAR DÍVIDAS -->
@@ -4459,6 +4461,7 @@ var _unused_placeholder = 1;
         <input type="file" id="dados-nfe-input" accept=".zip,.xml,.pdf,application/zip,application/xml,text/xml,application/pdf" multiple style="display:none" onchange="nfeOnFiles(event)">
         <button type="button" class="btn btn-primary btn-sm" id="dados-nfe-btn" onclick="document.getElementById('dados-nfe-input').click()">📂 Selecionar ZIP de XML e PDF da TTI</button>
         <div id="dados-nfe-status" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+        <div id="dados-nfe-ultima" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
       </div>
 
       <!-- CÓDIGOS RELACIONADOS -->
@@ -4480,6 +4483,7 @@ var _unused_placeholder = 1;
           <button class="btn btn-primary btn-sm" onclick="addCodRelacionado()">+ Adicionar</button>
         </div>
         <div id="cod-rel-status" style="margin-top:8px;font-size:12px;"></div>
+        <div id="dados-cod-rel-ultima" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
       </div>
 
       <!-- CARGA EQUIPAMENTOS DISTRIBUIDORES (Excel NF + máquinas) -->
@@ -6271,24 +6275,42 @@ async function cancelarPedidoEncerramento(cod, id) {
 }
 
 // ─── PIN ÁREA DADOS ──────────────────────────────────
+/** «Actualizado em DD/MM/AAAA, HH:MM:SS» — formato comum em Dados / mapas. */
+function dadosFmtAtualizadoEm(isoOrDate) {
+  if (isoOrDate == null || isoOrDate === '') return '';
+  const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
+  if (!d || isNaN(d.getTime())) return '';
+  return d.toLocaleString('pt-BR');
+}
+
+function dadosHtmlAtualizadoEm(isoOrDate, extraHtml) {
+  const ts = dadosFmtAtualizadoEm(isoOrDate);
+  if (!ts) return 'Ainda sem data de actualização.';
+  const extra = extraHtml ? (' &nbsp;·&nbsp; ' + extraHtml) : '';
+  return 'Actualizado em <strong>' + ts + '</strong>' + extra;
+}
+
 function renderUltimaVendasCarga() {
   const el = document.getElementById('dados-vendas-ultima');
   if (!el) return;
   try {
     const saved = localStorage.getItem('delta_vendas_ultima_carga');
-    if (!saved) { el.textContent = 'Nenhuma carga efectuada neste browser.'; return; }
+    if (!saved) { el.textContent = 'Ainda sem data de actualização.'; return; }
     const savedObj = JSON.parse(saved);
     const { data, ficheiro, novos, ignorados, total, lidas, ignoradasFechado, ignoradasOutroDia, hoje } = savedObj;
-    const d = new Date(data);
-    const totalTxt = total != null ? ` &nbsp;·&nbsp; total servidor: <strong>${Number(total).toLocaleString('pt-BR')}</strong>` : '';
-    const lidasTxt = lidas != null ? ` &nbsp;·&nbsp; ${Number(lidas).toLocaleString('pt-BR')} lidas${hoje ? ` (dia ${hoje})` : ''}` : '';
-    const outroTxt = ignoradasOutroDia != null ? ` &nbsp;·&nbsp; <span style="color:var(--muted)">${Number(ignoradasOutroDia).toLocaleString('pt-BR')} de outros dias ignoradas</span>` : '';
-    const fechadoTxt = ignoradasFechado != null ? ` &nbsp;·&nbsp; <span style="color:var(--muted)">${Number(ignoradasFechado).toLocaleString('pt-BR')} de meses fechados ignoradas</span>` : '';
-    el.innerHTML = `<strong>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</strong>
-      &nbsp;·&nbsp; ${ficheiro}
-      &nbsp;·&nbsp; <span style="color:#16a34a">+${Number(novos||0).toLocaleString('pt-BR')} novos</span>
-      &nbsp;·&nbsp; <span style="color:var(--muted)">${Number(ignorados||0).toLocaleString('pt-BR')} já existentes</span>${lidasTxt}${outroTxt}${fechadoTxt}${totalTxt}`;
-  } catch(e) { el.textContent = '—'; }
+    const totalTxt = total != null ? `total servidor: <strong>${Number(total).toLocaleString('pt-BR')}</strong>` : '';
+    const lidasTxt = lidas != null ? `${Number(lidas).toLocaleString('pt-BR')} lidas${hoje ? ` (dia ${hoje})` : ''}` : '';
+    const parts = [
+      ficheiro ? String(ficheiro) : '',
+      `<span style="color:#16a34a">+${Number(novos||0).toLocaleString('pt-BR')} novos</span>`,
+      `<span style="color:var(--muted)">${Number(ignorados||0).toLocaleString('pt-BR')} já existentes</span>`,
+      lidasTxt,
+      ignoradasOutroDia != null ? `<span style="color:var(--muted)">${Number(ignoradasOutroDia).toLocaleString('pt-BR')} de outros dias ignoradas</span>` : '',
+      ignoradasFechado != null ? `<span style="color:var(--muted)">${Number(ignoradasFechado).toLocaleString('pt-BR')} de meses fechados ignoradas</span>` : '',
+      totalTxt,
+    ].filter(Boolean);
+    el.innerHTML = dadosHtmlAtualizadoEm(data, parts.join(' &nbsp;·&nbsp; '));
+  } catch(e) { el.textContent = 'Ainda sem data de actualização.'; }
 }
 
 async function desbloquearDadosContent() {
@@ -6296,6 +6318,7 @@ async function desbloquearDadosContent() {
   document.getElementById('dados-content').style.display = 'block';
   renderUltimaCargaSAP();
   renderUltimaVendasCarga();
+  try { await renderUltimaCargaRc(); } catch (_) {}
   loadCodRelacionados();
   loadVendasCobertura(false);
   try { if (typeof distCargaEquipRefreshStats === 'function') distCargaEquipRefreshStats(); } catch (_) {}
@@ -7200,15 +7223,31 @@ function renderCodRelacionados() {
   if (!el) return;
   if (!codRelacionados.length) {
     el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:4px 0;">Nenhum par registado.</div>';
-    return;
-  }
-  el.innerHTML = codRelacionados.map(r => `
+  } else {
+    el.innerHTML = codRelacionados.map(r => `
     <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;">
       <span style="font-weight:600;min-width:80px;">${r.cod_pai}</span>
       <span style="color:var(--muted);">→</span>
       <span style="min-width:80px;">${r.cod_filho}</span>
       <button onclick="removeCodRelacionado(${r.id})" style="margin-left:auto;background:none;border:none;color:var(--danger);cursor:pointer;font-size:16px;padding:0 4px;">✕</button>
     </div>`).join('');
+  }
+  const ult = document.getElementById('dados-cod-rel-ultima');
+  if (ult) {
+    let iso = '';
+    try { iso = localStorage.getItem('delta_cod_rel_atualizado_em') || ''; } catch (_) {}
+    const extra = codRelacionados.length
+      ? (codRelacionados.length + ' par' + (codRelacionados.length === 1 ? '' : 'es'))
+      : '';
+    ult.innerHTML = (typeof dadosHtmlAtualizadoEm === 'function')
+      ? dadosHtmlAtualizadoEm(iso, extra)
+      : 'Ainda sem data de actualização.';
+  }
+}
+
+function codRelMarcarAtualizado() {
+  const iso = new Date().toISOString();
+  try { localStorage.setItem('delta_cod_rel_atualizado_em', iso); } catch (_) {}
 }
 
 async function addCodRelacionado() {
@@ -7230,6 +7269,7 @@ async function addCodRelacionado() {
     document.getElementById('cod-rel-pai').value = '';
     document.getElementById('cod-rel-filho').value = '';
     if(st) st.innerHTML = '<span style="color:#2e7d32">✅ Par adicionado.</span>';
+    codRelMarcarAtualizado();
     await loadCodRelacionados();
     setTimeout(() => { if(st) st.innerHTML = ''; }, 3000);
   } catch(e) {
@@ -7243,6 +7283,7 @@ async function removeCodRelacionado(id) {
     await fetch(`https://qnscwppgljobelplgbkp.supabase.co/rest/v1/cod_relacionados?id=eq.${id}`, {
       method: 'DELETE', headers: HEADERS
     });
+    codRelMarcarAtualizado();
     await loadCodRelacionados();
   } catch(e) { toast('Erro ao remover: ' + e.message, 'error'); }
 }
@@ -7595,20 +7636,21 @@ function renderUltimaCargaDividas(meta) {
       info = s ? JSON.parse(s) : null;
     }
     if (!info || !info.data) {
-      el.textContent = 'Nenhuma carga de dívidas registada.';
+      el.textContent = 'Ainda sem data de actualização.';
       return;
     }
-    const d = new Date(info.data);
     const n = info.total != null ? Number(info.total) : 0;
     const sync = info.supabaseOk === false
       ? '<span style="color:#c62828">⚠ NÃO sincronizou no Supabase</span>'
       : '<span style="color:#2e7d32">Supabase OK</span>';
-    el.innerHTML = `<strong>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</strong>`
-      + (info.ficheiro ? ` &nbsp;·&nbsp; ${escHtml(info.ficheiro)}` : '')
-      + ` &nbsp;·&nbsp; <span style="color:#2e7d32">${n.toLocaleString('pt-BR')} clientes com dívida</span>`
-      + ` &nbsp;·&nbsp; ${sync}`;
+    const parts = [
+      info.ficheiro ? escHtml(info.ficheiro) : '',
+      `<span style="color:#2e7d32">${n.toLocaleString('pt-BR')} clientes com dívida</span>`,
+      sync,
+    ].filter(Boolean);
+    el.innerHTML = dadosHtmlAtualizadoEm(info.data, parts.join(' &nbsp;·&nbsp; '));
   } catch (_) {
-    el.textContent = '—';
+    el.textContent = 'Ainda sem data de actualização.';
   }
 }
 
@@ -10616,6 +10658,35 @@ function mostrarEstadoListaRc(msg, erro) {
   }
 }
 
+async function renderUltimaCargaRc() {
+  const el = document.getElementById('dados-rc-ultima');
+  if (!el) return;
+  let iso = '';
+  let nRc = 0;
+  let nCli = 0;
+  try {
+    const raw = localStorage.getItem('df_comissao_rc');
+    const p = raw ? JSON.parse(raw) : null;
+    if (p && p.atualizado_em) iso = p.atualizado_em;
+    if (p && Array.isArray(p.rcs)) {
+      nRc = p.rcs.length;
+      nCli = p.rcs.reduce((s, rc) => s + ((rc && rc.clientes) ? rc.clientes.length : 0), 0);
+    }
+  } catch (_) {}
+  if (!iso && typeof idbGet === 'function') {
+    try {
+      const packed = await idbGet('df_comissao_rc');
+      if (packed && packed.atualizado_em) iso = packed.atualizado_em;
+      if ((!nRc) && packed && Array.isArray(packed.rcs)) {
+        nRc = packed.rcs.length;
+        nCli = packed.rcs.reduce((s, rc) => s + ((rc && rc.clientes) ? rc.clientes.length : 0), 0);
+      }
+    } catch (_) {}
+  }
+  const extra = nRc ? (`${nRc} RC · ${nCli} clientes`) : '';
+  el.innerHTML = dadosHtmlAtualizadoEm(iso, extra);
+}
+
 /** Carga da lista de RC. Falha de leitura não substitui o mapa. */
 async function carregarListaComissaoRc(event) {
   const file = event && event.target && event.target.files ? event.target.files[0] : null;
@@ -10689,6 +10760,7 @@ async function carregarListaComissaoRc(event) {
   const nCli = (gravado.mapa.rcs || []).reduce((s, rc) => s + (rc.clientes ? rc.clientes.length : 0), 0);
   const ign = leitura.ignorados ? ` Diogo ignorado: ${leitura.ignorados}.` : '';
   mostrarEstadoListaRc(gravado.mapa.rcs.length + ' RC, ' + nCli + ' clientes.' + ign, false);
+  try { await renderUltimaCargaRc(); } catch (_) {}
   if (typeof toast === 'function') toast('Guardado');
   if (typeof renderComissaoRc === 'function') {
     try { renderComissaoRc(); } catch (_) {}
@@ -11268,17 +11340,17 @@ function renderUltimaCargaSAP() {
   if (!el) return;
   try {
     const saved = localStorage.getItem('delta_sap_ultima_carga');
-    if (!saved) { el.textContent = 'Nenhuma carga efectuada neste browser.'; return; }
+    if (!saved) { el.textContent = 'Ainda sem data de actualização.'; return; }
     const { data, ficheiro, total, anulados, adicionados, removidos } = JSON.parse(saved);
-    const d = new Date(data);
-    let html = `<strong>${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</strong>
-      &nbsp;·&nbsp; ${ficheiro}
-      &nbsp;·&nbsp; <span style="color:#2e7d32">${total} clientes activos</span>`;
-    if (adicionados) html += ` &nbsp;·&nbsp; <span style="color:#1976d2">+${adicionados} novos</span>`;
-    if (removidos)   html += ` &nbsp;·&nbsp; <span style="color:#f57c00">-${removidos} removidos</span>`;
-    if (anulados)    html += ` &nbsp;·&nbsp; <span style="color:#c62828">${anulados} anulado(s) apagado(s)</span>`;
-    el.innerHTML = html;
-  } catch(e) { el.textContent = '—'; }
+    const parts = [
+      ficheiro ? String(ficheiro) : '',
+      `<span style="color:#2e7d32">${total} clientes activos</span>`,
+      adicionados ? `<span style="color:#1976d2">+${adicionados} novos</span>` : '',
+      removidos ? `<span style="color:#f57c00">-${removidos} removidos</span>` : '',
+      anulados ? `<span style="color:#c62828">${anulados} anulado(s) apagado(s)</span>` : '',
+    ].filter(Boolean);
+    el.innerHTML = dadosHtmlAtualizadoEm(data, parts.join(' &nbsp;·&nbsp; '));
+  } catch(e) { el.textContent = 'Ainda sem data de actualização.'; }
 }
 
 /** Lista completa (todos os canais) — sem filtro. */
@@ -14795,8 +14867,18 @@ let _nfePorMesSrc = null;
 let _nfeMetaPronta = false;
 let _nfeFiltro = '';
 let _nfeStatusMsg = '';
+/** ISO da última gravação/carga das NF (nuvem ou IndexedDB). */
+let _nfeAtualizadoEm = null;
 let _nfeGen = 0;
 let _nfeBusy = false;
+
+function nfeGuardarAtualizadoEm(iso) {
+  if (!iso) return;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return;
+  const cur = Date.parse(_nfeAtualizadoEm || '') || 0;
+  if (t >= cur) _nfeAtualizadoEm = new Date(t).toISOString();
+}
 
 function nfeInvalidarIndiceMes() {
   _nfePorMes = null;
@@ -14840,8 +14922,16 @@ function nfePrepararChrome() {
   if (excel) excel.style.display = 'none';
   const banner = document.getElementById('pv-banner');
   if (banner) {
-    banner.innerHTML = '<strong>NF emitidas</strong> — consulta do mês corrente. A carga do ZIP de XML e PDF da TTI faz-se em Dados. Clique no número da NF para abrir o PDF. Cruza o CNPJ/CPF do destinatário com a lista de clientes e mostra por canal e vendedor. CPF sem vendedor fica no Marcio Gorga, no Ecommerce. O site próprio do Marcio (NPess 99520009) não entra neste menu. Transferência entre os CNPJ da Delta ES e da Delta SP fica em Transferências internas, sem vendedor. A mesma chave não duplica. A gravação é no fim da carga.';
+    banner.innerHTML = '';
+    banner.style.display = 'none';
   }
+}
+
+function pvMostrarBanner(html) {
+  const banner = document.getElementById('pv-banner');
+  if (!banner) return;
+  banner.style.display = '';
+  banner.innerHTML = html || '';
 }
 
 async function nfeLerPdfsNuvem(nChunks) {
@@ -14891,12 +14981,13 @@ async function nfeLimparChunksPdf(keep) {
 
 async function nfeLoadRemote(opts) {
   const res = await fetch(
-    `${LISTA_CLIENTES_SUPA_URL}?id=eq.${NFE_STORE_ID}&select=data`,
+    `${LISTA_CLIENTES_SUPA_URL}?id=eq.${NFE_STORE_ID}&select=data,atualizado_em`,
     { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } }
   );
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const rows = await res.json();
   const data = rows && rows[0] && rows[0].data;
+  if (rows && rows[0] && rows[0].atualizado_em) nfeGuardarAtualizadoEm(rows[0].atualizado_em);
   let notas = [];
   if (data && Array.isArray(data.notas)) notas = data.notas;
   else if (Array.isArray(data)) notas = data;
@@ -14967,6 +15058,7 @@ function nfeMapaPdfs(notas, prev) {
 async function nfePersistir(notas) {
   const arr = Array.isArray(notas) ? notas : [];
   const ts = new Date().toISOString();
+  nfeGuardarAtualizadoEm(ts);
   let pdfsPrev = {};
   try {
     const pack = await idbGet(NFE_PDF_IDB_KEY);
@@ -15058,6 +15150,7 @@ async function nfePersistirAcrescimo(todas, comBinario) {
   }
   const enviados = inline.concat(novas);
   const ts = new Date().toISOString();
+  nfeGuardarAtualizadoEm(ts);
   const base = Number(_nfePdfChunks) || 0;
   const chunks = enviados.length && typeof nfePartirPdfsEmChunks === 'function'
     ? nfePartirPdfsEmChunks(enviados)
@@ -15185,6 +15278,7 @@ async function nfeHidrate() {
   try {
     const packed = await idbGet(NFE_IDB_KEY);
     if (packed && Array.isArray(packed.notas)) local = packed.notas;
+    if (packed && packed.ts) nfeGuardarAtualizadoEm(packed.ts);
   } catch (_) {}
   const pdfsLocais = await nfeLerPdfsLocais();
   let remote = null;
@@ -15264,6 +15358,7 @@ async function nfeHidrateMeta(opts) {
   try {
     const packed = await idbGet(NFE_IDB_KEY);
     if (packed && Array.isArray(packed.notas)) local = packed.notas;
+    if (packed && packed.ts) nfeGuardarAtualizadoEm(packed.ts);
   } catch (_) {}
   let remote = null;
   let pdfsInline = {};
@@ -16408,10 +16503,15 @@ function nfeHtml() {
   const doMes = nfeNotasDoMesEcra(_nfeNotas || [], f);
   const erro = _nfeStatusMsg && /não foi possível/i.test(_nfeStatusMsg);
   const estado = escHtml(erro ? _nfeStatusMsg : nfeEstadoMes(doMes, nfeMesEfetivo(f)));
-  return `<p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.45;">
-      Consulta das NF do mês escolhido — por omissão, o mês corrente. O ZIP de XML e PDF da TTI carrega-se em <strong>Dados</strong>. Clique no número da NF para abrir o PDF. A coluna Boleto mostra S quando a nota tem boleto gravado e N quando não tem. O ícone verde a seguir abre o WhatsApp com esse PDF para escolher o contacto. CPF sem vendedor fica no Marcio Gorga (Ecommerce). O site próprio do Marcio (NPess 99520009) não entra neste menu. Transferência entre os CNPJ da Delta ES e da Delta SP fica em Transferências internas, sem vendedor. A mesma chave não duplica.
-    </p>
-    <div style="font-size:12px;color:var(--muted);margin:0 0 12px;">${estado}</div>
+  const ts = _nfeAtualizadoEm ? new Date(_nfeAtualizadoEm) : null;
+  const tsTxt = (ts && !isNaN(ts.getTime())) ? ts.toLocaleString('pt-BR') : '';
+  const atualizado = tsTxt
+    ? ('Actualizado em ' + escHtml(tsTxt))
+    : 'Ainda sem data de actualização das NF.';
+  return `<div style="font-size:13px;color:var(--muted);margin:0 0 12px;line-height:1.45;">
+      <div>${atualizado}</div>
+      <div style="margin-top:4px;">${estado}</div>
+    </div>
     ${nfeFiltrosHtml('geral', doMes)}
     <div id="nfe-geral-conteudo">${nfeConteudoGeralHtml(doMes)}</div>`;
 }
@@ -16467,9 +16567,24 @@ function nfePaint() {
 
 function nfeSyncVistas() {
   const st = document.getElementById('dados-nfe-status');
+  const nMenu = nfeNotasDesteMenu(nfeArquivoNotas()).length;
   if (st) {
-    const nMenu = nfeNotasDesteMenu(nfeArquivoNotas()).length;
     st.textContent = _nfeStatusMsg || (nMenu ? (nMenu + ' notas guardadas.') : 'Ainda sem carga.');
+  }
+  const ult = document.getElementById('dados-nfe-ultima');
+  if (ult) {
+    const mes = (typeof nfeMesEfetivo === 'function')
+      ? nfeMesEfetivo(typeof nfeFiltrosGeral === 'function' ? nfeFiltrosGeral() : {})
+      : '';
+    const doMes = (typeof nfeNotasDoMesEcra === 'function')
+      ? nfeNotasDoMesEcra(_nfeNotas || [], typeof nfeFiltrosGeral === 'function' ? nfeFiltrosGeral() : {})
+      : [];
+    const contagem = (typeof nfeEstadoMes === 'function' && mes)
+      ? nfeEstadoMes(doMes, mes).replace(/\.$/, '')
+      : (nMenu ? (nMenu + ' notas guardadas') : '');
+    ult.innerHTML = (typeof dadosHtmlAtualizadoEm === 'function')
+      ? dadosHtmlAtualizadoEm(_nfeAtualizadoEm, contagem)
+      : (contagem || 'Ainda sem data de actualização.');
   }
   const btn = document.getElementById('dados-nfe-btn');
   if (btn) btn.disabled = !!_nfeBusy;
@@ -17303,10 +17418,7 @@ function pvRender(opts) {
     if (btnPubP) btnPubP.style.display = 'none';
     const excelBtnP = document.getElementById('pv-btn-excel');
     if (excelBtnP) excelBtnP.style.display = 'none';
-    const bannerP = document.getElementById('pv-banner');
-    if (bannerP) {
-      bannerP.innerHTML = '<strong>Maiores perdas mês</strong> — Top 20 clientes por vendedor no mês escolhido (não é acumulado). Valor perdido = quanto o cliente deixou de comprar face ao mesmo mês do ano anterior. Todos os canais.';
-    }
+    pvMostrarBanner('<strong>Maiores perdas mês</strong> — Top 20 clientes por vendedor no mês escolhido (não é acumulado). Valor perdido = quanto o cliente deixou de comprar face ao mesmo mês do ano anterior. Todos os canais.');
     pvMontarVistaPerdas();
     return;
   }
@@ -17322,10 +17434,7 @@ function pvRender(opts) {
     if (btnPubVal) btnPubVal.style.display = 'none';
     const excelBtnVal = document.getElementById('pv-btn-excel');
     if (excelBtnVal) excelBtnVal.style.display = 'none';
-    const bannerVal = document.getElementById('pv-banner');
-    if (bannerVal) {
-      bannerVal.innerHTML = '<strong>Validades</strong> — stock DFB disponível (dep. 0011 / cl. 00) com validade curta (até 4 meses) e com menos de 8 meses, lido do stock SAP + Unilog que a app Análises Stock SAP x Unilog guarda no Supabase. O mesmo stock serve todos os canais. Só consulta.';
-    }
+    pvMostrarBanner('<strong>Validades</strong> — stock DFB disponível (dep. 0011 / cl. 00) com validade curta (até 4 meses) e com menos de 8 meses, lido do stock SAP + Unilog que a app Análises Stock SAP x Unilog guarda no Supabase. O mesmo stock serve todos os canais. Só consulta.');
     if (typeof vldMontarVista === 'function') vldMontarVista('pv', 'pv-canal-panels', { ativo: () => _pvView === 'validades' });
     return;
   }
@@ -17346,10 +17455,7 @@ function pvRender(opts) {
     if (btnPubV) btnPubV.style.display = 'none';
     const excelBtnV = document.getElementById('pv-btn-excel');
     if (excelBtnV) excelBtnV.style.display = 'none';
-    const bannerV = document.getElementById('pv-banner');
-    if (bannerV) {
-      bannerV.innerHTML = '<strong>Vendas</strong> — mês (N), mesmo mês do ano anterior (N-1), acumulado e objectivo (Budget) do mês, todas as empresas. O menu Vendas de cada canal mostra só os canais desse menu, com o vendedor na mesma tabela. O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra. Só consulta. Este ecrã lê o agregado guardado e não relê as linhas de venda.';
-    }
+    pvMostrarBanner('<strong>Vendas</strong> — mês (N), mesmo mês do ano anterior (N-1), acumulado e objectivo (Budget) do mês, todas as empresas. O menu Vendas de cada canal mostra só os canais desse menu, com o vendedor na mesma tabela. O R$ de 2025 e 2026 preenche-se ao carregar o Excel do SAP; as linhas não são gravadas outra vez; antes de 2025 não entra. Só consulta. Este ecrã lê o agregado guardado e não relê as linhas de venda.');
     pvMontarVistaVendas();
     return;
   }
@@ -17414,6 +17520,7 @@ function pvRender(opts) {
   const mesNome = PV_MESES[m] || '—';
   const banner = document.getElementById('pv-banner');
   if (banner) {
+    banner.style.display = '';
     if (_pvView === 'accuracy') {
       const accHint = edit
         ? 'Preenche Previsão e N no mapa mensal.'
@@ -18483,6 +18590,7 @@ function orc27PrepararChrome() {
   if (anoWrap) anoWrap.style.display = 'none';
   const banner = document.getElementById('pv-banner');
   if (banner) {
+    banner.style.display = '';
     const hint = '<span id="orc27-autosave-hint" style="margin-left:8px;color:#15803d;font-weight:600;"></span>';
     if (_orc27Sub === 'volume') {
       banner.innerHTML = '<strong>Orçamento 2027 · Volume</strong> — '
@@ -26728,13 +26836,15 @@ function renderVendasCobertura(map, opts = {}) {
     );
   }
 
-  const ts = opts.atualizado_em ? new Date(opts.atualizado_em) : null;
-  const tsTxt = ts && !isNaN(ts.getTime())
-    ? ts.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
-    : '';
-  const fonteTxt = opts.fromCache
-    ? `Resumo em cache${tsTxt ? ' · actualizado ' + tsTxt : ''}${opts.fonte ? ' (' + opts.fonte + ')' : ''}. Usa «Actualizar» após carregar vendas novas.`
-    : `Resumo recalculado${tsTxt ? ' · ' + tsTxt : ''}.`;
+  const ultCob = document.getElementById('dados-cobertura-ultima');
+  if (ultCob) {
+    const extra = opts.fromCache
+      ? ('resumo em cache' + (opts.fonte ? ' (' + opts.fonte + ')' : ''))
+      : 'resumo recalculado';
+    ultCob.innerHTML = (typeof dadosHtmlAtualizadoEm === 'function')
+      ? dadosHtmlAtualizadoEm(opts.atualizado_em, extra)
+      : (opts.atualizado_em ? String(opts.atualizado_em) : 'Ainda sem data de actualização.');
+  }
 
   el.innerHTML = `
     <div class="vcob-summary">
@@ -26745,9 +26855,6 @@ function renderVendasCobertura(map, opts = {}) {
     </div>
     ${gridHtml}
     ${alertas.join('')}
-    <div class="vcob-note">${fonteTxt}<br>
-      A carga lê o mês corrente e o mês anterior e funde só os dias do ficheiro — os outros dias do mês ficam.<br>
-      Um mês antigo que esteja mesmo em falta pode ser carregado. Um mês antigo que já tem valores não é apagado nem fica em falta.</div>
   `;
 }
 
@@ -48024,12 +48131,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-vendas-hora-upd: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-dados-atualizado-em: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-vendas-hora-upd';
+  var CACHE_KEEP = 'v2026-11-24-dados-atualizado-em';
 
   function tryRegister() {
     try {
@@ -51834,14 +51941,17 @@ async function distCargaEquipRefreshStats() {
     totalValor += v;
   });
   const valorTxt = distFmtValorBRL(totalValor);
-  const txt = totalQty
-    ? `<strong>${totalQty}</strong> máquina(s)` +
+  const extra = totalQty
+    ? (`<strong>${totalQty}</strong> máquina(s)` +
       (valorTxt ? ` · Total Eq <strong>${valorTxt}</strong>` : '') +
-      ` · ${rows.length} linha(s) · ${byCli.size} clientes (local ∪ Supabase)` +
-      (meta?.em ? ` · última carga local ${new Date(meta.em).toLocaleString('pt-BR')}` : '') +
-      ' · máquinas do catálogo (sem filtros) · fonte: aba <code>base</code>'
-    : 'Nenhuma carga de máquinas profissionais. Importa um Excel com a aba <strong>base</strong> (export SAP).';
-  if (el) el.innerHTML = txt;
+      ` · ${rows.length} linha(s) · ${byCli.size} clientes` +
+      ' · catálogo (sem filtros) · aba <code>base</code>')
+    : 'sem máquinas profissionais';
+  if (el) {
+    el.innerHTML = (typeof dadosHtmlAtualizadoEm === 'function')
+      ? dadosHtmlAtualizadoEm(meta && meta.em, totalQty ? extra : '')
+      : (totalQty ? extra : 'Ainda sem data de actualização.');
+  }
   if (listEl) {
     const arr = [...byCli.values()].sort((a, b) => String(a.nome || a.cod).localeCompare(String(b.nome || b.cod)));
     listEl.innerHTML = arr.length

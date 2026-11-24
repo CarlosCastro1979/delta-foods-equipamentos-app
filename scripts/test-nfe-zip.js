@@ -314,8 +314,15 @@ function testUiCarga() {
   assert(fnIni > 0 && fnFim > fnIni, 'função de consulta das NF encontrada');
   assert(!fn.includes('type="file"') && !fn.includes('nfe-file-input'), 'a previsão não é o sítio de upload');
   assert(!fn.includes('Selecionar zip') && !fn.includes('Selecionar ZIP'), 'a previsão não tem botão de carregar');
-  assert(fn.includes('Dados'), 'a consulta aponta a carga para Dados');
+  assert(fn.includes('Actualizado em'), 'NF mostra data/hora de actualização');
+  assert(fn.includes('nfeEstadoMes'), 'NF mostra contagem do mês');
+  assert(!fn.includes('Consulta das NF do mês escolhido'), 'sem texto longo de ajuda no menu NF');
   assert(!html.includes('id="nfe-file-input"'), 'não ficou input de upload na previsão');
+  assert(html.includes('id="dados-nfe-ultima"'), 'Dados mostra Actualizado em das NF');
+  assert(html.includes('dadosHtmlAtualizadoEm'), 'helper comum de data de actualização em Dados');
+  assert(html.includes('id="dados-rc-ultima"'), 'Dados RC tem data de actualização');
+  assert(html.includes('id="dados-cobertura-ultima"'), 'Dados cobertura tem data de actualização');
+  assert(html.includes('id="dados-cod-rel-ultima"'), 'Dados códigos relacionados tem data de actualização');
 
   const canalIni = html.indexOf('id="panel-vendas-canal"');
   const canalFim = html.indexOf('id="panel-visitas"');
@@ -324,7 +331,7 @@ function testUiCarga() {
   assert(canal.includes('id="canal-nfe-host"'), 'as notas renderizam-se no menu do canal');
   assert(!canal.includes('type="file"'), 'o menu do canal não carrega o zip');
   assert(html.includes('nfeNotasDoCanal(_nfeNotas, canalId)'), 'o menu do canal usa o filtro por canal');
-  assert(html.includes('v2026-11-24-vendas-hora-upd'), 'service worker referido no index');
+  assert(html.includes('v2026-11-24-dados-atualizado-em'), 'service worker referido no index');
   assert(!html.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no index');
   assert(!html.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no index');
@@ -336,7 +343,7 @@ function testUiCarga() {
   assert(!html.includes('v2026-10-02-nf-mesmo-vendedor'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-vendedor-atual'), 'service worker referido no index');
   assert(!html.includes('v2026-10-02-nfe-pdf'), 'service worker referido no index');
-  assert(sw.includes('v2026-11-24-vendas-hora-upd'), 'service worker actualizado');
+  assert(sw.includes('v2026-11-24-dados-atualizado-em'), 'service worker actualizado');
   assert(!sw.includes('v2026-10-21-nfe-mes-quente'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-nfe-filtros-rapidos'), 'service worker antigo já não está no sw');
   assert(!sw.includes('v2026-10-21-contratos-autosave'), 'service worker antigo já não está no sw');
@@ -371,7 +378,7 @@ function loadNfeUi(notas, canalId, pvView) {
     }
     return els[id];
   }
-  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfeTodas', '_nfeMesesCarregados', '_nfeMesesDisponiveis', '_nfePorMes', '_nfePorMesSrc', '_nfeFiltro', '_nfeStatusMsg', '_nfeBusy'];
+  const names = ['CANAIS_APP', 'escHtml', 'nfeNormNome', 'nfeNotasDoCanal', 'resolveCanalActivoId', 'document', '_pvView', '_nfeNotas', '_nfeTodas', '_nfeMesesCarregados', '_nfeMesesDisponiveis', '_nfePorMes', '_nfePorMesSrc', '_nfeFiltro', '_nfeStatusMsg', '_nfeAtualizadoEm', '_nfeBusy'];
   const state = {
     notas: notas,
     todas: null,
@@ -418,6 +425,7 @@ function loadNfeUi(notas, canalId, pvView) {
     state.porMesSrc,
     '',
     '',
+    null,
     false,
   ];
   /* Getter/setter via object: nfeAplicarHotPath reatribui _nfeNotas/_nfeTodas no scope do Function. */
