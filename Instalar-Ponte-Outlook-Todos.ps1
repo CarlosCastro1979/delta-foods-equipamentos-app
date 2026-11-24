@@ -90,30 +90,49 @@ try {
     [IO.File]::WriteAllText($vbs, $vbsBody, [Text.Encoding]::ASCII)
 
     Write-Step '[4/4] A iniciar a ponte...'
+    # Arranque directo (sem esperar o auto-update do serve.ps1 bloquear o listen).
+    # VBS fica no Startup para os próximos logons.
     $env:DELTA_OUTLOOK_SILENT = '1'
+    $env:DELTA_OUTLOOK_NO_UPDATE = '1'
+    Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $serve
+    )
     Start-Process -FilePath 'wscript.exe' -ArgumentList @('//B', $vbs) -WindowStyle Hidden
-    Start-Sleep -Seconds 5
 
     $ok = $false
     $okPort = $null
-    foreach ($p in $ports) {
-        try {
-            $r = Invoke-WebRequest -UseBasicParsing -Method OPTIONS `
-                -Uri ("http://127.0.0.1:{0}/api/open-outlook-draft" -f $p) -TimeoutSec 3
-            $h = [string]$r.Headers['X-Delta-Outlook-Bridge']
-            if ($h -match '^com-v[3-9]') {
-                $ok = $true
-                $okPort = $p
-                Write-Step ("  OK porta $p ($h)")
-                break
-            }
-        } catch { }
+    # serve.ps1 em silent podia demorar >5s (download GitHub antes de ouvir) —
+    # por isso o .bat dizia «ainda nao respondeu» e a app caía no .eml.
+    for ($attempt = 1; $attempt -le 20 -and -not $ok; $attempt++) {
+        Start-Sleep -Seconds 2
+        foreach ($p in $ports) {
+            try {
+                $r = Invoke-WebRequest -UseBasicParsing -Method OPTIONS `
+                    -Uri ("http://127.0.0.1:{0}/api/open-outlook-draft" -f $p) -TimeoutSec 3
+                $h = [string]$r.Headers['X-Delta-Outlook-Bridge']
+                if ($h -match '^com-v[3-9]') {
+                    $ok = $true
+                    $okPort = $p
+                    Write-Step ("  OK porta $p ($h) apos ~$($attempt * 2)s")
+                    break
+                }
+            } catch { }
+        }
+        if (-not $ok -and $Interactive -and ($attempt % 5) -eq 0) {
+            Write-Step ("  Ainda a arrancar... ($($attempt * 2)s)")
+        }
     }
 
     if (-not $ok) {
-        Write-Step '  AVISO: ponte ainda nao respondeu — espera 5s e exporta na app.'
+        Write-Step '  FALHOU: ponte nao respondeu em ~40s.'
+        Write-Step '  Abre o Gestor de Tarefas e confirma powershell serve.ps1,'
+        Write-Step '  ou corre de novo este instalador com o Outlook fechado.'
+        $log = Join-Path $dfDir 'bridge.log'
+        if (Test-Path -LiteralPath $log) {
+            Write-Step ("  Log: $log")
+        }
         if ($Interactive) { exit 2 }
-        exit 0  # GPO: nao falhar o logon; a ponte pode atrasar no cold-start
+        exit 0  # GPO: nao falhar o logon
     }
 
     Write-Step "Pronto. Ponte em 127.0.0.1:$okPort (arranca com o Windows)."

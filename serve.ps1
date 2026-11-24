@@ -7,31 +7,28 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $appDir = Join-Path $root 'delta-foods-equipamentos-app'
 $syncFiles = @('index.html', 'manifest.json', 'sw.js', 'simulador-template.js', 'exceljs.min.js', 'xlsx.full.min.js', 'pdf-lib.min.js', 'mc00-template.xlsx', 'quebra-template.xlsx', 'icon-192.png', 'icon-512.png')
 
-# Ponte instalada (LocalAppData): actualiza serve.ps1 a partir do main e reinicia.
-# Assim o Display($false)/com-v4 chega sem voltar a correr o .bat.
+# Auto-update: NÃO bloquear o listen. O instalador passa DELTA_OUTLOOK_NO_UPDATE=1
+# no 1.º arranque; nos seguintes actualizamos em background DEPOIS de ouvir.
+$script:DeltaOutlookPendingUpdate = $false
 if (
     $silent -and
     $env:DELTA_OUTLOOK_NO_UPDATE -ne '1' -and
     $env:DELTA_OUTLOOK_UPDATING -ne '1' -and
     $root -like '*\DeltaFoodsOutlookBridge'
 ) {
+    # Só marcar — o download corre depois do HttpListener.Start (senão o .bat
+    # dava «ponte ainda nao respondeu» e a app descarregava .eml).
+    $script:DeltaOutlookPendingUpdate = $true
+}
+
+function Write-BridgeLog([string]$msg) {
     try {
-        $selfPath = $MyInvocation.MyCommand.Path
-        $updUrl = 'https://raw.githubusercontent.com/CarlosCastro1979/delta-foods-equipamentos-app/main/serve.ps1'
-        $updTmp = Join-Path $env:TEMP ('DeltaServeUpd_{0}.ps1' -f [guid]::NewGuid().ToString('N').Substring(0, 8))
-        Invoke-WebRequest -UseBasicParsing -Uri $updUrl -OutFile $updTmp -TimeoutSec 20
-        $newTxt = [IO.File]::ReadAllText($updTmp)
-        $curTxt = [IO.File]::ReadAllText($selfPath)
-        if ($newTxt -match "X-Delta-Outlook-Bridge.*=.*'com-v4'" -and $newTxt -ne $curTxt) {
-            Copy-Item -LiteralPath $updTmp -Destination $selfPath -Force
-            Remove-Item -LiteralPath $updTmp -Force -ErrorAction SilentlyContinue
-            $env:DELTA_OUTLOOK_UPDATING = '1'
-            Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
-                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $selfPath
-            )
-            exit 0
+        $logDir = if ($root -like '*\DeltaFoodsOutlookBridge') { $root } else {
+            Join-Path $env:LOCALAPPDATA 'DeltaFoodsOutlookBridge'
         }
-        Remove-Item -LiteralPath $updTmp -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+        $line = ('{0:yyyy-MM-dd HH:mm:ss} {1}' -f (Get-Date), $msg)
+        Add-Content -LiteralPath (Join-Path $logDir 'bridge.log') -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
     } catch { }
 }
 
@@ -472,12 +469,15 @@ foreach ($tryPort in $portOrder) {
         break
     } catch {
         Write-Info "Porta $tryPort ocupada - a tentar outra..." 'Yellow'
+        Write-BridgeLog ("porta $tryPort falhou: $($_.Exception.Message)")
     }
 }
 if (-not $listener) {
+    Write-BridgeLog 'FALHOU: nenhuma porta disponivel'
     throw "Nao foi possivel iniciar o servidor local (portas ocupadas). Fecha o processo na 8088/8080 ou define PORT."
 }
 
+Write-BridgeLog ("a ouvir 127.0.0.1:$port silent=$silent")
 Write-Info ''
 Write-Info 'Delta Foods - Gestao de Equipamentos' 'Green'
 Write-Info "Local:  http://localhost:$port/delta-foods-equipamentos-app/" 'Cyan'
@@ -487,6 +487,24 @@ Write-Info 'github.io = main em producao. Sem o PR 73 no main, o site online con
 Write-Info 'API Outlook: POST /api/open-outlook-draft (CORS + Private Network)' 'Gray'
 Write-Info 'Ctrl+C para parar' 'Gray'
 Write-Info ''
+
+# Auto-update em background: grava o ficheiro novo para o PRÓXIMO arranque
+# (não reinicia agora — senão disputa a porta com este processo).
+if ($script:DeltaOutlookPendingUpdate) {
+    Start-Job -ScriptBlock {
+        param($selfPath, $updUrl)
+        try {
+            $updTmp = Join-Path $env:TEMP ('DeltaServeUpd_{0}.ps1' -f [guid]::NewGuid().ToString('N').Substring(0, 8))
+            Invoke-WebRequest -UseBasicParsing -Uri $updUrl -OutFile $updTmp -TimeoutSec 15
+            $newTxt = [IO.File]::ReadAllText($updTmp)
+            $curTxt = [IO.File]::ReadAllText($selfPath)
+            if ($newTxt -match "X-Delta-Outlook-Bridge.*=.*'com-v4'" -and $newTxt -ne $curTxt) {
+                Copy-Item -LiteralPath $updTmp -Destination $selfPath -Force
+            }
+            Remove-Item -LiteralPath $updTmp -Force -ErrorAction SilentlyContinue
+        } catch { }
+    } -ArgumentList @($MyInvocation.MyCommand.Path, 'https://raw.githubusercontent.com/CarlosCastro1979/delta-foods-equipamentos-app/main/serve.ps1') | Out-Null
+}
 
 while ($listener.IsListening) {
     $ctx = $listener.GetContext()
