@@ -692,7 +692,7 @@
     var mesNome = PREMIOS_MESES[mesIdx] || '';
     var saudacao = peSaudacao(o.agora);
     var remetente = String(o.remetente || '').trim();
-    var frase = 'segue abaixo a apuração do prémio referente ao mês ' + mesNome
+    var frase = 'Segue abaixo a apuração do prémio referente ao mês ' + mesNome
       + ' para a devida contabilização e pagamento.';
     var fecho = modelo.linhas[0] && modelo.linhas[0].ehFechoTrim;
     var td = 'border:1px solid #d1d5db;padding:6px 10px;font-family:Calibri,Arial,sans-serif;font-size:12px;';
@@ -758,17 +758,19 @@
       body += '<td style="' + td + 'text-align:' + ta + ';">' + tt + '</td>';
     }
     body += '</tr>';
-    var tabela = '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8102e;margin:12px 0;">'
+    var tabela = '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #c8102e;margin:0;">'
       + '<thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
       + '<body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;line-height:1.45;">'
       + '<div>' + peEsc(saudacao) + ',</div>'
-      + '<div style="margin-top:12px;">' + peEsc(frase) + '</div>'
+      // Tab (~1×) à frente + espaço extra antes da tabela (Outlook HTML).
+      + '<div style="margin-top:12px;padding-left:48px;">' + peEsc(frase) + '</div>'
+      + '<div style="height:22px;line-height:22px;font-size:12px;">&nbsp;</div>'
       + tabela
-      + '<div style="margin-top:12px;">Obrigado,'
+      + '<div style="margin-top:16px;">Obrigado,'
       + (remetente ? '<br>' + peEsc(remetente) : '')
       + '</div></body></html>';
-    var texto = [saudacao + ',', '', frase, '', 'Obrigado,', remetente].filter(Boolean).join('\n');
+    var texto = [saudacao + ',', '', '\t' + frase, '', 'Obrigado,', remetente].filter(Boolean).join('\n');
     var mm = String(mesIdx + 1).padStart(2, '0');
     return {
       to: PREMIOS_EMAIL_TO,

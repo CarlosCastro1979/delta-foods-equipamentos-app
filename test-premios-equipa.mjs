@@ -201,7 +201,11 @@ check('email: saudação + frase + Baker Tilly Para + Andrea/Carlos CC', () => {
   assert.equal(email.cc, pe.PREMIOS_EMAIL_CC);
   assert.ok(email.subject.includes('Setembro'));
   assert.ok(email.html.includes('Boa tarde'));
-  assert.ok(email.html.includes('apuração do prémio referente ao mês Setembro'));
+  assert.ok(email.html.includes('Segue abaixo a apuração do prémio referente ao mês Setembro'));
+  assert.ok(!email.html.includes('>segue abaixo'), 'frase com S maiúsculo');
+  assert.ok(email.html.includes('padding-left:48px'), 'tab (~1) à frente da frase');
+  assert.ok(email.html.includes('height:22px'), 'espaço antes da tabela');
+  assert.ok(email.texto.includes('\tSegue abaixo'), 'texto plano com tab');
   assert.ok(email.html.includes('contabilização e pagamento'));
   assert.ok(email.html.includes('Obrigado'));
   assert.ok(email.html.includes('Carlos Castro'));
@@ -224,10 +228,10 @@ check('scorecard email: só tabela, sem saudação', () => {
   assert.ok(js.includes('Scorecard: só a tabela'));
 });
 
-check('Cache SW / dfb-build alinhados (premios-email-dp)', () => {
-  assert.ok(html.includes('v2026-11-24-premios-email-dp'));
-  assert.ok(sw.includes('v2026-11-24-premios-email-dp'));
-  assert.ok(/<!--\s*dfb-build:[^>]*premios-email-dp[^>]*-->/.test(html.slice(0, 400)));
+check('Cache SW / dfb-build alinhados (premios-email-fmt)', () => {
+  assert.ok(html.includes('v2026-11-24-premios-email-fmt'));
+  assert.ok(sw.includes('v2026-11-24-premios-email-fmt'));
+  assert.ok(/<!--\s*dfb-build:[^>]*premios-email-fmt[^>]*-->/.test(html.slice(0, 400)));
 });
 
 if (!process.exitCode) console.log('\nTodos os testes Prémios Equipa passaram.');
