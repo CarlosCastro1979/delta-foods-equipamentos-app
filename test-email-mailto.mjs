@@ -942,6 +942,14 @@ check('XLSX/SheetJS: ficheiro local + ensureXLSX antes do CDN (↓ Excel Prospec
   assert.ok(pros.includes('catch'), 'exportProsExcel mostra erro se falhar');
 });
 
+check('Dados Mestres: email novo delta-cafes (sem entidades2)', () => {
+  assert.ok(html.includes("EMAIL_DADOS_MESTRE = 'dadosmestres.entidades@delta-cafes.pt'"));
+  assert.equal((html.match(/EMAIL_DADOS_MESTRE = 'dadosmestres\.entidades@delta-cafes\.pt'/g) || []).length, 2,
+    'rota + encerramento usam o mesmo Para');
+  assert.ok(!html.includes('entidades2@'));
+  assert.ok(!html.includes('dadosmestres.entidades2@gruponabeiro.com'));
+});
+
 if (process.exitCode) {
   console.error('\nFalhou pelo menos um teste.');
   process.exit(process.exitCode);

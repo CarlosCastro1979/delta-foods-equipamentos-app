@@ -323,10 +323,10 @@ check('switchSubTab redirecciona Novo/Por Registar no Varejo via canalRegistosTa
   assert.ok(fn.includes('_distAllowNovoForm'), 'Dist continua a poder abrir o form forçado');
 });
 
-check('Cache SW / dfb-build alinhados (ponte-arranque)', () => {
-  assert.ok(html.includes('v2026-11-24-ponte-arranque'));
-  assert.ok(sw.includes('v2026-11-24-ponte-arranque'));
-  assert.ok(/<!--\s*dfb-build:[^>]*ponte-arranque[^>]*-->/.test(html.slice(0, 300)));
+check('Cache SW / dfb-build alinhados (dados-mestres-email)', () => {
+  assert.ok(html.includes('v2026-11-24-dados-mestres-email'));
+  assert.ok(sw.includes('v2026-11-24-dados-mestres-email'));
+  assert.ok(/<!--\s*dfb-build:[^>]*dados-mestres-email[^>]*-->/.test(html.slice(0, 300)));
 });
 
 if (process.exitCode) process.exit(process.exitCode);
