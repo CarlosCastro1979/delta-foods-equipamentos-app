@@ -143,10 +143,61 @@ check('Marcio 99% → 0; 100% → 500', () => {
   assert.equal(pe.premiosCalcularPessoaMes(cfg, serie, 3).premio, 500);
 });
 
-check('Cache SW / dfb-build alinhados (premios-mes-var)', () => {
-  assert.ok(html.includes('v2026-11-23-premios-mes-var'));
-  assert.ok(sw.includes('v2026-11-23-premios-mes-var'));
-  assert.ok(/<!--\s*dfb-build:[^>]*premios-mes-var[^>]*-->/.test(html.slice(0, 400)));
+check('fecho trim: Var. trim. % na tabela; scorecard e email na UI', () => {
+  const js = fs.readFileSync(path.join(root, 'premios-equipa.js'), 'utf8');
+  assert.ok(js.includes('Var. trim. %'));
+  assert.ok(js.includes('varPctTrim'));
+  assert.ok(js.includes('premiosCalcularScorecard'));
+  assert.ok(js.includes('premiosEquipaExportarEmail'));
+  assert.ok(html.includes('premiosEquipaExportarEmail()'));
+  assert.ok(html.includes("showPremiosEquipaSub('scorecard')"));
+  assert.ok(html.includes('id="pe-btn-email"'));
+});
+
+check('scorecard: ganhos÷tecto; comissão fora; tecto = 12×mensal+4×trim', () => {
+  assert.equal(pe.premiosTectoAnual({ mensal: 3000, trim: 3000 }), 12 * 3000 + 4 * 3000);
+  assert.equal(pe.premiosTectoAteMes({ mensal: 3000, trim: 3000 }, 2), 3 * 3000 + 1 * 3000); // Jan–Mar
+  assert.equal(pe.premiosTectoAteMes({ mensal: 3000, trim: 3000 }, 8), 9 * 3000 + 3 * 3000); // Jan–Set
+  const cfg = { id: 'x', nome: 'X', mensal: 3000, trim: 3000, comissao: false };
+  const serie = Array.from({ length: 12 }, () => ({ vendas: 200, obj: 100, temVendas: true }));
+  // todos os meses batem → 9×3000 + 3×3000 trim (Set) se ate=8; recuperação 0
+  const ganhos = pe.premiosGanhosAteMes(cfg, serie, 8);
+  assert.equal(ganhos, 9 * 3000 + 3 * 3000);
+  const score = pe.premiosCalcularScorecard([cfg], { x: serie }, 8);
+  assert.equal(score.linhas[0].acumPct, 1);
+});
+
+check('email: saudação + frase com mês + Obrigado + remetente; To vazio', () => {
+  const cfg = { id: 'diogo', nome: 'Diogo', mensal: 3000, trim: 3000, comissao: false };
+  const serie = Array.from({ length: 12 }, () => ({ vendas: 50, obj: 100, temVendas: true }));
+  const modelo = pe.premiosCalcularQuadro([Object.assign({}, cfg, { id: 'diogo' })], { diogo: serie }, 8);
+  // fix id in serie map
+  const modelo2 = pe.premiosCalcularQuadro(
+    [{ id: 'diogo', nome: 'Diogo Oliveira', mensal: 3000, trim: 3000, comissao: false }],
+    { diogo: serie },
+    8
+  );
+  const email = pe.peMontarEmail({
+    modelo: modelo2,
+    mesIdx: 8,
+    ano: 2026,
+    remetente: 'Carlos Castro',
+    agora: new Date(2026, 8, 15, 15, 0, 0),
+  });
+  assert.equal(email.to, '');
+  assert.ok(email.subject.includes('Setembro'));
+  assert.ok(email.html.includes('Boa tarde'));
+  assert.ok(email.html.includes('apuração do prémio referente ao mês Setembro'));
+  assert.ok(email.html.includes('contabilização e pagamento'));
+  assert.ok(email.html.includes('Obrigado'));
+  assert.ok(email.html.includes('Carlos Castro'));
+  assert.ok(email.filename.includes('2026-09'));
+});
+
+check('Cache SW / dfb-build alinhados (premios-score-email)', () => {
+  assert.ok(html.includes('v2026-11-23-premios-score-email'));
+  assert.ok(sw.includes('v2026-11-23-premios-score-email'));
+  assert.ok(/<!--\s*dfb-build:[^>]*premios-score-email[^>]*-->/.test(html.slice(0, 400)));
 });
 
 if (!process.exitCode) console.log('\nTodos os testes Prémios Equipa passaram.');
