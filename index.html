@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-23-premios-outlook-padrao Premios: Total a Pagar + Outlook padrao -->
+<!-- dfb-build: v2026-11-24-premios-total-pagar Premios: Total a Pagar + to vazio OK -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2195,7 +2195,7 @@ var _unused_placeholder = 1;
 <script src="nfe-emitidas.js"></script>
 <script src="comissao-rc-mapa.js"></script>
 <script src="comissao-rc.js?v=2026-11-06-email"></script>
-<script src="premios-equipa.js?v=2026-11-23-outlook-padrao"></script>
+<script src="premios-equipa.js?v=2026-11-24-total-pagar"></script>
 <script src="vendas-volume-familias.js"></script>
 <script src="validades-stock.js"></script>
 </head>
@@ -38209,7 +38209,8 @@ async function outlookAbrirRascunho({
   // COM anexos: NUNCA mailto — abre Outlook sem ficheiro e o .eml ia para
   // Transferências (parece que «não anexou»). Só o .eml (já leva o Excel).
   // SEM anexos: mailto OK.
-  if (isWindowsPc && !isMobile && to) {
+  // To vazio + anexos (ex. Prémios Equipa antes de haver destinatários): mesmo .eml.
+  if (isWindowsPc && !isMobile && (to || hasAttachments)) {
     if (hasAttachments) {
       let emlOk = false;
       try {
@@ -48026,12 +48027,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-23-premios-outlook-padrao: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-premios-total-pagar: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-23-premios-outlook-padrao';
+  var CACHE_KEEP = 'v2026-11-24-premios-total-pagar';
 
   function tryRegister() {
     try {
