@@ -1,6 +1,6 @@
-// Service Worker v2026-11-23-premios-score-email — Premios: trim % + scorecard + email
+// Service Worker v2026-11-23-premios-outlook-padrao — Premios: Total a Pagar + Outlook padrao
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-23-premios-score-email';
+const CACHE = 'v2026-11-23-premios-outlook-padrao';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

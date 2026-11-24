@@ -143,12 +143,15 @@ check('Marcio 99% → 0; 100% → 500', () => {
   assert.equal(pe.premiosCalcularPessoaMes(cfg, serie, 3).premio, 500);
 });
 
-check('fecho trim: Var. trim. % na tabela; scorecard e email na UI', () => {
+check('fecho trim: Var. trim. % + Total a Pagar; Outlook sem forceEmlFallback', () => {
   const js = fs.readFileSync(path.join(root, 'premios-equipa.js'), 'utf8');
   assert.ok(js.includes('Var. trim. %'));
+  assert.ok(js.includes('Total a Pagar'));
+  assert.ok(!js.includes('Total fecho'));
   assert.ok(js.includes('varPctTrim'));
   assert.ok(js.includes('premiosCalcularScorecard'));
   assert.ok(js.includes('premiosEquipaExportarEmail'));
+  assert.ok(!/forceEmlFallback\s*:/.test(js), 'seguir padrão Comissão RC — ponte Outlook, não .eml em Transferências');
   assert.ok(html.includes('premiosEquipaExportarEmail()'));
   assert.ok(html.includes("showPremiosEquipaSub('scorecard')"));
   assert.ok(html.includes('id="pe-btn-email"'));
@@ -194,10 +197,16 @@ check('email: saudação + frase com mês + Obrigado + remetente; To vazio', () 
   assert.ok(email.filename.includes('2026-09'));
 });
 
-check('Cache SW / dfb-build alinhados (premios-score-email)', () => {
-  assert.ok(html.includes('v2026-11-23-premios-score-email'));
-  assert.ok(sw.includes('v2026-11-23-premios-score-email'));
-  assert.ok(/<!--\s*dfb-build:[^>]*premios-score-email[^>]*-->/.test(html.slice(0, 400)));
+check('scorecard email: só tabela, sem saudação', () => {
+  const js = fs.readFileSync(path.join(root, 'premios-equipa.js'), 'utf8');
+  assert.ok(js.includes('peScorecardTabelaHtml'));
+  assert.ok(js.includes('Scorecard: só a tabela'));
+});
+
+check('Cache SW / dfb-build alinhados (premios-outlook-padrao)', () => {
+  assert.ok(html.includes('v2026-11-23-premios-outlook-padrao'));
+  assert.ok(sw.includes('v2026-11-23-premios-outlook-padrao'));
+  assert.ok(/<!--\s*dfb-build:[^>]*premios-outlook-padrao[^>]*-->/.test(html.slice(0, 400)));
 });
 
 if (!process.exitCode) console.log('\nTodos os testes Prémios Equipa passaram.');

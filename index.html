@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-23-premios-score-email Premios: trim % + scorecard + email -->
+<!-- dfb-build: v2026-11-23-premios-outlook-padrao Premios: Total a Pagar + Outlook padrao -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2195,7 +2195,7 @@ var _unused_placeholder = 1;
 <script src="nfe-emitidas.js"></script>
 <script src="comissao-rc-mapa.js"></script>
 <script src="comissao-rc.js?v=2026-11-06-email"></script>
-<script src="premios-equipa.js?v=2026-11-23-score-email"></script>
+<script src="premios-equipa.js?v=2026-11-23-outlook-padrao"></script>
 <script src="vendas-volume-familias.js"></script>
 <script src="validades-stock.js"></script>
 </head>
@@ -48026,12 +48026,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-23-premios-score-email: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-23-premios-outlook-padrao: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-23-premios-score-email';
+  var CACHE_KEEP = 'v2026-11-23-premios-outlook-padrao';
 
   function tryRegister() {
     try {

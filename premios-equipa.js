@@ -588,7 +588,7 @@
       head += '<th style="text-align:right;padding:8px 10px;">Var. trim. %</th>'
         + '<th style="text-align:right;padding:8px 10px;">Prémio trim.</th>'
         + '<th style="text-align:right;padding:8px 10px;">Recuperação</th>'
-        + '<th style="text-align:right;padding:8px 10px;">Total fecho</th>';
+        + '<th style="text-align:right;padding:8px 10px;">Total a Pagar</th>';
     }
     head += '</tr>';
     var body = '';
@@ -624,34 +624,49 @@
       + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
   }
 
-  function peScorecardHtml(score) {
-    var ate = score.ateMesIdx | 0;
-    var head = '<tr style="background:var(--bg-secondary);">'
-      + '<th style="text-align:left;padding:8px 6px;position:sticky;left:0;background:var(--bg-secondary);">Vendedor</th>';
+  function peScorecardTabelaHtml(score, opts) {
+    var o = opts || {};
+    var email = !!o.email;
+    var td = email
+      ? 'border:1px solid #d1d5db;padding:6px 8px;font-family:Calibri,Arial,sans-serif;font-size:12px;'
+      : 'padding:8px 6px;';
+    var th = email
+      ? td + 'background:#c8102e;color:#ffffff;font-weight:700;'
+      : 'background:var(--bg-secondary);padding:8px 6px;';
+    var head = '<tr' + (email ? '' : ' style="background:var(--bg-secondary);"') + '>'
+      + '<th style="' + (email ? th + 'text-align:left;' : th + 'text-align:left;position:sticky;left:0;background:var(--bg-secondary);') + '">Vendedor</th>';
     for (var m = 0; m < 12; m++) {
-      head += '<th style="text-align:right;padding:8px 6px;">' + peEsc(PREMIOS_MESES[m].slice(0, 3)) + '</th>';
+      head += '<th style="' + th + 'text-align:right;">' + peEsc(PREMIOS_MESES[m].slice(0, 3)) + '</th>';
     }
-    head += '<th style="text-align:right;padding:8px 6px;font-weight:700;">Acum.</th></tr>';
+    head += '<th style="' + th + 'text-align:right;font-weight:700;">Acum.</th></tr>';
     var body = '';
     for (var i = 0; i < score.linhas.length; i++) {
       var r = score.linhas[i];
-      body += '<tr style="border-bottom:1px solid var(--border);">'
-        + '<td style="padding:8px 6px;position:sticky;left:0;background:var(--bg);font-weight:600;">' + peEsc(r.nome) + '</td>';
+      body += '<tr' + (email ? '' : ' style="border-bottom:1px solid var(--border);"') + '>'
+        + '<td style="' + td + (email ? 'text-align:left;' : 'position:sticky;left:0;background:var(--bg);font-weight:600;') + '">' + peEsc(r.nome) + '</td>';
       for (var j = 0; j < 12; j++) {
         var p = r.mesesPct[j];
         var cls = '';
         if (p != null) cls = p >= 1 ? 'color:#166534;font-weight:600;' : (p > 0 ? 'color:#166534;' : 'color:#b45309;');
-        body += '<td style="padding:8px 6px;text-align:right;' + cls + '">' + peFmtScorePct(p) + '</td>';
+        body += '<td style="' + td + 'text-align:right;' + cls + '">' + peFmtScorePct(p) + '</td>';
       }
       var aCls = r.acumPct != null && r.acumPct >= 0.5 ? 'color:#166534;font-weight:700;' : 'font-weight:700;';
-      body += '<td style="padding:8px 6px;text-align:right;' + aCls + '">' + peFmtScorePct(r.acumPct) + '</td></tr>';
+      body += '<td style="' + td + 'text-align:right;' + aCls + '">' + peFmtScorePct(r.acumPct) + '</td></tr>';
     }
+    var tableStyle = email
+      ? 'border-collapse:collapse;border:1px solid #c8102e;margin:0;'
+      : 'width:100%;border-collapse:collapse;font-size:12px;';
+    return '<table cellpadding="0" cellspacing="0" style="' + tableStyle + '">'
+      + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table>';
+  }
+
+  function peScorecardHtml(score) {
+    var ate = score.ateMesIdx | 0;
     var mesAte = PREMIOS_MESES[ate] || '';
     return '<p style="font-size:12px;color:var(--muted);margin:0 0 10px;line-height:1.45;">'
       + '% de prémios ganhos ÷ tecto possível (só prémios — comissões 2,3% fora). '
       + 'Acumulado até <strong>' + peEsc(mesAte) + '</strong>. Ordenado pelo acumulado.</p>'
-      + '<div style="overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">'
-      + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+      + '<div style="overflow:auto;">' + peScorecardTabelaHtml(score, { email: false }) + '</div>';
   }
 
   function peSaudacao(agora) {
@@ -673,7 +688,7 @@
     var td = 'border:1px solid #d1d5db;padding:6px 10px;font-family:Calibri,Arial,sans-serif;font-size:12px;';
     var th = td + 'background:#c8102e;color:#ffffff;font-weight:700;';
     var cols = ['Vendedor', 'Vendas', 'Objectivo', 'Var. obj. %', 'Prémio', 'Comissão', 'Total mês'];
-    if (fecho) cols = cols.concat(['Var. trim. %', 'Prémio trim.', 'Recuperação', 'Total fecho']);
+    if (fecho) cols = cols.concat(['Var. trim. %', 'Prémio trim.', 'Recuperação', 'Total a Pagar']);
     var head = cols.map(function (c, i) {
       return '<th style="' + th + 'text-align:' + (i === 0 ? 'left' : 'right') + ';">' + peEsc(c) + '</th>';
     }).join('');
@@ -819,19 +834,17 @@
       var email;
       var folhas;
       if (_peVista === 'scorecard' && _peScore) {
-        var mesNome = PREMIOS_MESES[_peMes] || '';
-        var saudacao = peSaudacao(new Date());
-        var frase = 'segue abaixo o scorecard de prémios ( % atingido vs tecto possível, sem comissões) até '
-          + mesNome + ' de ' + _peAno + '.';
+        // Scorecard: só a tabela (sem saudação / fecho) — texto vem depois.
+        var tabelaScore = peScorecardTabelaHtml(_peScore, { email: true });
         email = {
           to: '',
           cc: '',
           subject: 'Scorecard Prémios Equipa — ' + _peAno,
-          html: '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="font-family:Calibri,Arial,sans-serif;font-size:14px;">'
-            + '<div>' + peEsc(saudacao) + ',</div><div style="margin-top:12px;">' + peEsc(frase) + '</div>'
-            + peScorecardHtml(_peScore).replace(/^<p[^>]*>[\s\S]*?<\/p>/, '')
-            + '<div style="margin-top:12px;">Obrigado,' + (remetente ? '<br>' + peEsc(remetente) : '') + '</div></body></html>',
-          texto: [saudacao + ',', '', frase, '', 'Obrigado,', remetente].filter(Boolean).join('\n'),
+          html: '<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
+            + '<body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#111827;">'
+            + tabelaScore
+            + '</body></html>',
+          texto: '',
           filename: 'Premios_Scorecard_' + _peAno + '.xlsx',
         };
         folhas = [peScorecardFolha(_peScore, _peAno)];
@@ -847,14 +860,20 @@
         if (_peScore) folhas.push(peScorecardFolha(_peScore, _peAno));
       }
       if (typeof toast === 'function') toast('A gerar Excel…');
-      if (typeof h.ensureXLSX === 'function') await h.ensureXLSX();
+      // Mesmo padrão da Comissão de RC: ensureXLSX + outlookAbrirRascunho (ponte COM).
+      // Sem forceEmlFallback — senão cai em Transferências em vez do Outlook.
+      if (typeof ensureXLSX === 'function') await ensureXLSX();
+      else if (typeof h.ensureXLSX === 'function') await h.ensureXLSX();
       var blob = peBlobXlsx(folhas);
-      if (typeof h.outlookAbrirRascunho !== 'function') {
-        if (typeof h.triggerBlobDownload === 'function') h.triggerBlobDownload(blob, email.filename);
-        if (typeof toast === 'function') toast('Excel descarregado. Outlook indisponível neste ecrã.', 'warn');
+      var abrir = typeof outlookAbrirRascunho === 'function' ? outlookAbrirRascunho
+        : (typeof h.outlookAbrirRascunho === 'function' ? h.outlookAbrirRascunho : null);
+      if (!abrir) {
+        if (typeof triggerBlobDownload === 'function') triggerBlobDownload(blob, email.filename);
+        else if (typeof h.triggerBlobDownload === 'function') h.triggerBlobDownload(blob, email.filename);
+        if (typeof toast === 'function') toast('Excel descarregado. O Outlook não está disponível neste ecrã.', 'warn');
         return;
       }
-      await h.outlookAbrirRascunho({
+      await abrir({
         to: email.to || '',
         cc: email.cc || '',
         subject: email.subject,
@@ -867,10 +886,9 @@
         draftName: email.filename.replace(/\.xlsx$/i, '') + '.eml',
         toastMsg: '📧 Outlook aberto com a tabela no corpo e o Excel em anexo.',
         mailtoFallback: {
-          body: email.texto,
+          body: email.texto || '',
           toastMsg: '📧 Outlook a abrir. Anexa o Excel descarregado ao email.',
         },
-        forceEmlFallback: true,
         ccExact: true,
       });
     } catch (e) {
