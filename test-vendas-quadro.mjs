@@ -1004,10 +1004,10 @@ check('processVendasFile actualiza o quadro sem varrer a base', () => {
   assert.ok(!renderFn.includes('Agregado guardado'), 'sem «Agregado guardado» no mapa');
   assert.ok(!renderFn.includes('não estava</strong> na tabela de vendas'), 'sem nota longa de R$ no mapa');
   const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-  assert.ok(sw.includes('v2026-11-24-vendas-hora-upd'));
+  assert.ok(sw.includes('v2026-11-24-dados-atualizado-em'));
   assert.ok(!sw.includes('v2026-10-21-nfe-contratos-prod'));
   assert.ok(!sw.includes('v2026-10-20-nfe-boletos-parcelas'));
-  assert.ok(html.includes('v2026-11-24-vendas-hora-upd'));
+  assert.ok(html.includes('v2026-11-24-dados-atualizado-em'));
   assert.ok(!html.includes('v2026-10-21-nfe-contratos-prod'));
 });
 

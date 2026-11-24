@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-vendas-hora-upd — Vendas hora actualização
+// Service Worker v2026-11-24-dados-atualizado-em — Dados Actualizado em
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-vendas-hora-upd';
+const CACHE = 'v2026-11-24-dados-atualizado-em';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
