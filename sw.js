@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-premios-email-addr — Prémios email só addr
+// Service Worker v2026-11-24-premios-recup-sem-ano — Prémios rec sem+ano
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-premios-email-addr';
+const CACHE = 'v2026-11-24-premios-recup-sem-ano';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
