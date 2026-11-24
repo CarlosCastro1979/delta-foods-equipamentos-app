@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-dados-atualizado-em Dados + NF: Actualizado em -->
+<!-- dfb-build: v2026-11-24-dados-datas-nuvem Dados: datas da nuvem SAP/RC/NF -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -6285,9 +6285,28 @@ function dadosFmtAtualizadoEm(isoOrDate) {
 
 function dadosHtmlAtualizadoEm(isoOrDate, extraHtml) {
   const ts = dadosFmtAtualizadoEm(isoOrDate);
-  if (!ts) return 'Ainda sem data de actualização.';
-  const extra = extraHtml ? (' &nbsp;·&nbsp; ' + extraHtml) : '';
-  return 'Actualizado em <strong>' + ts + '</strong>' + extra;
+  const extra = extraHtml ? String(extraHtml) : '';
+  if (!ts) {
+    return extra
+      ? ('Ainda sem data de actualização. &nbsp;·&nbsp; ' + extra)
+      : 'Ainda sem data de actualização.';
+  }
+  return 'Actualizado em <strong>' + ts + '</strong>' + (extra ? (' &nbsp;·&nbsp; ' + extra) : '');
+}
+
+/** Escolhe a data mais recente entre candidatas (ISO, Date ou epoch ms). */
+function dadosPickMaisRecente() {
+  let best = 0;
+  let bestRaw = null;
+  for (let i = 0; i < arguments.length; i++) {
+    const v = arguments[i];
+    if (v == null || v === '') continue;
+    let t = 0;
+    if (typeof v === 'number') t = v > 1e12 ? v : (v > 1e9 ? v : 0);
+    else t = Date.parse(v instanceof Date ? v.toISOString() : String(v)) || 0;
+    if (t > best) { best = t; bestRaw = v; }
+  }
+  return bestRaw;
 }
 
 function renderUltimaVendasCarga() {
@@ -6316,13 +6335,13 @@ function renderUltimaVendasCarga() {
 async function desbloquearDadosContent() {
   document.getElementById('dados-pin-gate').style.display = 'none';
   document.getElementById('dados-content').style.display = 'block';
-  renderUltimaCargaSAP();
+  try { await renderUltimaCargaSAP(); } catch (_) { try { renderUltimaCargaSAP(); } catch (__) {} }
   renderUltimaVendasCarga();
   try { await renderUltimaCargaRc(); } catch (_) {}
   loadCodRelacionados();
   loadVendasCobertura(false);
   try { if (typeof distCargaEquipRefreshStats === 'function') distCargaEquipRefreshStats(); } catch (_) {}
-  try { if (typeof nfeAoAbrirDados === 'function') nfeAoAbrirDados(); } catch (_) {}
+  try { if (typeof nfeAoAbrirDados === 'function') await nfeAoAbrirDados(); } catch (_) {}
   try {
     if (typeof carregarDividasMetaRemoto === 'function') {
       const meta = await carregarDividasMetaRemoto();
@@ -9124,7 +9143,7 @@ function switchSubTab(group, sub) {
     if (sub === 'pendentes') loadPendentes();
     if (sub === 'contratos-falta') loadDistContratosFalta();
     if (sub === 'vendedores') renderVendedoresTable();
-    if (sub === 'carga-sap') renderUltimaCargaSAP();
+    if (sub === 'carga-sap') { try { renderUltimaCargaSAP(); } catch (_) {} }
   }
   if (group === 'contratos') {
     window._contratosSubTab = sub;
@@ -10673,16 +10692,35 @@ async function renderUltimaCargaRc() {
       nCli = p.rcs.reduce((s, rc) => s + ((rc && rc.clientes) ? rc.clientes.length : 0), 0);
     }
   } catch (_) {}
-  if (!iso && typeof idbGet === 'function') {
+  if (typeof idbGet === 'function') {
     try {
       const packed = await idbGet('df_comissao_rc');
-      if (packed && packed.atualizado_em) iso = packed.atualizado_em;
+      if (packed && packed.atualizado_em) iso = dadosPickMaisRecente(iso, packed.atualizado_em) || iso;
       if ((!nRc) && packed && Array.isArray(packed.rcs)) {
         nRc = packed.rcs.length;
         nCli = packed.rcs.reduce((s, rc) => s + ((rc && rc.clientes) ? rc.clientes.length : 0), 0);
       }
     } catch (_) {}
   }
+  try {
+    if (typeof LISTA_CLIENTES_SUPA_URL !== 'undefined' && typeof SUPA_KEY !== 'undefined') {
+      const res = await fetch(
+        `${LISTA_CLIENTES_SUPA_URL}?id=eq.comissao_rc&select=data,atualizado_em`,
+        { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY }, cache: 'no-store' }
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        const row = rows && rows[0];
+        if (row) {
+          iso = dadosPickMaisRecente(iso, row.atualizado_em, row.data && row.data.atualizado_em) || iso;
+          if ((!nRc) && row.data && Array.isArray(row.data.rcs)) {
+            nRc = row.data.rcs.length;
+            nCli = row.data.rcs.reduce((s, rc) => s + ((rc && rc.clientes) ? rc.clientes.length : 0), 0);
+          }
+        }
+      }
+    }
+  } catch (_) {}
   const extra = nRc ? (`${nRc} RC · ${nCli} clientes`) : '';
   el.innerHTML = dadosHtmlAtualizadoEm(iso, extra);
 }
@@ -11314,7 +11352,7 @@ async function confirmarCargaSAP() {
   resultEl.style.border = '1px solid #c8e6c9';
   resultEl.style.background = '#e8f5e9';
   resultEl.style.color = '#2e7d32';
-  renderUltimaCargaSAP();
+  try { await renderUltimaCargaSAP(); } catch (_) {}
 
   _sapImportBuffer = null;
   toast(msg);
@@ -11335,22 +11373,54 @@ function cancelarCargaSAP() {
   document.getElementById('sap-result').style.display = 'none';
 }
 
-function renderUltimaCargaSAP() {
+async function renderUltimaCargaSAP() {
   const el = document.getElementById('sap-ultima-carga');
   if (!el) return;
+  let local = null;
   try {
     const saved = localStorage.getItem('delta_sap_ultima_carga');
-    if (!saved) { el.textContent = 'Ainda sem data de actualização.'; return; }
-    const { data, ficheiro, total, anulados, adicionados, removidos } = JSON.parse(saved);
-    const parts = [
-      ficheiro ? String(ficheiro) : '',
-      `<span style="color:#2e7d32">${total} clientes activos</span>`,
-      adicionados ? `<span style="color:#1976d2">+${adicionados} novos</span>` : '',
-      removidos ? `<span style="color:#f57c00">-${removidos} removidos</span>` : '',
-      anulados ? `<span style="color:#c62828">${anulados} anulado(s) apagado(s)</span>` : '',
-    ].filter(Boolean);
-    el.innerHTML = dadosHtmlAtualizadoEm(data, parts.join(' &nbsp;·&nbsp; '));
-  } catch(e) { el.textContent = 'Ainda sem data de actualização.'; }
+    if (saved) local = JSON.parse(saved);
+  } catch (_) { local = null; }
+  let cloudIso = '';
+  let cloudTotal = null;
+  try {
+    if (typeof LISTA_CLIENTES_SUPA_URL !== 'undefined' && typeof LISTA_CLIENTES_META_ID !== 'undefined' && typeof SUPA_KEY !== 'undefined') {
+      const res = await fetch(
+        `${LISTA_CLIENTES_SUPA_URL}?id=eq.${LISTA_CLIENTES_META_ID}&select=data,atualizado_em`,
+        { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY }, cache: 'no-store' }
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        if (rows && rows[0]) {
+          cloudIso = rows[0].atualizado_em || '';
+          const d = rows[0].data;
+          if (d && typeof d === 'object' && !Array.isArray(d) && d.__total != null) cloudTotal = Number(d.__total);
+          else if (Array.isArray(d)) cloudTotal = d.length;
+        }
+      }
+    }
+  } catch (_) {}
+  const lsTs = parseInt(localStorage.getItem(CLIENTES_TS_KEY) || '0', 10) || 0;
+  const memTs = Number(_listaClientesTs) || 0;
+  const iso = dadosPickMaisRecente(
+    local && local.data,
+    cloudIso,
+    lsTs > 0 ? lsTs : null,
+    memTs > 0 ? memTs : null
+  );
+  const total = (local && local.total != null)
+    ? local.total
+    : (cloudTotal != null
+      ? cloudTotal
+      : ((typeof getListaClientesCompleta === 'function') ? getListaClientesCompleta().length : null));
+  const parts = [
+    local && local.ficheiro ? String(local.ficheiro) : '',
+    total != null ? `<span style="color:#2e7d32">${Number(total).toLocaleString('pt-BR')} clientes activos</span>` : '',
+    local && local.adicionados ? `<span style="color:#1976d2">+${local.adicionados} novos</span>` : '',
+    local && local.removidos ? `<span style="color:#f57c00">-${local.removidos} removidos</span>` : '',
+    local && local.anulados ? `<span style="color:#c62828">${local.anulados} anulado(s) apagado(s)</span>` : '',
+  ].filter(Boolean);
+  el.innerHTML = dadosHtmlAtualizadoEm(iso, parts.join(' &nbsp;·&nbsp; '));
 }
 
 /** Lista completa (todos os canais) — sem filtro. */
@@ -16568,20 +16638,13 @@ function nfePaint() {
 function nfeSyncVistas() {
   const st = document.getElementById('dados-nfe-status');
   const nMenu = nfeNotasDesteMenu(nfeArquivoNotas()).length;
-  if (st) {
-    st.textContent = _nfeStatusMsg || (nMenu ? (nMenu + ' notas guardadas.') : 'Ainda sem carga.');
-  }
+  const busyMsg = (_nfeBusy || (_nfeStatusMsg && /a ler|a gravar|a juntar|erro/i.test(_nfeStatusMsg)))
+    ? _nfeStatusMsg
+    : '';
+  if (st) st.textContent = busyMsg || '';
   const ult = document.getElementById('dados-nfe-ultima');
   if (ult) {
-    const mes = (typeof nfeMesEfetivo === 'function')
-      ? nfeMesEfetivo(typeof nfeFiltrosGeral === 'function' ? nfeFiltrosGeral() : {})
-      : '';
-    const doMes = (typeof nfeNotasDoMesEcra === 'function')
-      ? nfeNotasDoMesEcra(_nfeNotas || [], typeof nfeFiltrosGeral === 'function' ? nfeFiltrosGeral() : {})
-      : [];
-    const contagem = (typeof nfeEstadoMes === 'function' && mes)
-      ? nfeEstadoMes(doMes, mes).replace(/\.$/, '')
-      : (nMenu ? (nMenu + ' notas guardadas') : '');
+    const contagem = nMenu ? (nMenu + ' notas guardadas') : '';
     ult.innerHTML = (typeof dadosHtmlAtualizadoEm === 'function')
       ? dadosHtmlAtualizadoEm(_nfeAtualizadoEm, contagem)
       : (contagem || 'Ainda sem data de actualização.');
@@ -16594,8 +16657,28 @@ function nfeSyncVistas() {
   if (pane && panel && panel.classList.contains('active') && pane.style.display !== 'none') nfePaintCanal();
 }
 
+/** Só a data da nuvem (sem baixar PDF) — para o cartão em Dados. */
+async function nfeRefreshAtualizadoEm() {
+  try {
+    const res = await fetch(
+      `${LISTA_CLIENTES_SUPA_URL}?id=eq.${NFE_STORE_ID}&select=atualizado_em`,
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY }, cache: 'no-store' }
+    );
+    if (!res.ok) return;
+    const rows = await res.json();
+    if (rows && rows[0] && rows[0].atualizado_em) nfeGuardarAtualizadoEm(rows[0].atualizado_em);
+  } catch (_) {}
+  if (!_nfeAtualizadoEm) {
+    try {
+      const packed = await idbGet(NFE_IDB_KEY);
+      if (packed && packed.ts) nfeGuardarAtualizadoEm(packed.ts);
+    } catch (_) {}
+  }
+}
+
 async function nfeAoAbrirDados() {
   try { await nfeHidrateMeta(); } catch (_) {}
+  try { await nfeRefreshAtualizadoEm(); } catch (_) {}
   if (!_nfeBusy && !_nfeStatusMsg && nfeArquivoNotas().length) {
     const nMenu = nfeNotasDesteMenu(nfeArquivoNotas()).length;
     _nfeStatusMsg = nMenu + ' notas guardadas.';
@@ -48131,12 +48214,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-dados-atualizado-em: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-dados-datas-nuvem: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-dados-atualizado-em';
+  var CACHE_KEEP = 'v2026-11-24-dados-datas-nuvem';
 
   function tryRegister() {
     try {

@@ -304,8 +304,8 @@ check('scorecard email: só tabela, sem saudação', () => {
 });
 
 check('Cache SW / dfb-build alinhados (dados-atualizado-em)', () => {
-  assert.ok(html.includes('v2026-11-24-dados-atualizado-em'));
-  assert.ok(sw.includes('v2026-11-24-dados-atualizado-em'));
+  assert.ok(html.includes('v2026-11-24-dados-datas-nuvem'));
+  assert.ok(sw.includes('v2026-11-24-dados-datas-nuvem'));
   assert.ok(/<!--\s*dfb-build:[^>]*dados-atualizado-em[^>]*-->/.test(html.slice(0, 400)));
 });
 
