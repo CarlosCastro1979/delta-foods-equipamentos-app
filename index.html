@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-dividas-balancete-dup Dívidas: não dobrar a linha 999 -->
+<!-- dfb-build: v2026-11-24-resumo-carga-canal13 Resumo carga só canal 13 Massimo/Eduardo -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2643,7 +2643,7 @@ var _unused_placeholder = 1;
       <span class="count-badge" id="dist-resumo-count-badge"></span>
     </div>
     <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">
-      Quadro da carga Excel (NF): equipamentos profissionais e valor líquido por código de distribuidor.
+      Quadro da carga Excel (NF): só clientes do canal 13 com vendedor Massimo Bottello ou Eduardo Madeira. Equipamentos profissionais e valor líquido por código.
     </p>
     <div id="dist-resumo-summary" class="dist-resumo-summary" style="display:flex;flex-wrap:wrap;gap:10px;margin:0 0 12px;"></div>
     <div class="table-wrap table-wrap--freeze">
@@ -10497,50 +10497,56 @@ function renderDistContratosFalta() {
   }
 }
 
-/** Resumo carga Dist: agrega por código SAP (qty + valor). */
+/** Resumo carga Dist: agrega por código SAP (qty + valor), só canal 13 / Massimo / Eduardo. */
 let distResumoCargaData = [];
 let _distResumoFiltroBucket = null; // null | 'com_valor' | 'sem_valor'
+let _distResumoHaviaCargaFora = false;
+
+/** Lista SAP do canal Distribuidores: canal 13 e NPess do Massimo ou do Eduardo. */
+function distClientesResumoCarga() {
+  const full = typeof getListaClientesCompleta === 'function'
+    ? getListaClientesCompleta()
+    : (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : []);
+  return (full || []).filter(c => typeof clientePertenceAoCanal !== 'function' || clientePertenceAoCanal(c, 'distribuidores'));
+}
 
 function distBuildResumoCargaRows() {
   const rows = typeof distCargaAllRows === 'function' ? distCargaAllRows() : [];
+  const idx = new Map();
+  try {
+    distClientesResumoCarga().forEach(c => {
+      const k = typeof normCod === 'function' ? normCod(c.cod) : String(c.cod || '').replace(/^0+/, '');
+      if (k && k !== '0' && !idx.has(k)) idx.set(k, c);
+    });
+  } catch (_) {}
   const byCod = new Map();
+  _distResumoHaviaCargaFora = false;
   (rows || []).forEach(r => {
     const cod = typeof distNormCodCliente === 'function'
       ? distNormCodCliente(r.cod_cliente)
       : String(r.cod_cliente || '').replace(/^0+/, '');
     if (!cod || cod === '0') return;
+    const cli = idx.get(cod);
+    if (!cli) {
+      _distResumoHaviaCargaFora = true;
+      return;
+    }
     if (!byCod.has(cod)) {
       byCod.set(cod, {
         cod,
-        nome: r.nome_cliente || '',
+        nome: (cli.nome || r.nome_cliente || ''),
         qty: 0,
         valor: 0,
-        vendedor: '',
-        cep: '',
+        vendedor: cli.vendedor || '',
+        cep: cli.cep || '',
       });
     }
     const g = byCod.get(cod);
     g.qty += typeof distSanitizeQty === 'function' ? distSanitizeQty(r.qty) : (Number(r.qty) || 1);
     g.valor += typeof distCargaRowValor === 'function' ? distCargaRowValor(r) : 0;
     if (!g.nome && r.nome_cliente) g.nome = r.nome_cliente;
+    if (!g.vendedor && cli.vendedor) g.vendedor = cli.vendedor;
   });
-  // Vendedor / CEP da lista SAP Dist
-  try {
-    const lista = (typeof getListaClientesActiva === 'function' ? getListaClientesActiva() : [])
-      .filter(c => typeof clientePertenceAoCanal !== 'function' || clientePertenceAoCanal(c, 'distribuidores'));
-    const idx = new Map();
-    lista.forEach(c => {
-      const k = typeof normCod === 'function' ? normCod(c.cod) : String(c.cod || '').replace(/^0+/, '');
-      if (k && k !== '0' && !idx.has(k)) idx.set(k, c);
-    });
-    byCod.forEach((g, cod) => {
-      const cli = idx.get(cod);
-      if (!cli) return;
-      if (cli.vendedor) g.vendedor = cli.vendedor;
-      if (cli.cep) g.cep = cli.cep;
-      if (cli.nome && (!g.nome || g.nome.length < String(cli.nome).length)) g.nome = cli.nome;
-    });
-  } catch (_) {}
   return [...byCod.values()].sort((a, b) => {
     if (b.valor !== a.valor) return b.valor - a.valor;
     return String(a.nome || a.cod).localeCompare(String(b.nome || b.cod), 'pt');
@@ -10664,7 +10670,13 @@ function renderDistResumoCarga() {
           <td><span class="vendedor-badge">${c.vendedor || '—'}</span></td>
         </tr>`;
       }).join('')
-    : '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Sem carga de equipamentos Dist. Importa o Excel em Dados.</td></tr>';
+    : ('<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">'
+      + ((search || vendFilt || _distResumoFiltroBucket)
+        ? 'Nenhum distribuidor com este filtro.'
+        : (_distResumoHaviaCargaFora
+          ? 'Nenhum cliente do canal 13 com vendedor Massimo ou Eduardo nesta carga.'
+          : 'Sem carga de equipamentos Dist. Importa o Excel em Dados.'))
+      + '</td></tr>');
 
   try {
     contratosEnsureFreezeResize();
@@ -48488,12 +48500,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-dividas-balancete-dup: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-resumo-carga-canal13: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-dividas-balancete-dup';
+  var CACHE_KEEP = 'v2026-11-24-resumo-carga-canal13';
 
   function tryRegister() {
     try {

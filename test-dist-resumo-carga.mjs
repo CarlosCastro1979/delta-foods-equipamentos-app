@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const CACHE = 'v2026-11-24-dividas-balancete-dup';
+const CACHE = 'v2026-11-24-resumo-carga-canal13';
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
@@ -46,6 +46,10 @@ const rows = [
   { cod_cliente: '458529', nome_cliente: 'BEER BEV OUTRO', qty: 3, meta: { valor: 200 } },
 ];
 
+rows.push({ cod_cliente: '410730', nome_cliente: 'RUBI VAREJO', qty: 4, meta: { valor: 9000 } });
+rows.push({ cod_cliente: '100001', nome_cliente: 'FORA CANAL', qty: 2, meta: { valor: 50 } });
+rows.push({ cod_cliente: '100002', nome_cliente: 'MASSIMO QB', qty: 6, meta: { valor: 80 } });
+
 const ctx = {
   console,
   Map,
@@ -55,6 +59,9 @@ const ctx = {
   Array,
   Object,
   JSON,
+  parseInt,
+  isNaN,
+  Set,
   normCod(v) { return String(v || '').trim().replace(/^0+/, '') || '0'; },
   distNormCodCliente(cod) {
     const s = String(cod || '').trim().replace(/^0+/, '');
@@ -69,16 +76,26 @@ const ctx = {
     return m && m.valor != null ? Number(m.valor) || 0 : 0;
   },
   distCargaAllRows() { return rows; },
-  getListaClientesActiva() {
+  getListaClientesCompleta() {
     return [
-      { cod: '458532', nome: 'BEER BEV COM.IMP', vendedor: 'EDUARDO MADEIRA', cep: '01000-000' },
-      { cod: '749286', nome: 'EUROBRASIL', vendedor: 'MASSIMO BOTTELLO', cep: '02000-000' },
+      { cod: '458532', nome: 'BEER BEV COM.IMP', vendedor: 'EDUARDO MADEIRA', npess: 99520020, canal: '13', cep: '01000-000' },
+      { cod: '749286', nome: 'EUROBRASIL', vendedor: 'MASSIMO BOTTELLO', npess: 99520003, canal: '13', cep: '02000-000' },
+      { cod: '410730', nome: 'RUBI', vendedor: 'DIOGO OLIVEIRA', npess: 99520018, canal: '13', cep: '03000-000' },
+      { cod: '100001', nome: 'FORA CANAL', vendedor: 'EDUARDO MADEIRA', npess: 99520020, canal: '04', cep: '04000-000' },
+      { cod: '100002', nome: 'MASSIMO QB', vendedor: 'MASSIMO BOTTELLO', npess: 99530002, canal: '13', cep: '05000-000' },
     ];
   },
-  clientePertenceAoCanal() { return true; },
+  clientePertenceAoCanal(c, canalId) {
+    if (canalId !== 'distribuidores') return false;
+    const ch = String(c.canal == null ? '' : c.canal).replace(/\D/g, '').padStart(2, '0').slice(-2);
+    if (ch && ch !== '00' && ch !== '13') return false;
+    const np = parseInt(c.npess, 10);
+    return np === 99520003 || np === 99520020 || np === 99530002;
+  },
 };
 vm.createContext(ctx);
 vm.runInContext(extractFn(html, 'canalRegistosTabsState'), ctx);
+vm.runInContext(extractFn(html, 'distClientesResumoCarga'), ctx);
 vm.runInContext(extractFn(html, 'distBuildResumoCargaRows'), ctx);
 
 const st = ctx.canalRegistosTabsState('distribuidores');
@@ -86,7 +103,10 @@ assert.equal(st.hideResumoCarga, false);
 assert.equal(ctx.canalRegistosTabsState('horeca').hideResumoCarga, true);
 
 const agg = ctx.distBuildResumoCargaRows();
-assert.equal(agg.length, 3, '3 códigos distintos');
+assert.equal(agg.length, 3, 'só canal 13 com Massimo ou Eduardo');
+assert.equal(agg.some(r => r.cod === '458529'), false, 'código só no Excel, fora da lista Dist, não entra');
+assert.equal(agg.some(r => r.cod === '410730'), false, 'canal 13 do Diogo não entra no Dist');
+assert.equal(agg.some(r => r.cod === '100001'), false, 'Eduardo noutro canal SAP não entra');
 const beer = agg.find(r => r.cod === '458532');
 assert.ok(beer);
 assert.equal(beer.qty, 15);
@@ -95,9 +115,11 @@ assert.equal(beer.vendedor, 'EDUARDO MADEIRA');
 const euro = agg.find(r => r.cod === '749286');
 assert.equal(euro.qty, 8);
 assert.equal(euro.valor, 0);
-const other = agg.find(r => r.cod === '458529');
-assert.equal(other.qty, 3);
-assert.equal(other.valor, 200);
+assert.equal(euro.vendedor, 'MASSIMO BOTTELLO');
+const qb = agg.find(r => r.cod === '100002');
+assert.equal(qb.qty, 6);
+assert.equal(qb.vendedor, 'MASSIMO BOTTELLO');
+assert.equal(ctx._distResumoHaviaCargaFora, true);
 // Ordenação: maior valor primeiro
 assert.equal(agg[0].cod, '458532');
 
