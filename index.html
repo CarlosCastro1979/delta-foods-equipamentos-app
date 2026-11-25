@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-dist-sem-equip-auto Sem equipamento na carga fica sem comodato -->
+<!-- dfb-build: v2026-11-25-contrato-no-registo Contrato gerado fica no registo -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -48793,12 +48793,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-dist-sem-equip-auto: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-25-contrato-no-registo: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-dist-sem-equip-auto';
+  var CACHE_KEEP = 'v2026-11-25-contrato-no-registo';
 
   function tryRegister() {
     try {
@@ -50127,10 +50127,15 @@ function ctGetData() {
   };
 
   // Dist: só o nome do equipamento no Word (sem «Gama N — lote —»). Horeca multi-gama mantém o prefixo.
+  // ANEXO_I guarda a descrição crua (sem prefixo de gama) para o registo do cliente.
   const prefixGamaWord = multi && !ctContratoEhDistribuidores();
+  data.ANEXO_I = [];
   for (let i = 1; i <= 8; i++) {
     const sel = document.getElementById('ct_a1_' + i + '_equip');
     let desc = sel && sel.value ? (sel.options[sel.selectedIndex]?.dataset?.desc || '') : '';
+    const serie = document.getElementById('ct_a1_'+i+'_serie')?.value || '';
+    const nf = document.getElementById('ct_a1_'+i+'_nf')?.value || '';
+    if (desc) data.ANEXO_I.push({ tipo: desc, tag: serie, nf });
     const gIdx = parseInt(document.getElementById('ct_a1_' + i + '_gama')?.value, 10) || 0;
     if (desc && prefixGamaWord) {
       const lab = ctGamaLabel(gamas[gIdx] || gamas[0] || ctEmptyGama(), gIdx);
@@ -50138,8 +50143,8 @@ function ctGetData() {
     }
     data['A1_R' + i + '_QTD'] = document.getElementById('ct_a1_'+i+'_qtd')?.value || '';
     data['A1_R' + i + '_DESC'] = desc;
-    data['A1_R' + i + '_SERIE'] = document.getElementById('ct_a1_'+i+'_serie')?.value || '';
-    data['A1_R' + i + '_NF'] = document.getElementById('ct_a1_'+i+'_nf')?.value || '';
+    data['A1_R' + i + '_SERIE'] = serie;
+    data['A1_R' + i + '_NF'] = nf;
     data['A1_R' + i + '_VALOR'] = document.getElementById('ct_a1_'+i+'_valor')?.value || '';
     data['A1_R' + i + '_GAMA'] = String(gIdx);
   }
@@ -50352,11 +50357,13 @@ async function ctGerar() {
     a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
     showToast('✅ Contrato gerado: ' + filename, 'success');
+
+    // O Word já saiu. O registo do cliente tem de ficar gravado antes de
+    // limpar o rascunho e de abrir o email de assinatura.
+    const gravado = await ctGuardarContratoSuapbase(data);
+    if (!gravado || gravado.ok === false) return;
     if (typeof ctClearDraft === 'function') ctClearDraft();
     setTimeout(() => ctAbrirEmail(filename, data, out), 800);
-
-    // ─── Guardar contrato automaticamente no registo do cliente ───
-    ctGuardarContratoSuapbase(data).catch(e => console.warn('Erro ao guardar contrato:', e));
 
   } catch(e) {
     console.error('ctGerar error:', e);
@@ -50509,82 +50516,399 @@ function ctBuildDocx(documentXml) {
   }
 }
 
-async function ctGuardarContratoSuapbase(data) {
-  const cod = data.COMOD_COD || document.getElementById('ct_cod')?.value?.trim();
-  if (!cod) return;
+/** Caps do gerador → Cápsulas do registo. Kg mantém-se. */
+function ctUnidadeRegisto(un) {
+  const u = String(un || '').trim();
+  if (/^kg/i.test(u)) return 'Kg';
+  return 'Capsulas';
+}
 
-  // Buscar o registo actual do cliente
-  const res = await fetch(SUPA_URL + '?cod=eq.' + encodeURIComponent(cod) + '&select=id,cod,nome,contrato,contratos,vendedor', {
-    headers: typeof registosReadHeaders === 'function' ? registosReadHeaders() : HEADERS
-  });
-  if (!res.ok) return;
-  let registos = await res.json();
-  if (typeof filterByCanalActivoVendedor === 'function') {
-    registos = filterByCanalActivoVendedor(registos);
-  } else if (typeof vendedorPertenceAoCanalActivo === 'function') {
-    registos = registos.filter(r => vendedorPertenceAoCanalActivo(r.vendedor));
-  }
-  if (typeof filterByUtilizadorActivo === 'function') {
-    registos = filterByUtilizadorActivo(registos);
-  }
-  if (!registos.length) {
-    toast('Sem permissão para guardar contrato neste cliente.', 'error');
-    return;
-  }
-  if (typeof podeEditarRegisto === 'function' && !podeEditarRegisto(registos[0].vendedor)) {
-    toast('Sem permissão para guardar contrato neste cliente.', 'error');
-    return;
-  }
+/** Tira o prefixo «Gama N — lote — » que o Word usa, para o tipo ficar o nome da máquina. */
+function ctTipoMaquinaContrato(desc) {
+  const s = String(desc || '').trim();
+  if (!/^Gama\s+\d+/i.test(s)) return s;
+  const idx = s.lastIndexOf(' — ');
+  if (idx < 0) return s;
+  return s.slice(idx + 3).trim() || s;
+}
 
-  const registo = registos[0];
-  const contratosActuais = Array.isArray(registo.contratos) ? registo.contratos : [];
+function ctTagMaquinaContrato(tipo, tag) {
+  const t = String(tag || '').trim();
+  if (!t || t === '—') return '';
+  if (typeof equipIsDelonghi === 'function' && equipIsDelonghi(tipo)) return '';
+  return t;
+}
 
-  // Construir o novo contrato com todos os dados do formulário
-  const g = id => (document.getElementById(id) || {}).value || '';
-  const hoje = new Date();
-  const inicioYYYYMM = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0');
+function ctNfMaquinaContrato(nf) {
+  const n = String(nf || '').trim();
+  return !n || n === '—' ? '' : n;
+}
 
-  ctSyncLegacyGamaFields();
-  const gamasSave = Array.isArray(data.GAMAS) && data.GAMAS.length
-    ? data.GAMAS
-    : ctCollectGamas();
-  const g0 = gamasSave[0] || {};
-  const novoContrato = {
-    num:      data.NUM_CONTRATO,
-    inicio:   inicioYYYYMM,
-    consumo:  parseInt(g0.qtd != null ? g0.qtd : g('ct_qtd_mes'), 10) || 0,
-    duracao:  parseInt(g('ct_dur_num')) || 0,
-    unidade:  g0.unidade || g('ct_unidade') || 'Caps',
-    lote:     g0.lote || data.LOTE,
-    prazo:    parseInt(g('ct_dias_num')) || 30,
+/** Anexo I do gerador. Nº Série = Tag. Anexo II (investimento) não entra. */
+function ctEquipamentosDoAnexoI(data) {
+  const linhas = [];
+  const src = data && Array.isArray(data.ANEXO_I) ? data.ANEXO_I : null;
+  if (src) {
+    src.forEach(r => {
+      const tipo = ctTipoMaquinaContrato(r && (r.tipo || r.desc));
+      if (!tipo) return;
+      linhas.push({
+        tipo,
+        tag: ctTagMaquinaContrato(tipo, r.tag || r.serie),
+        nf: ctNfMaquinaContrato(r.nf),
+        codigo: String((r && r.codigo) || '').trim(),
+      });
+    });
+    return linhas;
+  }
+  for (let i = 1; i <= 8; i++) {
+    const tipo = ctTipoMaquinaContrato(data && data['A1_R' + i + '_DESC']);
+    if (!tipo) continue;
+    linhas.push({
+      tipo,
+      tag: ctTagMaquinaContrato(tipo, data['A1_R' + i + '_SERIE']),
+      nf: ctNfMaquinaContrato(data['A1_R' + i + '_NF']),
+      codigo: '',
+    });
+  }
+  return linhas;
+}
+
+function ctInicioMesActual(d) {
+  const now = d instanceof Date ? d : new Date();
+  return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+}
+
+function ctLinhaContratoDoGerador(data, inicio) {
+  const gamas = Array.isArray(data && data.GAMAS) ? data.GAMAS.filter(Boolean) : [];
+  const g0 = gamas[0] || {};
+  const qtd = (g0.qtd != null && String(g0.qtd).trim() !== '')
+    ? g0.qtd
+    : (data && data.QTD_MES);
+  const linha = {
+    num: String((data && data.NUM_CONTRATO) || '').trim(),
+    inicio: inicio || '',
+    consumo: parseInt(qtd, 10) || 0,
+    duracao: parseInt(data && data.DURACAO_NUM, 10) || 0,
+    unidade: ctUnidadeRegisto(g0.unidade || 'Caps'),
+    lote: String(g0.lote || (data && data.LOTE) || '').trim(),
+    prazo: parseInt(data && data.DIAS_PAG_NUM, 10) || 30,
+    pdv: 'unico',
   };
-  if (gamasSave.length > 1) {
-    novoContrato.gamas = gamasSave.map(gm => ({
-      lote: gm.lote || '',
-      unidade: gm.unidade || 'Caps',
+  if (gamas.length > 1) {
+    linha.gamas = gamas.map(gm => ({
+      lote: String(gm.lote || '').trim(),
+      unidade: ctUnidadeRegisto(gm.unidade),
       consumo: parseInt(gm.qtd, 10) || 0,
     }));
   }
+  return linha;
+}
 
-  const colapsados = colapsarContratosArray(contratosActuais, registo);
-  if (clienteJaTemNumero({ ...registo, contratos: colapsados.list }, novoContrato.num)) {
-    toast(msgContratoJaCriado(novoContrato.num, registo), 'error');
-    return false;
+/** Junta máquinas novas às existentes. Mesmo tipo+tag preenche NF vazia em vez de duplicar. */
+function ctJuntarEquipamentos(existentes, novos, dist) {
+  const out = (Array.isArray(existentes) ? existentes : [])
+    .filter(e => e && String(e.tipo || '').trim())
+    .map(e => ({ ...e }));
+  (novos || []).forEach(n => {
+    if (!n || !n.tipo) return;
+    const tipo = String(n.tipo).trim().toUpperCase();
+    const tag = String(n.tag || '').trim().toUpperCase();
+    const nf = String(n.nf || '').trim();
+    const semId = !tag && !nf;
+    if (!semId) {
+      const hit = out.find(e =>
+        String(e.tipo || '').trim().toUpperCase() === tipo
+        && String(e.tag || '').trim().toUpperCase() === tag
+      );
+      if (hit) {
+        if (!hit.nf && nf) hit.nf = nf;
+        if (!hit.codigo && n.codigo) hit.codigo = n.codigo;
+        if (!hit.tag && n.tag) hit.tag = n.tag;
+        return;
+      }
+    }
+    out.push(dist
+      ? { tipo: n.tipo, tag: n.tag || '', codigo: n.codigo || '', nf: nf, origem: n.origem || 'contrato' }
+      : { tipo: n.tipo, tag: n.tag || '', nf: nf });
+  });
+  return out;
+}
+
+function ctJuntarDistContratos(existentes, numero, equipamentos) {
+  const list = (Array.isArray(existentes) ? existentes : []).map(c => ({
+    numero: String((c && (c.numero || c.num)) || '').trim(),
+    equipamentos: Array.isArray(c && c.equipamentos) ? c.equipamentos.map(e => ({ ...e })) : [],
+  }));
+  list.push({
+    numero: String(numero || '').trim(),
+    equipamentos: (equipamentos || []).filter(e => e && e.tipo).map(e => ({
+      tipo: e.tipo,
+      tag: e.tag || '',
+      codigo: e.codigo || '',
+      nf: e.nf || '',
+      origem: 'contrato',
+    })),
+  });
+  return list;
+}
+
+function ctEquipamentosPlanosDist(distContratos) {
+  const equipamentos = [];
+  (distContratos || []).forEach(c => {
+    (c.equipamentos || []).forEach(e => {
+      if (!e || !e.tipo) return;
+      equipamentos.push({
+        tipo: e.tipo,
+        tag: e.tag || '',
+        codigo: e.codigo || '',
+        nf: e.nf || '',
+      });
+    });
+  });
+  return equipamentos;
+}
+
+function ctClienteJaTemEsteNumero(existente, num) {
+  if (!existente || !num) return false;
+  if (typeof isNumContratoPlaceholder === 'function' && isNumContratoPlaceholder(num)) return false;
+  if (typeof clienteJaTemNumero === 'function') return !!clienteJaTemNumero(existente, num);
+  const alvo = String(num).replace(/\s+/g, '').toUpperCase();
+  if (!alvo || /^SEM[_ ]?COMODATO$/.test(alvo)) return false;
+  const nums = [];
+  String(existente.contrato || '').split(/[,;]/).forEach(n => nums.push(n));
+  (existente.contratos || []).forEach(c => nums.push(c && (c.num || c.numero)));
+  (existente.dist_contratos || []).forEach(c => nums.push(c && (c.numero || c.num)));
+  return nums.some(n => String(n || '').replace(/\s+/g, '').toUpperCase() === alvo);
+}
+
+function ctSapDoCodigo(cod) {
+  const alvo = typeof normCod === 'function' ? normCod(cod) : String(cod || '').trim();
+  let nome = '';
+  let vendedor = '';
+  let cep = '';
+  const listas = [];
+  if (typeof getListaClientesActiva === 'function') listas.push(getListaClientesActiva() || []);
+  if (typeof getListaClientesCompleta === 'function') listas.push(getListaClientesCompleta() || []);
+  for (let i = 0; i < listas.length; i++) {
+    const cli = (listas[i] || []).find(c => {
+      const k = typeof normCod === 'function' ? normCod(c && c.cod) : String((c && c.cod) || '').trim();
+      return k === alvo;
+    });
+    if (!cli) continue;
+    if (!nome) nome = cli.nome || '';
+    if (!vendedor) vendedor = cli.vendedor || '';
+    if (!cep) cep = cli.cep || '';
+    if (nome && vendedor && cep) break;
+  }
+  if (!cep && typeof getMorada === 'function') {
+    const m = getMorada(cod);
+    if (m && m.cep) cep = String(m.cep).trim();
+  }
+  return { nome, vendedor, cep };
+}
+
+/**
+ * Monta o corpo do registo a partir do contrato já preenchido.
+ * opts.dist — canal Distribuidores.
+ * opts.existente — linha actual (merge). Sem linha → criar.
+ * opts.sap — { nome, vendedor, cep } quando o formulário não os traz.
+ * opts.inicio — YYYY-MM.
+ */
+function ctMontarRegistoDoContrato(data, opts) {
+  opts = opts || {};
+  const dist = !!opts.dist;
+  const existente = opts.existente || null;
+  const sap = opts.sap || {};
+  const cod = String((data && data.COMOD_COD) || '').trim();
+  const num = String((data && data.NUM_CONTRATO) || '').trim();
+  if (!cod) return { error: 'Falta o código do cliente.' };
+  if (!num) return { error: 'Falta o número do contrato.' };
+  if (ctClienteJaTemEsteNumero(existente, num)) {
+    const msg = typeof msgContratoJaCriado === 'function'
+      ? msgContratoJaCriado(num, existente)
+      : ('Este cliente já tem o contrato ' + num + '.');
+    return { error: msg };
+  }
+  const nome = String((data && data.COMOD_EMPRESA) || sap.nome || (existente && existente.nome) || '').trim();
+  const vendedor = String((data && data.VENDEDOR) || sap.vendedor || (existente && existente.vendedor) || '').trim();
+  const cep = String((existente && existente.cep) || sap.cep || '').trim();
+  const inicio = opts.inicio || ctInicioMesActual();
+  const novosEq = ctEquipamentosDoAnexoI(data);
+
+  if (dist) {
+    const sem = !!(existente && (
+      existente.tem_comodato === false
+      || /^SEM[_ ]?COMODATO$/i.test(String(existente.contrato || ''))
+    ));
+    let prevDist = [];
+    if (existente && !sem) {
+      if (typeof distNormalizeRegisto === 'function') {
+        const n = distNormalizeRegisto(existente);
+        prevDist = (n && n.dist_contratos) || [];
+      } else if (Array.isArray(existente.dist_contratos) && existente.dist_contratos.length) {
+        prevDist = existente.dist_contratos;
+      } else if (Array.isArray(existente.equipamentos) && existente.equipamentos.length) {
+        const numAntigo = String(existente.contrato || '').trim();
+        prevDist = [{ numero: /^SEM/i.test(numAntigo) ? '' : numAntigo, equipamentos: existente.equipamentos }];
+      }
+    }
+    const dist_contratos = ctJuntarDistContratos(prevDist, num, novosEq);
+    const equipamentos = ctEquipamentosPlanosDist(dist_contratos);
+    return {
+      acao: existente && existente.id ? 'patch' : 'post',
+      id: existente && existente.id,
+      body: {
+        vendedor, cod, nome, cep,
+        contrato: dist_contratos.map(c => c.numero).filter(Boolean).join(', '),
+        contratos: [],
+        equipamentos,
+        tem_comodato: true,
+        dist_contratos,
+      },
+    };
   }
 
-  const contratosNovos = [...colapsados.list, novoContrato];
+  let prevList = existente && Array.isArray(existente.contratos) ? existente.contratos.slice() : [];
+  if (typeof colapsarContratosArray === 'function') {
+    prevList = colapsarContratosArray(prevList, existente || { cod, contrato: '' }).list;
+  }
+  let contratos = prevList.concat([ctLinhaContratoDoGerador(data, inicio)]);
+  if (typeof colapsarContratosArray === 'function') {
+    contratos = colapsarContratosArray(contratos, existente || { cod, contrato: '' }).list;
+  }
+  const equipamentos = ctJuntarEquipamentos(existente && existente.equipamentos, novosEq, false);
+  return {
+    acao: existente && existente.id ? 'patch' : 'post',
+    id: existente && existente.id,
+    body: {
+      vendedor, cod, nome, cep,
+      contrato: num,
+      contratos,
+      equipamentos,
+    },
+  };
+}
 
-  // Também actualizar o campo contrato (nº de registo visível)
-  const patch = await fetch(SUPA_URL + '?id=eq.' + registo.id, {
-    method: 'PATCH',
-    headers: { ...HEADERS, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-    body: JSON.stringify({ contratos: contratosNovos, contrato: data.NUM_CONTRATO })
+async function ctGuardarContratoSuapbase(data) {
+  const cod = String((data && data.COMOD_COD) || (document.getElementById('ct_cod') || {}).value || '').trim();
+  if (!cod) {
+    const msg = 'Falta o código do cliente para gravar o registo.';
+    toast(msg, 'error');
+    return { ok: false, error: msg };
+  }
+
+  let existente = null;
+  try {
+    const hit = typeof findRegistoByCod === 'function' ? await findRegistoByCod(cod) : null;
+    if (hit && hit.id && typeof fetchRegistoById === 'function') {
+      existente = (await fetchRegistoById(hit.id)) || hit;
+    } else {
+      existente = hit;
+    }
+  } catch (e) {
+    console.warn('ctGuardarContratoSuapbase lookup:', e);
+  }
+
+  if (existente && typeof podeEditarRegisto === 'function' && !podeEditarRegisto(existente.vendedor)) {
+    const msg = 'Sem permissão para guardar contrato neste cliente.';
+    toast(msg, 'error');
+    return { ok: false, error: msg };
+  }
+
+  const dist = typeof ctContratoEhDistribuidores === 'function' && ctContratoEhDistribuidores();
+  const montado = ctMontarRegistoDoContrato(data, {
+    dist,
+    existente,
+    sap: ctSapDoCodigo(cod),
+    inicio: ctInicioMesActual(),
   });
+  if (!montado || montado.error) {
+    const msg = (montado && montado.error) || 'Não consegui montar o registo do contrato.';
+    toast(msg, 'error');
+    return { ok: false, error: msg };
+  }
 
-  if (patch.ok) {
-    clearRegistosCache();
-    try { if (typeof clearContratosCache === 'function') clearContratosCache(); } catch (_) {}
-    toast('✅ Contrato ' + data.NUM_CONTRATO + ' guardado no perfil do cliente.');
+  const body = montado.body;
+  const aviso = (msg) => {
+    toast(msg, 'error');
+    return { ok: false, error: msg };
+  };
+
+  try {
+    if (montado.acao === 'patch') {
+      let res = await fetch(SUPA_URL + '?id=eq.' + encodeURIComponent(montado.id), {
+        method: 'PATCH',
+        headers: { ...HEADERS, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok && dist) {
+        const errText = await res.text().catch(() => '');
+        if (/tem_comodato|dist_contratos|schema cache/i.test(errText)) {
+          const legado = { ...body };
+          delete legado.tem_comodato;
+          delete legado.dist_contratos;
+          res = await fetch(SUPA_URL + '?id=eq.' + encodeURIComponent(montado.id), {
+            method: 'PATCH',
+            headers: { ...HEADERS, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify(legado),
+          });
+        }
+      }
+      if (!res.ok) {
+        const t = await res.text().catch(() => '');
+        return aviso('Contrato Word gerado, mas não ficou no registo: HTTP ' + res.status + (t ? ' — ' + t.slice(0, 140) : ''));
+      }
+    } else {
+      const postBody = {
+        ...body,
+        id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('d' + Date.now()),
+        data: new Date().toISOString().slice(0, 10),
+        manual: true,
+      };
+      let res = await fetch(SUPA_URL, {
+        method: 'POST',
+        headers: HEADERS,
+        body: JSON.stringify(postBody),
+      });
+      if (!res.ok && dist) {
+        const errText = await res.text().catch(() => '');
+        if (/tem_comodato|dist_contratos|schema cache/i.test(errText)) {
+          const legado = { ...postBody };
+          delete legado.tem_comodato;
+          delete legado.dist_contratos;
+          res = await fetch(SUPA_URL, { method: 'POST', headers: HEADERS, body: JSON.stringify(legado) });
+        }
+      }
+      if (!res.ok) {
+        const t = await res.text().catch(() => '');
+        return aviso('Contrato Word gerado, mas não ficou no registo: HTTP ' + res.status + (t ? ' — ' + t.slice(0, 140) : ''));
+      }
+      montado.id = postBody.id;
+      body.id = postBody.id;
+    }
+
+    try {
+      const hadList = Array.isArray(allData) && allData.length > 1;
+      const mem = hadList ? allData.slice() : null;
+      clearRegistosCache();
+      if (mem) {
+        const saved = { ...(existente || {}), ...body, id: montado.id };
+        const k = typeof normCod === 'function' ? normCod(saved.cod) : String(saved.cod || '');
+        const i = mem.findIndex(x => x && (x.id === saved.id || (typeof normCod === 'function' ? normCod(x.cod) : String(x.cod || '')) === k));
+        if (i >= 0) mem[i] = { ...mem[i], ...saved };
+        else mem.unshift(saved);
+        allData = mem;
+        if (typeof setRegistosCache === 'function') setRegistosCache(allData);
+      }
+      if (typeof clearContratosCache === 'function') clearContratosCache();
+    } catch (_) {}
+
+    toast('✅ Contrato ' + (data.NUM_CONTRATO || '') + ' guardado no perfil do cliente.');
+    return { ok: true, id: montado.id };
+  } catch (e) {
+    console.error('ctGuardarContratoSuapbase:', e);
+    return aviso('Contrato Word gerado, mas não ficou no registo: ' + (e && e.message ? e.message : e));
   }
 }
 

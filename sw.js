@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-dist-sem-equip-auto — sem equipamento fica sem comodato
+// Service Worker v2026-11-25-contrato-no-registo — contrato gerado fica no registo
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-dist-sem-equip-auto';
+const CACHE = 'v2026-11-25-contrato-no-registo';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
