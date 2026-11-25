@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const CACHE = 'v2026-11-16-outlook-anexo-eml';
+const CACHE = 'v2026-11-24-dividas-balancete-dup';
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
@@ -48,6 +48,8 @@ const names = [
   'idxColunaSaldoTotal',
   'idxColunaVencido120',
   'idxColunaSaldoVencido',
+  'vendedorDividaAnulado',
+  'assinaturaSaldoBalancete',
   'cabecalhoBalancetePosicional',
   'parseBalanceteDividasSheet',
   'saldoTotalDivida',
@@ -114,6 +116,41 @@ const so120 = parsed.itens.find(i => i.cod === '55001');
 assert.equal(so120.vencido120, 90.5);
 assert.equal(so120.saldoTotal, 0);
 assert.equal(so120.vendedorCod, '99520002');
+
+// Balancete SAP: a linha do vendedor 999 repete o mesmo saldo e não pode dobrar.
+const sapHeader = [
+  'Empresa', 'Organização vendas', 'Escritório de vendas', 'Nº pessoal', 'Cliente', 'Nome',
+  'Cód.Razão Especial', 'Saldo Total',
+  'Venc. Escalão 1', 'Venc. Escalão 2', 'Venc. Escalão 3', 'Venc. Escalão 4', 'Venc. Escalão 5', 'Venc. Escalão 6',
+  'Total Vencido', 'Total a Vencer',
+];
+function linhaSap(vend, cod, nome, total, e1, e2, e3, e4, e5, e6, venc, aVencer) {
+  return ['GN52', 'DF01', 'DFSP', vend, cod, nome, '', total, e1, e2, e3, e4, e5, e6, venc, aVencer];
+}
+const sap = ctx.parseBalanceteDividasSheet([
+  sapHeader,
+  linhaSap(99520004, '410730', 'RUBI DISTRIBUIDORA DE ALIMENTOS LTD', 865772.46, 0, 0, 301294.7, 0, 0, -11350.83, 289943.87, 575828.59),
+  linhaSap(99529999, '410730', 'RUBI DISTRIBUIDORA DE ALIMENTOS LTD', 865772.46, 0, 0, 301294.7, 0, 0, -11350.83, 289943.87, 575828.59),
+  linhaSap(99520018, '749004', 'CENCOSUD BRASIL COMERCIAL S.A', 139269.08, 0, 0, 0, 0, 0, 139269.08, 139269.08, 0),
+  linhaSap(99520099, '441908', 'UNILOG EXPRESS LOGISTICA S/A', 2564.92, 0, 0, 0, 0, 0, 0, 2564.92, 0),
+  linhaSap(99529999, '441908', 'UNILOG EXPRESS LOGISTICA S/A', 2564.92, 0, 0, 0, 0, 0, 0, 2564.92, 0),
+  linhaSap(99530099, '441908', 'UNILOG EXPRESS LOGISTICA S/A', 5190.63, 0, 0, 0, 0, 0, 0, 5190.63, 0),
+]);
+assert.equal(sap.ok, true);
+assert.equal(sap.cols.saldoTotal, 7);
+assert.equal(sap.cols.vencido120, 13, 'Escalão 6 é o +120');
+assert.equal(sap.cols.saldoVencido, 14, 'Total Vencido é o saldo vencido');
+const rubi = sap.itens.find(i => i.cod === '410730');
+assert.equal(rubi.saldoTotal, 865772.46, 'RUBI não dobra com a cópia 999');
+assert.equal(rubi.saldoVencido, 289943.87);
+assert.equal(rubi.vencido120, -11350.83);
+assert.equal(rubi.vendedorCod, '99520004');
+const cenco = sap.itens.find(i => i.cod === '749004');
+assert.equal(cenco.saldoTotal, 139269.08);
+assert.equal(cenco.vencido120, 139269.08);
+const unilog = sap.itens.find(i => i.cod === '441908');
+assert.equal(unilog.saldoTotal, 7755.55, 'saldos diferentes (GN52 e GN53) somam; a cópia 999 não');
+assert.equal(unilog.saldoVencido, 7755.55);
 
 // Títulos dos saldos mandam, mesmo fora de H/N/O. Cliente continua na coluna E.
 const movedHeader = new Array(8).fill('');

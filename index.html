@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-dist-resumo-carga Dist resumo carga por distribuidor -->
+<!-- dfb-build: v2026-11-24-dividas-balancete-dup Dívidas: não dobrar a linha 999 -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -4481,7 +4481,7 @@ var _unused_placeholder = 1;
           <span style="font-size:22px;">💰</span>
           <div>
             <div style="font-weight:600;font-size:15px;">Carregar Dívidas</div>
-            <div style="font-size:12px;color:var(--muted);line-height:1.5;">Balancete Excel. Coluna <strong>E</strong> = código do cliente, coluna <strong>D</strong> = código do vendedor. Saldos: <strong>Saldo Total</strong> (H), <strong>Saldo Vencido</strong> (O) e <strong>Vencido +120 dias</strong> (N). Cada carga substitui a fotografia das dívidas no Supabase — não mexe nas vendas.</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5;">Balancete Excel. Coluna <strong>E</strong> = código do cliente, coluna <strong>D</strong> = código do vendedor. Saldos: <strong>Saldo Total</strong> (H), <strong>Total Vencido</strong> (O) e <strong>Venc. Escalão 6</strong> / +120 dias (N). A mesma linha repetida no vendedor 999 não soma outra vez. Cada carga substitui a fotografia das dívidas no Supabase — não mexe nas vendas.</div>
           </div>
         </div>
         <input type="file" id="dados-dividas-input" accept=".xlsx,.xls" style="display:none" onchange="handleSCDividasImport(event)">
@@ -7768,7 +7768,7 @@ function normHeaderDivida(h) {
     .trim();
 }
 
-/** Colunas fixas do balancete Brasil: D vendedor, E cliente, H total, N +120, O vencido. */
+/** Colunas fixas do balancete Brasil: D vendedor, E cliente, H total, N escalão 6 (+120), O total vencido. */
 const BAL_COL_VENDEDOR = 3;
 const BAL_COL_CLIENTE = 4;
 const BAL_COL_TOTAL = 7;
@@ -7807,13 +7807,28 @@ function idxColunaSaldoTotal(headers) {
 }
 
 function idxColunaVencido120(headers) {
-  return headers.findIndex(h => (/VENCIDO/.test(h) && /120/.test(h)) || /^\+\s*120/.test(h) || /120\s*DIAS/.test(h));
+  const explicit = headers.findIndex(h => (/VENCIDO/.test(h) && /120/.test(h)) || /^\+\s*120/.test(h) || /120\s*DIAS/.test(h));
+  if (explicit >= 0) return explicit;
+  // Balancete SAP Brasil: coluna N é «Venc. Escalão 6» (o escalão mais antigo, +120 dias).
+  return headers.findIndex(h => /ESCALAO\s*6\b/.test(h));
 }
 
 function idxColunaSaldoVencido(headers, i120) {
   const exact = headers.findIndex((h, i) => i !== i120 && (h === 'SALDO VENCIDO' || /^SALDO VENCIDO\b/.test(h)));
   if (exact >= 0) return exact;
+  const totalVenc = headers.findIndex((h, i) => i !== i120 && (h === 'TOTAL VENCIDO' || /^TOTAL VENCIDO\b/.test(h)));
+  if (totalVenc >= 0) return totalVenc;
   return headers.findIndex((h, i) => i !== i120 && h === 'VENCIDO');
+}
+
+/** NPess anulado no balancete (99529999 e afins): cópia do saldo, não é outra dívida. */
+function vendedorDividaAnulado(cod) {
+  const s = String(cod == null ? '' : cod).replace(/\D/g, '').replace(/^0+/, '');
+  return s.length >= 3 && s.endsWith('999');
+}
+
+function assinaturaSaldoBalancete(total, vencido, v120) {
+  return round2Divida(total) + '|' + round2Divida(vencido) + '|' + round2Divida(v120);
 }
 
 function cabecalhoBalancetePosicional(headers) {
@@ -7830,8 +7845,9 @@ function cabecalhoBalancetePosicional(headers) {
 /**
  * Lê a folha do balancete.
  * Coluna E = código do cliente, coluna D = código do vendedor.
- * Saldos pelos títulos (Saldo Total, Saldo Vencido, Vencido +120 dias);
+ * Saldos pelos títulos (Saldo Total, Total/Saldo Vencido, Vencido +120 ou Escalão 6);
  * se o título não aparecer, usa H, O e N.
+ * Linha repetida do mesmo saldo no vendedor 999 não soma.
  * @returns {{ok:boolean, quase?:boolean, error?:string, headerRow?:number, itens?:Array}}
  */
 function parseBalanceteDividasSheet(rows) {
@@ -7885,6 +7901,7 @@ function parseBalanceteDividasSheet(rows) {
     const vendRaw = row[iVend];
     const vendedorCod = celulaCodVendedorDivida(vendRaw);
     const vendedorNome = vendedorCod ? '' : String(vendRaw == null ? '' : vendRaw).trim();
+    const sig = assinaturaSaldoBalancete(saldoTotal, saldoVencido, vencido120);
     const prev = acc.get(cod);
     if (!prev) {
       acc.set(cod, {
@@ -7895,8 +7912,16 @@ function parseBalanceteDividasSheet(rows) {
         saldoTotal,
         saldoVencido,
         vencido120,
+        _sigs: new Set([sig]),
       });
+    } else if (prev._sigs.has(sig) && (vendedorDividaAnulado(vendedorCod) || vendedorDividaAnulado(prev.vendedorCod))) {
+      // O SAP repete o mesmo saldo na linha do vendedor 999. Não soma outra vez.
+      if (vendedorDividaAnulado(prev.vendedorCod) && vendedorCod && !vendedorDividaAnulado(vendedorCod)) {
+        prev.vendedorCod = vendedorCod;
+        prev.vendedor = vendedorNome;
+      }
     } else {
+      prev._sigs.add(sig);
       prev.saldoTotal = round2Divida(prev.saldoTotal + saldoTotal);
       prev.saldoVencido = round2Divida(prev.saldoVencido + saldoVencido);
       prev.vencido120 = round2Divida(prev.vencido120 + vencido120);
@@ -7916,7 +7941,11 @@ function parseBalanceteDividasSheet(rows) {
     ok: true,
     headerRow,
     cols: { codigo: iCod, vendedor: iVend, saldoTotal: iTotal, saldoVencido: iVenc, vencido120: i120 },
-    itens: [...acc.values()],
+    itens: [...acc.values()].map(it => {
+      const o = { ...it };
+      delete o._sigs;
+      return o;
+    }),
   };
 }
 
@@ -48459,12 +48488,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-dist-resumo-carga: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-dividas-balancete-dup: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-dist-resumo-carga';
+  var CACHE_KEEP = 'v2026-11-24-dividas-balancete-dup';
 
   function tryRegister() {
     try {
