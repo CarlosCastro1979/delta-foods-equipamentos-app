@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-resumo-carga-canal13 Resumo carga só canal 13 Massimo/Eduardo -->
+<!-- dfb-build: v2026-11-24-sap-lista-atualizado Lista SAP: dia e hora da actualização -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2728,7 +2728,7 @@ var _unused_placeholder = 1;
 
       <div style="margin-top:24px;padding:14px 16px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);">
         <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Última carga</div>
-        <div id="sap-ultima-carga" style="font-size:13px;color:var(--text);">—</div>
+        <div id="sap-ultima-carga-registos" class="js-sap-ultima-carga" style="font-size:13px;color:var(--text);">—</div>
       </div>
     </div>
   </div>
@@ -4453,7 +4453,7 @@ var _unused_placeholder = 1;
         </div>
         <div id="sap-result" style="display:none;font-size:13px;padding:10px 14px;border-radius:8px;border:1px solid #c8e6c9;background:#e8f5e9;color:#2e7d32;margin-bottom:10px;"></div>
         <button class="btn btn-primary btn-sm" onclick="document.getElementById('dados-sap-input').click()">📂 Selecionar ficheiro</button>
-        <div id="sap-ultima-carga" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+        <div id="sap-ultima-carga" class="js-sap-ultima-carga" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
       </div>
 
       <!-- CARREGAR LISTA DE RC -->
@@ -11495,18 +11495,22 @@ async function confirmarCargaSAP() {
   // 1. Guardar nova lista activa (memória + IndexedDB; localStorage best-effort)
   const listaTs = Date.now();
   const saved = await salvarListaClientesLocal(novaLista, listaTs);
+  const ultimaMeta = {
+    data: new Date().toISOString(), ficheiro: fileName, total: novaLista.length,
+    anulados: codsAnulados.length,
+    adicionados: _sapImportBuffer._adicionados || 0,
+    removidos: _sapImportBuffer._removidos || 0,
+    ricosPreservados: preservados.kept || 0,
+    registadosRepostos: repostos.restored || 0,
+    storage: saved.lsOk ? 'localStorage+idb' : 'indexedDB'
+  };
   try {
-    localStorage.setItem('delta_sap_ultima_carga', JSON.stringify({
-      data: new Date().toISOString(), ficheiro: fileName, total: novaLista.length,
-      anulados: codsAnulados.length,
-      adicionados: _sapImportBuffer._adicionados || 0,
-      removidos: _sapImportBuffer._removidos || 0,
-      ricosPreservados: preservados.kept || 0,
-      registadosRepostos: repostos.restored || 0,
-      storage: saved.lsOk ? 'localStorage+idb' : 'indexedDB'
-    }));
+    localStorage.setItem('delta_sap_ultima_carga', JSON.stringify(ultimaMeta));
   } catch (e) {
     console.warn('delta_sap_ultima_carga:', e);
+  }
+  try { await idbSet('delta_sap_ultima_carga', ultimaMeta); } catch (e) {
+    console.warn('delta_sap_ultima_carga idb:', e);
   }
   // Fonte de verdade no confirm: voltar a cruzar com Supabase AGORA (após possíveis registos feitos
   // entre "Carregar" e "Confirmar") e excluir sempre quem ficou na lista activa.
@@ -11659,13 +11663,21 @@ function cancelarCargaSAP() {
 }
 
 async function renderUltimaCargaSAP() {
-  const el = document.getElementById('sap-ultima-carga');
-  if (!el) return;
+  const els = document.querySelectorAll('.js-sap-ultima-carga');
+  if (!els.length) return;
   let local = null;
   try {
     const saved = localStorage.getItem('delta_sap_ultima_carga');
     if (saved) local = JSON.parse(saved);
   } catch (_) { local = null; }
+  if (typeof idbGet === 'function') {
+    try {
+      const packed = await idbGet('delta_sap_ultima_carga');
+      const localIso = local && local.data;
+      const idbIso = packed && packed.data;
+      if (idbIso && (!localIso || dadosPickMaisRecente(localIso, idbIso) === idbIso)) local = packed;
+    } catch (_) {}
+  }
   let cloudIso = '';
   let cloudTotal = null;
   try {
@@ -11705,7 +11717,8 @@ async function renderUltimaCargaSAP() {
     local && local.removidos ? `<span style="color:#f57c00">-${local.removidos} removidos</span>` : '',
     local && local.anulados ? `<span style="color:#c62828">${local.anulados} anulado(s) apagado(s)</span>` : '',
   ].filter(Boolean);
-  el.innerHTML = dadosHtmlAtualizadoEm(iso, parts.join(' &nbsp;·&nbsp; '));
+  const htmlUltima = dadosHtmlAtualizadoEm(iso, parts.join(' &nbsp;·&nbsp; '));
+  els.forEach((el) => { el.innerHTML = htmlUltima; });
 }
 
 /** Lista completa (todos os canais) — sem filtro. */
@@ -48500,12 +48513,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-resumo-carga-canal13: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-sap-lista-atualizado: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-resumo-carga-canal13';
+  var CACHE_KEEP = 'v2026-11-24-sap-lista-atualizado';
 
   function tryRegister() {
     try {

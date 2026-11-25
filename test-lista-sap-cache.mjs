@@ -11,7 +11,8 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 
 function extractFn(src, name) {
-  const start = src.indexOf(`function ${name}(`);
+  let start = src.indexOf(`async function ${name}(`);
+  if (start < 0) start = src.indexOf(`function ${name}(`);
   if (start < 0) throw new Error('Função em falta: ' + name);
   const brace = src.indexOf('{', start);
   let depth = 0;
@@ -50,13 +51,13 @@ check('pesquisa de texto não redesenha a tabela em cada tecla', () => {
 });
 
 check('service worker sobe de versão com o index', () => {
-  assert.ok(sw.includes('v2026-11-16-outlook-anexo-eml'));
+  assert.ok(sw.includes('v2026-11-24-sap-lista-atualizado'));
   assert.ok(!sw.includes('v2026-10-02-vendedor-atual'));
   assert.ok(!html.includes('v2026-10-02-vendedor-atual'));
   assert.ok(!sw.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!sw.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!sw.includes('v2026-10-01-nfe-dados-canal'));
-  assert.ok(html.includes('v2026-11-16-outlook-anexo-eml'));
+  assert.ok(html.includes('v2026-11-24-sap-lista-atualizado'));
   assert.ok(!html.includes('v2026-10-02-nfe-pdf'));
   assert.ok(!html.includes('v2026-10-01-nfe-filtros'));
   assert.ok(!html.includes('v2026-10-01-nfe-dados-canal'));
@@ -176,6 +177,74 @@ check('família de códigos não muda com o índice', () => {
   const fam2 = famCtx.getCodsFamilia('300');
   assert.ok(fam2.has('400'));
   assert.ok(fam2.has('300'));
+});
+
+check('data da Lista SAP aparece no cartão de Dados', () => {
+  const card = html.slice(
+    html.indexOf('<!-- CARREGAR LISTA SAP -->'),
+    html.indexOf('<!-- CARREGAR LISTA DE RC -->')
+  );
+  assert.ok(card.includes('id="sap-ultima-carga"'), 'o cartão Dados tem o sítio da data');
+  assert.ok(card.includes('js-sap-ultima-carga'));
+  const ids = html.match(/id="sap-ultima-carga"/g) || [];
+  assert.equal(ids.length, 1, 'id sap-ultima-carga tem de ser único');
+  assert.ok(html.includes('id="sap-ultima-carga-registos"'));
+  const fn = extractFn(html, 'renderUltimaCargaSAP');
+  assert.ok(fn.includes("querySelectorAll('.js-sap-ultima-carga')"));
+  assert.ok(fn.includes('dadosHtmlAtualizadoEm'));
+  assert.ok(!fn.includes("getElementById('sap-ultima-carga')"));
+  assert.ok(fn.includes("idbGet('delta_sap_ultima_carga')"));
+});
+
+const isoCarga = '2026-11-24T20:15:30.000Z';
+const nodesUltima = [
+  { id: 'sap-ultima-carga-registos', innerHTML: '—' },
+  { id: 'sap-ultima-carga', innerHTML: '' },
+];
+const ctxUltima = {
+  console,
+  Number,
+  String,
+  Date,
+  parseInt,
+  document: {
+    querySelectorAll(sel) {
+      return sel === '.js-sap-ultima-carga' ? nodesUltima : [];
+    },
+  },
+  localStorage: {
+    getItem(k) {
+      if (k === 'delta_sap_ultima_carga') {
+        return JSON.stringify({ data: isoCarga, total: 29033, ficheiro: 'lista.xlsx', adicionados: 12 });
+      }
+      return null;
+    },
+  },
+  CLIENTES_TS_KEY: 'delta_clientes_ts',
+  _listaClientesTs: 0,
+  LISTA_CLIENTES_SUPA_URL: 'https://example.invalid/lista',
+  LISTA_CLIENTES_META_ID: 'v1',
+  SUPA_KEY: 'k',
+  idbGet: async () => null,
+  fetch: async () => { throw new Error('offline'); },
+  getListaClientesCompleta() { return []; },
+};
+vm.createContext(ctxUltima);
+vm.runInContext(
+  extractFn(html, 'dadosFmtAtualizadoEm') + '\n' +
+  extractFn(html, 'dadosHtmlAtualizadoEm') + '\n' +
+  extractFn(html, 'dadosPickMaisRecente') + '\n' +
+  extractFn(html, 'renderUltimaCargaSAP'),
+  ctxUltima
+);
+const htmlDados = await ctxUltima.renderUltimaCargaSAP().then(() => nodesUltima[1].innerHTML);
+const htmlRegistos = nodesUltima[0].innerHTML;
+check('os dois sítios recebem dia e hora', () => {
+  assert.ok(htmlDados.startsWith('Actualizado em <strong>'));
+  assert.equal(htmlDados, htmlRegistos);
+  assert.ok(htmlDados.includes('29.033') || htmlDados.includes('29033'));
+  assert.ok(htmlDados.includes('lista.xlsx'));
+  assert.ok(htmlDados.includes('novos'));
 });
 
 if (process.exitCode) process.exit(process.exitCode);
