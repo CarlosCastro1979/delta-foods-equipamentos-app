@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-sap-lista-atualizado Lista SAP: dia e hora da actualização -->
+<!-- dfb-build: v2026-11-24-dist-registo-comodato Por registar: comodato ou sem comodatos -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2500,8 +2500,7 @@ var _unused_placeholder = 1;
           </div>
         </div>
         <div class="dist-sem-comodato-banner" id="dist-sem-comodato-aviso">
-          Marcado como <strong>sem comodato</strong> / <span class="badge-sem-comodato">sem equipamentos</span>.
-          Ao guardar, o cliente passa para a lista de registados sem contratos nem máquinas.
+          Marcado como <strong>sem comodato</strong>. O cadastro e o MC00 editam-se em Registos OK, no botão Editar.
         </div>
         <div id="dist-contratos-ui" style="display:none">
           <div class="dist-equip-pool" id="f-dist-equip-pool">
@@ -4730,7 +4729,7 @@ var _unused_placeholder = 1;
           </div>
         </div>
         <div class="dist-sem-comodato-banner" id="edit-dist-sem-comodato-aviso">
-          Marcado como <strong>sem comodato</strong> / <span class="badge-sem-comodato">sem equipamentos</span>.
+          Marcado como <strong>sem comodato</strong>. O cadastro e o MC00 estão nas abas acima.
         </div>
         <div id="edit-dist-contratos-ui" style="display:none">
           <div class="dist-equip-pool">
@@ -10710,6 +10709,122 @@ function renderDistResumoCarga() {
   }
 }
 
+let _distRegistarBusy = false;
+
+/** Por registar (Dist): um clique grava a decisão e tira o cliente da lista. */
+async function distRegistarPorDecisao(cod, nome, cep, vendedor, comComodato) {
+  if (_distRegistarBusy) return;
+  cod = String(cod || '').trim();
+  nome = String(nome || '').trim();
+  vendedor = String(vendedor || '').trim();
+  cep = String(cep || '').trim();
+  if (!cod || !nome) { toast('Cliente sem código ou nome.', 'error'); return; }
+  if (!vendedor) { toast('Cliente sem vendedor.', 'error'); return; }
+  _distRegistarBusy = true;
+  try {
+    let existente = typeof findRegistoByCod === 'function' ? await findRegistoByCod(cod) : null;
+    if (existente && existente.id && typeof fetchRegistoById === 'function') {
+      existente = (await fetchRegistoById(existente.id)) || existente;
+    }
+    const ja = existente && typeof distNormalizeRegisto === 'function'
+      ? distNormalizeRegisto(existente).tem_comodato
+      : null;
+    if (existente && existente.id && (ja === true || ja === false)) {
+      toast(ja === false ? 'Já está registado sem comodato.' : 'Já está registado com comodato.');
+      if (ja === true) openEditWithRegisto(existente);
+      else {
+        switchSubTab('registos', 'lista');
+        loadData(true);
+      }
+      loadPendentes();
+      return;
+    }
+
+    const base = {
+      vendedor, cod, nome, cep,
+      contrato: comComodato ? '' : 'SEM_COMODATO',
+      contratos: [],
+      equipamentos: comComodato ? (existente && existente.equipamentos) || [] : [],
+      tem_comodato: !!comComodato,
+      dist_contratos: comComodato ? (existente && existente.dist_contratos) || [] : [],
+    };
+    let saved = null;
+    if (existente && existente.id) {
+      saved = { ...existente, ...base };
+      let res = await fetch(SUPA_URL + '?id=eq.' + encodeURIComponent(existente.id), {
+        method: 'PATCH',
+        headers: { ...HEADERS, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify(base),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        if (/tem_comodato|dist_contratos|schema cache/i.test(errText)) {
+          const legado = { ...base };
+          delete legado.tem_comodato;
+          delete legado.dist_contratos;
+          if (!comComodato) legado.contrato = 'SEM_COMODATO';
+          res = await fetch(SUPA_URL + '?id=eq.' + encodeURIComponent(existente.id), {
+            method: 'PATCH',
+            headers: { ...HEADERS, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify(legado),
+          });
+        }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+      }
+    } else {
+      saved = {
+        ...base,
+        id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('d' + Date.now()),
+        data: new Date().toISOString().slice(0, 10),
+        manual: true,
+      };
+      let res = await fetch(SUPA_URL, {
+        method: 'POST',
+        headers: HEADERS,
+        body: JSON.stringify(saved),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        if (/tem_comodato|dist_contratos|schema cache/i.test(errText)) {
+          const legado = { ...saved };
+          delete legado.tem_comodato;
+          delete legado.dist_contratos;
+          if (!comComodato) legado.contrato = 'SEM_COMODATO';
+          res = await fetch(SUPA_URL, { method: 'POST', headers: HEADERS, body: JSON.stringify(legado) });
+          saved = legado;
+        }
+        if (!res.ok) {
+          const t2 = await res.text().catch(() => '');
+          throw new Error('HTTP ' + res.status + (t2 ? ' — ' + t2.slice(0, 180) : ''));
+        }
+      }
+    }
+
+    try {
+      const mem = Array.isArray(allData)
+        ? [saved].concat(allData.filter(r => r && normCod(r.cod) !== normCod(saved.cod) && r.id !== saved.id))
+        : [saved];
+      allData = mem;
+      clearRegistosCache();
+      setRegistosCache(allData);
+    } catch (_) {}
+
+    if (comComodato) {
+      toast('Registado com comodato. Preenche o contrato e anexa a NF e o contrato.');
+      openEditWithRegisto(saved);
+    } else {
+      toast('Registado sem comodato. Em Registos OK, Editar abre o cadastro e o MC00.');
+      switchSubTab('registos', 'lista');
+      loadData(true);
+    }
+    loadPendentes();
+  } catch (e) {
+    toast('Erro ao registar: ' + (e.message || e), 'error');
+  } finally {
+    _distRegistarBusy = false;
+  }
+}
+
 function renderPendentes() {
   const search = document.getElementById('pending-search')?.value?.trim()?.toLowerCase() || '';
   const vendFilt = typeof resolveVendFilt === 'function'
@@ -10767,13 +10882,19 @@ function renderPendentes() {
         const badge = ready
           ? ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">carga pronta</span>'
           : '';
-        const btnLabel = isDist ? (ready ? '→ Associar contratos' : '→ Indicar comodato') : '→ Registar';
+        const nomeAttr = String(c.nome || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        const vendAttr = String(c.vendedor || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        const dataAttrs = `data-cod="${c.cod}" data-nome="${nomeAttr}" data-cep="${c.cep || ''}" data-vend="${vendAttr}"`;
+        const accoes = isDist
+          ? `<button class="btn-edit" data-dist-decisao="comodato" ${dataAttrs}>comodato</button>
+             <button class="btn-edit" data-dist-decisao="sem" ${dataAttrs} style="margin-left:6px;">sem comodatos</button>`
+          : `<button class="btn-edit" ${dataAttrs}>→ Registar</button>`;
         return `<tr>
         <td>${c.cod}</td>
         <td>${c.nome}${badge}</td>
         <td>${c.cep||'—'}</td>
         <td><span class="vendedor-badge">${c.vendedor||'—'}</span></td>
-        <td><button class="btn-edit" data-cod="${c.cod}" data-nome="${c.nome.replace(/"/g,'&quot;').replace(/'/g,'&#39;')}" data-cep="${c.cep||''}" data-vend="${c.vendedor||''}">${btnLabel}</button></td>
+        <td style="white-space:nowrap;">${accoes}</td>
       </tr>`;
       })();
 
@@ -10790,6 +10911,10 @@ function renderPendentes() {
     pendingBody.addEventListener('click', function(e) {
       const btn = e.target.closest('[data-cod]');
       if (!btn) return;
+      if (btn.dataset.distDecisao === 'comodato' || btn.dataset.distDecisao === 'sem') {
+        distRegistarPorDecisao(btn.dataset.cod, btn.dataset.nome, btn.dataset.cep, btn.dataset.vend, btn.dataset.distDecisao === 'comodato');
+        return;
+      }
       preencherNovo(btn.dataset.cod, btn.dataset.nome, btn.dataset.cep, btn.dataset.vend);
     });
   }
@@ -48513,12 +48638,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-sap-lista-atualizado: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-dist-registo-comodato: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-sap-lista-atualizado';
+  var CACHE_KEEP = 'v2026-11-24-dist-registo-comodato';
 
   function tryRegister() {
     try {
@@ -50787,6 +50912,19 @@ async function distPrepareFormForCod(prefix, cod, opts) {
   const hasCarga = rows.length > 0;
   st.hasCarga = hasCarga;
 
+  // Decisão já gravada «sem comodato» mantém-se mesmo que o Excel tenha carga.
+  if (opts.fromRegisto) {
+    const decidido = distNormalizeRegisto(opts.fromRegisto);
+    if (decidido.tem_comodato === false) {
+      st.temComodato = false;
+      distSetComodatoPerguntaVisible(prefix, true);
+      distApplyComodatoUi(prefix);
+      const listOff = document.getElementById(prefix === 'e' ? 'e-dist-contratos-list' : 'f-dist-contratos-list');
+      if (listOff) listOff.innerHTML = '';
+      return;
+    }
+  }
+
   if (hasCarga) {
     distSetComodatoPerguntaVisible(prefix, false);
     st.temComodato = true;
@@ -50871,6 +51009,31 @@ function distEquipOptionsHtml(selected) {
     opts.map(e => `<option value="${e.replace(/"/g, '&quot;')}" ${e === sel ? 'selected' : ''}>${e}</option>`).join('');
 }
 
+function distSyncDocBtns(card) {
+  if (!card) return;
+  const num = (card.querySelector('.dist-ct-numero')?.value || '').trim();
+  const prefix = card.closest('#e-dist-contratos-list') ? 'e' : 'f';
+  const cod = (document.getElementById(prefix === 'e' ? 'e-cod' : 'f-cod')?.value || '').trim();
+  card.querySelectorAll('.ct-doc-btn').forEach(btn => {
+    btn.dataset.uploadCod = cod;
+    btn.dataset.uploadNum = num;
+  });
+  if (cod && num && typeof contratoDocsRefreshRow === 'function') contratoDocsRefreshRow(cod, num);
+}
+
+function distAbrirDocDoCard(btn, tipo) {
+  const card = btn && btn.closest ? btn.closest('.dist-contrato-card') : null;
+  if (!card) return;
+  distSyncDocBtns(card);
+  const cod = btn.dataset.uploadCod || '';
+  const num = btn.dataset.uploadNum || '';
+  if (!cod || !num) {
+    toast('Preenche o nº do contrato antes de anexar a NF ou o contrato.', 'error');
+    return;
+  }
+  if (typeof contratoAbrirDocs === 'function') contratoAbrirDocs(cod, num, tipo);
+}
+
 function distAddContrato(prefix, data) {
   prefix = prefix || 'f';
   data = data || {};
@@ -50895,8 +51058,13 @@ function distAddContrato(prefix, data) {
     <div class="form-group" style="margin-bottom:10px">
       <label style="font-size:11px;color:var(--muted)">Nº contrato *</label>
       <input type="text" class="form-input dist-ct-numero" placeholder="Ex: B0029/25" value="${(data.numero || '').replace(/"/g, '&quot;')}"
-        onblur="checkNumContratoInput(this, { exceptId: '${prefix}' === 'e' && typeof editingId !== 'undefined' ? editingId : null })"
+        onblur="checkNumContratoInput(this, { exceptId: '${prefix}' === 'e' && typeof editingId !== 'undefined' ? editingId : null });distSyncDocBtns(this.closest('.dist-contrato-card'))"
         onfocus="_distUi['${prefix}'].activeContratoIdx = [...this.closest('#${listId}').children].indexOf(this.closest('.dist-contrato-card'));distSetContratoCollapsed(this.closest('.dist-contrato-card'), false)">
+    </div>
+    <div class="dist-ct-docs" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:-2px 0 10px;">
+      <button type="button" class="ct-doc-btn" data-upload-tipo="nf" data-upload-cod="" data-upload-num="" onclick="distAbrirDocDoCard(this,'nf')">NF</button>
+      <button type="button" class="ct-doc-btn" data-upload-tipo="ct" data-upload-cod="" data-upload-num="" onclick="distAbrirDocDoCard(this,'ct')">Contrato</button>
+      <span style="font-size:11px;color:var(--muted);">Anexa a NF e o contrato assinado neste número.</span>
     </div>
     <div class="dist-ct-summary" style="display:none" onclick="if(this.closest('.dist-contrato-card')?.classList.contains('is-collapsed'))distToggleContratoCard(this.closest('.dist-contrato-card'))"></div>
     <div class="dist-ct-body">
@@ -50905,6 +51073,7 @@ function distAddContrato(prefix, data) {
         onclick="distSetContratoCollapsed(this.closest('.dist-contrato-card'), false);distAddEquipRow(this.closest('.dist-contrato-card'), '')">+ Adicionar equipamento</button>
     </div>`;
   list.appendChild(card);
+  distSyncDocBtns(card);
   if (equips.length) equips.forEach(eq => distAddEquipRow(card, eq));
   else if (!data.skipEmptyEquip) distAddEquipRow(card, {});
   distUpdateContratoSummary(card);
