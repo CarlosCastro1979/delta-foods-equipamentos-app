@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-dist-resumo-carga — Dist resumo carga
+// Service Worker v2026-11-24-dividas-balancete-dup — Dívidas sem dobrar linha 999
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-dist-resumo-carga';
+const CACHE = 'v2026-11-24-dividas-balancete-dup';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
