@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-sap-lista-atualizado — Lista SAP: dia e hora
+// Service Worker v2026-11-24-dist-registo-comodato — Por registar: comodato ou sem
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-sap-lista-atualizado';
+const CACHE = 'v2026-11-24-dist-registo-comodato';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
