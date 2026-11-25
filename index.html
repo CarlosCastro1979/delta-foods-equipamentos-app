@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- dfb-build: v2026-11-24-dist-registo-comodato Por registar: comodato ou sem comodatos -->
+<!-- dfb-build: v2026-11-24-dist-sem-equip-auto Sem equipamento na carga fica sem comodato -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2569,6 +2569,7 @@ var _unused_placeholder = 1;
       </select>
       <span class="count-badge" id="pending-count-badge"></span>
     </div>
+    <p id="pending-dist-hint" style="display:none;font-size:12px;color:var(--muted);margin:0 0 10px;"></p>
 
     <div id="pending-import-bar" style="display:none">
       <div class="import-bar">
@@ -10386,6 +10387,23 @@ async function loadPendentes() {
         const reg = distFindRegistoForCliente(c, index);
         return distClassifyCliente(c, reg) === 'por_registar';
       });
+      const cargaLigada = typeof distCargaAllRows === 'function' && distCargaAllRows().length > 0;
+      if (cargaLigada) {
+        const semEquip = pendentesData.filter(c => distClientePodeAutoSemComodato(c));
+        if (semEquip.length) {
+          try {
+            const marked = await distAutoMarcarSemComodato(semEquip, index);
+            if (marked.length) {
+              const feitos = new Set(marked.map(cod => normCod(cod)));
+              pendentesData = pendentesData.filter(c => !feitos.has(normCod(c.cod)));
+              toast(marked.length + ' clientes sem equipamentos na carga ficaram sem comodato.');
+            }
+          } catch (autoErr) {
+            console.error('distAutoMarcarSemComodato:', autoErr);
+            toast('Não consegui marcar os sem equipamento. Podes usar o botão sem comodatos.', 'error');
+          }
+        }
+      }
     } else {
       // Validação exclusivamente por código SAP — CNPJ/nome podem repetir em códigos diferentes
       const data = await fetchRegistosPaginado('cod', 'cod.asc');
@@ -10710,6 +10728,124 @@ function renderDistResumoCarga() {
 }
 
 let _distRegistarBusy = false;
+let _distAutoSemPromise = null;
+
+/** Carga já importada e este cliente não tem nenhuma linha de equipamento. */
+function distClientePodeAutoSemComodato(c) {
+  if (!c || c._revisao) return false;
+  const cod = String(c.cod || '').trim();
+  const nome = String(c.nome || '').trim();
+  const vendedor = String(c.vendedor || '').trim();
+  if (!cod || !nome || !vendedor) return false;
+  if (typeof distCargaAllRows !== 'function' || !distCargaAllRows().length) return false;
+  if (typeof distCargaByCliente !== 'function') return false;
+  return distCargaByCliente(cod, { nome }).length === 0;
+}
+
+async function distGravarLoteSemComodato(rows) {
+  const chunk = 80;
+  for (let i = 0; i < rows.length; i += chunk) {
+    const part = rows.slice(i, i + chunk);
+    let res = await fetch(SUPA_URL, {
+      method: 'POST',
+      headers: HEADERS,
+      body: JSON.stringify(part),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      if (/tem_comodato|dist_contratos|schema cache/i.test(errText)) {
+        const legado = part.map(r => {
+          const x = { ...r };
+          delete x.tem_comodato;
+          delete x.dist_contratos;
+          x.contrato = 'SEM_COMODATO';
+          return x;
+        });
+        res = await fetch(SUPA_URL, { method: 'POST', headers: HEADERS, body: JSON.stringify(legado) });
+      }
+    }
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error('HTTP ' + res.status + (t ? ' — ' + t.slice(0, 160) : ''));
+    }
+  }
+}
+
+async function distAutoMarcarSemComodato(clientes, index) {
+  if (_distAutoSemPromise) return _distAutoSemPromise;
+  _distAutoSemPromise = distAutoMarcarSemComodatoRun(clientes, index)
+    .finally(() => { _distAutoSemPromise = null; });
+  return _distAutoSemPromise;
+}
+
+async function distAutoMarcarSemComodatoRun(clientes, index) {
+  const novos = [];
+  const patches = [];
+  (clientes || []).forEach(c => {
+    if (!distClientePodeAutoSemComodato(c)) return;
+    const reg = index && typeof distFindRegistoForCliente === 'function'
+      ? distFindRegistoForCliente(c, index)
+      : null;
+    const base = {
+      vendedor: String(c.vendedor || '').trim(),
+      cod: String(c.cod || '').trim(),
+      nome: String(c.nome || '').trim(),
+      cep: String(c.cep || '').trim(),
+      contrato: 'SEM_COMODATO',
+      contratos: [],
+      equipamentos: [],
+      tem_comodato: false,
+      dist_contratos: [],
+    };
+    if (reg && reg.id) patches.push({ id: reg.id, body: base, prev: reg });
+    else {
+      novos.push({
+        ...base,
+        id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('d' + Date.now() + Math.random().toString(16).slice(2)),
+        data: new Date().toISOString().slice(0, 10),
+        manual: true,
+      });
+    }
+  });
+  if (!novos.length && !patches.length) return [];
+  if (novos.length) await distGravarLoteSemComodato(novos);
+  for (const p of patches) {
+    let res = await fetch(SUPA_URL + '?id=eq.' + encodeURIComponent(p.id), {
+      method: 'PATCH',
+      headers: { ...HEADERS, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(p.body),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      if (/tem_comodato|dist_contratos|schema cache/i.test(errText)) {
+        const legado = { ...p.body };
+        delete legado.tem_comodato;
+        delete legado.dist_contratos;
+        legado.contrato = 'SEM_COMODATO';
+        res = await fetch(SUPA_URL + '?id=eq.' + encodeURIComponent(p.id), {
+          method: 'PATCH',
+          headers: { ...HEADERS, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+          body: JSON.stringify(legado),
+        });
+      }
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+  }
+  const saved = novos.concat(patches.map(p => ({ ...p.prev, ...p.body, id: p.id })));
+  try {
+    const mem = Array.isArray(allData) ? allData.slice() : [];
+    saved.forEach(r => {
+      const k = normCod(r.cod);
+      const i = mem.findIndex(x => x && (x.id === r.id || normCod(x.cod) === k));
+      if (i >= 0) mem[i] = { ...mem[i], ...r };
+      else mem.unshift(r);
+      if (index && typeof index.set === 'function') index.set(k, { ...(index.get(k) || {}), ...r });
+    });
+    allData = mem;
+    clearRegistosCache();
+  } catch (_) {}
+  return saved.map(r => r.cod);
+}
 
 /** Por registar (Dist): um clique grava a decisão e tira o cliente da lista. */
 async function distRegistarPorDecisao(cod, nome, cep, vendedor, comComodato) {
@@ -10852,6 +10988,17 @@ function renderPendentes() {
     if (revisao.length) txt += ` · ⚠ ${revisao.length} precisam revisão`;
     countEl.textContent = txt;
   }
+  const hint = document.getElementById('pending-dist-hint');
+  if (hint) {
+    const cargaLigada = isDist && typeof distCargaAllRows === 'function' && distCargaAllRows().length > 0;
+    if (cargaLigada) {
+      hint.style.display = '';
+      hint.textContent = 'Quem tem equipamentos na carga preenche o comodato. Quem não tem nenhum fica registado sem comodato.';
+    } else {
+      hint.style.display = 'none';
+      hint.textContent = '';
+    }
+  }
 
   const pendingBody = document.getElementById('pending-body');
   if (!pendingBody) return;
@@ -10879,16 +11026,24 @@ function renderPendentes() {
       </tr>`
     : (() => {
         const ready = hasCargaFn(c);
+        const cargaLigada = isDist && typeof distCargaAllRows === 'function' && distCargaAllRows().length > 0;
         const badge = ready
           ? ' <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;background:#dcfce7;color:#166534;border:1px solid #bbf7d0;">carga pronta</span>'
           : '';
         const nomeAttr = String(c.nome || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         const vendAttr = String(c.vendedor || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         const dataAttrs = `data-cod="${c.cod}" data-nome="${nomeAttr}" data-cep="${c.cep || ''}" data-vend="${vendAttr}"`;
-        const accoes = isDist
-          ? `<button class="btn-edit" data-dist-decisao="comodato" ${dataAttrs}>comodato</button>
-             <button class="btn-edit" data-dist-decisao="sem" ${dataAttrs} style="margin-left:6px;">sem comodatos</button>`
-          : `<button class="btn-edit" ${dataAttrs}>→ Registar</button>`;
+        let accoes;
+        if (!isDist) {
+          accoes = `<button class="btn-edit" ${dataAttrs}>→ Registar</button>`;
+        } else if (ready) {
+          accoes = `<button class="btn-edit" data-dist-decisao="comodato" ${dataAttrs}>comodato</button>`;
+        } else if (cargaLigada) {
+          accoes = `<button class="btn-edit" data-dist-decisao="sem" ${dataAttrs}>sem comodatos</button>`;
+        } else {
+          accoes = `<button class="btn-edit" data-dist-decisao="comodato" ${dataAttrs}>comodato</button>
+             <button class="btn-edit" data-dist-decisao="sem" ${dataAttrs} style="margin-left:6px;">sem comodatos</button>`;
+        }
         return `<tr>
         <td>${c.cod}</td>
         <td>${c.nome}${badge}</td>
@@ -48638,12 +48793,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 <script>
-// v2026-11-24-dist-registo-comodato: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
+// v2026-11-24-dist-sem-equip-auto: sem popup instalador. SW só após load + documento activo (evita InvalidStateError)
 (function registerSwSafe() {
   if (!('serviceWorker' in navigator)) return;
   var SW_URL = '/delta-foods-equipamentos-app/sw.js';
   var SW_SCOPE = '/delta-foods-equipamentos-app/';
-  var CACHE_KEEP = 'v2026-11-24-dist-registo-comodato';
+  var CACHE_KEEP = 'v2026-11-24-dist-sem-equip-auto';
 
   function tryRegister() {
     try {
@@ -52464,6 +52619,10 @@ async function distCargaEquipConfirmMap() {
       (skippedNotEquip ? ` · ${skippedNotEquip} café/filtro/outro` : '') +
       ` · aba "${sheetName}"` + where
   );
+  if (typeof isCanalDistribuidores === 'function' && isCanalDistribuidores()
+      && typeof loadPendentes === 'function') {
+    loadPendentes();
+  }
 }
 
 function distCargaEquipClearLocal() {

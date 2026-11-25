@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-dist-registo-comodato — Por registar: comodato ou sem
+// Service Worker v2026-11-24-dist-sem-equip-auto — sem equipamento fica sem comodato
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-dist-registo-comodato';
+const CACHE = 'v2026-11-24-dist-sem-equip-auto';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
