@@ -1,6 +1,6 @@
-// Service Worker v2026-11-24-resumo-carga-canal13 — Resumo carga só canal Dist
+// Service Worker v2026-11-24-sap-lista-atualizado — Lista SAP: dia e hora
 // Mantém-se registado (obrigatório para «Instalar aplicação» / PWA standalone).
-const CACHE = 'v2026-11-24-resumo-carga-canal13';
+const CACHE = 'v2026-11-24-sap-lista-atualizado';
 
 self.addEventListener('install', e => {
   self.skipWaiting();
