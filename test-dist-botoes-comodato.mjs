@@ -11,11 +11,11 @@ import { fileURLToPath } from 'node:url';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
-const CACHE = 'v2026-11-24-dist-sem-equip-auto';
+const CACHE = 'v2026-11-25-contrato-no-registo';
 
 assert.ok(html.includes(CACHE));
 assert.ok(sw.includes(CACHE));
-assert.ok(/<!--\s*dfb-build:[^>]*dist-sem-equip-auto[^>]*-->/.test(html.slice(0, 400)));
+assert.ok(/<!--\s*dfb-build:[^>]*contrato-no-registo[^>]*-->/.test(html.slice(0, 400)));
 assert.ok(!html.includes('Indicar comodato'));
 assert.ok(html.includes('data-dist-decisao="comodato"'));
 assert.ok(html.includes('data-dist-decisao="sem"'));

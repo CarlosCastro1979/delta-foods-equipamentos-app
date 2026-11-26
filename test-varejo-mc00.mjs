@@ -328,9 +328,9 @@ check('switchSubTab redirecciona Novo/Por Registar no Varejo via canalRegistosTa
 });
 
 check('Cache SW / dfb-build alinhados (dist-sem-equip-auto)', () => {
-  assert.ok(html.includes('v2026-11-24-dist-sem-equip-auto'));
-  assert.ok(sw.includes('v2026-11-24-dist-sem-equip-auto'));
-  assert.ok(/<!--\s*dfb-build:[^>]*dist-sem-equip-auto[^>]*-->/.test(html.slice(0, 300)));
+  assert.ok(html.includes('v2026-11-25-contrato-no-registo'));
+  assert.ok(sw.includes('v2026-11-25-contrato-no-registo'));
+  assert.ok(/<!--\s*dfb-build:[^>]*contrato-no-registo[^>]*-->/.test(html.slice(0, 300)));
 });
 
 if (process.exitCode) process.exit(process.exitCode);
